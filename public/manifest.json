@@ -1,0 +1,23 @@
+{
+  "name": "PAGNOL Asset Management",
+  "short_name": "PAGNOL",
+  "description": "Gestión inteligente de activos para el sector minero, potenciada con un asistente de IA.",
+  "icons": [
+    {
+      "src": "/logo1.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo1.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#FB8504"
+}

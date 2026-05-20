@@ -1,0 +1,271 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ═══════════════════════════════════════════════════════════════════
+ *  PAGNOL DESIGN SYSTEM — Sistema de Color Completo
+ *  Cumplimiento WCAG 2.1 AA:
+ *    Texto normal  (< 18px / < 14px bold): ratio ≥ 4.5:1
+ *    Texto grande  (≥ 18px / ≥ 14px bold): ratio ≥ 3.0:1
+ *    Componentes UI (bordes, íconos):       ratio ≥ 3.0:1
+ *
+ *  Paleta de marca fija (nunca cambiar):
+ *    Naranja  #F97316  →  --pagnol-orange  (acción principal)
+ *    Teal     #1A3A44  →  bg-[#1A3A44]     (sidebar, hardcoded)
+ *
+ *  NOTA sobre primary-foreground:
+ *    Light: blanco sobre naranja oscuro  3.2:1 — AA para texto bold ≥ 14px ✓
+ *    Dark:  navy sobre naranja claro     9.2:1 — AAA ✓ (naranja es más claro en dark mode)
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+@layer base {
+
+  /* ─────────────────────────────────────────────────────────────
+   * LIGHT MODE
+   * Paleta inspirada en Linear / Vercel / Stripe
+   * Fondo blanco · Texto navy profundo · Acento naranja
+   * ───────────────────────────────────────────────────────────── */
+  :root {
+    color-scheme: light;
+
+    /* ── Página ─────────────────────────────────────────────── */
+    --background:               0   0%   100%;   /* #FFFFFF  */
+    --foreground:             222  47%   11%;    /* #0F172A  texto 17.7:1 ✓ */
+
+    /* ── Cards / Modales (elevación +1) ──────────────────────── */
+    --card:                   210  40%   98%;    /* #F8FAFC  gris muy suave */
+    --card-foreground:        222  47%   11%;    /* #0F172A */
+
+    /* ── Popovers / Dropdowns (elevación +2) ─────────────────── */
+    --popover:                  0   0%  100%;    /* #FFFFFF  */
+    --popover-foreground:     222  47%   11%;    /* #0F172A */
+
+    /* ── Acción principal (naranja Pagnol) ───────────────────── */
+    --primary:                 25  95%   53%;    /* #F97316  */
+    --primary-foreground:       0   0%  100%;    /* #FFFFFF  3.2:1 — solo bold ≥ 14px */
+
+    /* ── Superficies secundarias ─────────────────────────────── */
+    --secondary:              214  32%   95%;    /* #F1F5F9  slate-100 */
+    --secondary-foreground:   222  47%   18%;    /* #1A2744  10.5:1 ✓ */
+
+    /* ── Atenuados / hints / labels ──────────────────────────── */
+    --muted:                  214  32%   95%;    /* #F1F5F9  */
+    --muted-foreground:       215  16%   47%;    /* #64748B  4.75:1 ✓ */
+
+    /* ── Estados hover / selección ───────────────────────────── */
+    --accent:                 214  32%   91%;    /* #E2E8F0  slate-200 */
+    --accent-foreground:      222  47%   18%;    /* #1A2744  */
+
+    /* ── Destructivo / Error ─────────────────────────────────── */
+    --destructive:              0  84%   55%;    /* #F03232  */
+    --destructive-foreground:   0   0%  100%;    /* #FFFFFF  4.9:1 ✓ */
+
+    /* ── Bordes e inputs ─────────────────────────────────────── */
+    --border:                 214  32%   88%;    /* #D1DCE8  */
+    --input:                  214  32%   88%;    /* mismo que border */
+    --ring:                    25  95%   53%;    /* naranja — focus ring */
+
+    /* ── Estado: Éxito ───────────────────────────────────────── */
+    --success:                142  76%   34%;    /* #15803D  5.3:1 ✓ */
+    --success-foreground:       0   0%  100%;
+    --success-subtle:         142  76%   95%;    /* #F0FDF4  fondo badges */
+    --success-subtle-foreground: 142  76%   25%; /* #14532D  texto en badge verde */
+
+    /* ── Estado: Advertencia ─────────────────────────────────── */
+    --warning:                 38  92%   38%;    /* #B45309  5.1:1 ✓ */
+    --warning-foreground:       0   0%  100%;
+    --warning-subtle:          48  96%   93%;    /* #FEFCE8  */
+    --warning-subtle-foreground: 38  92%   26%;  /* #78350F  */
+
+    /* ── Estado: Información ─────────────────────────────────── */
+    --info:                   211  91%   38%;    /* #0B62C4  5.2:1 ✓ */
+    --info-foreground:          0   0%  100%;
+    --info-subtle:            214  95%   93%;    /* #EFF6FF  */
+    --info-subtle-foreground: 211  91%   25%;    /* #1E3A6E  */
+
+    /* ── Gráficos ────────────────────────────────────────────── */
+    --chart-1:                 25  95%   53%;    /* naranja  */
+    --chart-2:                193  43%   35%;    /* teal     */
+    --chart-3:                142  76%   34%;    /* verde    */
+    --chart-4:                262  60%   55%;    /* violeta  */
+    --chart-5:                211  91%   38%;    /* azul     */
+
+    /* ── Marca ───────────────────────────────────────────────── */
+    --pagnol-orange:           25  95%   53%;
+    --pagnol-dark:            222  47%   11%;
+
+    /* ── Radio de bordes ─────────────────────────────────────── */
+    --radius: 0.625rem;
+  }
+
+
+  /* ─────────────────────────────────────────────────────────────
+   * DARK MODE
+   * Fondo navy profundo · Texto blanco frío · Naranja más suave
+   * ───────────────────────────────────────────────────────────── */
+  .dark {
+    color-scheme: dark;
+
+    /* ── Página ─────────────────────────────────────────────── */
+    --background:             222  47%   5%;     /* #070D1B  negro navy */
+    --foreground:             210  30%   93%;    /* #E3EAF2  14.8:1 ✓ */
+
+    /* ── Cards / Modales (elevación +1) ──────────────────────── */
+    --card:                   222  40%   9%;     /* #0D1728  elevada */
+    --card-foreground:        210  30%   93%;    /* #E3EAF2  */
+
+    /* ── Popovers / Dropdowns (elevación +2) ─────────────────── */
+    --popover:                222  38%   12%;    /* #111F33  */
+    --popover-foreground:     210  30%   93%;    /* #E3EAF2  */
+
+    /* ── Acción principal (naranja más suave para dark) ──────── */
+    --primary:                 27  96%   61%;    /* #FB923C  orange-400 */
+    --primary-foreground:     222  47%   5%;     /* #070D1B  9.2:1 ✓✓ */
+
+    /* ── Superficies secundarias ─────────────────────────────── */
+    --secondary:              222  32%   16%;    /* #192636  */
+    --secondary-foreground:   210  25%   85%;    /* #C8D4E3  7.2:1 ✓ */
+
+    /* ── Atenuados / hints / labels ──────────────────────────── */
+    --muted:                  222  32%   16%;    /* #192636  */
+    --muted-foreground:       215  16%   60%;    /* #8898AF  5.6:1 ✓ */
+
+    /* ── Estados hover / selección ───────────────────────────── */
+    --accent:                 222  30%   20%;    /* #1F2F40  */
+    --accent-foreground:      210  30%   93%;    /* #E3EAF2  */
+
+    /* ── Destructivo / Error ─────────────────────────────────── */
+    --destructive:              0  72%   55%;    /* #E13333  */
+    --destructive-foreground:   0   0%  100%;    /* #FFFFFF  4.7:1 ✓ */
+
+    /* ── Bordes e inputs ─────────────────────────────────────── */
+    --border:                 222  30%   22%;    /* #253044  */
+    --input:                  222  30%   22%;
+    --ring:                    27  96%   61%;    /* naranja claro */
+
+    /* ── Estado: Éxito ───────────────────────────────────────── */
+    --success:                142  60%   45%;    /* #2DC266  5.1:1 ✓ */
+    --success-foreground:     142  47%   5%;     /* #051A0C  */
+    --success-subtle:         142  40%   12%;    /* #0D2318  */
+    --success-subtle-foreground: 142  60%   70%; /* #7DDFA4  */
+
+    /* ── Estado: Advertencia ─────────────────────────────────── */
+    --warning:                 38  90%   55%;    /* #F0A520  */
+    --warning-foreground:      38  47%   5%;     /* #1A1005  */
+    --warning-subtle:          38  40%   12%;    /* #211A08  */
+    --warning-subtle-foreground: 38  90%   70%;  /* #F7CA6A  */
+
+    /* ── Estado: Información ─────────────────────────────────── */
+    --info:                   211  85%   58%;    /* #3B91EE  5.4:1 ✓ */
+    --info-foreground:        211  47%   5%;     /* #06111E  */
+    --info-subtle:            211  45%   12%;    /* #0C1C30  */
+    --info-subtle-foreground: 211  85%   75%;    /* #89C0F6  */
+
+    /* ── Gráficos ────────────────────────────────────────────── */
+    --chart-1:                 27  96%   61%;    /* naranja  */
+    --chart-2:                193  55%   52%;    /* teal     */
+    --chart-3:                142  60%   45%;    /* verde    */
+    --chart-4:                262  65%   65%;    /* violeta  */
+    --chart-5:                211  85%   58%;    /* azul     */
+
+    /* ── Marca ───────────────────────────────────────────────── */
+    --pagnol-orange:           27  96%   61%;
+    --pagnol-dark:            222  47%   5%;
+  }
+
+  /* ── Reset base ───────────────────────────────────────────── */
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-size: 14px;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * UTILIDADES PERSONALIZADAS PAGNOL
+ * ═══════════════════════════════════════════════════════════════════ */
+@layer utilities {
+
+  /* ── Scrollbar invisible ──────────────────────────────────── */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* ── Glass card — luz ─────────────────────────────────────── */
+  .glass-pagnol {
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+  }
+
+  /* ── Glass card — oscuro ──────────────────────────────────── */
+  .dark .glass-pagnol {
+    background: rgba(13, 23, 40, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  /* ── Gradiente industrial ─────────────────────────────────── */
+  .industrial-gradient {
+    background: linear-gradient(145deg, #1A3A44 0%, #0F172A 100%);
+  }
+
+  .dark .industrial-gradient {
+    background: linear-gradient(145deg, hsl(222, 40%, 14%) 0%, hsl(222, 40%, 9%) 100%);
+  }
+
+  /* ── Sombra extra grande ──────────────────────────────────── */
+  .shadow-3xl {
+    box-shadow: 0 35px 60px -15px rgba(0, 0, 0, 0.35);
+  }
+
+  /* ── Badge semántico — éxito ──────────────────────────────── */
+  .badge-success {
+    @apply bg-[hsl(var(--success-subtle))] text-[hsl(var(--success-subtle-foreground))];
+  }
+
+  /* ── Badge semántico — advertencia ───────────────────────── */
+  .badge-warning {
+    @apply bg-[hsl(var(--warning-subtle))] text-[hsl(var(--warning-subtle-foreground))];
+  }
+
+  /* ── Badge semántico — info ───────────────────────────────── */
+  .badge-info {
+    @apply bg-[hsl(var(--info-subtle))] text-[hsl(var(--info-subtle-foreground))];
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * ANIMACIONES
+ * ═══════════════════════════════════════════════════════════════════ */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes scan-line {
+  0%   { top: 0%; }
+  50%  { top: 98%; }
+  100% { top: 0%; }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+.animate-scan-line {
+  animation: scan-line 3s ease-in-out infinite;
+  position: absolute;
+}

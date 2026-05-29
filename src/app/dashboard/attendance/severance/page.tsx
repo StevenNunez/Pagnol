@@ -54,7 +54,7 @@ const formatCurrency = (value: number) => {
 };
 
 export default function SeverancePage() {
-    const { users } = useAppState();
+    const { users, currentTenant } = useAppState();
     const { toast } = useToast();
     const [workerPopoverOpen, setWorkerPopoverOpen] = useState(false);
     const [calculationResult, setCalculationResult] = useState<any>(null);
@@ -146,9 +146,9 @@ export default function SeverancePage() {
                   theme: "plain",
                   styles: { fontSize: 9 },
                   body: [
-                    ["Razón Social:", "PAGNOL Asset Management", "Nombre Trabajador:", selectedWorker.name],
-                    ["RUT:", "77.123.456-K", "RUT Trabajador:", selectedWorker.rut || 'N/A'],
-                    ["Dirección:", "Av. del Titanio 34, La Serena", "Fecha Ingreso:", format(watch('startDate'), "dd/MM/yyyy")],
+                    ["Razón Social:", currentTenant?.name || 'N/A', "Nombre Trabajador:", selectedWorker.name],
+                    ["RUT:", "—", "RUT Trabajador:", selectedWorker.rut || 'N/A'],
+                    ["Dirección:", "—", "Fecha Ingreso:", format(watch('startDate'), "dd/MM/yyyy")],
                     ["", "", "Fecha Término:", format(watch('endDate'), "dd/MM/yyyy")],
                   ],
                 });
@@ -169,7 +169,7 @@ export default function SeverancePage() {
 
                 const finalY = (doc as any).lastAutoTable.finalY;
                 doc.setFontSize(10);
-                const text = `En La Serena, a ${format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: es })}, ${selectedWorker.name}, RUT ${selectedWorker.rut}, declara haber recibido de PAGNOL Asset Management, la suma de ${formatCurrency(calculationResult.totalSeverance)}, por concepto del total de los haberes que le corresponden por el término de su contrato de trabajo. Declara, asimismo, no tener reclamo alguno que formular en contra de la empresa.`;
+                const text = `A ${format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: es })}, ${selectedWorker.name}, RUT ${selectedWorker.rut || 'N/A'}, declara haber recibido de ${currentTenant?.name || 'la empresa'}, la suma de ${formatCurrency(calculationResult.totalSeverance)}, por concepto del total de los haberes que le corresponden por el término de su contrato de trabajo. Declara, asimismo, no tener reclamo alguno que formular en contra de la empresa.`;
                 const splitText = doc.splitTextToSize(text, doc.internal.pageSize.getWidth() - 30);
                 doc.text(splitText, 15, finalY + 15);
 

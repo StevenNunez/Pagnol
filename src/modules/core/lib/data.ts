@@ -273,19 +273,104 @@ export interface ToolLog {
   returnNotes?: string;
 }
 
+// Códigos de marcas de asistencia (estándar industria minera)
+export type AttendanceMark = 'P' | 'A' | 'D' | 'LM' | 'PSG' | 'V' | 'PP' | 'MJ' | 'ATR';
+
+export const ATTENDANCE_MARK_LABELS: Record<AttendanceMark, string> = {
+  P:   'Presente',
+  A:   'Ausente',
+  D:   'Descanso',
+  LM:  'Licencia Médica',
+  PSG: 'Permiso Sin Goce',
+  V:   'Vacaciones',
+  PP:  'Permiso Paternal',
+  MJ:  'Media Jornada',
+  ATR: 'Atraso',
+};
+
 export interface AttendanceLog {
   id: string;
   userId: string;
   userName: string;
   timestamp: Date;
   type: 'in' | 'out';
-  method: 'qr' | 'manual';
-  registrarId: string; // ID of the guard or admin who registered it
+  method: 'qr' | 'manual' | 'import';
+  registrarId: string;
   registrarName: string;
-  date: string; // YYYY-MM-DD for easy querying
+  date: string; // YYYY-MM-DD
+  contractId?: string | null;
+  markType?: AttendanceMark | null; // null = entrada/salida normal
   originalTimestamp?: Date | null;
   modifiedAt?: Date | null;
-  modifiedBy?: string | null; // User ID of the admin who modified it
+  modifiedBy?: string | null;
+}
+
+// ── Resultado de escaneo QR ──────────────────────────────────────────────────
+
+export interface ScanResult {
+  workerId: string;
+  workerName: string;
+  workerCargo?: string;
+  logType: 'in' | 'out';
+  logTime: string;           // HH:mm
+  contractId?: string | null;
+  contractName?: string | null;
+  shiftName?: string | null;
+  shiftType?: string | null;
+  isNightShift?: boolean;
+  isRestDay: boolean;
+}
+
+// ── Contratos y Turnos (Minería) ─────────────────────────────────────────────
+
+export type ShiftType = '5x2' | '4x3' | '7x7' | '14x14' | '21x7' | 'custom';
+
+export interface ShiftSchedule {
+  id: string;
+  tenantId: string;
+  name: string;
+  shiftType: ShiftType;
+  daysOn: number;
+  daysOff: number;
+  workStart: string;    // HH:mm
+  workEnd: string;      // HH:mm
+  isNightShift: boolean;
+  lunchStart?: string;  // HH:mm
+  lunchEnd?: string;    // HH:mm
+  rotationReferenceDate: string; // YYYY-MM-DD — day 1 of the on-cycle
+  createdAt: Date;
+}
+
+export interface Contract {
+  id: string;
+  tenantId: string;
+  name: string;
+  code?: string;
+  clientName?: string;
+  location?: string;
+  status: 'active' | 'closed' | 'suspended';
+  startDate: Date | string;
+  endDate?: Date | string | null;
+  description?: string;
+  createdBy?: string;
+  createdAt: Date;
+  // Subcontratistas
+  isSubcontractor?: boolean;
+  parentContractId?: string | null;
+  subcontractorCompany?: string | null;
+  subcontractorRut?: string | null;
+}
+
+export interface ContractWorker {
+  id: string;
+  tenantId: string;
+  contractId: string;
+  userId: string;
+  shiftScheduleId?: string | null;
+  roleInContract?: string;
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+  createdAt: Date;
 }
 
 export interface Supplier {

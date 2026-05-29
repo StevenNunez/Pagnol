@@ -15,6 +15,7 @@ import {
   Briefcase,
   PackagePlus,
   FileText,
+  FileSpreadsheet,
   Edit,
   CalendarCheck,
   Clock,
@@ -112,9 +113,13 @@ const getSafetyNavItems = () => [
 ];
 
 const getAttendanceNavItems = () => [
+  { href: '/dashboard/attendance/overview', icon: Globe, label: 'Vista General' },
   { href: '/dashboard/attendance', icon: Clock, label: 'Control de Asistencia' },
-  { href: '/dashboard/attendance/registry', icon: History, label: 'Registro Diario' },
-  { href: '/dashboard/attendance/report', icon: FileBarChart, label: 'Reporte Mensual' },
+  { href: '/dashboard/attendance/contracts', icon: Briefcase, label: 'Contratos' },
+  { href: '/dashboard/attendance/shifts', icon: RotateCcw, label: 'Turnos' },
+  { href: '/dashboard/attendance/import', icon: FileUp, label: 'Importar Planilla' },
+  { href: '/dashboard/attendance/report', icon: FileBarChart, label: 'Reporte Semanal' },
+  { href: '/dashboard/attendance/monthly-report', icon: FileSpreadsheet, label: 'Liquidación de Sueldo' },
   { href: '/dashboard/attendance/overtime', icon: Zap, label: 'Horas Extras' },
   { href: '/dashboard/attendance/severance', icon: HandCoins, label: 'Finiquitos' },
 ];

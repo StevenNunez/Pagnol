@@ -386,9 +386,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
   const sendPasswordReset = async (email: string) => {
-    const redirectTo = `${window.location.origin}/update-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-    if (error) throw error;
+    // Uses our own API route so the email is sent from hola@teolabs.app
+    // via Nodemailer instead of Supabase's default SMTP.
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim() }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'No se pudo enviar el correo.');
+    }
   };
 
   const reauthenticateAndChangeEmail = async (

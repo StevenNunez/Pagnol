@@ -88,8 +88,17 @@ export default function ResetPasswordPage() {
                             </div>
                             <h2 className="text-3xl font-black tracking-tight text-[#204A57]">Correo Enviado</h2>
                             <p className="text-slate-500 text-sm font-medium max-w-sm mx-auto">
-                                Revisa tu bandeja de entrada en <span className="font-bold text-slate-700">{email}</span> y haz clic en el enlace de recuperación.
+                                Si <span className="font-bold text-slate-700">{email}</span> tiene una cuenta, recibirás un enlace en los próximos minutos.
                             </p>
+                            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-left space-y-2 text-sm">
+                                <p className="font-bold text-amber-800 text-[10px] uppercase tracking-widest">¿No llegó el correo?</p>
+                                <ul className="text-amber-700 space-y-1 text-xs list-disc list-inside">
+                                    <li>Revisa la carpeta de <strong>Spam / Correo no deseado</strong></li>
+                                    <li>El enlace es válido por <strong>1 hora</strong></li>
+                                    <li>El sistema limita el reenvío: espera <strong>1 minuto</strong> entre intentos</li>
+                                    <li>Si el correo no es el registrado en la plataforma, no llegará nada</li>
+                                </ul>
+                            </div>
                             <Link href="/login" className="inline-block mt-4 text-pagnol-orange text-sm font-bold hover:underline">
                                 Volver al inicio de sesión
                             </Link>

@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/modules/core/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import { ArrowLeft, Lock, ShieldCheck, Eye, EyeOff, Loader2, CheckCircle } from "lucide-react";
+import { ArrowLeft, Lock, ShieldCheck, Eye, EyeOff, Loader2, CheckCircle, AlertTriangle } from "lucide-react";
 import { z } from "zod";
 
 const schema = z.object({
@@ -19,30 +19,57 @@ const schema = z.object({
     path: ["confirm"],
 });
 
+type PageState = 'loading' | 'ready' | 'invalid' | 'done';
+
 export default function UpdatePasswordPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { toast } = useToast();
+
+    const [pageState, setPageState] = useState<PageState>('loading');
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [done, setDone] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     useEffect(() => {
-        // Supabase sets the session from the URL hash automatically on page load
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-            if (event === "PASSWORD_RECOVERY") {
-                // User is in recovery mode — ready to update password
+        // The /auth/callback already exchanged the PKCE code and set the session.
+        // We just need to verify the current session is a PASSWORD_RECOVERY session.
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if (session?.user) {
+                setPageState('ready');
+                return;
             }
-        });
-        return () => subscription.unsubscribe();
+
+            // Fallback: listen for PASSWORD_RECOVERY event (implicit flow / direct link)
+            const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+                if (event === 'PASSWORD_RECOVERY' && session?.user) {
+                    setPageState('ready');
+                }
+            });
+
+            // If after a brief wait there's still no session, show invalid state
+            const timeout = setTimeout(() => {
+                setPageState('invalid');
+            }, 2000);
+
+            return () => {
+                subscription.unsubscribe();
+                clearTimeout(timeout);
+            };
+        };
+
+        checkSession();
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setErrors({});
+
         const result = schema.safeParse({ password, confirm });
         if (!result.success) {
             const fieldErrors: Record<string, string> = {};
@@ -68,13 +95,15 @@ export default function UpdatePasswordPage() {
             const { error } = await supabase.auth.updateUser({ password });
             if (error) throw error;
 
-            setDone(true);
+            setPageState('done');
+            // Sign out after password change so user logs in fresh
+            await supabase.auth.signOut();
             setTimeout(() => router.push("/login"), 3000);
         } catch (error: any) {
             toast({
                 variant: "destructive",
-                title: "Error",
-                description: error.message || "No se pudo actualizar la contraseña.",
+                title: "Error al actualizar",
+                description: error.message || "No se pudo actualizar la contraseña. El enlace puede haber expirado.",
             });
         } finally {
             setLoading(false);
@@ -121,7 +150,37 @@ export default function UpdatePasswordPage() {
             <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-20">
                 <div className="w-full max-w-md space-y-8 animate-in slide-in-from-right-8 duration-700">
 
-                    {done ? (
+                    {pageState === 'loading' && (
+                        <div className="text-center space-y-4">
+                            <Loader2 size={40} className="animate-spin mx-auto text-pagnol-orange" />
+                            <p className="text-slate-500 text-sm font-medium">Verificando enlace de recuperación...</p>
+                        </div>
+                    )}
+
+                    {pageState === 'invalid' && (
+                        <div className="text-center space-y-4">
+                            <div className="flex justify-center">
+                                <AlertTriangle size={56} className="text-amber-500" />
+                            </div>
+                            <h2 className="text-3xl font-black tracking-tight text-[#204A57]">Enlace Inválido</h2>
+                            <p className="text-slate-500 text-sm font-medium max-w-sm mx-auto">
+                                El enlace de recuperación expiró, ya fue utilizado, o es inválido.<br />
+                                Los enlaces son válidos por <strong>1 hora</strong>.
+                            </p>
+                            <div className="pt-2 space-y-3">
+                                <Link href="/reset-password">
+                                    <Button className="w-full h-11 bg-pagnol-orange hover:bg-orange-600 text-white rounded-xl font-black uppercase tracking-widest text-xs">
+                                        Solicitar nuevo enlace
+                                    </Button>
+                                </Link>
+                                <Link href="/login" className="block text-center text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest">
+                                    Volver al Login
+                                </Link>
+                            </div>
+                        </div>
+                    )}
+
+                    {pageState === 'done' && (
                         <div className="text-center space-y-4">
                             <div className="flex justify-center">
                                 <CheckCircle size={56} className="text-green-500" />
@@ -132,7 +191,9 @@ export default function UpdatePasswordPage() {
                                 Ir al login ahora
                             </Link>
                         </div>
-                    ) : (
+                    )}
+
+                    {pageState === 'ready' && (
                         <>
                             <div className="space-y-2">
                                 <h2 className="text-3xl font-black tracking-tight text-[#204A57]">Restablecer Contraseña</h2>

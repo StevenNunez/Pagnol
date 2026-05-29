@@ -42,6 +42,7 @@ import * as paymentMutations from './mutations/paymentMutations';
 import * as maintenanceMutations from './mutations/maintenanceMutations';
 import * as eaMutations from './mutations/eaMutations';
 import * as protocolMutations from './mutations/protocolMutations';
+import * as contractMutations from './mutations/contractMutations';
 import { WORK_ITEMS_SEED } from '@/lib/work-items-seed';
 
 const initialState: AppDataState = {
@@ -77,6 +78,9 @@ const initialState: AppDataState = {
     eaDocuments: [],
     protocolTemplates: [],
     protocols: [],
+    shiftSchedules: [],
+    contracts: [],
+    contractWorkers: [],
 };
 
 
@@ -174,6 +178,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const eaDocumentsData = useSupabaseCollection('ea_documents', { tenantId, mapper: mappers.ea_documents, orderBy: { column: 'generated_at', ascending: false } });
     const protocolTemplatesData = useSupabaseCollection('protocol_templates', { tenantId, mapper: mappers.protocol_templates, orderBy: { column: 'created_at', ascending: false } });
     const protocolsData = useSupabaseCollection('protocols', { tenantId, mapper: mappers.protocols, orderBy: { column: 'created_at', ascending: false } });
+    const shiftSchedulesData = useSupabaseCollection('shift_schedules', { tenantId, mapper: mappers.shift_schedules, orderBy: { column: 'created_at', ascending: true } });
+    const contractsData = useSupabaseCollection('contracts', { tenantId, mapper: mappers.contracts, orderBy: { column: 'created_at', ascending: false } });
+    const contractWorkersData = useSupabaseCollection('contract_workers', { tenantId, mapper: mappers.contract_workers });
 
     // Dynamic / specialized data
     const rolesArray = useSupabaseCollection<any>('roles', { enabled: !!tenantId });
@@ -322,6 +329,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             subscriptionPlansData, workItemsData, progressLogsData, dynamicRolesData, paymentStatesData,
             dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
             protocolTemplatesData, protocolsData,
+            shiftSchedulesData, contractsData, contractWorkersData,
         ].every(data => data !== undefined);
 
         if (!allDataLoaded) {
@@ -373,6 +381,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'SET_DATA', payload: { collection: "eaDocuments", data: processData(eaDocumentsData) } });
         dispatch({ type: 'SET_DATA', payload: { collection: "protocolTemplates", data: processData(protocolTemplatesData) } });
         dispatch({ type: 'SET_DATA', payload: { collection: "protocols", data: processData(protocolsData) } });
+        dispatch({ type: 'SET_DATA', payload: { collection: "shiftSchedules", data: processData(shiftSchedulesData) } });
+        dispatch({ type: 'SET_DATA', payload: { collection: "contracts", data: processData(contractsData) } });
+        dispatch({ type: 'SET_DATA', payload: { collection: "contractWorkers", data: processData(contractWorkersData) } });
 
         const rolesToUse = dynamicRolesData && Object.keys(dynamicRolesData).length > 0 ? dynamicRolesData : ROLES_DEFAULT;
         dispatch({ type: "SET_ROLES", payload: rolesToUse });
@@ -390,7 +401,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         checklistTemplatesData, behaviorObservationsData, stockMovementsData,
         subscriptionPlansData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
-        protocolTemplatesData, protocolsData, refreshVersion
+        protocolTemplatesData, protocolsData,
+        shiftSchedulesData, contractsData, contractWorkersData, refreshVersion
     ]);
 
 
@@ -522,6 +534,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // EA Documents
         generateEADocument: bindContext(eaMutations.generateEADocument),
         confirmEASentToDT: bindContext(eaMutations.confirmEASentToDT),
+
+        // Contratos y Turnos
+        addContract: bindContext(contractMutations.addContract),
+        updateContract: bindContext(contractMutations.updateContract),
+        deleteContract: bindContext(contractMutations.deleteContract),
+        addContractWorker: bindContext(contractMutations.addContractWorker),
+        removeContractWorker: bindContext(contractMutations.removeContractWorker),
+        updateContractWorker: bindContext(contractMutations.updateContractWorker),
+        addShiftSchedule: bindContext(contractMutations.addShiftSchedule),
+        updateShiftSchedule: bindContext(contractMutations.updateShiftSchedule),
+        deleteShiftSchedule: bindContext(contractMutations.deleteShiftSchedule),
 
         // Protocols
         addProtocolTemplate: bindContext(protocolMutations.addProtocolTemplate),

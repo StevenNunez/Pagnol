@@ -100,6 +100,8 @@ export const ALL_PERMISSIONS = {
     'attendance:register': { label: 'Registrar Asistencia (QR)', group: 'Asistencia' },
     'attendance:edit': { label: 'Editar Registros de Asistencia', group: 'Asistencia' },
     'attendance:view': { label: 'Ver Asistencia', group: 'Asistencia' },
+    'contracts:manage': { label: 'Gestionar Contratos', group: 'Asistencia' },
+    'shifts:manage': { label: 'Gestionar Turnos de Trabajo', group: 'Asistencia' },
 
     'reports:view': { label: 'Ver Reportes', group: 'Reportes' },
 

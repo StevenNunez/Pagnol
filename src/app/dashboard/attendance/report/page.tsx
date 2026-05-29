@@ -80,10 +80,7 @@ interface DailySummary {
 }
 
 const WEEK_START_ON = 1; // Lunes
-const HOLIDAYS: Date[] = [
-  new Date(2025, 8, 18),
-  new Date(2025, 8, 19),
-];
+const HOLIDAY_MD: string[] = ["01-01","05-01","05-21","06-29","07-16","08-15","09-18","09-19","10-12","10-31","11-01","12-08","12-25"];
 
 export default function AttendanceReportPage() {
   const { users, attendanceLogs, can } = useAppState();
@@ -109,9 +106,7 @@ export default function AttendanceReportPage() {
 
   const calculateDailySummary = useCallback(
     (logs: AttendanceLog[], day: Date): DailySummary => {
-      const isHoliday = HOLIDAYS.some(
-        (h) => h.toDateString() === day.toDateString()
-      );
+      const isHoliday = HOLIDAY_MD.includes(format(day, "MM-dd"));
       const dayOfWeek = getDay(day);
       const isSaturday = dayOfWeek === 6;
       const isFriday = dayOfWeek === 5;

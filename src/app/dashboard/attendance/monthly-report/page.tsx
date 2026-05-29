@@ -43,7 +43,7 @@ const TOPE_GRATIFICACION_ANUAL = IMM_TOPE * SUELDO_MINIMO;
 const TOPE_GRATIFICACION_MENSUAL = TOPE_GRATIFICACION_ANUAL / 12;
 
 export default function MonthlyReportPage() {
-  const { users } = useAppState();
+  const { users, currentTenant } = useAppState();
   const { toast } = useToast();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
@@ -168,9 +168,9 @@ export default function MonthlyReportPage() {
           theme: "plain",
           styles: { fontSize: 9 },
           body: [
-            ["Razón Social:", "PAGNOL Asset Management", "Nombre Trabajador:", selectedUser.name],
-            ["RUT:", "77.123.456-K", "RUT Trabajador:", selectedUser.rut || 'N/A'],
-            ["Dirección:", "Av. del Titanio 34, La Serena", "Cargo:", selectedUser.cargo || 'N/A'],
+            ["Razón Social:", currentTenant?.name || 'N/A', "Nombre Trabajador:", selectedUser.name],
+            ["RUT:", "—", "RUT Trabajador:", selectedUser.rut || 'N/A'],
+            ["Dirección:", "—", "Cargo:", selectedUser.cargo || 'N/A'],
             ["Período:", format(report.period.start, "MMMM yyyy", { locale: es }), "", ""],
           ],
         });

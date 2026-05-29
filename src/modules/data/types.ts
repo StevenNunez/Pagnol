@@ -32,6 +32,10 @@ import {
   ProtocolTemplate,
   Protocol,
   ProtocolSignature,
+  ShiftSchedule,
+  Contract,
+  ContractWorker,
+  ScanResult,
 } from '../core/lib/data';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 
@@ -68,6 +72,9 @@ export interface AppDataState {
   eaDocuments: EADocument[];
   protocolTemplates: ProtocolTemplate[];
   protocols: Protocol[];
+  shiftSchedules: ShiftSchedule[];
+  contracts: Contract[];
+  contractWorkers: ContractWorker[];
 }
 
 // This defines the shape of the context, including all functions
@@ -156,10 +163,23 @@ export interface AppStateContextType extends AppDataState {
   signDailyTalk: (talkId: string) => Promise<void>;
 
   // Attendance
-  handleAttendanceScan: (qrCode: string) => Promise<void>;
+  handleAttendanceScan: (qrCode: string) => Promise<ScanResult>;
   addManualAttendance: (userId: string, date: Date, time: string, type: 'in' | 'out') => Promise<void>;
   updateAttendanceLog: (logId: string, newTimestamp: Date, newType: 'in' | 'out', originalTimestamp: Date) => Promise<void>;
   deleteAttendanceLog: (logId: string) => Promise<void>;
+
+  // Contratos
+  addContract: (data: Omit<Contract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>) => Promise<Contract>;
+  updateContract: (id: string, data: Partial<Contract>) => Promise<void>;
+  deleteContract: (id: string) => Promise<void>;
+  addContractWorker: (contractId: string, userId: string, shiftScheduleId: string | null, roleInContract?: string) => Promise<void>;
+  removeContractWorker: (contractWorkerId: string) => Promise<void>;
+  updateContractWorker: (id: string, data: Partial<ContractWorker>) => Promise<void>;
+
+  // Turnos
+  addShiftSchedule: (data: Omit<ShiftSchedule, 'id' | 'tenantId' | 'createdAt'>) => Promise<ShiftSchedule>;
+  updateShiftSchedule: (id: string, data: Partial<ShiftSchedule>) => Promise<void>;
+  deleteShiftSchedule: (id: string) => Promise<void>;
 
   // Payments
   addSupplierPayment: (data: any) => Promise<void>;

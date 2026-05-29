@@ -11,6 +11,7 @@ export async function GET(request: Request) {
     const safeNext = next.startsWith('/') ? next : '/dashboard';
 
     if (code) {
+        // PKCE flow: exchange the code for a session (used by password reset)
         const cookieStore = await cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,15 +31,15 @@ export async function GET(request: Request) {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
         if (!error && data.session) {
-            // If this is a password recovery session, always go to update-password
-            const isRecovery =
-                data.session.user?.recovery_sent_at !== undefined &&
-                safeNext === '/update-password';
-
             return NextResponse.redirect(`${origin}${safeNext}`);
         }
+
+        // PKCE exchange failed — redirect to login with error
+        return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
     }
 
-    // Something went wrong — send to login with error param
-    return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
+    // No code present → implicit flow (Google OAuth sends tokens in the URL hash).
+    // The hash is invisible server-side; redirect to the destination and let the
+    // client-side Supabase SDK pick up the tokens from the hash automatically.
+    return NextResponse.redirect(`${origin}${safeNext}`);
 }

@@ -36,6 +36,37 @@ export default function LoginPage() {
         if (!authLoading && user) router.replace('/dashboard');
     }, [user, authLoading, router]);
 
+    // Handle implicit-flow OAuth tokens that may arrive at the login page
+    // (e.g. when /auth/callback redirected here carrying a #access_token hash).
+    // Supabase's client SDK processes the hash automatically; we just need to
+    // wait for the session and then navigate.
+    React.useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const hash = window.location.hash;
+        if (!hash.includes('access_token=')) return;
+
+        // Clear the hash to keep the URL clean
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+        // The Supabase SDK will have already started processing the hash tokens.
+        // Poll briefly for the session then redirect.
+        const check = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                router.replace('/dashboard');
+            }
+        };
+        check();
+        // Also handle it via onAuthStateChange in case getSession fires before SDK processes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (session) {
+                subscription.unsubscribe();
+                router.replace('/dashboard');
+            }
+        });
+        return () => subscription.unsubscribe();
+    }, [router]);
+
     const handleGoogleLogin = async () => {
         setOauthLoading(true);
         const { error } = await supabase.auth.signInWithOAuth({

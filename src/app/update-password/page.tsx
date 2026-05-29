@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/modules/core/lib/supabase";
@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import { ArrowLeft, Lock, ShieldCheck, Eye, EyeOff, Loader2, CheckCircle, AlertTriangle } from "lucide-react";
+import {
+    ArrowLeft, Lock, ShieldCheck, Eye, EyeOff,
+    Loader2, CheckCircle, AlertTriangle,
+} from "lucide-react";
 import { z } from "zod";
 
 const schema = z.object({
@@ -21,12 +24,13 @@ const schema = z.object({
 
 type PageState = 'loading' | 'ready' | 'invalid' | 'done';
 
-export default function UpdatePasswordPage() {
+function UpdatePasswordInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { toast } = useToast();
 
     const [pageState, setPageState] = useState<PageState>('loading');
+    const [invalidReason, setInvalidReason] = useState<string>('');
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -35,36 +39,67 @@ export default function UpdatePasswordPage() {
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     useEffect(() => {
-        // The /auth/callback already exchanged the PKCE code and set the session.
-        // We just need to verify the current session is a PASSWORD_RECOVERY session.
-        const checkSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
+        const init = async () => {
+            // 1. Check for error in hash (e.g. #error=access_denied&error_code=otp_expired)
+            //    This happens when Supabase falls back to site URL after a failed verification.
+            const hash = typeof window !== 'undefined' ? window.location.hash : '';
+            if (hash.includes('error=')) {
+                const params = new URLSearchParams(hash.replace(/^#/, ''));
+                const desc = params.get('error_description') ?? params.get('error') ?? 'Enlace inválido';
+                const code = params.get('error_code') ?? '';
+                const isExpired = code === 'otp_expired' || desc.toLowerCase().includes('expired');
+                setInvalidReason(
+                    isExpired
+                        ? 'El enlace de recuperación expiró. Los enlaces son válidos por 1 hora.'
+                        : decodeURIComponent(desc.replace(/\+/g, ' '))
+                );
+                setPageState('invalid');
+                // Clean the hash so refreshing doesn't loop
+                window.history.replaceState(null, '', window.location.pathname);
+                return;
+            }
 
+            // 2. PKCE flow: Supabase appended ?code= to this URL
+            const code = searchParams.get('code');
+            if (code) {
+                const { error } = await supabase.auth.exchangeCodeForSession(code);
+                // Clean the code from the URL
+                window.history.replaceState(null, '', '/update-password');
+                if (error) {
+                    setInvalidReason('El enlace de recuperación expiró o ya fue utilizado.');
+                    setPageState('invalid');
+                } else {
+                    setPageState('ready');
+                }
+                return;
+            }
+
+            // 3. Implicit flow: PASSWORD_RECOVERY event or existing recovery session
+            const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
                 setPageState('ready');
                 return;
             }
 
-            // Fallback: listen for PASSWORD_RECOVERY event (implicit flow / direct link)
             const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
                 if (event === 'PASSWORD_RECOVERY' && session?.user) {
                     setPageState('ready');
+                    subscription.unsubscribe();
                 }
             });
 
-            // If after a brief wait there's still no session, show invalid state
+            // 4. No token found — give a brief window then show invalid
             const timeout = setTimeout(() => {
+                setInvalidReason('No se encontró un enlace de recuperación válido. Solicita uno nuevo.');
                 setPageState('invalid');
-            }, 2000);
-
-            return () => {
                 subscription.unsubscribe();
-                clearTimeout(timeout);
-            };
+            }, 2500);
+
+            return () => { clearTimeout(timeout); subscription.unsubscribe(); };
         };
 
-        checkSession();
-    }, []);
+        init();
+    }, [searchParams]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -96,14 +131,13 @@ export default function UpdatePasswordPage() {
             if (error) throw error;
 
             setPageState('done');
-            // Sign out after password change so user logs in fresh
             await supabase.auth.signOut();
             setTimeout(() => router.push("/login"), 3000);
         } catch (error: any) {
             toast({
                 variant: "destructive",
                 title: "Error al actualizar",
-                description: error.message || "No se pudo actualizar la contraseña. El enlace puede haber expirado.",
+                description: error.message || "No se pudo actualizar la contraseña.",
             });
         } finally {
             setLoading(false);
@@ -112,48 +146,42 @@ export default function UpdatePasswordPage() {
 
     return (
         <div className="min-h-screen flex bg-white">
-            {/* Left Panel */}
+            {/* Left panel */}
             <div className="hidden lg:flex flex-col justify-between w-[45%] bg-[#0F172A] p-12 relative overflow-hidden text-white">
                 <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/4 pointer-events-none" />
                 <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-pagnol-orange/10 rounded-full blur-[100px] translate-y-1/4 -translate-x-1/4 pointer-events-none" />
-
                 <div className="relative z-10">
                     <Link href="/login" className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">
                         <ArrowLeft size={14} /> Volver al Login
                     </Link>
                 </div>
-
                 <div className="relative z-10 space-y-6">
                     <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-6">
                         <ShieldCheck size={32} className="text-[#0F172A]" />
                     </div>
                     <h1 className="text-5xl font-black tracking-tighter leading-none">
-                        Nueva<br />
-                        <span className="text-pagnol-orange">Contraseña</span> Segura.
+                        Nueva<br /><span className="text-pagnol-orange">Contraseña</span> Segura.
                     </h1>
                     <p className="text-slate-400 text-sm font-medium leading-relaxed max-w-md">
-                        Establece una contraseña fuerte para proteger el acceso a los activos de tu operación.
+                        Establece una contraseña fuerte para proteger el acceso a tu operación.
                     </p>
                 </div>
-
                 <div className="relative z-10 pt-12 border-t border-white/10">
                     <div className="flex items-center gap-4">
-                        <div className="p-3 bg-white/5 rounded-xl text-pagnol-orange">
-                            <ShieldCheck size={24} />
-                        </div>
+                        <div className="p-3 bg-white/5 rounded-xl text-pagnol-orange"><ShieldCheck size={24} /></div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Datos protegidos</p>
                     </div>
                 </div>
             </div>
 
-            {/* Right Panel */}
+            {/* Right panel */}
             <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-20">
                 <div className="w-full max-w-md space-y-8 animate-in slide-in-from-right-8 duration-700">
 
                     {pageState === 'loading' && (
                         <div className="text-center space-y-4">
                             <Loader2 size={40} className="animate-spin mx-auto text-pagnol-orange" />
-                            <p className="text-slate-500 text-sm font-medium">Verificando enlace de recuperación...</p>
+                            <p className="text-slate-500 text-sm font-medium">Verificando enlace...</p>
                         </div>
                     )}
 
@@ -164,8 +192,7 @@ export default function UpdatePasswordPage() {
                             </div>
                             <h2 className="text-3xl font-black tracking-tight text-[#204A57]">Enlace Inválido</h2>
                             <p className="text-slate-500 text-sm font-medium max-w-sm mx-auto">
-                                El enlace de recuperación expiró, ya fue utilizado, o es inválido.<br />
-                                Los enlaces son válidos por <strong>1 hora</strong>.
+                                {invalidReason || 'El enlace de recuperación expiró o ya fue utilizado.'}
                             </p>
                             <div className="pt-2 space-y-3">
                                 <Link href="/reset-password">
@@ -182,11 +209,9 @@ export default function UpdatePasswordPage() {
 
                     {pageState === 'done' && (
                         <div className="text-center space-y-4">
-                            <div className="flex justify-center">
-                                <CheckCircle size={56} className="text-green-500" />
-                            </div>
+                            <CheckCircle size={56} className="text-green-500 mx-auto" />
                             <h2 className="text-3xl font-black tracking-tight text-[#204A57]">¡Contraseña Actualizada!</h2>
-                            <p className="text-slate-500 text-sm font-medium">Serás redirigido al inicio de sesión en unos segundos.</p>
+                            <p className="text-slate-500 text-sm font-medium">Redirigiendo al login en unos segundos...</p>
                             <Link href="/login" className="text-pagnol-orange text-sm font-bold hover:underline">
                                 Ir al login ahora
                             </Link>
@@ -203,11 +228,10 @@ export default function UpdatePasswordPage() {
                             <form onSubmit={handleSubmit} className="space-y-6">
                                 <div className="space-y-4">
                                     <div className="space-y-2">
-                                        <Label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nueva Contraseña</Label>
+                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nueva Contraseña</Label>
                                         <div className="relative">
                                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                                             <Input
-                                                id="password"
                                                 type={showPassword ? "text" : "password"}
                                                 placeholder="••••••••"
                                                 className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium"
@@ -215,11 +239,8 @@ export default function UpdatePasswordPage() {
                                                 onChange={e => setPassword(e.target.value)}
                                                 required
                                             />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPassword(!showPassword)}
-                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors"
-                                            >
+                                            <button type="button" onClick={() => setShowPassword(!showPassword)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
                                                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                             </button>
                                         </div>
@@ -227,11 +248,10 @@ export default function UpdatePasswordPage() {
                                     </div>
 
                                     <div className="space-y-2">
-                                        <Label htmlFor="confirm" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Confirmar Contraseña</Label>
+                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Confirmar Contraseña</Label>
                                         <div className="relative">
                                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                                             <Input
-                                                id="confirm"
                                                 type={showConfirm ? "text" : "password"}
                                                 placeholder="••••••••"
                                                 className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium"
@@ -239,11 +259,8 @@ export default function UpdatePasswordPage() {
                                                 onChange={e => setConfirm(e.target.value)}
                                                 required
                                             />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowConfirm(!showConfirm)}
-                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors"
-                                            >
+                                            <button type="button" onClick={() => setShowConfirm(!showConfirm)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
                                                 {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
                                             </button>
                                         </div>
@@ -261,12 +278,24 @@ export default function UpdatePasswordPage() {
                             </form>
 
                             <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">
-                                Soporte Técnico Enterprise &bull; support@pagnol.app
+                                Soporte Técnico &bull; hola@teolabs.app
                             </p>
                         </>
                     )}
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function UpdatePasswordPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center">
+                <Loader2 size={40} className="animate-spin text-pagnol-orange" />
+            </div>
+        }>
+            <UpdatePasswordInner />
+        </Suspense>
     );
 }

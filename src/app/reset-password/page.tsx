@@ -30,12 +30,13 @@ export default function ResetPasswordPage() {
         try {
             await sendPasswordReset(email);
             setSent(true);
-        } catch {
+        } catch (err: any) {
             toast({
                 variant: "destructive",
                 title: "Error",
-                description: "No se pudo enviar el correo. Verifica que sea correcto.",
+                description: err?.message || "No se pudo enviar el correo.",
             });
+            console.error('[ResetPassword]', err);
         } finally {
             setIsSubmitting(false);
         }

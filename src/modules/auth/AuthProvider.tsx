@@ -386,16 +386,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
   const sendPasswordReset = async (email: string) => {
-    // Uses our own API route so the email is sent from hola@teolabs.app
-    // via Nodemailer instead of Supabase's default SMTP.
-    const res = await fetch('/api/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.toLowerCase().trim() }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'No se pudo enviar el correo.');
+    const normalizedEmail = email.toLowerCase().trim();
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        // If API failed, fall back to Supabase native so the user still gets an email
+        console.warn('[Auth] API reset failed, falling back to Supabase:', body);
+        throw new Error(body.error || 'api_error');
+      }
+    } catch (err: any) {
+      // Last-resort fallback: use Supabase directly
+      // (email will come from Supabase's SMTP, not hola@teolabs.app)
+      const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${appUrl}/update-password`,
+      });
+      if (error) throw error;
     }
   };
 

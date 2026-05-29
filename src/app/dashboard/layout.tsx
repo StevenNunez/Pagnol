@@ -63,6 +63,17 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   // Determine if the current page is the main dashboard hub
   const isDashboardHub = pathname === '/dashboard';
 
+  // Intercept Supabase auth errors that arrive as hash fragments (e.g. after a
+  // failed password-reset link clicks through to the site URL instead of /update-password).
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hash = window.location.hash;
+    if (hash.includes('error=')) {
+      window.history.replaceState(null, '', window.location.pathname);
+      router.replace('/update-password' + hash);
+    }
+  }, [router]);
+
   React.useEffect(() => {
     setIsClient(true);
     console.log('[DashboardLayout] authLoading:', authLoading, '| user:', !!user, '| path:', pathname);

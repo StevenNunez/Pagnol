@@ -109,6 +109,9 @@ export default function ResetPasswordPage() {
                             <div className="space-y-2">
                                 <h2 className="text-3xl font-black tracking-tight text-[#204A57]">¿Olvidaste tu contraseña?</h2>
                                 <p className="text-slate-500 text-sm font-medium">Ingresa tu correo y te enviaremos un enlace de recuperación.</p>
+                                <p className="text-[11px] text-slate-400 font-medium">
+                                    ¿Ingresaste con Google? Usa el mismo correo de tu cuenta Google — también funciona para establecer una contraseña.
+                                </p>
                             </div>
 
                             <form onSubmit={handleSubmit} className="space-y-6">

@@ -31,6 +31,7 @@ function UpdatePasswordInner() {
 
     const [pageState, setPageState] = useState<PageState>('loading');
     const [invalidReason, setInvalidReason] = useState<string>('');
+    const [isGoogleUser, setIsGoogleUser] = useState(false);
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -127,12 +128,16 @@ function UpdatePasswordInner() {
                 return;
             }
 
-            const { error } = await supabase.auth.updateUser({ password });
+            const { error, data } = await supabase.auth.updateUser({ password });
             if (error) throw error;
+
+            // Detect if this was a Google OAuth user setting a password for the first time
+            const providers = (data?.user?.app_metadata?.providers as string[] | undefined) ?? [];
+            setIsGoogleUser(providers.includes('google') && providers.length > 1);
 
             setPageState('done');
             await supabase.auth.signOut();
-            setTimeout(() => router.push("/login"), 3000);
+            setTimeout(() => router.push("/login"), 4000);
         } catch (error: any) {
             toast({
                 variant: "destructive",
@@ -211,7 +216,16 @@ function UpdatePasswordInner() {
                         <div className="text-center space-y-4">
                             <CheckCircle size={56} className="text-green-500 mx-auto" />
                             <h2 className="text-3xl font-black tracking-tight text-[#204A57]">¡Contraseña Actualizada!</h2>
-                            <p className="text-slate-500 text-sm font-medium">Redirigiendo al login en unos segundos...</p>
+
+                            {isGoogleUser ? (
+                                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-left text-sm space-y-1">
+                                    <p className="font-bold text-blue-800 text-[10px] uppercase tracking-widest">Cuenta Google detectada</p>
+                                    <p className="text-blue-700">Ahora puedes ingresar tanto con <strong>Google</strong> como con tu <strong>correo + nueva contraseña</strong>.</p>
+                                </div>
+                            ) : (
+                                <p className="text-slate-500 text-sm font-medium">Redirigiendo al login en unos segundos...</p>
+                            )}
+
                             <Link href="/login" className="text-pagnol-orange text-sm font-bold hover:underline">
                                 Ir al login ahora
                             </Link>

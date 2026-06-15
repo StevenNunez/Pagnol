@@ -1,6 +1,6 @@
 import { supabase } from '@/modules/core/lib/supabase';
 
-type Context = { user: any; tenantId: string | null; db?: any };
+import type { MutationContext as Context } from './context';
 
 export const generateEADocument = async (
     employeeId: string,

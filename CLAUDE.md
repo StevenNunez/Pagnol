@@ -89,6 +89,46 @@ Flows are in `src/ai/flows/`. Each exports an async function backed by `ai.defin
 - PDF export uses `jspdf` + `jspdf-autotable` (see `monthly-report` and `severance` pages for the pattern).
 - Page-level components are always `"use client"` and consume context; no server components inside `/dashboard`.
 
+### Design System (UI Standard) — el módulo **Pagnol** es la referencia
+
+Toda página de `/dashboard` DEBE seguir este estándar. El lenguaje visual canónico vive en `src/app/dashboard/pagnol/*` (activos, movimientos, personal).
+
+**Tokens — nunca colores crudos.** Usa SIEMPRE tokens semánticos, nunca paletas de Tailwind (`slate`, `gray`, `amber`, `zinc`) ni hex (`bg-[#...]`). Los tokens ya se adaptan a dark mode; las paletas crudas no.
+- Superficies: `bg-background` (página), `bg-card` (tarjetas/paneles), `bg-popover` (dropdowns).
+- Texto: `text-foreground` (principal), `text-muted-foreground` (secundario/labels). NUNCA `text-slate-700`.
+- Acción: `bg-primary text-primary-foreground` (naranja Pagnol). Bordes: `border` / `border-border`.
+- Estados: `success` / `warning` / `info` / `destructive` y sus variantes `-subtle` / `-subtle-foreground` para badges. Helpers: `.badge-success`, `.badge-warning`, `.badge-info`.
+
+**Layout maestro de página** (estructura idéntica en todo módulo):
+```tsx
+<div className="space-y-8 animate-in fade-in duration-500">
+  <PageHeader title="…" description="…" />        {/* alimenta la barra superior */}
+  {/* Toolbar opcional: filtros/búsqueda/acciones */}
+  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6"> … </div>
+  {/* Contenido en <Card> */}
+</div>
+```
+- Espaciado vertical de página: `space-y-8` (NO `gap-6`/`gap-8` sueltos, NO `space-y-4/6`).
+- Animación de entrada: `animate-in fade-in duration-500` en el wrapper raíz.
+
+**Radios (firma Pagnol):** tarjetas/paneles grandes `rounded-[1.5rem]`–`rounded-[2.5rem]`; controles (inputs, selects, badges) `rounded-xl`. Evita `rounded-md`/`rounded-lg` sueltos en superficies grandes.
+
+**Tipografía:**
+- Título de página → solo vía `<PageHeader>` (lo pinta el layout). No dupliques `<h1 text-3xl>` en el cuerpo.
+- Micro-label industrial (la firma): `text-[10px] font-black uppercase tracking-widest text-muted-foreground`.
+- Título de sección/tarjeta: `CardTitle` o `text-lg font-bold`. No inventes escalas nuevas.
+
+**Componentes base compartidos (úsalos, no los re-implementes):** primitivos `Button`, `Card`, `Input`, `Select`, `Dialog`, `Table`, `Badge` desde `src/components/ui/`. Y los compartidos de página:
+- `PageShell` (`src/components/page-shell.tsx`) — layout maestro (wrapper + animación + PageHeader + toolbar). Envuelve toda página en esto.
+- `EmptyState` (`src/components/empty-state.tsx`) — estado vacío. NO escribas "No hay datos" a mano.
+- `LoadingState` (`src/components/loading-state.tsx`) — spinner. NO copies `<Loader2 className="animate-spin">` por página.
+- `DataTable` (`src/components/data-table.tsx`) — tabla con columnas tipadas + estados loading/vacío integrados.
+- `PageHeader` (`src/components/page-header.tsx`) — setea el título de la barra superior (lo usa PageShell internamente).
+
+**Botones:** `<Button>` con sus variantes (`default`/`outline`/`secondary`/`ghost`/`destructive`). Acciones primarias destacadas pueden añadir `rounded-[1.5rem]` + `shadow-lg shadow-primary/10` + `hover:scale-105 active:scale-95`.
+
+**Dark mode:** garantizado por usar tokens. Si necesitas un par claro/oscuro manual es señal de que deberías usar un token. Prohibido `text-slate-*`/`bg-*-50` sin su `dark:`.
+
 ### Module Map
 
 `/dashboard` sub-routes and their purpose:

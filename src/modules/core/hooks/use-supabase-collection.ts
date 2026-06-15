@@ -94,6 +94,13 @@ export function useSupabaseCollection<T>(
                 setData(prev => {
                     if (eventType === 'INSERT') {
                         const item = mapper ? mapper(newRecord) : newRecord;
+                        const id = (item as any)?.id;
+                        // Dedupe: si la fila ya existe (p. ej. por un optimistic update
+                        // previo o un evento duplicado), reemplázala en lugar de
+                        // agregar un duplicado.
+                        if (id != null && prev.some(m => (m as any).id === id)) {
+                            return prev.map(m => ((m as any).id === id ? (item as T) : m));
+                        }
                         return [...prev, item as T];
                     }
                     if (eventType === 'UPDATE') {

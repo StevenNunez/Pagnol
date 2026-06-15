@@ -50,6 +50,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { QRCodeSVG } from 'qrcode.react';
 import { QrCode, Printer, Coins, Settings2 } from 'lucide-react';
 import { supabase } from '@/modules/core/lib/supabase';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
@@ -508,7 +509,7 @@ export default function CargaMasivaPage() {
 
                 const response = await fetch('/api/bulk-upload', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: await authHeaders(),
                     body: JSON.stringify({
                         tenantId: currentTenantId,
                         user: { id: currentUser?.id, name: currentUser?.name },
@@ -579,7 +580,7 @@ export default function CargaMasivaPage() {
             // We use a proxy in our backend to avoid CORS and protect credentials
             const response = await fetch('/api/integrations/erp-connect', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await authHeaders(),
                 body: JSON.stringify({
                     erp: selectedERP,
                     credentials: erpCredentials,

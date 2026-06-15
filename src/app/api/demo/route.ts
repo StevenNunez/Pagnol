@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
-export async function POST() {
+export async function POST(request: Request) {
+    if (!(await rateLimitByIp(request, 'demo', 10, 3600))) {
+        return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
+    }
+
     const email = process.env.DEMO_EMAIL;
     const password = process.env.DEMO_PASSWORD;
 

@@ -2,11 +2,7 @@ import { supabase } from '@/modules/core/lib/supabase';
 import { format } from 'date-fns';
 import type { ScanResult } from '@/modules/core/lib/data';
 
-type Context = {
-  user: any;
-  tenantId: string | null;
-  db: any;
-};
+import type { MutationContext as Context } from './context';
 
 /** Calcula si una fecha es "día de descanso" en un turno rotativo. */
 function calcIsRestDay(
@@ -37,16 +33,47 @@ export async function handleAttendanceScan(
     throw new Error('No tienes permiso para registrar asistencia.');
   }
 
-  // 1. Buscar trabajador por QR
-  const { data: scannedUser, error: userError } = await supabase
-    .from('profiles')
-    .select('id, name, cargo')
-    .eq('tenant_id', tenantId)
-    .eq('qr_code', qrCode)
-    .single();
+  // 1. Resolver trabajador según formato de QR
+  let scannedUser: { id: string; name: string; cargo: string | null } | null = null;
 
-  if (userError || !scannedUser) {
-    throw new Error('Código QR no válido o usuario no encontrado.');
+  if (qrCode.startsWith('PAGNOL:')) {
+    // Formato dinámico: PAGNOL:{userId}:{token}  — token de un solo uso, expira en 2 min
+    const parts = qrCode.split(':');
+    if (parts.length !== 3) throw new Error('Formato de QR inválido.');
+    const [, userId, token] = parts;
+
+    const { data: validatedId, error: rpcError } = await supabase
+      .rpc('use_qr_token', { p_token: token, p_user_id: userId, p_tenant_id: tenantId });
+
+    if (rpcError) {
+      throw new Error(`Error al validar QR: ${rpcError.message}`);
+    }
+    if (!validatedId) {
+      throw new Error('Código QR expirado o ya utilizado. El trabajador debe actualizar su QR en la app.');
+    }
+
+    // El RPC ya validó el tenant — buscamos solo por id
+    const { data, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, name, cargo')
+      .eq('id', validatedId)
+      .single();
+
+    if (profileError || !data) {
+      throw new Error(`Usuario no encontrado (id: ${validatedId}, error: ${profileError?.message ?? 'sin datos'})`);
+    }
+    scannedUser = data;
+  } else {
+    // Formato legado: USER-{uuid} (credenciales impresas físicas)
+    const { data, error: userError } = await supabase
+      .from('profiles')
+      .select('id, name, cargo')
+      .eq('tenant_id', tenantId)
+      .eq('qr_code', qrCode)
+      .single();
+
+    if (userError || !data) throw new Error('Código QR no válido o usuario no encontrado.');
+    scannedUser = data;
   }
 
   // 2. Buscar asignación activa en un contrato + turno

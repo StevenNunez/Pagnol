@@ -3,11 +3,7 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { nanoid } from 'nanoid';
 
-type Context = {
-  user: any;
-  tenantId: string | null;
-  db: any;
-};
+import type { MutationContext as Context } from './context';
 
 export async function addTool(name: string, { tenantId }: Context) {
   if (!tenantId) throw new Error("Inquilino no válido.");

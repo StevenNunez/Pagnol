@@ -61,6 +61,10 @@ import {
   MapPin,
   HelpCircle,
   Link2,
+  KeyRound,
+  CalendarClock,
+  Contact,
+  NotebookPen,
 } from 'lucide-react';
 
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
@@ -103,13 +107,25 @@ const getPurchasingNavItems = () => [
   { href: '/dashboard/purchasing/finance', icon: DollarSign, label: 'Finanzas' },
 ];
 
-const getSafetyNavItems = () => [
+const getSafetyNavItems = (can: (p: any) => boolean) => [
   { href: '/dashboard/safety', icon: ShieldCheck, label: 'Panel de Seguridad' },
   { href: '/dashboard/safety/assigned-checklists', icon: ClipboardList, label: 'Checklists' },
   { href: '/dashboard/safety/assigned-inspections', icon: Search, label: 'Inspecciones' },
   { href: '/dashboard/safety/daily-talk', icon: Users, label: 'Charla Diaria' },
   { href: '/dashboard/safety/behavior-observation', icon: Target, label: 'Observaciones' },
   { href: '/dashboard/safety/templates', icon: FileUp, label: 'Plantillas' },
+  ...(can('safety_checklists:review') ? [
+    { href: '/dashboard/safety/review-checklists', icon: ListChecks, label: 'Revisar Checklists' },
+  ] : []),
+  ...(can('safety_inspections:review') ? [
+    { href: '/dashboard/safety/review-inspections', icon: ShieldAlert, label: 'Revisar Inspecciones' },
+  ] : []),
+  ...(can('safety_checklists:review') ? [
+    { href: '/dashboard/safety/review-daily-talks', icon: BookOpen, label: 'Revisar Charlas' },
+  ] : []),
+  ...(can('safety_observations:review') ? [
+    { href: '/dashboard/safety/review-observations', icon: Target, label: 'Revisar Observaciones' },
+  ] : []),
 ];
 
 const getAttendanceNavItems = () => [
@@ -167,9 +183,21 @@ const getDteNavItems = () => [
   { href: '/dashboard/dte/soporte', icon: HelpCircle, label: 'Soporte Técnico' },
 ];
 
+const getRentalsNavItems = () => [
+  { href: '/dashboard/rentals', icon: LayoutDashboard, label: 'Panel de Arriendos' },
+  { href: '/dashboard/rentals/contracts', icon: FileText, label: 'Contratos' },
+  { href: '/dashboard/rentals/parties', icon: Contact, label: 'Arrendadores y Clientes' },
+  { href: '/dashboard/rentals/payments', icon: CalendarClock, label: 'Calendario de Pagos' },
+];
+
+const getWorkReportsNavItems = () => [
+  { href: '/dashboard/work-reports', icon: NotebookPen, label: 'Informes de Terreno' },
+];
+
 const getUsersNavItems = () => [
   { href: '/dashboard/users', icon: Users, label: 'Lista de Usuarios' },
   { href: '/dashboard/users/print-qrs', icon: QrCode, label: 'Imprimir Credenciales' },
+  { href: '/dashboard/users/geofence', icon: MapPin, label: 'Zona de la Faena' },
   { href: '/dashboard/permissions', icon: ShieldCheck, label: 'Gestión de Permisos' },
 ];
 
@@ -231,13 +259,19 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       return { navItems: getPurchasingNavItems(), moduleTitle: 'Compras', moduleIcon: ShoppingCart };
     }
     if (pathname.startsWith('/dashboard/safety')) {
-      return { navItems: getSafetyNavItems(), moduleTitle: 'Seguridad', moduleIcon: ShieldCheck };
+      return { navItems: getSafetyNavItems(can), moduleTitle: 'Seguridad', moduleIcon: ShieldCheck };
     }
     if (pathname.startsWith('/dashboard/attendance')) {
       return { navItems: getAttendanceNavItems(), moduleTitle: 'Asistencia', moduleIcon: CalendarCheck };
     }
     if (pathname.startsWith('/dashboard/payments')) {
       return { navItems: getPaymentsNavItems(), moduleTitle: 'Pagos', moduleIcon: DollarSign };
+    }
+    if (pathname.startsWith('/dashboard/rentals')) {
+      return { navItems: getRentalsNavItems(), moduleTitle: 'Arriendos', moduleIcon: KeyRound };
+    }
+    if (pathname.startsWith('/dashboard/work-reports')) {
+      return { navItems: getWorkReportsNavItems(), moduleTitle: 'Reportes Trabajo', moduleIcon: NotebookPen };
     }
     if (pathname.startsWith('/dashboard/estado-pago')) {
       return {

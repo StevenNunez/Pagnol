@@ -1,37 +1,19 @@
 
 "use client";
 
-import React, { useMemo } from "react";
-import Link from "next/link";
+import React from "react";
 import { PageHeader } from "@/components/page-header";
-import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
+import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Briefcase } from "lucide-react";
-import type { MaterialRequest, Material, User, Supplier } from "@/modules/core/lib/data";
-
-
-type CompatibleMaterialRequest = MaterialRequest & {
-    materialId?: string;
-    quantity?: number;
-    items?: { materialId: string; quantity: number }[];
-};
+import type { Supplier } from "@/modules/core/lib/data";
 
 
 export default function SupervisorSuppliersPage() {
-    const { requests, materials, suppliers } = useAppState();
-    const { user } = useAuth();
+    const { suppliers } = useAppState();
 
-    const materialMap = useMemo(() => new Map((materials || []).map((m: Material) => [m.id, m])), [materials]);
-
-    const myRequests = useMemo(() => {
-        if (!user) return [];
-        return ((requests || []) as CompatibleMaterialRequest[])
-            .filter(r => r.supervisorId === user.id)
-            .sort((a,b) => (a.createdAt as any) - (b.createdAt as any));
-    }, [requests, user]);
-    
     return (
         <div className="flex flex-col gap-8">
             <PageHeader
@@ -65,15 +47,9 @@ export default function SupervisorSuppliersPage() {
                                 </div>
                             ))}
                         </div>
-                        <ScrollBar orientation="vertical" />
                     </ScrollArea>
                 </CardContent>
             </Card>
         </div>
     );
 }
-
-    
-
-    
-

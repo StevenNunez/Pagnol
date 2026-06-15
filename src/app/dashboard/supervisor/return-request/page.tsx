@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import { Send, Loader2, Undo2, PackageSearch, CalendarIcon, XCircle } from "lucide-react";
+import { Loader2, Undo2, PackageSearch, CalendarIcon, XCircle } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Material, MaterialRequest } from "@/modules/core/lib/data";
@@ -57,10 +57,11 @@ export default function SupervisorReturnRequestPage() {
       .filter(req => {
         if (req.supervisorId !== authUser.id || req.status !== 'approved') return false;
         if (selectedDate) {
-          const approvedAt = new Date(req.createdAt as any);
-          return isSameDay(approvedAt, selectedDate);
+          // Use deliveryDate (actual handoff), fallback to approvalDate then createdAt
+          const relevantDate = new Date((req.deliveryDate ?? req.approvalDate ?? req.createdAt) as any);
+          return isSameDay(relevantDate, selectedDate);
         }
-        return true; // if no date is selected, show all
+        return true;
       })
       .forEach(req => {
         (req.items || []).forEach(item => {
@@ -143,7 +144,7 @@ export default function SupervisorReturnRequestPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 pb-10 fade-in">
       <PageHeader 
         title="Registrar Devolución de Materiales" 
         description="Indica la cantidad sobrante de los materiales que retiraste para devolverlos a bodega." 

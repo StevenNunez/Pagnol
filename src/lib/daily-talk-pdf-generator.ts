@@ -92,11 +92,11 @@ function addFooter(doc: jsPDF) {
     }
 }
 
-export async function generateDailyTalkPDF(talk: DailyTalk, users: User[]) {
+export async function generateDailyTalkPDF(talk: DailyTalk, users: User[], logoUrl?: string) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const logo = await getBase64FromUrl('/logo.png');
+  const logo = await getBase64FromUrl(logoUrl || '/logo.png');
   
   const userMap = new Map(users.map(u => [u.id, u]));
 

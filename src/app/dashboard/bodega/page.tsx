@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useAppState } from '@/modules/core/contexts/app-provider';
-import { PageHeader } from '@/components/page-header';
+import { PageShell } from '@/components/page-shell';
 import {
     Card,
     CardHeader,
@@ -191,12 +191,11 @@ export default function WarehouseHubPage() {
 
 
     return (
-        <div className="flex flex-col gap-8 pb-10 fade-in">
-            <PageHeader
-                title="Centro de Control de Bodega"
-                description="Vista general del inventario, alertas y movimientos recientes."
-            />
-
+        <PageShell
+            title="Centro de Control de Bodega"
+            description="Vista general del inventario, alertas y movimientos recientes."
+            className="pb-10"
+        >
             {/* 1. SECCIÓN DE ACCIONES RÁPIDAS */}
             <section>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -378,7 +377,7 @@ export default function WarehouseHubPage() {
                     </div>
                 </div>
             </div>
-        </div>
+        </PageShell>
     );
 }
 

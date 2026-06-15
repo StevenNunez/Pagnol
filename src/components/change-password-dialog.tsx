@@ -53,10 +53,8 @@ export function ChangePasswordDialog({ isOpen, onClose }: ChangePasswordDialogPr
             return;
         }
 
-        console.log('[ChangePassword] Initiating re-authentication...');
         await reauthenticateAndChangePassword(data.currentPassword, data.newPassword);
-        console.log('[ChangePassword] Success');
-        
+
         toast({
             title: 'Contraseña Actualizada',
             description: 'Tu contraseña ha sido cambiada exitosamente.',

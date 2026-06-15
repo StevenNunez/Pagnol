@@ -4,11 +4,7 @@ import { supabase } from '@/modules/core/lib/supabase';
 import { PurchaseRequest, Material, PurchaseLot, PurchaseOrder } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 
-type Context = {
-  user: any;
-  tenantId: string | null;
-  db: any;
-};
+import type { MutationContext as Context } from './context';
 
 export async function addPurchaseRequest(
   data: Partial<Omit<PurchaseRequest, 'id' | 'status' | 'createdAt' | 'tenantId'>>,

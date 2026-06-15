@@ -23,6 +23,7 @@ export interface Tenant {
   address?: string;
   // Faenas y sectores configurados (Bodega → Destino en despachos)
   faenas?: string[];
+  logoUrl?: string;
 }
 
 export interface EADocument {
@@ -371,6 +372,201 @@ export interface ContractWorker {
   startDate?: Date | string | null;
   endDate?: Date | string | null;
   createdAt: Date;
+}
+
+// ── Arriendos (Rentals) ──────────────────────────────────────────────────────
+
+/** incoming = arrendamos DE un proveedor; outgoing = arrendamos A un cliente. */
+export type RentalDirection = 'incoming' | 'outgoing';
+/** lessor = arrendador/proveedor; client = cliente al que arrendamos. */
+export type RentalPartyType = 'lessor' | 'client';
+export type RentalBillingCycle = 'monthly' | 'biweekly' | 'weekly' | 'daily' | 'one_time';
+export type RentalAssetCategory = 'machinery' | 'measurement' | 'vehicle' | 'truck' | 'other';
+export type RentalContractStatus = 'active' | 'pending' | 'finished' | 'cancelled';
+export type RentalPaymentStatus = 'pending' | 'paid' | 'overdue';
+
+export interface RentalParty {
+  id: string;
+  tenantId: string;
+  name: string;
+  partyType: RentalPartyType;
+  rut?: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  bank?: string;
+  accountType?: string;
+  accountNumber?: string;
+  notes?: string;
+  createdAt: Date;
+}
+
+export interface RentalContract {
+  id: string;
+  tenantId: string;
+  code?: string;
+  direction: RentalDirection;
+  partyId: string;
+  title: string;
+  status: RentalContractStatus;
+  startDate: Date | string;
+  endDate?: Date | string | null;
+  billingCycle: RentalBillingCycle;
+  amount: number;
+  currency: string; // 'CLP' | 'UF' | 'USD'
+  paymentDay?: number | null; // día del mes (1-31) para mensual
+  notes?: string;
+  createdBy?: string;
+  createdAt: Date;
+}
+
+export interface RentalAsset {
+  id: string;
+  tenantId: string;
+  contractId: string;
+  name: string;
+  category: RentalAssetCategory;
+  identifier?: string; // patente / nº de serie
+  quantity: number;
+  unitPrice?: number;
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+  status: 'active' | 'returned';
+  notes?: string;
+  createdAt: Date;
+}
+
+export interface RentalPayment {
+  id: string;
+  tenantId: string;
+  contractId: string;
+  dueDate: Date | string;
+  amount: number;
+  status: RentalPaymentStatus;
+  paidDate?: Date | string | null;
+  paymentMethod?: string;
+  reference?: string;
+  notes?: string;
+  createdAt: Date;
+}
+
+// Work Reports / Informes de Terreno
+export type WorkReportStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'observed'
+  | 'operations_approved'
+  | 'final_approved'
+  | 'archived';
+
+export type WorkExecutionStatus = 'not_started' | 'in_progress' | 'suspended' | 'finished';
+
+export interface WorkReportLaborItem {
+  id: string;
+  workerId?: string | null;
+  name: string;
+  role: string;
+  hours: number;
+}
+
+export interface WorkReportEquipmentItem {
+  id: string;
+  equipmentId?: string | null;
+  equipment: string;
+  type: string;
+  hours: number;
+  activity: string;
+}
+
+export interface WorkReportMaterialItem {
+  id: string;
+  materialId?: string | null;
+  material: string;
+  unit: string;
+  quantity: number;
+}
+
+export interface WorkReportPhoto {
+  id: string;
+  url: string;
+  path?: string;
+  description: string;
+  date: string;
+  userId: string;
+  userName: string;
+}
+
+export interface WorkReportProgressEntry {
+  id: string;
+  percent: number;
+  status: WorkExecutionStatus;
+  observations?: string;
+  date: string;
+  userId: string;
+  userName: string;
+}
+
+export interface WorkReportSignature {
+  id: string;
+  step: 'supervisor' | 'operations' | 'final';
+  userId: string;
+  userName: string;
+  userRole: string;
+  signature: string;
+  date: string;
+  action: string;
+  notes?: string;
+}
+
+export interface WorkReportAuditEntry {
+  id: string;
+  action: string;
+  fromStatus?: WorkReportStatus | null;
+  toStatus?: WorkReportStatus | null;
+  userId: string;
+  userName: string;
+  date: string;
+  notes?: string;
+}
+
+export interface WorkReport {
+  id: string;
+  tenantId: string;
+  internalCode: string;
+  status: WorkReportStatus;
+  workItemId?: string | null;
+  otNumber: string;
+  client: string;
+  faena: string;
+  area: string;
+  supervisorId: string;
+  supervisorName: string;
+  workDate: Date | string;
+  startTime?: string | null;
+  endTime?: string | null;
+  location?: string | null;
+  activities: string;
+  labor: WorkReportLaborItem[];
+  equipment: WorkReportEquipmentItem[];
+  materials: WorkReportMaterialItem[];
+  photos: WorkReportPhoto[];
+  progressPercent: number;
+  executionStatus: WorkExecutionStatus;
+  progressObservations?: string | null;
+  progressHistory: WorkReportProgressEntry[];
+  signatures: WorkReportSignature[];
+  auditLog: WorkReportAuditEntry[];
+  rejectionReason?: string | null;
+  sentTo?: string[] | null;
+  createdBy: string;
+  createdByName: string;
+  updatedBy?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  submittedAt?: Date | string | null;
+  operationsApprovedAt?: Date | string | null;
+  finalApprovedAt?: Date | string | null;
 }
 
 export interface Supplier {
@@ -725,4 +921,3 @@ export const WORK_SCHEDULE = {
     end: '14:00',
   },
 };
-

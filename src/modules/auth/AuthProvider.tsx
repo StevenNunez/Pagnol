@@ -418,13 +418,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ) => {
     const emailToUse = user?.email || supabaseUser?.email;
     if (!emailToUse) throw new Error("No hay un correo electrónico asociado a esta sesión.");
-    
-    console.log('[Auth] Re-authenticating for email change:', emailToUse);
+
     const { error: reauthError } = await supabase.auth.signInWithPassword({
       email: emailToUse,
       password: currentPass,
     });
-    
+
     if (reauthError) {
       console.error('[Auth] Re-authentication failed:', reauthError);
       throw reauthError;
@@ -449,7 +448,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const emailToUse = user?.email || supabaseUser?.email;
     if (!emailToUse) throw new Error("No hay un correo electrónico asociado a esta sesión.");
 
-    console.log('[Auth] Re-authenticating for password change:', emailToUse);
     const { error: reauthError } = await supabase.auth.signInWithPassword({
       email: emailToUse,
       password: currentPass,

@@ -5,11 +5,7 @@ import { MaterialRequest, Material, ReturnRequest, UserRole } from '@/modules/co
 import { ROLES, Permission } from '@/modules/core/lib/permissions';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 
-type Context = {
-  user: any;
-  tenantId: string | null;
-  db: any;
-};
+import type { MutationContext as Context } from './context';
 
 export async function addMaterialRequest(
   requestData: {

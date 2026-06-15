@@ -36,6 +36,7 @@ interface ContractData {
     deliveryTimestamp: Date;
     pagnoleroName: string;
     pagnoleroSignatureUrl?: string | null;
+    logoUrl?: string;
 }
 
 export async function generateContractPDF(data: ContractData) {
@@ -45,8 +46,7 @@ export async function generateContractPDF(data: ContractData) {
     let y = margin;
 
     // -- HEADER --
-    const logoUrl = '/logo.png';
-    const logoBase64 = await getBase64FromUrl(logoUrl);
+    const logoBase64 = await getBase64FromUrl(data.logoUrl || '/logo.png');
     if (logoBase64) {
         doc.addImage(logoBase64, 'PNG', margin, y, 25, 25);
     }

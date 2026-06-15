@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/modules/core/lib/admin';
+import { requireAuth, resolveTenant } from '@/modules/core/lib/api-auth';
+import { encryptSecret } from '@/modules/core/lib/crypto';
 
 export async function POST(request: Request) {
     try {
+        const auth = await requireAuth(request, { roles: ['administrador'] });
+        if (!auth.ok) return auth.response;
+        const { ctx } = auth;
+
         const body = await request.json();
-        const { erp, credentials, tenantId } = body;
+        const { erp, credentials, tenantId: bodyTenantId } = body;
+
+        // El tenant lo fija el perfil del llamante (super-admin puede cross-tenant).
+        const tenantId = resolveTenant(ctx, bodyTenantId);
 
         if (!erp || !credentials || !tenantId) {
             return NextResponse.json({ error: 'Faltan parámetros obligatorios' }, { status: 400 });
@@ -34,8 +43,23 @@ export async function POST(request: Request) {
 
             connectionResult = await authResponse.json();
 
-            // 2. Save credentials securely in Supabase
-            // We store the encrypted credentials or tokens for background polling/sync
+            // 2. Guardar credenciales con los secretos CIFRADOS en reposo (AES-256-GCM).
+            //    clientId no es secreto; clientSecret y accessToken sí → se cifran.
+            let encryptedSecret: string;
+            let encryptedToken: string | null;
+            try {
+                encryptedSecret = encryptSecret(credentials.clientSecret);
+                encryptedToken = connectionResult.access_token
+                    ? encryptSecret(connectionResult.access_token)
+                    : null;
+            } catch (encErr: any) {
+                console.error('[erp-connect] cifrado no disponible:', encErr.message);
+                return NextResponse.json(
+                    { error: 'Cifrado de credenciales no configurado en el servidor.' },
+                    { status: 500 }
+                );
+            }
+
             const { error: upsertError } = await supabaseAdmin
                 .from('tenant_integrations')
                 .upsert({
@@ -43,10 +67,8 @@ export async function POST(request: Request) {
                     erp_provider: 'defontana',
                     credentials: {
                         clientId: credentials.clientId,
-                        // In production, NEVER save raw secrets without encryption
-                        // For this implementation, we follow the user request flow
-                        clientSecret: credentials.clientSecret,
-                        accessToken: connectionResult.access_token,
+                        clientSecret: encryptedSecret,
+                        accessToken: encryptedToken,
                         tokenExpiresAt: connectionResult.expires_at || new Date(Date.now() + 3600000).toISOString()
                     },
                     status: 'active',

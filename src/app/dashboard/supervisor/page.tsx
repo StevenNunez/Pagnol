@@ -246,43 +246,49 @@ export default function SupervisorHubPage() {
           {
             label: "Pendientes Aprobación",
             value: metrics.pending,
-            color: "amber",
             icon: Clock,
+            border: "border-l-amber-500",
+            text: "text-amber-600",
+            bg: "bg-amber-100",
           },
           {
             label: "Por Recibir",
             value: metrics.delivery,
-            color: "blue",
             icon: PackageCheck,
+            border: "border-l-blue-500",
+            text: "text-blue-600",
+            bg: "bg-blue-100",
           },
           {
             label: "Devoluciones Pend.",
             value: metrics.returns,
-            color: "purple",
             icon: RotateCcw,
+            border: "border-l-purple-500",
+            text: "text-purple-600",
+            bg: "bg-purple-100",
           },
           {
             label: "Stock Crítico",
             value: metrics.lowStock,
-            color: "red",
             icon: AlertTriangle,
+            border: "border-l-red-500",
+            text: "text-red-600",
+            bg: "bg-red-100",
           },
         ].map((m) => (
           <Card
             key={m.label}
-            className={`border-l-4 border-l-${m.color}-500 shadow-sm hover:shadow-md transition`}
+            className={cn("border-l-4 shadow-sm hover:shadow-md transition", m.border)}
           >
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{m.label}</p>
-                <h3 className={`text-3xl font-bold text-${m.color}-600`}>
+                <h3 className={cn("text-3xl font-bold", m.text)}>
                   {m.value}
                 </h3>
               </div>
-              <div
-                className={`h-12 w-12 rounded-full bg-${m.color}-100 flex items-center justify-center`}
-              >
-                <m.icon className={`h-6 w-6 text-${m.color}-600`} />
+              <div className={cn("h-12 w-12 rounded-full flex items-center justify-center", m.bg)}>
+                <m.icon className={cn("h-6 w-6", m.text)} />
               </div>
             </CardContent>
           </Card>
@@ -326,7 +332,7 @@ export default function SupervisorHubPage() {
             <div>
               <CardTitle className="text-xl">Historial de Actividad</CardTitle>
               <CardDescription>
-                Últimos movimiento de solicitudes, compras y devoluciones.
+                Últimos movimientos de solicitudes, compras y devoluciones.
               </CardDescription>
             </div>
 
@@ -430,33 +436,46 @@ export default function SupervisorHubPage() {
 // ==================================================
 // COMPONENTE PARA ACCIONES RÁPIDAS (REUTILIZABLE)
 // ==================================================
+const QUICK_ACTION_COLORS: Record<string, { hover: string; bg: string; text: string; arrow: string }> = {
+  primary: {
+    hover: "hover:border-primary/50 hover:bg-primary/5",
+    bg: "bg-primary/10",
+    text: "text-primary",
+    arrow: "text-primary/40",
+  },
+  blue: {
+    hover: "hover:border-blue-500/50 hover:bg-blue-50",
+    bg: "bg-blue-100",
+    text: "text-blue-600",
+    arrow: "text-blue-400",
+  },
+  purple: {
+    hover: "hover:border-purple-500/50 hover:bg-purple-50",
+    bg: "bg-purple-100",
+    text: "text-purple-600",
+    arrow: "text-purple-400",
+  },
+};
+
 function QuickAction({ href, icon: Icon, title, desc, color, arrow: Arrow }: {href: string, icon: React.ElementType, title: string, desc: string, color: string, arrow: React.ElementType}) {
+  const c = QUICK_ACTION_COLORS[color] ?? QUICK_ACTION_COLORS.primary;
   return (
     <Link href={href} className="block h-full">
-      <Card
-        className={cn(
-          "h-full group cursor-pointer border-2 transition-all duration-300",
-          `hover:border-${color}-500/50 hover:bg-${color}-50/25`
-        )}
-      >
+      <Card className={cn("h-full group cursor-pointer border-2 transition-all duration-300", c.hover)}>
         <CardHeader className="flex flex-row items-center gap-4 pb-2">
-          <div className={cn("p-3 rounded-lg transition-transform group-hover:scale-110",
-              `bg-${color}-100`
-          )}>
-            <Icon className={cn("h-6 w-6", `text-${color}-600`)} />
+          <div className={cn("p-3 rounded-lg transition-transform group-hover:scale-110", c.bg)}>
+            <Icon className={cn("h-6 w-6", c.text)} />
           </div>
-
           <div>
             <CardTitle className="text-lg">{title}</CardTitle>
             <CardDescription>{desc}</CardDescription>
           </div>
         </CardHeader>
-
         <CardContent className="pt-0 relative">
           <Arrow
             className={cn(
               "absolute right-4 bottom-4 h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100",
-              `text-${color}-400`
+              c.arrow
             )}
           />
         </CardContent>

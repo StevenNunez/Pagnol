@@ -1,36 +1,19 @@
 
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
 
 export async function POST(request: Request) {
     try {
         const { email, role, token, tenantName, invitedByName } = await request.json();
 
-        const host = process.env.EMAIL_HOST;
-        const port = Number(process.env.EMAIL_PORT) || 465;
-        const user = process.env.EMAIL_USER;
-        const pass = process.env.EMAIL_PASS;
-        const fromEmail = process.env.EMAIL_FROM || user;
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
 
-        if (!host || !user || !pass) {
+        if (!isEmailConfigured()) {
             console.error("Missing email configuration env variables.");
             return NextResponse.json({
                 error: 'Configuración de correo no encontrada en el servidor.',
-                details: 'Asegúrate de configurar EMAIL_HOST, EMAIL_USER y EMAIL_PASS.'
             }, { status: 500 });
         }
-
-        const transporter = nodemailer.createTransport({
-            host,
-            port,
-            secure: port === 465,
-            auth: { user, pass },
-            tls: { rejectUnauthorized: false },
-            connectionTimeout: 10000,
-            greetingTimeout: 10000,
-            socketTimeout: 15000,
-        });
 
         const inviteLink = `${appUrl}/invite/${token}`;
 
@@ -48,8 +31,7 @@ export async function POST(request: Request) {
         };
         const roleDisplay = roleLabel[role] || role?.toUpperCase() || 'Usuario';
 
-        const mailOptions = {
-            from: `"PAGNOL" <${fromEmail}>`,
+        await sendEmail({
             to: email,
             subject: `Fuiste invitado a ${tenantName || 'Pagnol'} — Acepta tu acceso`,
             headers: {
@@ -148,16 +130,11 @@ export async function POST(request: Request) {
   </table>
 </body>
 </html>`,
-        };
-
-        await transporter.sendMail(mailOptions);
+        });
         return NextResponse.json({ success: true, message: 'Correo enviado correctamente.' });
 
     } catch (error: any) {
         console.error('Error sending email:', error);
-        return NextResponse.json({
-            error: 'Error al enviar el correo.',
-            details: error.message
-        }, { status: 500 });
+        return NextResponse.json({ error: 'Error al enviar el correo.' }, { status: 500 });
     }
 }

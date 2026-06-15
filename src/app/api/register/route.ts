@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/modules/core/lib/admin';
-import nodemailer from 'nodemailer';
+import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
+import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 export async function POST(request: Request) {
   try {
+    if (!(await rateLimitByIp(request, 'register', 3, 3600))) {
+      return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
+    }
+
     const { tenantName, tenantId, adminName, adminEmail, phone, password } = await request.json();
 
     if (!tenantName || !tenantId || !adminName || !adminEmail || !password) {
@@ -76,7 +81,7 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('[Register API]', error);
-    return NextResponse.json({ error: error.message || 'Error interno del servidor.' }, { status: 500 });
+    return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }
 
@@ -85,34 +90,17 @@ async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
   adminEmail: string;
   tenantName: string;
 }) {
-  const host = process.env.EMAIL_HOST;
-  const port = Number(process.env.EMAIL_PORT) || 465;
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  const fromEmail = process.env.EMAIL_FROM || user;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
 
-  if (!host || !user || !pass) {
+  if (!isEmailConfigured()) {
     console.warn('[Register API] Email de bienvenida omitido: variables EMAIL_* no configuradas.');
     return;
   }
 
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: { user, pass },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
-
   const firstName = adminName.split(' ')[0];
   const year = new Date().getFullYear();
 
-  await transporter.sendMail({
-    from: `"PAGNOL" <${fromEmail}>`,
+  await sendEmail({
     to: adminEmail,
     subject: `¡Bienvenido a Pagnol, ${firstName}! Tu organización está lista`,
     headers: { 'Importance': 'high' },

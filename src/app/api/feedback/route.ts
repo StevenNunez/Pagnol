@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
 import { supabaseAdmin } from '@/modules/core/lib/admin';
+import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 export async function POST(request: Request) {
     try {
+        if (!(await rateLimitByIp(request, 'feedback', 20, 3600))) {
+            return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
+        }
+
         const body = await request.json();
         const { user_id, user_name, user_email, tenant_id, description, image, url } = body;
 
@@ -27,22 +32,9 @@ export async function POST(request: Request) {
         if (dbError) throw dbError;
 
         // 2. Enviar alerta por email (no bloquea si falla)
-        const host = process.env.EMAIL_HOST;
-        const port = Number(process.env.EMAIL_PORT) || 465;
-        const user = process.env.EMAIL_USER;
-        const pass = process.env.EMAIL_PASS;
-        const fromEmail = process.env.EMAIL_FROM || user;
         const alertTo = process.env.FEEDBACK_ALERT_TO || 'hola@teolabs.app';
 
-        if (host && user && pass) {
-            const transporter = nodemailer.createTransport({
-                host,
-                port,
-                secure: port === 465,
-                auth: { user, pass },
-                tls: { rejectUnauthorized: false },
-            });
-
+        if (isEmailConfigured()) {
             const shortDesc = description.length > 80
                 ? description.slice(0, 80) + '...'
                 : description;
@@ -114,8 +106,8 @@ export async function POST(request: Request) {
 </body>
 </html>`;
 
-            await transporter.sendMail({
-                from: `"PAGNOL Alerts" <${fromEmail}>`,
+            await sendEmail({
+                fromName: 'PAGNOL Alerts',
                 to: alertTo,
                 subject: `🔔 Feedback: ${shortDesc}`,
                 html: alertHtml,
@@ -129,6 +121,6 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error('[Feedback] Error:', error);
-        return NextResponse.json({ error: error.message || 'Error interno.' }, { status: 500 });
+        return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
 }

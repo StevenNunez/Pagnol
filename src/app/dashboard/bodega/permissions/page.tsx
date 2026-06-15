@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -150,12 +150,10 @@ export default function PermissionsPage() {
     }
 
     return (
-        <div className="flex flex-col gap-8">
-            <PageHeader
-                title="Gestión de Permisos y Roles"
-                description="Visualiza y edita las capacidades de cada rol en el sistema."
-            />
-            
+        <PageShell
+            title="Gestión de Permisos y Roles"
+            description="Visualiza y edita las capacidades de cada rol en el sistema."
+        >
             {!can('permissions:manage') && user?.role !== 'super-admin' && (
                 <Alert>
                     <Shield className="h-4 w-4" />
@@ -189,6 +187,6 @@ export default function PermissionsPage() {
                     </Accordion>
                 </CardContent>
             </Card>
-        </div>
+        </PageShell>
     );
 }

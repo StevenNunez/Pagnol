@@ -36,6 +36,14 @@ import {
   Contract,
   ContractWorker,
   ScanResult,
+  RentalParty,
+  RentalContract,
+  RentalAsset,
+  RentalPayment,
+  WorkReport,
+  WorkReportPhoto,
+  WorkReportSignature,
+  WorkReportStatus,
 } from '../core/lib/data';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 
@@ -75,6 +83,11 @@ export interface AppDataState {
   shiftSchedules: ShiftSchedule[];
   contracts: Contract[];
   contractWorkers: ContractWorker[];
+  rentalParties: RentalParty[];
+  rentalContracts: RentalContract[];
+  rentalAssets: RentalAsset[];
+  rentalPayments: RentalPayment[];
+  workReports: WorkReport[];
 }
 
 // This defines the shape of the context, including all functions
@@ -181,6 +194,29 @@ export interface AppStateContextType extends AppDataState {
   updateShiftSchedule: (id: string, data: Partial<ShiftSchedule>) => Promise<void>;
   deleteShiftSchedule: (id: string) => Promise<void>;
 
+  // Arriendos (Rentals)
+  addRentalParty: (data: Omit<RentalParty, 'id' | 'tenantId' | 'createdAt'>) => Promise<RentalParty>;
+  updateRentalParty: (id: string, data: Partial<RentalParty>) => Promise<void>;
+  deleteRentalParty: (id: string) => Promise<void>;
+  addRentalContract: (data: Omit<RentalContract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>) => Promise<RentalContract>;
+  updateRentalContract: (id: string, data: Partial<RentalContract>) => Promise<void>;
+  deleteRentalContract: (id: string) => Promise<void>;
+  addRentalAsset: (data: Omit<RentalAsset, 'id' | 'tenantId' | 'createdAt'>) => Promise<RentalAsset>;
+  updateRentalAsset: (id: string, data: Partial<RentalAsset>) => Promise<void>;
+  deleteRentalAsset: (id: string) => Promise<void>;
+  addRentalPayment: (data: Omit<RentalPayment, 'id' | 'tenantId' | 'createdAt' | 'status'> & { status?: RentalPayment['status'] }) => Promise<RentalPayment>;
+  generateRentalSchedule: (contractId: string, installments: number) => Promise<void>;
+  markRentalPaymentPaid: (id: string, details: { paidDate: Date | string; paymentMethod?: string; reference?: string }) => Promise<void>;
+  updateRentalPayment: (id: string, data: Partial<RentalPayment>) => Promise<void>;
+  deleteRentalPayment: (id: string) => Promise<void>;
+
+  // Reportes de Trabajo / Informes de Terreno
+  createWorkReport: (data: Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>) => Promise<WorkReport>;
+  updateWorkReport: (id: string, data: Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
+  transitionWorkReport: (id: string, toStatus: WorkReportStatus, details?: { signature?: WorkReportSignature; notes?: string; sentTo?: string[] }) => Promise<void>;
+  uploadWorkReportPhoto: (reportId: string, file: File, description: string) => Promise<WorkReportPhoto>;
+  deleteWorkReportPhoto: (photo: WorkReportPhoto) => Promise<void>;
+
   // Payments
   addSupplierPayment: (data: any) => Promise<void>;
   updateSupplierPayment: (paymentId: string, data: Partial<SupplierPayment>) => Promise<void>;
@@ -217,6 +253,7 @@ export interface AppStateContextType extends AppDataState {
 
 export type AppStateAction =
   | { type: 'SET_DATA'; payload: { collection: keyof AppDataState; data: any[] } }
+  | { type: 'SET_ALL'; payload: Partial<AppDataState> }
   | { type: 'SET_ROLES'; payload: typeof ROLES_DEFAULT }
   | { type: 'SET_PLANS'; payload: typeof PLANS }
   | { type: 'SET_LOADING'; payload: boolean };

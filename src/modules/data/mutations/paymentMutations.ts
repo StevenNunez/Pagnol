@@ -1,11 +1,7 @@
 
 import { supabase } from '@/modules/core/lib/supabase';
 
-type Context = {
-  user: any;
-  tenantId: string | null;
-  db: any;
-};
+import type { MutationContext as Context } from './context';
 
 export async function addSupplierPayment(data: any, { tenantId }: Context) {
   if (!tenantId) throw new Error("Inquilino no válido.");

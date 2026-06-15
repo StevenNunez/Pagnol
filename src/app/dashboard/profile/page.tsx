@@ -19,8 +19,11 @@ import {
     HeartPulse,
     Users,
     Signature,
-    Save
+    Save,
+    ImageUp,
+    X,
 } from 'lucide-react';
+import { supabase } from '@/modules/core/lib/supabase';
 import QRCode from "react-qr-code";
 import { ChangePasswordDialog } from '@/components/change-password-dialog';
 import { ChangeEmailDialog } from '@/components/change-email-dialog';
@@ -82,7 +85,7 @@ const InfoField = ({ label, value, icon: Icon }: InfoFieldProps) => (
 
 export default function ProfilePage() {
     const { user: authUser, authLoading } = useAuth();
-    const { users, updateUser } = useAppState();
+    const { users, updateUser, currentTenant } = useAppState();
     const { toast } = useToast();
 
     // Sincronizar con los datos en tiempo real de DataProvider si el usuario autenticado está en la lista
@@ -99,6 +102,61 @@ export default function ProfilePage() {
     const [isPasswordDialogOpen, setPasswordDialogOpen] = useState(false);
     const [isEmailDialogOpen, setEmailDialogOpen] = useState(false);
     const [isEditingUser, setIsEditingUser] = useState(false);
+
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+    const logoInputRef = useRef<HTMLInputElement>(null);
+
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !currentTenant?.id) return;
+
+        if (!file.type.startsWith('image/')) {
+            toast({ variant: 'destructive', title: 'Archivo inválido', description: 'Por favor selecciona una imagen (PNG, JPG, SVG).' });
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            toast({ variant: 'destructive', title: 'Archivo muy grande', description: 'El logo no debe superar 2 MB.' });
+            return;
+        }
+
+        setIsUploadingLogo(true);
+        try {
+            const ext = file.name.split('.').pop() || 'png';
+            const path = `${currentTenant.id}/logo.${ext}`;
+            const { error: uploadError } = await supabase.storage
+                .from('tenant-logos')
+                .upload(path, file, { upsert: true, contentType: file.type });
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage.from('tenant-logos').getPublicUrl(path);
+
+            const { error: updateError } = await supabase
+                .from('tenants')
+                .update({ logo_url: publicUrl })
+                .eq('id', currentTenant.id);
+            if (updateError) throw updateError;
+
+            toast({ title: 'Logo actualizado', description: 'El logo de la empresa se aplicará en todos los PDFs.' });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'Error al subir logo', description: err.message });
+        } finally {
+            setIsUploadingLogo(false);
+            if (logoInputRef.current) logoInputRef.current.value = '';
+        }
+    };
+
+    const handleRemoveLogo = async () => {
+        if (!currentTenant?.id) return;
+        setIsUploadingLogo(true);
+        try {
+            await supabase.from('tenants').update({ logo_url: null }).eq('id', currentTenant.id);
+            toast({ title: 'Logo eliminado', description: 'Los PDFs usarán el logo predeterminado de Pagnol.' });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'Error', description: err.message });
+        } finally {
+            setIsUploadingLogo(false);
+        }
+    };
 
     // Sync signature if it changes in global state
     useEffect(() => {
@@ -296,6 +354,67 @@ export default function ProfilePage() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Logo de Empresa — solo visible para administrador y super-admin */}
+                    {(user?.role === 'administrador' || user?.role === 'super-admin') && (
+                        <Card className="rounded-[3rem] border-none shadow-xl bg-card overflow-hidden">
+                            <CardHeader className="p-10">
+                                <CardTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
+                                    <div className="p-2 bg-primary/10 rounded-xl text-primary"><ImageUp size={20} /></div>
+                                    Logo de la Empresa
+                                </CardTitle>
+                                <CardDescription className="mt-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                                    Aparecerá en todos los PDFs generados por el sistema.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="p-10 pt-0 space-y-6">
+                                <div className="w-full min-h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center p-6">
+                                    {currentTenant?.logoUrl ? (
+                                        <div className="relative">
+                                            <Image
+                                                src={currentTenant.logoUrl}
+                                                alt="Logo de la empresa"
+                                                width={200}
+                                                height={80}
+                                                className="object-contain max-h-20"
+                                                unoptimized
+                                            />
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground italic">Sin logo cargado — se usa el logo de Pagnol.</p>
+                                    )}
+                                </div>
+                                <input
+                                    ref={logoInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={handleLogoUpload}
+                                />
+                                <div className="flex flex-col sm:flex-row gap-4">
+                                    <Button
+                                        onClick={() => logoInputRef.current?.click()}
+                                        disabled={isUploadingLogo}
+                                        className="h-14 px-10 flex-1 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-slate-900/20"
+                                    >
+                                        {isUploadingLogo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
+                                        {currentTenant?.logoUrl ? 'Reemplazar Logo' : 'Subir Logo'}
+                                    </Button>
+                                    {currentTenant?.logoUrl && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleRemoveLogo}
+                                            disabled={isUploadingLogo}
+                                            className="h-14 px-8 rounded-2xl font-black text-[10px] uppercase tracking-widest border-slate-200 text-destructive hover:text-destructive"
+                                        >
+                                            <X className="mr-2 h-4 w-4" />
+                                            Eliminar
+                                        </Button>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Tarjeta de Firma Digital Premium */}
                     <Card className="rounded-[3rem] border-none shadow-xl bg-card overflow-hidden">

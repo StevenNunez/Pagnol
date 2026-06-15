@@ -2,7 +2,8 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
+import { EmptyState } from "@/components/empty-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -48,12 +49,10 @@ export default function AdminCategoriesPage() {
 
 
     return (
-        <div className="flex flex-col gap-8">
-            <PageHeader
-                title="Gestión de Categorías"
-                description="Crea, edita y gestiona todas las categorías de materiales del sistema."
-            />
-            
+        <PageShell
+            title="Gestión de Categorías"
+            description="Crea, edita y gestiona todas las categorías de materiales del sistema."
+        >
             {editingCategory && (
                 <EditCategoryForm
                     category={editingCategory}
@@ -139,10 +138,12 @@ export default function AdminCategoriesPage() {
                                             </DropdownMenu>
                                         </div>
                                     )) : (
-                                        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                                            <FolderOpen className="h-10 w-10 mb-2 opacity-30" />
-                                            <p className="text-sm">{searchTerm ? `Sin resultados para "${searchTerm}"` : "No hay categorías aún."}</p>
-                                        </div>
+                                        <EmptyState
+                                            className="border-0 bg-transparent py-12"
+                                            icon={<FolderOpen size={22} />}
+                                            title={searchTerm ? "Sin resultados" : "No hay categorías aún"}
+                                            description={searchTerm ? `No se encontró "${searchTerm}".` : undefined}
+                                        />
                                     )}
                                 </div>
                                 <ScrollBar orientation="vertical" />
@@ -151,6 +152,6 @@ export default function AdminCategoriesPage() {
                     </Card>
                 </div>
             </div>
-        </div>
+        </PageShell>
     );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -201,13 +201,13 @@ const formatDate = (date: Date | string | null | undefined): string => {
 const getStatusBadge = (status: PurchaseRequestStatus) => {
   switch (status) {
     case "pending":
-      return <Badge variant="secondary" className="bg-yellow-500 text-white"><Clock className="mr-1 h-3 w-3" />Pendiente</Badge>;
+      return <Badge variant="outline" className="gap-1 border-warning/30 bg-warning-subtle text-warning-subtle-foreground"><Clock className="h-3 w-3" />Pendiente</Badge>;
     case "approved":
-      return <Badge variant="default" className="bg-green-600 text-white"><Check className="mr-1 h-3 w-3" />Aprobado</Badge>;
+      return <Badge variant="outline" className="gap-1 border-success/30 bg-success-subtle text-success-subtle-foreground"><Check className="h-3 w-3" />Aprobado</Badge>;
     case "rejected":
-      return <Badge variant="destructive"><X className="mr-1 h-3 w-3" />Rechazado</Badge>;
+      return <Badge variant="destructive" className="gap-1"><X className="h-3 w-3" />Rechazado</Badge>;
     case "received":
-      return <Badge variant="default" className="bg-blue-600 text-white"><PackageCheck className="mr-1 h-3 w-3" />Recibido</Badge>;
+      return <Badge variant="outline" className="gap-1 border-info/30 bg-info-subtle text-info-subtle-foreground"><PackageCheck className="h-3 w-3" />Recibido</Badge>;
     case "batched":
       return <Badge variant="default" className="bg-purple-600 text-white"><Box className="mr-1 h-3 w-3" />En Lote</Badge>;
     case "ordered":
@@ -300,7 +300,10 @@ export default function AdminPurchaseRequestsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <PageShell
+      title="Solicitudes de Compra"
+      description="Revisa, gestiona y registra el ingreso de materiales aprobados a bodega."
+    >
       {editingRequest && (
         <EditPurchaseRequestForm
           request={editingRequest}
@@ -315,11 +318,6 @@ export default function AdminPurchaseRequestsPage() {
         onClose={() => setReceivingRequest(null)}
         onConfirm={handleReceive}
         materials={materials}
-      />
-
-      <PageHeader
-        title="Solicitudes de Compra"
-        description="Revisa, gestiona y registra el ingreso de materiales aprobados a bodega."
       />
 
       {/* Resumen de estados */}
@@ -339,7 +337,7 @@ export default function AdminPurchaseRequestsPage() {
         ))}
       </div>
 
-      <Card className="border-l-4 border-l-orange-500 shadow-sm">
+      <Card className="border-l-4 border-l-primary shadow-sm">
         <CardHeader>
           <CardTitle>Historial de Solicitudes</CardTitle>
           <CardDescription>
@@ -523,6 +521,6 @@ export default function AdminPurchaseRequestsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

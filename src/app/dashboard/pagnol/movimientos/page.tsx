@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from '@/modules/core/lib/supabase';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 import { generateContractPDF } from '@/lib/contract-pdf-generator';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { useToast } from '@/modules/core/hooks/use-toast';
@@ -479,7 +480,7 @@ export default function MovimientosPagnolPage() {
 
           fetch('/api/push/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await authHeaders(),
             body: JSON.stringify({
               tenantId: getTenantId(),
               targetUserIds: approverIds,
@@ -620,7 +621,8 @@ export default function MovimientosPagnolPage() {
             items: itemsForContract,
             deliveryTimestamp: new Date(),
             pagnoleroName: currentUser?.name || 'Pañolero',
-            pagnoleroSignatureUrl: currentUser?.signature || null
+            pagnoleroSignatureUrl: currentUser?.signature || null,
+            logoUrl: currentTenant?.logoUrl,
           });
 
           // 2. Subir a Storage con timeout (8s)
@@ -686,7 +688,8 @@ export default function MovimientosPagnolPage() {
             items: itemsForContract,
             deliveryTimestamp: new Date(),
             pagnoleroName: currentUser?.name || 'Pañolero',
-            pagnoleroSignatureUrl: currentUser?.signature || null
+            pagnoleroSignatureUrl: currentUser?.signature || null,
+            logoUrl: currentTenant?.logoUrl,
           });
 
           const path = `contracts/direct/${filename}`;

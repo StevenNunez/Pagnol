@@ -114,10 +114,10 @@ function addObservationInfo(doc: jsPDF, observation: BehaviorObservation, startY
   return (doc as any).lastAutoTable.finalY;
 }
 
-export async function generateBehaviorObservationPDF(observation: BehaviorObservation) {
+export async function generateBehaviorObservationPDF(observation: BehaviorObservation, logoUrl?: string) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const logo = await getBase64FromUrl('/logo.png');
+  const logo = await getBase64FromUrl(logoUrl || '/logo.png');
 
   let y = addHeader(doc, logo);
   y = addObservationInfo(doc, observation, y);

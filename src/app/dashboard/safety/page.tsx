@@ -4,89 +4,120 @@
 import React, { useMemo } from "react";
 import { PageHeader } from "@/components/page-header";
 import { useAppState } from "@/modules/core/contexts/app-provider";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Inbox, ArrowRight } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, ClipboardList, Search, Users, Target, FileUp, ListChecks, ShieldAlert, BookOpen } from "lucide-react";
 import Link from "next/link";
-import type { BehaviorObservation } from "@/modules/core/lib/data";
 
-const formatDate = (date: Date | string | undefined | null) => {
-    if (!date) return 'N/A';
-    const jsDate = new Date(date as any);
-    return jsDate.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
-};
+export default function SafetyDashboardPage() {
+    const { assignedChecklists, safetyInspections, dailyTalks, behaviorObservations, checklistTemplates, isLoading } = useAppState();
 
-export default function ReviewBehaviorObservationsPage() {
-    const { behaviorObservations, isLoading } = useAppState();
+    const stats = useMemo(() => {
+        const checklistsPendientes = assignedChecklists?.filter(c => c.status === 'assigned').length ?? 0;
+        const checklistsCompletados = assignedChecklists?.filter(c => c.status === 'completed' || c.status === 'approved').length ?? 0;
 
-    const sortedObservations = useMemo(() => {
-        if (!behaviorObservations) return [];
-        return [...behaviorObservations].sort((a, b) => {
-            const dateA = new Date(a.observationDate as any).getTime();
-            const dateB = new Date(b.observationDate as any).getTime();
-            return dateB - dateA;
-        });
-    }, [behaviorObservations]);
+        const inspPendientes = safetyInspections?.filter(i => i.status === 'open' || i.status === 'in-progress').length ?? 0;
+        const inspCompletadas = safetyInspections?.filter(i => i.status === 'completed' || i.status === 'approved').length ?? 0;
 
-    const getRiskBadge = (level: string | null) => {
-        switch (level) {
-            case 'aceptable': return <Badge variant="default" className="bg-green-600 dark:bg-green-700">Aceptable</Badge>;
-            case 'leve': return <Badge variant="secondary" className="bg-yellow-500 dark:bg-yellow-600 text-white">Leve</Badge>;
-            case 'grave': return <Badge variant="destructive" className="bg-orange-600 dark:bg-orange-700">Grave</Badge>;
-            case 'gravisimo': return <Badge variant="destructive">Gravísimo</Badge>;
-            default: return <Badge variant="outline">N/A</Badge>;
-        }
-    };
+        const totalCharlas = dailyTalks?.length ?? 0;
+        const totalObservaciones = behaviorObservations?.length ?? 0;
+        const totalPlantillas = checklistTemplates?.length ?? 0;
+
+        return { checklistsPendientes, checklistsCompletados, inspPendientes, inspCompletadas, totalCharlas, totalObservaciones, totalPlantillas };
+    }, [assignedChecklists, safetyInspections, dailyTalks, behaviorObservations, checklistTemplates]);
 
     if (isLoading) {
         return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
     }
 
+    const cards = [
+        {
+            title: "Checklists Pendientes",
+            value: stats.checklistsPendientes,
+            sub: `${stats.checklistsCompletados} completados`,
+            icon: ClipboardList,
+            href: "/dashboard/safety/assigned-checklists",
+            color: stats.checklistsPendientes > 0 ? "text-yellow-600" : "text-green-600",
+        },
+        {
+            title: "Inspecciones Abiertas",
+            value: stats.inspPendientes,
+            sub: `${stats.inspCompletadas} resueltas`,
+            icon: Search,
+            href: "/dashboard/safety/assigned-inspections",
+            color: stats.inspPendientes > 0 ? "text-orange-600" : "text-green-600",
+        },
+        {
+            title: "Charlas Diarias",
+            value: stats.totalCharlas,
+            sub: "Total registradas",
+            icon: Users,
+            href: "/dashboard/safety/review-daily-talks",
+            color: "text-blue-600",
+        },
+        {
+            title: "Observaciones de Conducta",
+            value: stats.totalObservaciones,
+            sub: "Total registradas",
+            icon: Target,
+            href: "/dashboard/safety/review-observations",
+            color: "text-purple-600",
+        },
+        {
+            title: "Plantillas",
+            value: stats.totalPlantillas,
+            sub: "Disponibles para asignar",
+            icon: FileUp,
+            href: "/dashboard/safety/templates",
+            color: "text-slate-600",
+        },
+    ];
+
+    const accesos = [
+        { label: "Revisar Checklists", href: "/dashboard/safety/review-checklists", icon: ListChecks },
+        { label: "Revisar Inspecciones", href: "/dashboard/safety/review-inspections", icon: ShieldAlert },
+        { label: "Revisar Charlas", href: "/dashboard/safety/review-daily-talks", icon: BookOpen },
+        { label: "Revisar Observaciones", href: "/dashboard/safety/review-observations", icon: Target },
+    ];
+
     return (
         <div className="flex flex-col gap-8">
             <PageHeader
-                title="Revisión de Observaciones de Conducta"
-                description="Aquí puedes ver todos los formularios de observación de conducta que se han registrado."
+                title="Panel de Seguridad"
+                description="Resumen del estado actual del módulo de Prevención de Riesgos."
             />
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Historial de Observaciones</CardTitle>
-                    <CardDescription>
-                        Selecciona una observación para ver los detalles completos y descargar el informe en PDF.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <ScrollArea className="h-[calc(80vh-12rem)] border rounded-md">
-                        {sortedObservations.length > 0 ? (
-                            <div className="space-y-3 p-4">
-                                {sortedObservations.map((obs: BehaviorObservation) => (
-                                    <Link key={obs.id} href={`/dashboard/safety/review-observations/${obs.id}`} >
-                                        <div className="p-4 border rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:bg-muted/50 transition-colors cursor-pointer">
-                                            <div className="flex-grow">
-                                                <h4 className="font-semibold">Observación a: {obs.workerName}</h4>
-                                                <p className="text-sm text-muted-foreground">Obra: <span className="font-medium">{obs.obra}</span></p>
-                                                <p className="text-xs text-muted-foreground mt-1">Registrado por: {obs.observerName} el {formatDate(obs.observationDate)}</p>
-                                            </div>
-                                            <div className="flex items-center gap-4 flex-shrink-0">
-                                                {getRiskBadge(obs.riskLevel)}
-                                                <ArrowRight className="h-5 w-5 text-muted-foreground"/>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                ))}
-                            </div>
-                        ) : (
-                             <div className="flex flex-col items-center justify-center text-center text-muted-foreground h-full p-12">
-                                <Inbox className="h-16 w-16 mb-4"/>
-                                <h3 className="text-xl font-semibold">No hay observaciones</h3>
-                                <p className="mt-2">Aún no se ha registrado ninguna observación de conducta.</p>
-                            </div>
-                        )}
-                    </ScrollArea>
-                </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                {cards.map(card => (
+                    <Link key={card.href} href={card.href}>
+                        <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full">
+                            <CardHeader className="flex flex-row items-center justify-between pb-2">
+                                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+                                <card.icon className={`h-5 w-5 ${card.color}`} />
+                            </CardHeader>
+                            <CardContent>
+                                <p className={`text-3xl font-bold ${card.color}`}>{card.value}</p>
+                                <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+                            </CardContent>
+                        </Card>
+                    </Link>
+                ))}
+            </div>
+
+            <div>
+                <h2 className="text-lg font-semibold mb-4">Accesos Rápidos — Revisión</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {accesos.map(a => (
+                        <Link key={a.href} href={a.href}>
+                            <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                                <CardContent className="flex flex-col items-center justify-center gap-2 py-6">
+                                    <a.icon className="h-8 w-8 text-muted-foreground" />
+                                    <span className="text-sm font-medium text-center">{a.label}</span>
+                                </CardContent>
+                            </Card>
+                        </Link>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }

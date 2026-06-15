@@ -38,13 +38,13 @@ async function getBase64FromUrl(url: string): Promise<string> {
     }
   }
 
-export async function generateEstadoDePagoPDF(epId: string, contractorName: string, totalValue: number, earnedValue: number, items: WorkItem[]) {
+export async function generateEstadoDePagoPDF(epId: string, contractorName: string, totalValue: number, earnedValue: number, items: WorkItem[], logoUrl?: string) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 15;
   let y = margin;
 
-  const logo = await getBase64FromUrl('/logo.png');
+  const logo = await getBase64FromUrl(logoUrl || '/logo.png');
   if (logo) doc.addImage(logo, "PNG", margin, y, 40, 15);
 
   doc.setFont("helvetica", "bold");

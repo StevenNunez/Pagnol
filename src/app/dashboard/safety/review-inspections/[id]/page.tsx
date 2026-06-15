@@ -29,7 +29,7 @@ const formatDate = (date: Date | string | undefined | null, includeTime = false)
 export default function ReviewInspectionPage() {
     const params = useParams();
     const router = useRouter();
-    const { safetyInspections, users, isLoading, reviewSafetyInspection } = useAppState();
+    const { safetyInspections, users, isLoading, reviewSafetyInspection, currentTenant } = useAppState();
     const { user } = useAuth();
     const { toast } = useToast();
 
@@ -95,7 +95,7 @@ export default function ReviewInspectionPage() {
         const aprData = aprUser || { id: inspection.inspectorId, name: inspection.inspectorName || 'Inspector no encontrado' } as User;
 
         try {
-            await generateInspectionPDF(inspection, supervisorData, aprData);
+            await generateInspectionPDF(inspection, supervisorData, aprData, currentTenant?.logoUrl);
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error al generar PDF', description: error.message });
         }

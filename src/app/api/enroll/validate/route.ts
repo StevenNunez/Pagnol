@@ -10,9 +10,11 @@ export async function GET(request: Request) {
     }
 
     const admin = getSupabaseAdmin();
+    // Proyección explícita: NO exponer biometric_template ni columnas kyc_*,
+    // aunque la sesión las tuviera (defensa en profundidad).
     const { data, error } = await admin
         .from('enrollment_sessions')
-        .select('*')
+        .select('id, token, name, email, rut, role, internal_id, tenant_id, admin_id, status, expires_at, created_at')
         .eq('token', token)
         .gt('expires_at', new Date().toISOString())
         .maybeSingle();

@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseAdmin();
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error('Push subscribe error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }
 
@@ -42,6 +39,7 @@ export async function DELETE(req: NextRequest) {
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Push unsubscribe error:', err);
+    return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }

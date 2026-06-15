@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useAppState } from "@/modules/core/contexts/app-provider";
+import { useRecordFields } from "@/modules/core/hooks/use-record-fields";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,20 +24,33 @@ const formatDate = (date: Date | string | undefined | null) => {
 export default function BehaviorObservationDetailPage() {
     const params = useParams();
     const router = useRouter();
-    const { behaviorObservations, isLoading } = useAppState();
+    const { behaviorObservations, isLoading, currentTenant } = useAppState();
     const { toast } = useToast();
 
     const observationId = params.id as string;
 
+    // Firmas y foto (base64) ya no viajan en el collection (S6); se cargan bajo
+    // demanda y se fusionan para display y generación de PDF.
+    const media = useRecordFields<{ observer_signature: string | null; worker_signature: string | null; evidence_photo: string | null }>(
+        'behavior_observations', observationId, 'observer_signature, worker_signature, evidence_photo'
+    );
+
     const observation = useMemo(() => {
         if (!behaviorObservations) return null;
-        return behaviorObservations.find(o => o.id === observationId) || null;
-    }, [behaviorObservations, observationId]);
+        const base = behaviorObservations.find(o => o.id === observationId) || null;
+        if (!base) return null;
+        return {
+            ...base,
+            observerSignature: media?.observer_signature ?? base.observerSignature,
+            workerSignature: media?.worker_signature ?? base.workerSignature,
+            evidencePhoto: media?.evidence_photo ?? base.evidencePhoto,
+        };
+    }, [behaviorObservations, observationId, media]);
 
     const handleDownloadPDF = async () => {
         if (!observation) return;
         try {
-            await generateBehaviorObservationPDF(observation);
+            await generateBehaviorObservationPDF(observation, currentTenant?.logoUrl);
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error al generar PDF', description: error.message });
         }

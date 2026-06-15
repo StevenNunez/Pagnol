@@ -5,7 +5,7 @@ import React, { useState } from "react";
 import { useForm, SubmitHandler, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -104,12 +104,11 @@ export default function ManualStockEntryPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Ingreso Manual de Stock"
-        description="Registra el ingreso de stock para materiales existentes que no provienen de una orden de compra, o crea un nuevo material."
-      />
-      <Card className="max-w-2xl mx-auto border-l-4 border-l-amber-500 shadow-sm">
+    <PageShell
+      title="Ingreso Manual de Stock"
+      description="Registra el ingreso de stock para materiales existentes que no provienen de una orden de compra, o crea un nuevo material."
+    >
+      <Card className="max-w-2xl mx-auto border-l-4 border-l-primary shadow-sm">
         <CardHeader>
           <CardTitle>Registrar Ingreso Manual</CardTitle>
           <CardDescription>
@@ -318,6 +317,6 @@ export default function ManualStockEntryPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

@@ -2,7 +2,7 @@ import { supabase } from '@/modules/core/lib/supabase';
 import { mappers } from '../mappers';
 import type { Contract, ShiftSchedule, ContractWorker } from '@/modules/core/lib/data';
 
-type Context = { user: any; tenantId: string | null };
+import type { MutationContext as Context } from './context';
 
 // ── Contratos ────────────────────────────────────────────────────────────────
 

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { supabase } from "@/modules/core/lib/supabase";
+import { bearerHeader } from "@/modules/core/lib/auth-header";
 import {
   Upload, FileSpreadsheet, CheckCircle2, Loader2, AlertTriangle,
   ChevronDown, ChevronRight, Users,
@@ -63,7 +64,7 @@ export default function AttendanceImportPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch('/api/attendance/parse-excel', { method: 'POST', body: fd });
+      const res = await fetch('/api/attendance/parse-excel', { method: 'POST', headers: await bearerHeader(), body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Error al procesar');
       setSheets(data.sheets);

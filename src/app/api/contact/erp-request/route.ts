@@ -1,34 +1,22 @@
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
+import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 export async function POST(request: Request) {
     try {
+        if (!(await rateLimitByIp(request, 'erp-request', 5, 3600))) {
+            return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
+        }
+
         const { name, company, email, phone, erp, api } = await request.json();
 
         if (!name || !company || !email || !erp) {
             return NextResponse.json({ error: 'Faltan campos obligatorios.' }, { status: 400 });
         }
 
-        const host = process.env.EMAIL_HOST;
-        const port = Number(process.env.EMAIL_PORT) || 465;
-        const user = process.env.EMAIL_USER;
-        const pass = process.env.EMAIL_PASS;
-        const fromEmail = process.env.EMAIL_FROM || user;
-
-        if (!host || !user || !pass) {
+        if (!isEmailConfigured()) {
             return NextResponse.json({ error: 'Configuración de correo no encontrada.' }, { status: 500 });
         }
-
-        const transporter = nodemailer.createTransport({
-            host,
-            port,
-            secure: port === 465,
-            auth: { user, pass },
-            tls: { rejectUnauthorized: false },
-            connectionTimeout: 10000,
-            greetingTimeout: 10000,
-            socketTimeout: 15000,
-        });
 
         const apiLabel: Record<string, string> = {
             rest: 'REST API',
@@ -112,8 +100,7 @@ export async function POST(request: Request) {
 </body>
 </html>`;
 
-        await transporter.sendMail({
-            from: `"PAGNOL" <${fromEmail}>`,
+        await sendEmail({
             to: 'hola@teolabs.app',
             replyTo: email,
             subject: `🔌 Solicitud integración ERP — ${company} (${erp})`,
@@ -124,6 +111,6 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error('[ERP Request] Error:', error);
-        return NextResponse.json({ error: error.message || 'Error interno.' }, { status: 500 });
+        return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
 }

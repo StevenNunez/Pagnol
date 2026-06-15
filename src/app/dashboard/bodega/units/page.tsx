@@ -2,7 +2,8 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
+import { EmptyState } from "@/components/empty-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -48,12 +49,10 @@ export default function AdminUnitsPage() {
 
 
     return (
-        <div className="flex flex-col gap-8">
-            <PageHeader
-                title="Gestión de Unidades de Medida"
-                description="Crea y gestiona las unidades (ej: kg, m2, unidad) que se usarán en los materiales."
-            />
-
+        <PageShell
+            title="Gestión de Unidades de Medida"
+            description="Crea y gestiona las unidades (ej: kg, m2, unidad) que se usarán en los materiales."
+        >
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
                 {canCreate && (
                     <div className="lg:col-span-1">
@@ -120,10 +119,12 @@ export default function AdminUnitsPage() {
                                             )}
                                         </div>
                                     )) : (
-                                        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                                            <RulerIcon className="h-10 w-10 mb-2 opacity-30" />
-                                            <p className="text-sm">{searchTerm ? `Sin resultados para "${searchTerm}"` : "No hay unidades aún."}</p>
-                                        </div>
+                                        <EmptyState
+                                            className="border-0 bg-transparent py-12"
+                                            icon={<RulerIcon size={22} />}
+                                            title={searchTerm ? "Sin resultados" : "No hay unidades aún"}
+                                            description={searchTerm ? `No se encontró "${searchTerm}".` : undefined}
+                                        />
                                     )}
                                 </div>
                                 <ScrollBar orientation="vertical" />
@@ -132,6 +133,6 @@ export default function AdminUnitsPage() {
                     </Card>
                 </div>
             </div>
-        </div>
+        </PageShell>
     );
 }

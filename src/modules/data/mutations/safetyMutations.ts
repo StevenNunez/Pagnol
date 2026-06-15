@@ -3,11 +3,7 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { AssignedSafetyTask, ChecklistTemplate, DailyTalk, User } from '../../core/lib/data';
 
-type Context = {
-    user: any;
-    tenantId: string | null;
-    db: any;
-};
+import type { MutationContext as Context } from './context';
 
 export async function addChecklistTemplate(template: Pick<ChecklistTemplate, 'title' | 'items'>, { user, tenantId }: Context) {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');

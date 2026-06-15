@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { User } from '@/modules/core/lib/data';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 
 const FormSchema = z.object({
   newPassword: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
@@ -43,7 +44,7 @@ export function AdminChangePasswordDialog({ isOpen, onClose, userToEdit }: Admin
     try {
       const res = await fetch('/api/users/change-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ userId: userToEdit.id, newPassword: data.newPassword }),
       });
 

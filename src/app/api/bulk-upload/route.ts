@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/modules/core/lib/admin";
 import { getInitials } from "@/modules/core/lib/sequence-utils";
+import { requireAuth, resolveTenant } from "@/modules/core/lib/api-auth";
 import { randomUUID } from 'node:crypto';
 
 export const maxDuration = 300; // 5 min — para lotes grandes en Vercel
@@ -54,8 +55,15 @@ function sanitizeClass(raw: string | undefined | null): 'A' | 'B' | 'C' {
 
 export async function POST(req: Request) {
     try {
+        const auth = await requireAuth(req, { permission: 'materials:create' });
+        if (!auth.ok) return auth.response;
+        const { ctx } = auth;
+
         const body = await req.json();
-        const { assets, tenantId, user, customUsageTypeMap = {} } = body;
+        const { assets, tenantId: bodyTenantId, user, customUsageTypeMap = {} } = body;
+
+        // El tenant lo fija el perfil del llamante (super-admin puede operar cross-tenant).
+        const tenantId = resolveTenant(ctx, bodyTenantId);
 
         if (!tenantId || !assets || !Array.isArray(assets)) {
             return NextResponse.json(
@@ -263,7 +271,7 @@ export async function POST(req: Request) {
     } catch (error: any) {
         console.error("Error en bulk upload:", error);
         return NextResponse.json(
-            { success: false, error: error.message || "Internal server error" },
+            { success: false, error: "Error interno del servidor." },
             { status: 500 }
         );
     }

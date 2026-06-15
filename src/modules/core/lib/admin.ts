@@ -1,12 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Supabase Admin client for server-side operations that bypass RLS
-export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-        autoRefreshToken: false,
-        persistSession: false
-    }
-});
+// Cliente admin (service role) como singleton, reutilizando la ÚNICA factory
+// definida en supabase.ts (antes había dos createClient con service role).
+// Bypassa RLS; solo para uso server-side.
+export const supabaseAdmin = getSupabaseAdmin();

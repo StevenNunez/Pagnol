@@ -226,7 +226,7 @@ export default function ContractorContractDetailPage() {
 
     const { toast } = useToast();
     const { user } = useAuth();
-    const { workItems, isLoading, progressLogs, addPaymentState } = useAppState();
+    const { workItems, isLoading, progressLogs, addPaymentState, currentTenant } = useAppState();
     const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
     const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
     const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
@@ -377,7 +377,7 @@ export default function ContractorContractDetailPage() {
                 earnedValue: financialKPIs.earnedValue,
                 items: leafItems,
             } as any);
-            await generateEstadoDePagoPDF(epId, user.name, financialKPIs.totalContract, financialKPIs.earnedValue, leafItems);
+            await generateEstadoDePagoPDF(epId, user.name, financialKPIs.totalContract, financialKPIs.earnedValue, leafItems, currentTenant?.logoUrl);
             toast({
                 title: 'Estado de Pago Generado',
                 description: 'El documento PDF se descargó y el registro fue guardado en el historial.',

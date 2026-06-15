@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
+import { requireAuth } from '@/modules/core/lib/api-auth';
+
+export const maxDuration = 60;
+
+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+const ALLOWED_EXT = /\.xlsx?$/i;
 
 export type AttendanceMark = 'P' | 'A' | 'D' | 'LM' | 'PSG' | 'V' | 'PP' | 'MJ' | 'ATR';
 
@@ -115,9 +121,22 @@ function parseSheet(ws: ExcelJS.Worksheet): Omit<ParsedSheet, 'sheetName'> {
 
 export async function POST(req: NextRequest) {
   try {
+    // Solo requiere sesión válida: parse-excel no escribe en BD ni expone datos
+    // de otros usuarios (solo procesa el archivo subido). El objetivo es cerrar
+    // el abuso/DoS anónimo, no restringir por rol.
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
+
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     if (!file) return NextResponse.json({ error: 'No se recibió archivo.' }, { status: 400 });
+
+    if (!ALLOWED_EXT.test(file.name)) {
+      return NextResponse.json({ error: 'Formato inválido. Solo .xlsx o .xls.' }, { status: 400 });
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json({ error: 'Archivo demasiado grande (máx. 5 MB).' }, { status: 413 });
+    }
 
     const arrayBuffer = await file.arrayBuffer();
     const nodeBuffer = Buffer.from(new Uint8Array(arrayBuffer));
@@ -136,6 +155,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ sheets: results });
   } catch (e: any) {
     console.error('parse-excel error:', e);
-    return NextResponse.json({ error: e.message ?? 'Error al procesar el archivo.' }, { status: 500 });
+    return NextResponse.json({ error: 'Error al procesar el archivo.' }, { status: 500 });
   }
 }

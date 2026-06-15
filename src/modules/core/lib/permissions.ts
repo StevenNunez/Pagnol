@@ -21,6 +21,8 @@ export const ALL_PERMISSIONS = {
     'module_reports:view': { label: 'Acceder a Reportes', group: 'Acceso a Módulos' },
     'module_permissions:view': { label: 'Ver Gestión de Permisos', group: 'Acceso a Módulos' },
     'module_construction_control:view': { label: 'Acceder a Control de Obra', group: 'Acceso a Módulos' },
+    'module_dte:view': { label: 'Acceder a Facturación DTE', group: 'Acceso a Módulos' },
+    'module_work_reports:view': { label: 'Acceder a Reportes de Trabajo', group: 'Acceso a Módulos' },
     'pagnol:enroll_personal': { label: 'Enrolar Personal y Biometría', group: 'Módulo Pagnol' },
 
 
@@ -104,6 +106,15 @@ export const ALL_PERMISSIONS = {
     'shifts:manage': { label: 'Gestionar Turnos de Trabajo', group: 'Asistencia' },
 
     'reports:view': { label: 'Ver Reportes', group: 'Reportes' },
+    'work_reports:create': { label: 'Crear Informes de Terreno', group: 'Reportes de Trabajo' },
+    'work_reports:edit': { label: 'Editar Informes de Terreno', group: 'Reportes de Trabajo' },
+    'work_reports:sign': { label: 'Firmar Informes de Terreno', group: 'Reportes de Trabajo' },
+    'work_reports:submit': { label: 'Enviar Informes a Revisión', group: 'Reportes de Trabajo' },
+    'work_reports:review_operations': { label: 'Revisar/Aprobar como Jefe de Operaciones', group: 'Reportes de Trabajo' },
+    'work_reports:final_approve': { label: 'Aprobación Final ADC/Gerencia', group: 'Reportes de Trabajo' },
+    'work_reports:view_all': { label: 'Ver Todos los Informes de Terreno', group: 'Reportes de Trabajo' },
+    'work_reports:download_pdf': { label: 'Descargar PDF de Informes de Terreno', group: 'Reportes de Trabajo' },
+    'work_reports:send': { label: 'Enviar Informes por Correo', group: 'Reportes de Trabajo' },
 
     'safety_templates:create': { label: 'Crear Plantillas de Seguridad', group: 'Prevención de Riesgos' },
     'safety_templates:assign': { label: 'Asignar Checklists/Inspecciones', group: 'Prevención de Riesgos' },
@@ -120,6 +131,12 @@ export const ALL_PERMISSIONS = {
     'construction_control:view_reports': { label: 'Ver Reportes de Avance', group: 'Control de Obra' },
     'construction_control:review_protocols': { label: 'Revisar y Aprobar Protocolos', group: 'Control de Obra' },
 
+    // ── Arriendos ────────────────────────────────────────────────────
+    'module_rentals:view': { label: 'Acceder a Arriendos', group: 'Acceso a Módulos' },
+    'rentals:view': { label: 'Ver Arriendos', group: 'Arriendos' },
+    'rentals:manage_parties': { label: 'Gestionar Arrendadores y Clientes', group: 'Arriendos' },
+    'rentals:manage_contracts': { label: 'Gestionar Contratos de Arriendo', group: 'Arriendos' },
+    'rentals:manage_payments': { label: 'Gestionar Pagos de Arriendo', group: 'Arriendos' },
 
 } as const;
 
@@ -140,7 +157,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'module_pagnol:view', 'module_warehouse:view', 'module_bodega:view',
             'module_purchasing:view', 'module_users:view', 'module_safety:view',
             'module_attendance:view', 'module_payments:view', 'module_reports:view',
-            'module_permissions:view', 'module_construction_control:view',
+            'module_permissions:view', 'module_construction_control:view', 'module_dte:view', 'module_work_reports:view',
             // Activos y Stock
             'materials:create', 'materials:view_all', 'materials:edit', 'materials:delete', 'materials:archive',
             'tools:create', 'tools:view_all', 'tools:edit', 'tools:delete', 'tools:checkout', 'tools:return',
@@ -171,6 +188,9 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'attendance:register', 'attendance:edit', 'attendance:view',
             // Reportes
             'reports:view',
+            'work_reports:create', 'work_reports:edit', 'work_reports:sign', 'work_reports:submit',
+            'work_reports:review_operations', 'work_reports:final_approve',
+            'work_reports:view_all', 'work_reports:download_pdf', 'work_reports:send',
             // Control de Obra
             'construction_control:register_progress', 'construction_control:edit_structure',
             'construction_control:view_reports', 'construction_control:review_protocols',
@@ -178,13 +198,16 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'permissions:manage',
             // Pagnol
             'pagnol:enroll_personal',
+            // Arriendos
+            'module_rentals:view', 'rentals:view', 'rentals:manage_parties',
+            'rentals:manage_contracts', 'rentals:manage_payments',
         ],
     },
     'director-faena': {
         label: 'Director de Faena',
         description: 'Responsable técnico y legal de la operación minera (DS 132). Visibilidad total operacional.',
         permissions: [
-            'module_pagnol:view', 'module_warehouse:view', 'module_construction_control:view',
+            'module_pagnol:view', 'module_warehouse:view', 'module_construction_control:view', 'module_work_reports:view',
             'module_safety:view', 'module_attendance:view', 'module_reports:view',
             'module_purchasing:view', 'module_users:view',
             'materials:view_all', 'tools:view_all',
@@ -199,6 +222,9 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'safety_observations:create', 'safety_observations:review',
             'attendance:view', 'attendance:edit',
             'reports:view',
+            'work_reports:create', 'work_reports:edit', 'work_reports:sign', 'work_reports:submit',
+            'work_reports:review_operations', 'work_reports:final_approve',
+            'work_reports:view_all', 'work_reports:download_pdf', 'work_reports:send',
             'construction_control:register_progress', 'construction_control:edit_structure',
             'construction_control:view_reports', 'construction_control:review_protocols',
         ],
@@ -212,7 +238,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'construction_control:view_reports', 'construction_control:review_protocols',
             'module_purchasing:view', 'purchase_requests:create', 'purchase_requests:view_all',
             'module_warehouse:view', 'materials:view_all', 'material_requests:create',
-            'module_reports:view', 'reports:view',
+            'module_reports:view', 'reports:view', 'module_work_reports:view',
+            'work_reports:view_all', 'work_reports:download_pdf',
         ],
     },
     'jefe-terreno': {
@@ -228,6 +255,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'purchase_requests:create',
             'return_requests:create',
             'tools:view_own',
+            'module_work_reports:view', 'work_reports:create', 'work_reports:edit',
+            'work_reports:sign', 'work_reports:submit', 'work_reports:download_pdf',
         ],
     },
     'panolero': {
@@ -248,13 +277,15 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         label: 'Jefe de Finanzas',
         description: 'Gestiona facturas, pagos a proveedores y controla la planilla.',
         permissions: [
+            'module_dte:view',
             'module_payments:view',
             'payments:create', 'payments:view', 'payments:mark_as_paid', 'payments:edit', 'payments:delete',
             'suppliers:view', 'suppliers:edit', 'suppliers:create',
             'module_purchasing:view', 'orders:view_all',
             'finance:manage_purchase_orders',
             'module_attendance:view', 'attendance:view',
-            'module_reports:view', 'reports:view',
+            'module_reports:view', 'reports:view', 'module_work_reports:view',
+            'work_reports:view_all', 'work_reports:download_pdf',
         ],
     },
     'supervisor': {
@@ -268,6 +299,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'material_requests:view_own',
             'purchase_requests:create',
             'return_requests:create',
+            'module_work_reports:view', 'work_reports:create', 'work_reports:edit',
+            'work_reports:sign', 'work_reports:submit', 'work_reports:download_pdf',
         ],
     },
     'apr': {
@@ -302,6 +335,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'module_construction_control:view',
             'construction_control:view_reports',
             'construction_control:review_protocols',
+            'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
         ],
     },
     'contratista': {

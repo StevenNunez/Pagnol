@@ -266,11 +266,11 @@ async function addSignatures(doc: jsPDF, y: number, inspection: SafetyInspection
   await addSignature('Firma Revisor (APR)', inspection.reviewedBy?.signature || null, apr?.name || (inspection.reviewedBy as any)?.name || 'N/A', inspection.reviewedBy?.date || null, rightX);
 }
 
-export async function generateInspectionPDF(inspection: SafetyInspection, supervisor: User, apr: User) {
+export async function generateInspectionPDF(inspection: SafetyInspection, supervisor: User, apr: User, logoUrl?: string) {
   if (!inspection) throw new Error('Datos de la inspección incompletos.');
 
   const doc = new jsPDF();
-  const logo = await getBase64FromUrl('/logo.png');
+  const logo = await getBase64FromUrl(logoUrl || '/logo.png');
 
   addHeader(doc, inspection, logo);
   let y = addInspectionInfo(doc, inspection, supervisor, apr);

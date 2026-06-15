@@ -21,7 +21,10 @@ import {
     Construction,
     ShieldAlert,
     Warehouse,
-    Pickaxe
+    Pickaxe,
+    Receipt,
+    KeyRound,
+    NotebookPen
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Permission } from '@/modules/core/lib/permissions';
@@ -182,6 +185,39 @@ export default function DashboardHub() {
             border: "hover:border-rose-300 dark:hover:border-rose-500/50",
             shadow: "hover:shadow-rose-500/20 dark:hover:shadow-rose-500/10",
             permission: 'safety_checklists:review'
+        },
+        {
+            title: "Facturación DTE",
+            description: "Emisión y gestión de documentos tributarios electrónicos.",
+            icon: Receipt,
+            href: "/dashboard/dte",
+            color: "text-violet-600 dark:text-violet-400",
+            bg: "bg-violet-100 dark:bg-violet-500/10",
+            border: "hover:border-violet-300 dark:hover:border-violet-500/50",
+            shadow: "hover:shadow-violet-500/20 dark:hover:shadow-violet-500/10",
+            permission: 'module_dte:view'
+        },
+        {
+            title: "Módulo de Arriendos",
+            description: "Gestiona arriendos de maquinaria, vehículos y equipos: contratos, pagos y alertas.",
+            icon: KeyRound,
+            href: "/dashboard/rentals",
+            color: "text-teal-600 dark:text-teal-400",
+            bg: "bg-teal-100 dark:bg-teal-500/10",
+            border: "hover:border-teal-300 dark:hover:border-teal-500/50",
+            shadow: "hover:shadow-teal-500/20 dark:hover:shadow-teal-500/10",
+            permission: 'module_rentals:view'
+        },
+        {
+            title: "Reportes de Trabajo",
+            description: "Informes diarios de terreno con fotos, HH, HM, firmas y aprobaciones.",
+            icon: NotebookPen,
+            href: "/dashboard/work-reports",
+            color: "text-orange-600 dark:text-orange-400",
+            bg: "bg-orange-100 dark:bg-orange-500/10",
+            border: "hover:border-orange-300 dark:hover:border-orange-500/50",
+            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
+            permission: 'module_work_reports:view'
         },
     ];
 

@@ -70,7 +70,7 @@ type CompatibleMaterialRequest = MaterialRequest & {
 };
 
 export default function SupervisorRequestPage() {
-  const { materials, addMaterialRequest, requests, isLoading } = useAppState();
+  const { materials, addMaterialRequest, requests } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
@@ -224,6 +224,10 @@ export default function SupervisorRequestPage() {
       toast({ variant: "destructive", title: "Error", description: "Añade materiales y define el área de destino." });
       return;
     }
+    if (cart.some(item => item.quantity <= 0)) {
+      toast({ variant: "destructive", title: "Cantidad inválida", description: "Todos los ítems deben tener cantidad mayor a 0." });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -242,12 +246,9 @@ export default function SupervisorRequestPage() {
     }
   };
 
-  if (isLoading) {
-    return <div className="flex justify-center items-center h-[50vh]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  }
-
   // Helper para el material seleccionado actual
   const currentSelectedMaterial = currentMaterialId ? materialMap.get(currentMaterialId) : null;
+  const hasMaterials = Object.keys(groupedMaterials).length > 0;
 
   return (
     <div className="flex flex-col gap-8 pb-10 fade-in">
@@ -287,7 +288,11 @@ export default function SupervisorRequestPage() {
                         <Command>
                           <CommandInput placeholder="Buscar por nombre..." />
                           <CommandList>
-                            <CommandEmpty>No encontrado.</CommandEmpty>
+                            <CommandEmpty>
+                              {!hasMaterials
+                                ? "Sin materiales en bodega. Contacta al administrador."
+                                : "Material no encontrado."}
+                            </CommandEmpty>
                             {Object.entries(groupedMaterials).map(([category, items]) => (
                                 <CommandGroup key={category} heading={category}>
                                     {items.map(m => (

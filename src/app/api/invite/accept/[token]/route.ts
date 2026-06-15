@@ -103,6 +103,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
   } catch (error: any) {
     console.error('[Invite Accept]', error);
-    return NextResponse.json({ error: error.message || 'Error interno.' }, { status: 500 });
+    return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }

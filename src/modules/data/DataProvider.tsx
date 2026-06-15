@@ -2,14 +2,13 @@
 
 "use client";
 import React, {
-    createContext,
     useReducer,
     useCallback,
-    useContext,
     useEffect,
     useState,
     useMemo,
 } from 'react';
+import { createContainer } from 'react-tracked';
 import { supabase } from '@/modules/core/lib/supabase';
 import {
     User,
@@ -43,6 +42,8 @@ import * as maintenanceMutations from './mutations/maintenanceMutations';
 import * as eaMutations from './mutations/eaMutations';
 import * as protocolMutations from './mutations/protocolMutations';
 import * as contractMutations from './mutations/contractMutations';
+import * as rentalMutations from './mutations/rentalMutations';
+import * as workReportMutations from './mutations/workReportMutations';
 import { WORK_ITEMS_SEED } from '@/lib/work-items-seed';
 
 const initialState: AppDataState = {
@@ -81,6 +82,11 @@ const initialState: AppDataState = {
     shiftSchedules: [],
     contracts: [],
     contractWorkers: [],
+    rentalParties: [],
+    rentalContracts: [],
+    rentalAssets: [],
+    rentalPayments: [],
+    workReports: [],
 };
 
 
@@ -88,6 +94,12 @@ const appReducer = (state: AppDataState, action: AppStateAction): AppDataState =
     switch (action.type) {
         case 'SET_DATA':
             return { ...state, [action.payload.collection]: action.payload.data };
+        case 'SET_ALL':
+            // Batch update: una sola transición de estado para muchas colecciones.
+            // Conserva las referencias de los arrays no modificados, de modo que el
+            // tracking por propiedad (react-tracked) solo re-renderice los consumidores
+            // de las colecciones que realmente cambiaron.
+            return { ...state, ...action.payload };
         case 'SET_ROLES':
             return { ...state, roles: action.payload };
         case 'SET_PLANS':
@@ -99,13 +111,9 @@ const appReducer = (state: AppDataState, action: AppStateAction): AppDataState =
     }
 };
 
-// --- Context Definition ---
+// --- Provider value (custom hook consumed by react-tracked container) ---
 
-export const AppStateContext = createContext<AppStateContextType | undefined>(
-    undefined
-);
-
-export function DataProvider({ children }: { children: React.ReactNode }) {
+function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAction>] {
     const { user, getTenantId, can, authLoading } = useAuth();
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [refreshVersion, setRefreshVersion] = useState(0);
@@ -128,6 +136,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             legalRepresentative: t.legal_representative,
             legalRepresentativeRut: t.legal_representative_rut,
             address: t.address,
+            logoUrl: t.logo_url ?? undefined,
         });
 
         supabase.from('tenants').select('*').eq('id', tenantId).single().then(({ data: t }) => {
@@ -164,15 +173,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const supplierPaymentsData = useSupabaseCollection('supplier_payments', { tenantId, mapper: mappers.supplier_payments, orderBy: { column: 'due_date', ascending: true } });
     const salaryAdvancesData = useSupabaseCollection('salary_advances', { tenantId, mapper: mappers.salary_advances, orderBy: { column: 'requested_at', ascending: false } });
     const attendanceLogsData = useSupabaseCollection('attendance_logs', { tenantId, mapper: mappers.attendance_logs, orderBy: { column: 'timestamp', ascending: false } });
-    const assignedChecklistsData = useSupabaseCollection('assigned_checklists', { tenantId, mapper: mappers.assigned_checklists, orderBy: { column: 'created_at', ascending: false } });
+    // Proyección sin evidence_photos (arrays base64): se cargan bajo demanda en
+    // el detalle/revisión (useRecordFields). Requiere la migración 20260612000004
+    // (que añade template_title/supervisor_id/assigner_id/assigner_name/items). (S6)
+    const assignedChecklistsData = useSupabaseCollection('assigned_checklists', { tenantId, mapper: mappers.assigned_checklists, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, template_id, template_title, supervisor_id, assigner_id, assigner_name, status, area, items, observations, performed_by, completed_at, reviewed_by, rejection_notes, created_at' });
     const safetyInspectionsData = useSupabaseCollection('safety_inspections', { tenantId, mapper: mappers.safety_inspections, orderBy: { column: 'created_at', ascending: false } });
     const checklistTemplatesData = useSupabaseCollection('checklist_templates', { tenantId, mapper: mappers.checklist_templates });
-    const behaviorObservationsData = useSupabaseCollection('behavior_observations', { tenantId, mapper: mappers.behavior_observations, orderBy: { column: 'created_at', ascending: false } });
+    // Proyección sin firmas/foto (base64): se cargan bajo demanda en el detalle
+    // (useRecordFields). Requiere la migración 20260612000004 (worker_id/worker_name). (S6)
+    const behaviorObservationsData = useSupabaseCollection('behavior_observations', { tenantId, mapper: mappers.behavior_observations, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, obra, worker_id, worker_name, worker_rut, observation_date, items, risk_level, feedback, observer_id, observer_name, created_at' });
     const stockMovementsData = useSupabaseCollection('stock_movements', { tenantId, mapper: mappers.stock_movements, orderBy: { column: 'date', ascending: false } });
     const workItemsData = useSupabaseCollection('work_items', { tenantId, mapper: mappers.work_items, orderBy: { column: 'path', ascending: true } });
     const progressLogsData = useSupabaseCollection('progress_logs', { tenantId, mapper: mappers.progress_logs, orderBy: { column: 'date', ascending: false } });
     const paymentStatesData = useSupabaseCollection('payment_states', { tenantId, mapper: mappers.payment_states, orderBy: { column: 'created_at', ascending: false } });
-    const dailyTalksData = useSupabaseCollection('daily_talks', { tenantId, mapper: mappers.daily_talks, orderBy: { column: 'created_at', ascending: false } });
+    // Proyección sin firma/foto (base64 pesado): se cargan bajo demanda en el
+    // detalle (useRecordFields). Requiere la migración 20260612000004 (que añade
+    // obra/fecha al esquema). (S6)
+    const dailyTalksData = useSupabaseCollection('daily_talks', { tenantId, mapper: mappers.daily_talks, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, obra, fecha, expositor_id, expositor_name, temas, asistentes, created_at' });
     const maintenanceOrdersData = useSupabaseCollection('maintenance_orders', { tenantId, mapper: mappers.maintenance_orders, orderBy: { column: 'created_at', ascending: false } });
     const maintenanceLogsData = useSupabaseCollection('maintenance_logs', { tenantId, mapper: mappers.maintenance_logs, orderBy: { column: 'timestamp', ascending: false } });
     const eaDocumentsData = useSupabaseCollection('ea_documents', { tenantId, mapper: mappers.ea_documents, orderBy: { column: 'generated_at', ascending: false } });
@@ -181,6 +198,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const shiftSchedulesData = useSupabaseCollection('shift_schedules', { tenantId, mapper: mappers.shift_schedules, orderBy: { column: 'created_at', ascending: true } });
     const contractsData = useSupabaseCollection('contracts', { tenantId, mapper: mappers.contracts, orderBy: { column: 'created_at', ascending: false } });
     const contractWorkersData = useSupabaseCollection('contract_workers', { tenantId, mapper: mappers.contract_workers });
+    const rentalPartiesData = useSupabaseCollection('rental_parties', { tenantId, mapper: mappers.rental_parties, orderBy: { column: 'name', ascending: true } });
+    const rentalContractsData = useSupabaseCollection('rental_contracts', { tenantId, mapper: mappers.rental_contracts, orderBy: { column: 'created_at', ascending: false } });
+    const rentalAssetsData = useSupabaseCollection('rental_assets', { tenantId, mapper: mappers.rental_assets, orderBy: { column: 'created_at', ascending: false } });
+    const rentalPaymentsData = useSupabaseCollection('rental_payments', { tenantId, mapper: mappers.rental_payments, orderBy: { column: 'due_date', ascending: true } });
+    const workReportsData = useSupabaseCollection('work_reports', { tenantId, mapper: mappers.work_reports, orderBy: { column: 'created_at', ascending: false } });
 
     // Dynamic / specialized data
     const rolesArray = useSupabaseCollection<any>('roles', { enabled: !!tenantId });
@@ -203,7 +225,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 // Set flag BEFORE starting to avoid race conditions with quick re-renders
                 sessionStorage.setItem(seedFlag, 'true');
 
-                console.log(`Seeding work items for tenant ${tenantId}...`);
                 try {
                     const dataToInsert = WORK_ITEMS_SEED.map((item: any) => ({
                         id: item.id,
@@ -225,7 +246,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                     const { error } = await supabase.from('work_items').upsert(dataToInsert, { onConflict: 'id' });
                     if (error) throw error;
 
-                    console.log("Work items seeded successfully.");
                 } catch (error: any) {
                     console.warn("Work items seed skipped or failed:", error?.message || error);
                     // DON'T remove flag — keep it set to prevent infinite retry loop
@@ -238,62 +258,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
     }, [tenantId, workItemsData.length, can, user]);
 
-    // Seed default categories if the collection is empty for the tenant
-    useEffect(() => {
-        const seedCategories = async () => {
-            // Check if data is loaded, is an empty array, and user has permission
-            if (tenantId && Array.isArray(materialCategoriesData) && materialCategoriesData.length === 0 && can('categories:create')) {
-                console.log(`Seeding material categories for tenant ${tenantId}...`);
-
-                // Use a session flag to prevent re-seeding during hot-reloads in development
-                const seedFlag = `seeded_categories_${tenantId}`;
-                if (sessionStorage.getItem(seedFlag)) {
-                    return;
-                }
-
-                try {
-                    const defaultCategories = [
-                        'EPP (Elementos de Protección Personal)',
-                        'Herramientas Manuales',
-                        'Herramientas Eléctricas / Neumáticas',
-                        'Equipos de Medición y Control',
-                        'Activos TI',
-                        'Activos Mayores (Maquinaria)',
-                        'Materiales e Insumos',
-                        'Otros Activos'
-                    ];
-
-                    const dataToInsert = defaultCategories.map(name => ({
-                        name,
-                        tenant_id: tenantId
-                    }));
-
-                    const { error } = await supabase.from('material_categories').insert(dataToInsert);
-                    if (error) throw error;
-
-                    sessionStorage.setItem(seedFlag, 'true'); // Set flag after successful seeding
-                    console.log("Material categories seeded successfully.");
-                    toast({
-                        title: 'Categorías Creadas',
-                        description: 'Se han añadido las categorías por defecto para organizar tus activos.'
-                    });
-                } catch (error: any) {
-                    console.error("Error seeding material categories:", error?.message, error?.code, error?.details);
-                    toast({
-                        variant: 'destructive',
-                        title: 'Error al Crear Categorías',
-                        description: 'No se pudieron crear las categorías por defecto.'
-                    });
-                }
-            }
-        };
-
-        // Ensure tenantId is available and data has been fetched
-        if (tenantId && materialCategoriesData !== undefined) {
-            seedCategories();
-        }
-    }, [tenantId, materialCategoriesData, can, toast]);
-
+    // Las categorías por defecto ahora las siembra un trigger de Postgres en el
+    // INSERT de tenants (migración 20260612000006). Ya no se siembran desde el cliente.
 
     useEffect(() => {
         // Muestra cargando si la autenticación está en proceso o si no hay usuario aún
@@ -301,9 +267,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             dispatch({ type: 'SET_LOADING', payload: true });
             return;
         }
-
-        // DEBUG: Log para diagnóstico
-        console.log('[DataProvider] User:', user?.name, '| Role:', user?.role, '| TenantId:', tenantId, '| AuthLoading:', authLoading);
 
         // Si el usuario es super-admin, puede o no tener un tenant seleccionado.
         if (user.role === 'super-admin' && tenantId === null) {
@@ -330,6 +293,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
             protocolTemplatesData, protocolsData,
             shiftSchedulesData, contractsData, contractWorkersData,
+            rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData,
+            workReportsData,
         ].every(data => data !== undefined);
 
         if (!allDataLoaded) {
@@ -352,46 +317,58 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             } as WorkItem));
         }
 
-        dispatch({ type: 'SET_DATA', payload: { collection: "users", data: processData(usersData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "materials", data: processData(materialsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "tools", data: processData(toolsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "toolLogs", data: processData(toolLogsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "requests", data: processData(requestsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "returnRequests", data: processData(returnRequestsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "purchaseRequests", data: processData(purchaseRequestsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "suppliers", data: processData(suppliersData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "materialCategories", data: processData(materialCategoriesData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "units", data: processData(unitsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "purchaseLots", data: processData(purchaseLotsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "purchaseOrders", data: processData(purchaseOrdersData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "supplierPayments", data: processData(supplierPaymentsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "salaryAdvances", data: processData(salaryAdvancesData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "attendanceLogs", data: processData(attendanceLogsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "assignedChecklists", data: processData(assignedChecklistsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "safetyInspections", data: processData(safetyInspectionsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "checklistTemplates", data: processData(checklistTemplatesData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "behaviorObservations", data: processData(behaviorObservationsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "stockMovements", data: processData(stockMovementsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "workItems", data: processedWorkItems } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "progressLogs", data: processData(progressLogsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "paymentStates", data: processData(paymentStatesData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "dailyTalks", data: processData(dailyTalksData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "maintenanceOrders", data: processData(maintenanceOrdersData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "maintenanceLogs", data: processData(maintenanceLogsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "eaDocuments", data: processData(eaDocumentsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "protocolTemplates", data: processData(protocolTemplatesData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "protocols", data: processData(protocolsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "shiftSchedules", data: processData(shiftSchedulesData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "contracts", data: processData(contractsData) } });
-        dispatch({ type: 'SET_DATA', payload: { collection: "contractWorkers", data: processData(contractWorkersData) } });
-
         const rolesToUse = dynamicRolesData && Object.keys(dynamicRolesData).length > 0 ? dynamicRolesData : ROLES_DEFAULT;
-        dispatch({ type: "SET_ROLES", payload: rolesToUse });
-
         const plansToUse = subscriptionPlansData && Object.keys(subscriptionPlansData).length > 0 ? subscriptionPlansData : PLANS;
-        dispatch({ type: "SET_PLANS", payload: plansToUse });
 
-        dispatch({ type: "SET_LOADING", payload: false });
+        // Una sola transición de estado en lugar de 34 dispatches secuenciales.
+        // processData devuelve la misma referencia de array para las colecciones sin
+        // cambios, por lo que el reducer conserva su identidad y el tracking por
+        // propiedad evita re-renderizar consumidores no afectados.
+        dispatch({
+            type: 'SET_ALL',
+            payload: {
+                users: processData(usersData),
+                materials: processData(materialsData),
+                tools: processData(toolsData),
+                toolLogs: processData(toolLogsData),
+                requests: processData(requestsData),
+                returnRequests: processData(returnRequestsData),
+                purchaseRequests: processData(purchaseRequestsData),
+                suppliers: processData(suppliersData),
+                materialCategories: processData(materialCategoriesData),
+                units: processData(unitsData),
+                purchaseLots: processData(purchaseLotsData),
+                purchaseOrders: processData(purchaseOrdersData),
+                supplierPayments: processData(supplierPaymentsData),
+                salaryAdvances: processData(salaryAdvancesData),
+                attendanceLogs: processData(attendanceLogsData),
+                assignedChecklists: processData(assignedChecklistsData),
+                safetyInspections: processData(safetyInspectionsData),
+                checklistTemplates: processData(checklistTemplatesData),
+                behaviorObservations: processData(behaviorObservationsData),
+                stockMovements: processData(stockMovementsData),
+                workItems: processedWorkItems,
+                progressLogs: processData(progressLogsData),
+                paymentStates: processData(paymentStatesData),
+                dailyTalks: processData(dailyTalksData),
+                maintenanceOrders: processData(maintenanceOrdersData),
+                maintenanceLogs: processData(maintenanceLogsData),
+                eaDocuments: processData(eaDocumentsData),
+                protocolTemplates: processData(protocolTemplatesData),
+                protocols: processData(protocolsData),
+                shiftSchedules: processData(shiftSchedulesData),
+                contracts: processData(contractsData),
+                contractWorkers: processData(contractWorkersData),
+                rentalParties: processData(rentalPartiesData),
+                rentalContracts: processData(rentalContractsData),
+                rentalAssets: processData(rentalAssetsData),
+                rentalPayments: processData(rentalPaymentsData),
+                workReports: processData(workReportsData),
+                roles: rolesToUse,
+                subscriptionPlans: plansToUse,
+                isLoading: false,
+            },
+        });
 
     }, [
         authLoading, user, usersData, materialsData, toolsData, toolLogsData, requestsData,
@@ -402,9 +379,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         subscriptionPlansData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
         protocolTemplatesData, protocolsData,
-        shiftSchedulesData, contractsData, contractWorkersData, refreshVersion
+        shiftSchedulesData, contractsData, contractWorkersData,
+        rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData, workReportsData, refreshVersion
     ]);
 
+
+    // Safety net: if isLoading stays true for more than 12 seconds, force it false.
+    // This prevents the UI from being permanently blocked by auth or network delays.
+    useEffect(() => {
+        if (!state.isLoading) return;
+        const timer = setTimeout(() => {
+            console.warn('[DataProvider] isLoading timeout — forcing false. Check auth/network.');
+            dispatch({ type: 'SET_LOADING', payload: false });
+        }, 12000);
+        return () => clearTimeout(timer);
+    }, [state.isLoading]);
 
     const notify = useCallback((message: string, variant: "default" | "destructive" | "success" = "default") => {
         toast({
@@ -415,9 +404,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
     }, [toast]);
 
-    const bindContext = <T extends any[], R>(fn: (...args: [...T, { user: any; tenantId: string | null; db: any }]) => R) => {
+    const bindContext = <T extends any[], R>(fn: (...args: [...T, { user: User | null; tenantId: string | null }]) => R) => {
         return (...args: T): R => {
-            const context = { user, tenantId, db: null }; // Passing null for db as it's not needed by our new migrations
+            const context = { user, tenantId };
             if (context.user === undefined) {
                 throw new Error("Context for mutation is not yet available.");
             }
@@ -546,6 +535,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         updateShiftSchedule: bindContext(contractMutations.updateShiftSchedule),
         deleteShiftSchedule: bindContext(contractMutations.deleteShiftSchedule),
 
+        // Arriendos (Rentals)
+        addRentalParty: bindContext(rentalMutations.addRentalParty),
+        updateRentalParty: bindContext(rentalMutations.updateRentalParty),
+        deleteRentalParty: bindContext(rentalMutations.deleteRentalParty),
+        addRentalContract: bindContext(rentalMutations.addRentalContract),
+        updateRentalContract: bindContext(rentalMutations.updateRentalContract),
+        deleteRentalContract: bindContext(rentalMutations.deleteRentalContract),
+        addRentalAsset: bindContext(rentalMutations.addRentalAsset),
+        updateRentalAsset: bindContext(rentalMutations.updateRentalAsset),
+        deleteRentalAsset: bindContext(rentalMutations.deleteRentalAsset),
+        addRentalPayment: bindContext(rentalMutations.addRentalPayment),
+        generateRentalSchedule: bindContext(rentalMutations.generateRentalSchedule),
+        markRentalPaymentPaid: bindContext(rentalMutations.markRentalPaymentPaid),
+        updateRentalPayment: bindContext(rentalMutations.updateRentalPayment),
+        deleteRentalPayment: bindContext(rentalMutations.deleteRentalPayment),
+
+        // Reportes de Trabajo
+        createWorkReport: bindContext(workReportMutations.createWorkReport),
+        updateWorkReport: bindContext(workReportMutations.updateWorkReport),
+        transitionWorkReport: bindContext(workReportMutations.transitionWorkReport),
+        uploadWorkReportPhoto: bindContext(workReportMutations.uploadWorkReportPhoto),
+        deleteWorkReportPhoto: bindContext(workReportMutations.deleteWorkReportPhoto),
+
         // Protocols
         addProtocolTemplate: bindContext(protocolMutations.addProtocolTemplate),
         deleteProtocolTemplate: bindContext(protocolMutations.deleteProtocolTemplate),
@@ -557,6 +569,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         deleteProtocol: bindContext(protocolMutations.deleteProtocol),
     }), [user, tenantId]);
 
+    const refreshData = useCallback((_collectionName?: keyof AppDataState) => {
+        setRefreshVersion(v => v + 1);
+        // Future optimization: allow refreshing specific collections
+    }, []);
+
     const value: AppStateContextType = React.useMemo(() => ({
         ...state,
         isLoading: state.isLoading,
@@ -565,14 +582,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         can,
         notify,
         currentTenant,
-        refreshData: (collectionName?: keyof AppDataState) => {
-            setRefreshVersion(v => v + 1);
-            if (collectionName) {
-                // Future optimization: allow refreshing specific collections
-            }
-        },
+        refreshData,
         ...functions,
-    }), [state, can, notify, currentTenant, functions]);
+    }), [state, can, notify, currentTenant, refreshData, functions]);
 
-    return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
+    return [value, dispatch] as const;
 }
+
+// react-tracked container: las propiedades del estado se rastrean por acceso
+// mediante un Proxy, de modo que cada consumidor de useAppState() solo se
+// re-renderiza cuando cambia el slice que realmente lee (no ante cualquier
+// cambio de cualquier colección).
+const { Provider, useTrackedState } = createContainer(useAppValue);
+
+export const DataProvider = Provider;
+export const useAppStateTracked = useTrackedState;

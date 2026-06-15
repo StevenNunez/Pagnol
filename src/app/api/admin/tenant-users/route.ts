@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
             .eq("tenant_id", tenantId)
             .is("deleted_at", null);
 
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) { console.error('[admin/tenant-users]', error.message); return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 }); }
         return NextResponse.json({ count: count ?? 0 });
     }
 
@@ -61,6 +61,6 @@ export async function GET(req: NextRequest) {
         .is("deleted_at", null)
         .order("name");
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { console.error('[admin/tenant-users]', error.message); return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 }); }
     return NextResponse.json({ users: data ?? [] });
 }

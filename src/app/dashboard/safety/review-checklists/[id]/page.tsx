@@ -4,6 +4,7 @@ import React, { useMemo, useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
+import { useRecordFields } from "@/modules/core/hooks/use-record-fields";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,17 +30,25 @@ const formatDate = (date: Date | string | undefined | null, includeTime = false)
 export default function AprReviewChecklistPage() {
     const params = useParams();
     const router = useRouter();
-    const { assignedChecklists, users, isLoading, reviewAssignedChecklist } = useAppState();
+    const { assignedChecklists, users, isLoading, reviewAssignedChecklist, currentTenant } = useAppState();
     const { user } = useAuth();
     const { toast } = useToast();
 
     const signaturePadRef = useRef<any>(null);
     const checklistId = params.id as string;
 
+    // evidence_photos (arrays base64) ya no viajan en el collection (S6); se
+    // cargan bajo demanda y se fusionan para display y generación de PDF.
+    const media = useRecordFields<{ evidence_photos: string[] | null }>(
+        'assigned_checklists', checklistId, 'evidence_photos'
+    );
+
     const checklist = useMemo(() => {
         if (!assignedChecklists) return null;
-        return assignedChecklists.find((c: AssignedSafetyTask) => c.id === checklistId) || null;
-    }, [assignedChecklists, checklistId]);
+        const base = assignedChecklists.find((c: AssignedSafetyTask) => c.id === checklistId) || null;
+        if (!base) return null;
+        return { ...base, evidencePhotos: media?.evidence_photos ?? base.evidencePhotos };
+    }, [assignedChecklists, checklistId, media]);
 
     const [rejectionNotes, setRejectionNotes] = useState("");
     const [aprSignature, setAprSignature] = useState<string | null>(null);
@@ -98,7 +107,7 @@ export default function AprReviewChecklistPage() {
     const handleDownloadPDF = async () => {
         if (!checklist) return;
         try {
-            await generateChecklistPDF(checklist, users, supervisor, aprUser);
+            await generateChecklistPDF(checklist, users, supervisor, aprUser, currentTenant?.logoUrl);
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error al generar PDF', description: error.message });
         }

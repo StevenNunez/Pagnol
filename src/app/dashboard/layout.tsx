@@ -76,7 +76,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     setIsClient(true);
-    console.log('[DashboardLayout] authLoading:', authLoading, '| user:', !!user, '| path:', pathname);
 
     let timer: NodeJS.Timeout;
     if (authLoading && !user) {
@@ -88,7 +87,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     if (!authLoading && !user) {
-      console.log('[DashboardLayout] No user found, redirecting to /login');
       router.replace('/login');
     }
 

@@ -33,7 +33,7 @@ const STATUS_CONFIG: Record<PaymentState['status'], { label: string; className: 
 
 export default function PaymentHistoryPage() {
     const router = useRouter();
-    const { paymentStates } = useAppState();
+    const { paymentStates, currentTenant } = useAppState();
     const { user } = useAuth();
 
     const myPaymentStates = useMemo(() => {
@@ -52,7 +52,7 @@ export default function PaymentHistoryPage() {
 
     const handleDownload = async (ep: PaymentState) => {
         if (!user) return;
-        await generateEstadoDePagoPDF(ep.id, user.name, ep.totalValue, ep.earnedValue, ep.items);
+        await generateEstadoDePagoPDF(ep.id, user.name, ep.totalValue, ep.earnedValue, ep.items, currentTenant?.logoUrl);
     };
 
     return (

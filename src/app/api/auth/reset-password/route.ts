@@ -1,26 +1,16 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import nodemailer from 'nodemailer';
-
-// Lazily initialize admin client to avoid module-load failures if env vars are missing
-function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error('Supabase admin env vars missing');
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
-
-// Anon client for fallback resetPasswordForEmail
-function getAnonClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(url, key);
-}
+import { supabase, getSupabaseAdmin } from '@/modules/core/lib/supabase';
+import { sendEmail } from '@/modules/core/lib/email';
+import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 export async function POST(request: Request) {
   let email = '';
 
   try {
+    if (!(await rateLimitByIp(request, 'reset-password', 5, 3600))) {
+      return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
+    }
+
     const body = await request.json();
     email = (body.email ?? '').toLowerCase().trim();
 
@@ -35,7 +25,7 @@ export async function POST(request: Request) {
     let customEmailSent = false;
 
     try {
-      const admin = getAdminClient();
+      const admin = getSupabaseAdmin();
       const { data, error: linkError } = await admin.auth.admin.generateLink({
         type: 'recovery',
         email,
@@ -49,9 +39,7 @@ export async function POST(request: Request) {
         const actionLink = data.properties.action_link;
         const firstName = (data.user?.user_metadata?.name as string | undefined)?.split(' ')[0] ?? 'Usuario';
         await sendResetEmail({ email, firstName, actionLink });
-        customEmailSent = true;
-        console.log('[ResetPassword] Email sent via custom SMTP to', email);
-      }
+        customEmailSent = true;      }
     } catch (smtpErr: any) {
       console.error('[ResetPassword] Custom SMTP failed:', smtpErr.message);
     }
@@ -59,10 +47,7 @@ export async function POST(request: Request) {
     // ── Strategy 2: fallback to Supabase email ────────────────────────────────
     if (!customEmailSent) {
       try {
-        const anonClient = getAnonClient();
-        await anonClient.auth.resetPasswordForEmail(email, { redirectTo });
-        console.log('[ResetPassword] Fallback Supabase email triggered for', email);
-      } catch (fallbackErr: any) {
+        await supabase.auth.resetPasswordForEmail(email, { redirectTo });      } catch (fallbackErr: any) {
         // Supabase may return "rate limit exceeded" or similar — log but don't expose
         console.warn('[ResetPassword] Supabase fallback error:', fallbackErr.message);
       }
@@ -86,31 +71,10 @@ async function sendResetEmail({
   firstName: string;
   actionLink: string;
 }) {
-  const host = process.env.EMAIL_HOST;
-  const port = Number(process.env.EMAIL_PORT) || 465;
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  const fromEmail = process.env.EMAIL_FROM || 'hola@teolabs.app';
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
   const year = new Date().getFullYear();
 
-  if (!host || !user || !pass) {
-    throw new Error('SMTP env vars (EMAIL_HOST / EMAIL_USER / EMAIL_PASS) not configured');
-  }
-
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: { user, pass },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
-
-  await transporter.sendMail({
-    from: `"PAGNOL" <${fromEmail}>`,
+  await sendEmail({
     to: email,
     subject: 'Recupera tu acceso a Pagnol',
     headers: { Importance: 'high' },

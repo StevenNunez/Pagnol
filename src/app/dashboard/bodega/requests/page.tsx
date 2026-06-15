@@ -2,7 +2,9 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
+import { EmptyState } from "@/components/empty-state";
+import { LoadingState } from "@/components/loading-state";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import {
   Card,
@@ -47,11 +49,11 @@ type CompatibleMaterialRequest = MaterialRequest & {
 const StatusBadge = ({ status }: { status: Status }) => {
   switch (status) {
     case "pending":
-      return <Badge variant="secondary" className="bg-yellow-500 hover:bg-yellow-600 text-white border-none"><Clock className="mr-1 h-3 w-3" /> Pendiente</Badge>;
+      return <Badge variant="outline" className="gap-1 border-warning/30 bg-warning-subtle text-warning-subtle-foreground"><Clock className="h-3 w-3" /> Pendiente</Badge>;
     case "approved":
-      return <Badge className="bg-green-600 hover:bg-green-700 text-white border-none"><Check className="mr-1 h-3 w-3" /> Aprobado</Badge>;
+      return <Badge variant="outline" className="gap-1 border-success/30 bg-success-subtle text-success-subtle-foreground"><Check className="h-3 w-3" /> Aprobado</Badge>;
     case "rejected":
-      return <Badge variant="destructive" className="border-none"><X className="mr-1 h-3 w-3" /> Rechazado</Badge>;
+      return <Badge variant="destructive" className="gap-1 border-none"><X className="h-3 w-3" /> Rechazado</Badge>;
     default:
       return <Badge variant="outline">Desconocido</Badge>;
   }
@@ -82,9 +84,9 @@ const RequestItemsList = ({ req, materialMap }: { req: CompatibleMaterialRequest
             {material?.class && (
               <Badge variant="outline" className={cn(
                 "text-[10px] h-4 px-1 shrink-0 font-bold",
-                material.class === 'A' && "border-red-300 text-red-600 bg-red-50",
-                material.class === 'B' && "border-yellow-300 text-yellow-600 bg-yellow-50",
-                material.class === 'C' && "border-green-300 text-green-600 bg-green-50",
+                material.class === 'A' && "border-destructive/30 text-destructive bg-destructive/10",
+                material.class === 'B' && "border-warning/30 text-warning-subtle-foreground bg-warning-subtle",
+                material.class === 'C' && "border-success/30 text-success-subtle-foreground bg-success-subtle",
               )}>
                 Clase {material.class}
               </Badge>
@@ -222,7 +224,7 @@ export default function ManageMaterialRequestsPage() {
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8" disabled={isProcessing}>
+                <Button size="sm" className="bg-success text-success-foreground hover:bg-success/90 h-8" disabled={isProcessing}>
                   Aprobar
                 </Button>
               </AlertDialogTrigger>
@@ -233,7 +235,7 @@ export default function ManageMaterialRequestsPage() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => handleStatusUpdate(req.id, "approved")} className="bg-green-600 hover:bg-green-700">Confirmar y Descontar</AlertDialogAction>
+                  <AlertDialogAction onClick={() => handleStatusUpdate(req.id, "approved")} className="bg-success text-success-foreground hover:bg-success/90">Confirmar y Descontar</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -244,12 +246,10 @@ export default function ManageMaterialRequestsPage() {
   };
   
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Gestión de Solicitudes de Materiales"
-        description="Aprueba o rechaza las solicitudes de material de los supervisores."
-      />
-
+    <PageShell
+      title="Gestión de Solicitudes de Materiales"
+      description="Aprueba o rechaza las solicitudes de material de los supervisores."
+    >
       <Card className="border-l-4 border-l-primary shadow-sm">
         <CardHeader className="pb-3 border-b">
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -262,19 +262,19 @@ export default function ManageMaterialRequestsPage() {
         <CardContent className="pt-4">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Status)} className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-4 p-1 bg-muted rounded-lg">
-              <TabsTrigger value="pending" className="rounded-md data-[state=active]:bg-card data-[state=active]:text-yellow-600 data-[state=active]:shadow-sm gap-2">
+              <TabsTrigger value="pending" className="rounded-lg data-[state=active]:bg-card data-[state=active]:text-warning data-[state=active]:shadow-sm gap-2">
                 Pendientes
                 {pendingRequests.length > 0 && (
-                  <Badge className="bg-yellow-500 text-white text-[10px] h-4 px-1.5 font-bold">{pendingRequests.length}</Badge>
+                  <Badge className="bg-warning text-warning-foreground text-[10px] h-4 px-1.5 font-bold">{pendingRequests.length}</Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="approved" className="rounded-md data-[state=active]:bg-card data-[state=active]:text-green-600 data-[state=active]:shadow-sm gap-2">
+              <TabsTrigger value="approved" className="rounded-lg data-[state=active]:bg-card data-[state=active]:text-success data-[state=active]:shadow-sm gap-2">
                 Aprobadas
                 {approvedRequests.length > 0 && (
                   <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{approvedRequests.length}</Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="rejected" className="rounded-md data-[state=active]:bg-card data-[state=active]:text-red-600 data-[state=active]:shadow-sm gap-2">
+              <TabsTrigger value="rejected" className="rounded-lg data-[state=active]:bg-card data-[state=active]:text-destructive data-[state=active]:shadow-sm gap-2">
                 Rechazadas
                 {rejectedRequests.length > 0 && (
                   <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{rejectedRequests.length}</Badge>
@@ -285,7 +285,7 @@ export default function ManageMaterialRequestsPage() {
             {/* Tab Pendientes */}
             <TabsContent value="pending">
               {isLoading ? (
-                <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+                <LoadingState />
               ) : pendingRequests.length > 0 ? (
                 <ScrollArea className="h-[600px] pr-4">
                   <ul className="space-y-3 pt-2">
@@ -295,11 +295,11 @@ export default function ManageMaterialRequestsPage() {
                   </ul>
                 </ScrollArea>
               ) : (
-                <div className="flex flex-col items-center justify-center p-10 text-muted-foreground border-2 border-dashed rounded-xl bg-muted/30">
-                  <Check className="h-12 w-12 mb-3 text-green-500 opacity-50" />
-                  <p className="font-medium">¡Todo al día!</p>
-                  <p className="text-sm mt-1">No hay solicitudes pendientes.</p>
-                </div>
+                <EmptyState
+                  icon={<Check size={24} className="text-success" />}
+                  title="¡Todo al día!"
+                  description="No hay solicitudes pendientes."
+                />
               )}
             </TabsContent>
 
@@ -328,9 +328,10 @@ export default function ManageMaterialRequestsPage() {
                         </div>
                       ))
                     ) : (
-                      <div className="text-center py-12 text-muted-foreground">
-                        No hay solicitudes {status === "approved" ? "aprobadas" : "rechazadas"}.
-                      </div>
+                      <EmptyState
+                        className="border-0 bg-transparent"
+                        title={`No hay solicitudes ${status === "approved" ? "aprobadas" : "rechazadas"}`}
+                      />
                     )}
                   </div>
                 </ScrollArea>
@@ -339,7 +340,7 @@ export default function ManageMaterialRequestsPage() {
           </Tabs>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }
 

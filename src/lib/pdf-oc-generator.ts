@@ -29,6 +29,7 @@ interface OCData {
   paymentTerms: string;
   createdByName: string;
   cotizacion?: string;
+  logoUrl?: string;
 }
 
 // Extensión de tipos para jsPDF si es necesario
@@ -82,7 +83,7 @@ export async function generateOCPDF(data: OCData): Promise<{ blob: Blob; filenam
   let y = MARGIN;
 
   // Carga de Logo
-  const logoBase64 = await getBase64FromUrl("/logo.png");
+  const logoBase64 = await getBase64FromUrl(data.logoUrl || "/logo.png");
 
   // 2. HEADER
   // Info Empresa (Izquierda)

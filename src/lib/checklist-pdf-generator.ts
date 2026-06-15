@@ -151,12 +151,12 @@ function addChecklistInfo(doc: jsPDF, checklist: AssignedSafetyTask, supervisor?
   return y + info.length * LINE_HEIGHT + 6;
 }
 
-export async function generateChecklistPDF(checklist: AssignedSafetyTask, users: User[], supervisor?: User, apr?: User) {
+export async function generateChecklistPDF(checklist: AssignedSafetyTask, users: User[], supervisor?: User, apr?: User, logoUrl?: string) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  const logo = await getBase64FromUrl('/logo.png');
+  const logo = await getBase64FromUrl(logoUrl || '/logo.png');
 
   addHeader(doc, checklist, logo);
   let y = addChecklistInfo(doc, checklist, supervisor, apr);

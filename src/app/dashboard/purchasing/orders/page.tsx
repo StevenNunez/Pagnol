@@ -173,7 +173,7 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
 // --- Componente Principal ---
 
 export default function OrdersPage() {
-    const { purchaseOrders, suppliers, users, cancelPurchaseOrder, archiveLot } = useAppState();
+    const { purchaseOrders, suppliers, users, cancelPurchaseOrder, archiveLot, currentTenant } = useAppState();
     const { batchedLots } = useLots();
     const { toast } = useToast();
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
@@ -206,7 +206,7 @@ export default function OrdersPage() {
         }
 
         try {
-            const { blob, filename } = await generatePurchaseOrderPDF(order, supplier, index + 1);
+            const { blob, filename } = await generatePurchaseOrderPDF(order, supplier, index + 1, currentTenant?.logoUrl);
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;

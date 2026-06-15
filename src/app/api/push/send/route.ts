@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { sendPushNotification, type PushPayload } from '@/lib/web-push';
+import { requireAuth, resolveTenant } from '@/modules/core/lib/api-auth';
+import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseAdmin();
 
 export async function POST(req: NextRequest) {
   try {
-    const { tenantId, payload, targetUserIds } = await req.json() as {
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
+    const { ctx } = auth;
+
+    const { tenantId: bodyTenantId, payload, targetUserIds } = await req.json() as {
       tenantId: string;
       payload: PushPayload;
       targetUserIds?: string[];
     };
+
+    // Solo se puede notificar dentro del propio tenant (super-admin cross-tenant).
+    const tenantId = resolveTenant(ctx, bodyTenantId);
 
     if (!tenantId || !payload?.title) {
       return NextResponse.json({ error: 'Faltan datos requeridos' }, { status: 400 });
@@ -63,6 +68,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ sent, expired: expiredEndpoints.length });
   } catch (err: any) {
     console.error('Push send route error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import React, { useMemo } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useAppState } from "@/modules/core/contexts/app-provider";
+import { useRecordFields } from "@/modules/core/hooks/use-record-fields";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,20 +29,28 @@ const formatDate = (date: Date | string | undefined | null) => {
 export default function DailyTalkDetailPage() {
     const params = useParams();
     const router = useRouter();
-    const { dailyTalks, isLoading, users } = useAppState();
+    const { dailyTalks, isLoading, users, currentTenant } = useAppState();
     const { toast } = useToast();
 
     const talkId = params.id as string;
 
+    // firma y foto (base64) ya no viajan en el collection (S6); se cargan
+    // bajo demanda y se fusionan para display y generación de PDF.
+    const media = useRecordFields<{ firma: string | null; foto: string | null }>(
+        'daily_talks', talkId, 'firma, foto'
+    );
+
     const talk = useMemo(() => {
         if (!dailyTalks) return null;
-        return dailyTalks.find(o => o.id === talkId) || null;
-    }, [dailyTalks, talkId]);
+        const base = dailyTalks.find(o => o.id === talkId) || null;
+        if (!base) return null;
+        return { ...base, firma: media?.firma ?? base.firma, foto: media?.foto ?? base.foto };
+    }, [dailyTalks, talkId, media]);
 
     const handleDownloadPDF = async () => {
         if (!talk || !users) return;
         try {
-            await generateDailyTalkPDF(talk, users);
+            await generateDailyTalkPDF(talk, users, currentTenant?.logoUrl);
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error al generar PDF', description: error.message });
         }

@@ -84,6 +84,22 @@ export default function PersonalPage() {
   const [selectedUserForEnrollment, setSelectedUserForEnrollment] = useState<User | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedEmployeeForHistory, setSelectedEmployeeForHistory] = useState<User | null>(null);
+  // Documentos KYC del empleado seleccionado (tabla protegida profile_documents).
+  // RLS solo deja leerlos al dueño o a un admin del tenant; ya no viajan en el collection.
+  const [employeeDocs, setEmployeeDocs] = useState<{ kyc_face_image?: string | null; kyc_id_front?: string | null; kyc_id_back?: string | null } | null>(null);
+
+  useEffect(() => {
+    const id = selectedEmployeeForHistory?.id;
+    if (!id) { setEmployeeDocs(null); return; }
+    setEmployeeDocs(null);
+    supabase
+      .from('profile_documents')
+      .select('kyc_face_image, kyc_id_front, kyc_id_back')
+      .eq('profile_id', id)
+      .maybeSingle()
+      .then(({ data }) => setEmployeeDocs(data ?? null));
+  }, [selectedEmployeeForHistory?.id]);
+
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filter, setFilter] = useState('');
   const [historySearch, setHistorySearch] = useState('');
@@ -453,8 +469,8 @@ export default function PersonalPage() {
                         <div className="bg-slate-100 p-8 rounded-[2.5rem] border shadow-sm space-y-8">
                           <div className="flex items-center gap-6">
                             <div className="w-24 h-24 rounded-3xl bg-slate-50 border-2 border-slate-100 overflow-hidden shadow-inner">
-                              {selectedEmployeeForHistory.kyc_face_image ? (
-                                <img src={selectedEmployeeForHistory.kyc_face_image} className="w-full h-full object-cover" alt="Biometric Face" />
+                              {employeeDocs?.kyc_face_image ? (
+                                <img src={employeeDocs.kyc_face_image} className="w-full h-full object-cover" alt="Biometric Face" />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center text-slate-200"><ScanFace size={40} /></div>
                               )}
@@ -483,8 +499,8 @@ export default function PersonalPage() {
                         </h6>
                         <div className="grid grid-cols-2 gap-4">
                           {[
-                            { label: 'Cédula Frente', src: selectedEmployeeForHistory.kyc_id_front },
-                            { label: 'Cédula Reverso', src: selectedEmployeeForHistory.kyc_id_back },
+                            { label: 'Cédula Frente', src: employeeDocs?.kyc_id_front },
+                            { label: 'Cédula Reverso', src: employeeDocs?.kyc_id_back },
                           ].map(doc => (
                             <div key={doc.label} className="space-y-2">
                               <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">{doc.label}</p>

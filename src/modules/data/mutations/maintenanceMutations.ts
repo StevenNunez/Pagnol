@@ -1,7 +1,7 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { MaintenanceOrder, MaintenanceLog } from '@/modules/core/lib/data';
 
-type Context = { user: any; tenantId: string | null; db?: any };
+import type { MutationContext as Context } from './context';
 
 const generateOTCode = async (tenantId: string): Promise<string> => {
     const { count } = await supabase

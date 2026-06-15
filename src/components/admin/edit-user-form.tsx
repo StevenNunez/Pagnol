@@ -91,7 +91,6 @@ export function EditUserForm({ user, isOpen, onClose }: EditUserFormProps) {
     }, [user, reset, isSubmitting]);
 
     const onSubmit: SubmitHandler<FormData> = async (data) => {
-        console.log('[EditUserForm] Submitting data:', data);
         try {
             const { fechaIngreso, ...restOfData } = data;
 
@@ -115,10 +114,8 @@ export function EditUserForm({ user, isOpen, onClose }: EditUserFormProps) {
                 }
             });
 
-            console.log('[EditUserForm] Sending update to DB for user:', user.id, updatePayload);
             await updateUser(user.id, updatePayload);
-            console.log('[EditUserForm] Update successful');
-            
+
             toast({
                 title: 'Usuario Actualizado',
                 description: `Los datos de ${data.name} han sido guardados.`,

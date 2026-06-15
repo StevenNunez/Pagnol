@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import {
   Card,
@@ -239,12 +239,11 @@ export default function AdminMaterialsPage() {
   // --- Render ---
 
   return (
-    <div className="flex flex-col gap-8 pb-10 fade-in">
-      <PageHeader
-        title="Gestión de Materiales"
-        description="Administra el catálogo maestro de inventario, stock y proveedores."
-      />
-
+    <PageShell
+      title="Gestión de Materiales"
+      description="Administra el catálogo maestro de inventario, stock y proveedores."
+      className="pb-10"
+    >
       {editingMaterial && canEdit && (
         <EditMaterialForm
           material={editingMaterial}
@@ -593,6 +592,6 @@ export default function AdminMaterialsPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

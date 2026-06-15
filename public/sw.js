@@ -20,8 +20,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body || '',
-    icon: '/logo.png',
-    badge: '/logo.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     tag: data.tag || 'pagnol-notification',
     data: { url: data.url || '/dashboard/pagnol' },
     requireInteraction: data.requireInteraction || false,

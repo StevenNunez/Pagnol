@@ -1,0 +1,36 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '@/modules/core/lib/supabase';
+
+/**
+ * Carga bajo demanda columnas específicas de una fila por id.
+ *
+ * Se usa para campos pesados (firmas / fotos en base64) que se EXCLUYEN de los
+ * collections globales por rendimiento, pero que una página de detalle sí
+ * necesita mostrar. Mientras carga devuelve null (la UI muestra placeholder).
+ *
+ * @param table    Nombre de la tabla en Supabase.
+ * @param id       id de la fila (o null/undefined para no cargar).
+ * @param columns  Lista de columnas a traer, p. ej. 'firma, foto'.
+ */
+export function useRecordFields<T = Record<string, any>>(
+    table: string,
+    id: string | null | undefined,
+    columns: string
+): T | null {
+    const [data, setData] = useState<T | null>(null);
+
+    useEffect(() => {
+        if (!id) { setData(null); return; }
+        let active = true;
+        setData(null);
+        supabase
+            .from(table)
+            .select(columns)
+            .eq('id', id)
+            .maybeSingle()
+            .then(({ data }) => { if (active) setData((data as T) ?? null); });
+        return () => { active = false; };
+    }, [table, id, columns]);
+
+    return data;
+}

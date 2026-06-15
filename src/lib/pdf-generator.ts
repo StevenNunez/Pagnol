@@ -35,7 +35,7 @@ const getDate = (date: Date | string) =>
 const sanitizeFileName = (name: string) =>
   name.replace(/[^a-zA-Z0-9-_]/g, '_');
 
-export async function generatePurchaseOrderPDF(order: PurchaseOrderType, supplier: Supplier, orderIndex: number) {
+export async function generatePurchaseOrderPDF(order: PurchaseOrderType, supplier: Supplier, orderIndex: number, logoUrl?: string) {
   if (!order || !supplier || !order.items) {
     throw new Error('Datos de la orden o proveedor incompletos');
   }
@@ -49,8 +49,7 @@ export async function generatePurchaseOrderPDF(order: PurchaseOrderType, supplie
   };
   const LINE_HEIGHT = 7;
 
-  const logoUrl = '/logo.png';
-  const logoBase64 = await getBase64FromUrl(logoUrl);
+  const logoBase64 = await getBase64FromUrl(logoUrl || '/logo.png');
 
   const doc = new jsPDF();
   const pageHeight = doc.internal.pageSize.height || doc.internal.pageSize.getHeight();

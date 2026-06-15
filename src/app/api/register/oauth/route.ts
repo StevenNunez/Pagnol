@@ -1,14 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import nodemailer from 'nodemailer';
-
-function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
+import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
+import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
 
 export async function POST(request: Request) {
   try {
@@ -20,7 +12,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No autenticado.' }, { status: 401 });
     }
 
-    const admin = getAdminClient();
+    const admin = getSupabaseAdmin();
 
     // Verify the access token and get the user
     const { data: { user }, error: userError } = await admin.auth.getUser(accessToken);
@@ -101,8 +93,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
 
   } catch (err: any) {
-    console.error('[OAuthRegister]', err?.message);
-    return NextResponse.json({ error: err.message || 'Error interno.' }, { status: 500 });
+    console.error('[OAuthRegister]', err);
+    return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }
 
@@ -111,27 +103,14 @@ async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
   adminEmail: string;
   tenantName: string;
 }) {
-  const host = process.env.EMAIL_HOST;
-  const port = Number(process.env.EMAIL_PORT) || 465;
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  const fromEmail = process.env.EMAIL_FROM || 'hola@teolabs.app';
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
 
-  if (!host || !user || !pass) return;
-
-  const transporter = nodemailer.createTransport({
-    host, port, secure: port === 465,
-    auth: { user, pass },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 10000, socketTimeout: 15000,
-  });
+  if (!isEmailConfigured()) return;
 
   const firstName = adminName.split(' ')[0];
   const year = new Date().getFullYear();
 
-  await transporter.sendMail({
-    from: `"PAGNOL" <${fromEmail}>`,
+  await sendEmail({
     to: adminEmail,
     subject: `¡Bienvenido a Pagnol, ${firstName}! Tu organización está lista`,
     html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/></head>

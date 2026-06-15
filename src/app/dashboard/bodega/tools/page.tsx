@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import {
   Card,
@@ -174,12 +174,10 @@ export default function AdminToolsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Gestión de Herramientas"
-        description="Administra el inventario, préstamos y códigos QR de todas las herramientas."
-      />
-
+    <PageShell
+      title="Gestión de Herramientas"
+      description="Administra el inventario, préstamos y códigos QR de todas las herramientas."
+    >
       {editingTool && (
         <EditToolForm
           tool={editingTool}
@@ -190,7 +188,7 @@ export default function AdminToolsPage() {
 
       <ToolCheckoutCard />
 
-      <Card className="border-l-4 border-l-purple-500 shadow-sm">
+      <Card className="border-l-4 border-l-primary shadow-sm">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -248,7 +246,7 @@ export default function AdminToolsPage() {
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={5} className="h-32 text-center">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+                      <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                       <span className="sr-only">Cargando herramientas...</span>
                     </TableCell>
                   </TableRow>
@@ -275,12 +273,12 @@ export default function AdminToolsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge
-                            variant={info.status === "Disponible" ? "default" : "destructive"}
+                            variant="outline"
                             className={cn(
-                              "font-medium",
+                              "font-medium gap-1",
                               info.status === "Disponible"
-                                ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                                : "bg-orange-600 hover:bg-orange-700 text-white"
+                                ? "border-success/30 bg-success-subtle text-success-subtle-foreground"
+                                : "border-warning/30 bg-warning-subtle text-warning-subtle-foreground"
                             )}
                           >
                             {info.status}
@@ -394,6 +392,6 @@ export default function AdminToolsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

@@ -1,17 +1,33 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
+import { requireAuth, resolveTenant } from '@/modules/core/lib/api-auth';
 
 export async function POST(request: Request) {
     try {
-        const { email, password, name, role, tenantId, internalId, rut,
+        const auth = await requireAuth(request, { permission: 'users:create' });
+        if (!auth.ok) return auth.response;
+        const { ctx } = auth;
+
+        const { email, password, name, role, tenantId: bodyTenantId, internalId, rut,
                 biometric_template, kyc_face_image, kyc_id_front, kyc_id_back,
                 enrolledByName } = await request.json();
 
-        if (!email || !tenantId) {
+        if (!email) {
             return NextResponse.json({ error: 'Datos incompletos' }, { status: 400 });
         }
 
-        const admin = getSupabaseAdmin();
+        // El tenant lo determina el perfil del llamante (super-admin puede operar cross-tenant).
+        // Nunca se confía en el tenantId del body para usuarios normales.
+        const tenantId = resolveTenant(ctx, bodyTenantId);
+        if (!tenantId) {
+            return NextResponse.json({ error: 'Tenant no resuelto' }, { status: 400 });
+        }
+
+        // Solo un super-admin puede crear otro super-admin.
+        if (role === 'super-admin' && !ctx.isSuperAdmin) {
+            return NextResponse.json({ error: 'No autorizado para asignar este rol.' }, { status: 403 });
+        }
+
+        const admin = ctx.admin;
 
         // Create auth user without affecting the current admin session
         const { data: authData, error: authError } = await admin.auth.admin.createUser({
@@ -32,7 +48,7 @@ export async function POST(request: Request) {
 
         const qrCode = `USER-${newUser.id}`;
 
-        // Upsert profile with all fields
+        // Upsert profile (sin documentos KYC: van en profile_documents)
         const { error: profileError } = await admin
             .from('profiles')
             .upsert({
@@ -45,9 +61,6 @@ export async function POST(request: Request) {
                 internal_id: internalId,
                 qr_code: qrCode,
                 biometric_template: biometric_template || null,
-                kyc_face_image: kyc_face_image || null,
-                kyc_id_front: kyc_id_front || null,
-                kyc_id_back: kyc_id_back || null,
                 enrolled_by: enrolledByName || 'System',
                 enrolled_at: new Date().toISOString(),
                 onboarding_completed: !!biometric_template,
@@ -60,8 +73,27 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: profileError.message }, { status: 500 });
         }
 
+        // Documentos KYC en tabla protegida (RLS dueño/admin). Vía service role.
+        if (kyc_face_image || kyc_id_front || kyc_id_back) {
+            const { error: docError } = await admin
+                .from('profile_documents')
+                .upsert({
+                    profile_id: newUser.id,
+                    tenant_id: tenantId,
+                    kyc_face_image: kyc_face_image || null,
+                    kyc_id_front: kyc_id_front || null,
+                    kyc_id_back: kyc_id_back || null,
+                    updated_at: new Date().toISOString(),
+                });
+            if (docError) {
+                // No es fatal para la creación del usuario; se registra para diagnóstico.
+                console.error('[users/create] profile_documents upsert error:', docError.message);
+            }
+        }
+
         return NextResponse.json({ success: true, userId: newUser.id });
     } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 });
+        console.error('[users/create]', err);
+        return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
 }

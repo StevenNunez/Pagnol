@@ -12,7 +12,7 @@ import { generateOCPDF } from '@/lib/pdf-oc-generator';
 import { useToast } from '@/modules/core/hooks/use-toast';
 
 export default function PurchaseOrdersPage() {
-  const { purchaseOrders, suppliers } = useAppState();
+  const { purchaseOrders, suppliers, currentTenant } = useAppState();
   const { toast } = useToast();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -65,6 +65,7 @@ export default function PurchaseOrdersPage() {
             paymentTerms: '30 DÍAS',
             createdByName: order.creatorName || 'N/A',
             cotizacion: order.id.slice(0,8).toUpperCase(),
+            logoUrl: currentTenant?.logoUrl,
         });
         
         const url = window.URL.createObjectURL(blob);

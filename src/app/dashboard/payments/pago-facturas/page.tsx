@@ -27,7 +27,7 @@ type ProcessingItem = {
 };
 
 export default function FinanceQuoteProcessor() {
-  const { purchaseLots, purchaseRequests, users, suppliers, createPurchaseOrder, returnToPool } = useAppState();
+  const { purchaseLots, purchaseRequests, users, suppliers, createPurchaseOrder, returnToPool, currentTenant } = useAppState();
   const { user, can } = useAuth();
   const { toast } = useToast();
 
@@ -179,6 +179,7 @@ export default function FinanceQuoteProcessor() {
           totalNet: calculateTotal(),
           paymentTerms: '30 DÍAS',
           createdByName: user?.name || 'Usuario del Sistema',
+          logoUrl: currentTenant?.logoUrl,
       };
       
       const { blob, filename } = await generateOCPDF(pdfData);

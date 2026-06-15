@@ -1,7 +1,7 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { Protocol, ProtocolTemplate, ProtocolSignature } from '@/modules/core/lib/data';
 
-interface Context { user: any; tenantId: string | null; }
+import type { MutationContext as Context } from './context';
 
 export async function addProtocolTemplate(
     data: Omit<ProtocolTemplate, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>,

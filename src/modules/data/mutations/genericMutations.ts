@@ -1,16 +1,12 @@
 
 
 import { supabase } from '@/modules/core/lib/supabase';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 import { nanoid } from 'nanoid';
 import type { UserRole, Tenant, WorkItem, ProgressLog, PaymentState } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
-
-type Context = {
-    user: any;
-    tenantId: string | null;
-    db: any;
-};
+import type { MutationContext as Context } from './context';
 
 // --- Tenant ---
 export async function addTenant({ tenantName, tenantId, adminName, adminEmail }: any, { user }: Context) {
@@ -50,7 +46,7 @@ export async function addUser(data: any, { user, tenantId }: Context) {
 
     const res = await fetch('/api/users/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({
             email: data.email,
             password: data.password,
@@ -107,9 +103,7 @@ export async function updateUser(userId: string, data: any, { user }: Context) {
         cargas_familiares: data.cargasFamiliares,
         signature: data.signature,
         biometric_template: data.biometric_template,
-        kyc_id_front: data.kyc_id_front,
-        kyc_id_back: data.kyc_id_back,
-        kyc_face_image: data.kyc_face_image,
+        // Los documentos KYC viven en profile_documents (S4); no se escriben aquí.
         enrolled_by: data.biometric_template ? (user?.name || 'System') : undefined,
         enrolled_at: data.biometric_template ? new Date().toISOString() : undefined,
         onboarding_completed: data.biometric_template ? true : undefined,
@@ -312,8 +306,8 @@ export async function updateMaterial(materialId: string, data: any, { user, tena
                 new_stock: finalStock,
                 type: 'adjustment',
                 justification: 'Ajuste desde panel de edición',
-                user_id: user.id,
-                user_name: user.name,
+                user_id: user?.id ?? 'system',
+                user_name: user?.name ?? 'Sistema',
                 tenant_id: tenantId,
             });
 

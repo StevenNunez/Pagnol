@@ -1,24 +1,12 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Tenant, WorkReport } from '@/modules/core/lib/data';
+import {
+  WORK_REPORT_STATUS_LABEL as STATUS_LABEL,
+  WORK_EXECUTION_LABEL as EXECUTION_LABEL,
+} from '@/modules/core/lib/work-report-labels';
 
 const M = 14;
-
-const STATUS_LABEL: Record<string, string> = {
-  draft: 'Borrador',
-  pending_review: 'Pendiente Revision',
-  observed: 'Observado',
-  operations_approved: 'Aprobado Jefe Operaciones',
-  final_approved: 'Aprobado Final',
-  archived: 'Archivado',
-};
-
-const EXECUTION_LABEL: Record<string, string> = {
-  not_started: 'No iniciado',
-  in_progress: 'En ejecucion',
-  suspended: 'Suspendido',
-  finished: 'Finalizado',
-};
 
 async function toDataUrl(url?: string | null) {
   if (!url) return null;
@@ -38,16 +26,17 @@ async function toDataUrl(url?: string | null) {
 
 function header(doc: jsPDF, report: WorkReport, tenant?: Tenant | null) {
   const w = doc.internal.pageSize.getWidth();
+  const companyName = tenant?.name?.toUpperCase() || 'PAGNOL';
   doc.setFillColor(32, 74, 87);
   doc.rect(0, 0, w, 25, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
-  doc.text('VALAR - INFORME DE TERRENO', M, 12);
+  doc.text(`${companyName} - INFORME DE TERRENO`, M, 12);
   doc.setFontSize(8);
   doc.text(`Codigo: ${report.internalCode}`, M, 19);
   doc.text(`Emision: ${new Date().toLocaleDateString('es-CL')}`, w - M, 12, { align: 'right' });
-  doc.text(tenant?.name || 'VALAR', w - M, 19, { align: 'right' });
+  doc.text(tenant?.name || 'PAGNOL', w - M, 19, { align: 'right' });
   doc.setTextColor(0, 0, 0);
 }
 

@@ -103,6 +103,11 @@ export async function updateUser(userId: string, data: any, { user }: Context) {
         cargas_familiares: data.cargasFamiliares,
         signature: data.signature,
         biometric_template: data.biometric_template,
+        address: data.address,
+        birth_date: data.birthDate,
+        emergency_contact_name: data.emergencyContactName,
+        emergency_contact_phone: data.emergencyContactPhone,
+        employment_status: data.employmentStatus,
         // Los documentos KYC viven en profile_documents (S4); no se escriben aquí.
         enrolled_by: data.biometric_template ? (user?.name || 'System') : undefined,
         enrolled_at: data.biometric_template ? new Date().toISOString() : undefined,

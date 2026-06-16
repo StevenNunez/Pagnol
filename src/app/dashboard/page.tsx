@@ -24,7 +24,8 @@ import {
     Pickaxe,
     Receipt,
     KeyRound,
-    NotebookPen
+    NotebookPen,
+    UserCog
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Permission } from '@/modules/core/lib/permissions';
@@ -218,6 +219,27 @@ export default function DashboardHub() {
             border: "hover:border-orange-300 dark:hover:border-orange-500/50",
             shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
             permission: 'module_work_reports:view'
+        },
+        {
+            title: "Recursos Humanos",
+            description: "Ficha de empleados, vacaciones/licencias y documentos del personal.",
+            icon: UserCog,
+            href: "/dashboard/rrhh",
+            color: "text-fuchsia-600 dark:text-fuchsia-400",
+            bg: "bg-fuchsia-100 dark:bg-fuchsia-500/10",
+            border: "hover:border-fuchsia-300 dark:hover:border-fuchsia-500/50",
+            shadow: "hover:shadow-fuchsia-500/20 dark:hover:shadow-fuchsia-500/10",
+            permission: 'module_rrhh:view'
+        },
+        {
+            title: "Mis Solicitudes RRHH",
+            description: "Solicita vacaciones/licencias y gestiona tus documentos personales.",
+            icon: UserCog,
+            href: "/dashboard/rrhh/mis-solicitudes",
+            color: "text-fuchsia-600 dark:text-fuchsia-400",
+            bg: "bg-fuchsia-100 dark:bg-fuchsia-500/10",
+            border: "hover:border-fuchsia-300 dark:hover:border-fuchsia-500/50",
+            shadow: "hover:shadow-fuchsia-500/20 dark:hover:shadow-fuchsia-500/10",
         },
     ];
 

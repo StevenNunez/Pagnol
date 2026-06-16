@@ -44,6 +44,7 @@ import * as protocolMutations from './mutations/protocolMutations';
 import * as contractMutations from './mutations/contractMutations';
 import * as rentalMutations from './mutations/rentalMutations';
 import * as workReportMutations from './mutations/workReportMutations';
+import * as hrMutations from './mutations/hrMutations';
 import { WORK_ITEMS_SEED } from '@/lib/work-items-seed';
 
 const initialState: AppDataState = {
@@ -87,6 +88,8 @@ const initialState: AppDataState = {
     rentalAssets: [],
     rentalPayments: [],
     workReports: [],
+    leaveRequests: [],
+    hrDocuments: [],
 };
 
 
@@ -203,6 +206,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const rentalAssetsData = useSupabaseCollection('rental_assets', { tenantId, mapper: mappers.rental_assets, orderBy: { column: 'created_at', ascending: false } });
     const rentalPaymentsData = useSupabaseCollection('rental_payments', { tenantId, mapper: mappers.rental_payments, orderBy: { column: 'due_date', ascending: true } });
     const workReportsData = useSupabaseCollection('work_reports', { tenantId, mapper: mappers.work_reports, orderBy: { column: 'created_at', ascending: false } });
+    const leaveRequestsData = useSupabaseCollection('hr_leave_requests', { tenantId, mapper: mappers.hr_leave_requests, orderBy: { column: 'created_at', ascending: false } });
+    const hrDocumentsData = useSupabaseCollection('hr_documents', { tenantId, mapper: mappers.hr_documents, orderBy: { column: 'expiry_date', ascending: true } });
 
     // Dynamic / specialized data
     const rolesArray = useSupabaseCollection<any>('roles', { enabled: !!tenantId });
@@ -294,7 +299,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             protocolTemplatesData, protocolsData,
             shiftSchedulesData, contractsData, contractWorkersData,
             rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData,
-            workReportsData,
+            workReportsData, leaveRequestsData, hrDocumentsData,
         ].every(data => data !== undefined);
 
         if (!allDataLoaded) {
@@ -364,6 +369,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 rentalAssets: processData(rentalAssetsData),
                 rentalPayments: processData(rentalPaymentsData),
                 workReports: processData(workReportsData),
+                leaveRequests: processData(leaveRequestsData),
+                hrDocuments: processData(hrDocumentsData),
                 roles: rolesToUse,
                 subscriptionPlans: plansToUse,
                 isLoading: false,
@@ -380,7 +387,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
         protocolTemplatesData, protocolsData,
         shiftSchedulesData, contractsData, contractWorkersData,
-        rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData, workReportsData, refreshVersion
+        rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData, workReportsData,
+        leaveRequestsData, hrDocumentsData, refreshVersion
     ]);
 
 
@@ -555,8 +563,18 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         createWorkReport: bindContext(workReportMutations.createWorkReport),
         updateWorkReport: bindContext(workReportMutations.updateWorkReport),
         transitionWorkReport: bindContext(workReportMutations.transitionWorkReport),
+        recordWorkReportSent: bindContext(workReportMutations.recordWorkReportSent),
         uploadWorkReportPhoto: bindContext(workReportMutations.uploadWorkReportPhoto),
         deleteWorkReportPhoto: bindContext(workReportMutations.deleteWorkReportPhoto),
+        deleteWorkReport: bindContext(workReportMutations.deleteWorkReport),
+
+        // Recursos Humanos
+        addLeaveRequest: bindContext(hrMutations.addLeaveRequest),
+        updateLeaveRequestStatus: bindContext(hrMutations.updateLeaveRequestStatus),
+        deleteLeaveRequest: bindContext(hrMutations.deleteLeaveRequest),
+        addHRDocument: bindContext(hrMutations.addHRDocument),
+        updateHRDocument: bindContext(hrMutations.updateHRDocument),
+        deleteHRDocument: bindContext(hrMutations.deleteHRDocument),
 
         // Protocols
         addProtocolTemplate: bindContext(protocolMutations.addProtocolTemplate),

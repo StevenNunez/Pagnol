@@ -44,6 +44,9 @@ import {
   WorkReportPhoto,
   WorkReportSignature,
   WorkReportStatus,
+  LeaveRequest,
+  LeaveStatus,
+  HRDocument,
 } from '../core/lib/data';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 
@@ -88,6 +91,8 @@ export interface AppDataState {
   rentalAssets: RentalAsset[];
   rentalPayments: RentalPayment[];
   workReports: WorkReport[];
+  leaveRequests: LeaveRequest[];
+  hrDocuments: HRDocument[];
 }
 
 // This defines the shape of the context, including all functions
@@ -214,8 +219,18 @@ export interface AppStateContextType extends AppDataState {
   createWorkReport: (data: Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>) => Promise<WorkReport>;
   updateWorkReport: (id: string, data: Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
   transitionWorkReport: (id: string, toStatus: WorkReportStatus, details?: { signature?: WorkReportSignature; notes?: string; sentTo?: string[] }) => Promise<void>;
+  recordWorkReportSent: (id: string, recipients: string[]) => Promise<void>;
   uploadWorkReportPhoto: (reportId: string, file: File, description: string) => Promise<WorkReportPhoto>;
   deleteWorkReportPhoto: (photo: WorkReportPhoto) => Promise<void>;
+  deleteWorkReport: (id: string) => Promise<void>;
+
+  // Recursos Humanos
+  addLeaveRequest: (data: Omit<LeaveRequest, 'id' | 'tenantId' | 'userId' | 'userName' | 'status' | 'createdAt' | 'reviewedBy' | 'reviewedByName' | 'reviewedAt' | 'rejectionReason'>) => Promise<LeaveRequest>;
+  updateLeaveRequestStatus: (id: string, status: LeaveStatus, details?: { rejectionReason?: string }) => Promise<void>;
+  deleteLeaveRequest: (id: string) => Promise<void>;
+  addHRDocument: (data: Omit<HRDocument, 'id' | 'tenantId' | 'fileUrl' | 'filePath' | 'createdBy' | 'createdAt'>, file: File | null) => Promise<HRDocument>;
+  updateHRDocument: (id: string, data: Partial<HRDocument>) => Promise<void>;
+  deleteHRDocument: (doc: HRDocument) => Promise<void>;
 
   // Payments
   addSupplierPayment: (data: any) => Promise<void>;

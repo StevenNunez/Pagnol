@@ -65,6 +65,9 @@ import {
   CalendarClock,
   Contact,
   NotebookPen,
+  UserCog,
+  ClipboardCheck,
+  FileBadge,
 } from 'lucide-react';
 
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
@@ -194,6 +197,23 @@ const getWorkReportsNavItems = () => [
   { href: '/dashboard/work-reports', icon: NotebookPen, label: 'Informes de Terreno' },
 ];
 
+const getRrhhNavItems = (can: (p: Permission) => boolean) => [
+  ...(can('module_rrhh:view') ? [
+    { href: '/dashboard/rrhh', icon: LayoutDashboard, label: 'Panel RRHH' },
+  ] : []),
+  ...(can('hr_employees:view') ? [
+    { href: '/dashboard/rrhh/empleados', icon: Users, label: 'Ficha de Empleados' },
+  ] : []),
+  ...(can('hr_leave:view_all') ? [
+    { href: '/dashboard/rrhh/solicitudes', icon: ClipboardCheck, label: 'Vacaciones y Licencias' },
+  ] : []),
+  ...(can('hr_documents:view') ? [
+    { href: '/dashboard/rrhh/documentos', icon: FileBadge, label: 'Documentos' },
+  ] : []),
+  { href: '/dashboard/rrhh/mis-solicitudes', icon: CalendarClock, label: 'Mis Solicitudes' },
+  { href: '/dashboard/rrhh/mis-documentos', icon: FileText, label: 'Mis Documentos' },
+];
+
 const getUsersNavItems = () => [
   { href: '/dashboard/users', icon: Users, label: 'Lista de Usuarios' },
   { href: '/dashboard/users/print-qrs', icon: QrCode, label: 'Imprimir Credenciales' },
@@ -272,6 +292,9 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
     }
     if (pathname.startsWith('/dashboard/work-reports')) {
       return { navItems: getWorkReportsNavItems(), moduleTitle: 'Reportes Trabajo', moduleIcon: NotebookPen };
+    }
+    if (pathname.startsWith('/dashboard/rrhh')) {
+      return { navItems: getRrhhNavItems(can), moduleTitle: 'Recursos Humanos', moduleIcon: UserCog };
     }
     if (pathname.startsWith('/dashboard/estado-pago')) {
       return {

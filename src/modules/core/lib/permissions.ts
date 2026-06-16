@@ -115,6 +115,7 @@ export const ALL_PERMISSIONS = {
     'work_reports:view_all': { label: 'Ver Todos los Informes de Terreno', group: 'Reportes de Trabajo' },
     'work_reports:download_pdf': { label: 'Descargar PDF de Informes de Terreno', group: 'Reportes de Trabajo' },
     'work_reports:send': { label: 'Enviar Informes por Correo', group: 'Reportes de Trabajo' },
+    'work_reports:delete': { label: 'Eliminar Informes de Terreno', group: 'Reportes de Trabajo' },
 
     'safety_templates:create': { label: 'Crear Plantillas de Seguridad', group: 'Prevención de Riesgos' },
     'safety_templates:assign': { label: 'Asignar Checklists/Inspecciones', group: 'Prevención de Riesgos' },
@@ -138,21 +139,25 @@ export const ALL_PERMISSIONS = {
     'rentals:manage_contracts': { label: 'Gestionar Contratos de Arriendo', group: 'Arriendos' },
     'rentals:manage_payments': { label: 'Gestionar Pagos de Arriendo', group: 'Arriendos' },
 
+    // ── Recursos Humanos ─────────────────────────────────────────────
+    'module_rrhh:view': { label: 'Acceder a Recursos Humanos', group: 'Acceso a Módulos' },
+    'hr_employees:view': { label: 'Ver Ficha de Empleados', group: 'Recursos Humanos' },
+    'hr_employees:edit': { label: 'Editar Ficha de Empleados', group: 'Recursos Humanos' },
+    'hr_leave:view_all': { label: 'Ver Todas las Solicitudes de Vacaciones/Licencias', group: 'Recursos Humanos' },
+    'hr_leave:approve': { label: 'Aprobar/Rechazar Vacaciones y Licencias', group: 'Recursos Humanos' },
+    'hr_documents:view': { label: 'Ver Documentos de Empleados', group: 'Recursos Humanos' },
+    'hr_documents:manage': { label: 'Gestionar Documentos de Empleados', group: 'Recursos Humanos' },
+
 } as const;
 
 export type Permission = keyof typeof ALL_PERMISSIONS;
 export const PERMISSIONS = ALL_PERMISSIONS;
 
-export const ROLES: Record<UserRole, { label: string; description: string; permissions: Permission[] }> = {
-    'super-admin': {
-        label: 'Super Admin',
-        description: 'Control total de la plataforma y todos los tenants/suscriptores.',
-        permissions: Object.keys(ALL_PERMISSIONS) as Permission[],
-    },
-    'administrador': {
-        label: 'Administrador',
-        description: 'Dueño de la cuenta SaaS. Control total del tenant: usuarios, roles, módulos y configuración.',
-        permissions: [
+// Permisos de control total de un tenant (todo salvo lo exclusivo de Plataforma/Super Admin).
+// Se extrae como const porque la usan tanto 'administrador' (dueño real del tenant) como
+// 'soporte-pagnol' (cuenta de soporte interno creada por el administrador del tenant, con
+// los mismos permisos pero identificable por separado en la lista de usuarios).
+const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             // Módulos
             'module_pagnol:view', 'module_warehouse:view', 'module_bodega:view',
             'module_purchasing:view', 'module_users:view', 'module_safety:view',
@@ -191,6 +196,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'work_reports:create', 'work_reports:edit', 'work_reports:sign', 'work_reports:submit',
             'work_reports:review_operations', 'work_reports:final_approve',
             'work_reports:view_all', 'work_reports:download_pdf', 'work_reports:send',
+            'work_reports:delete',
             // Control de Obra
             'construction_control:register_progress', 'construction_control:edit_structure',
             'construction_control:view_reports', 'construction_control:review_protocols',
@@ -201,7 +207,28 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             // Arriendos
             'module_rentals:view', 'rentals:view', 'rentals:manage_parties',
             'rentals:manage_contracts', 'rentals:manage_payments',
-        ],
+            // Recursos Humanos
+            'module_rrhh:view',
+            'hr_employees:view', 'hr_employees:edit',
+            'hr_leave:view_all', 'hr_leave:approve',
+            'hr_documents:view', 'hr_documents:manage',
+];
+
+export const ROLES: Record<UserRole, { label: string; description: string; permissions: Permission[] }> = {
+    'super-admin': {
+        label: 'Super Admin',
+        description: 'Control total de la plataforma y todos los tenants/suscriptores.',
+        permissions: Object.keys(ALL_PERMISSIONS) as Permission[],
+    },
+    'administrador': {
+        label: 'Administrador',
+        description: 'Dueño de la cuenta SaaS. Control total del tenant: usuarios, roles, módulos y configuración.',
+        permissions: ADMINISTRADOR_PERMISSIONS,
+    },
+    'soporte-pagnol': {
+        label: 'Soporte Pagnol',
+        description: 'Cuenta de soporte interno (equipo Pagnol) creada por el administrador del tenant. Mismos permisos que Administrador, acotados a este tenant.',
+        permissions: ADMINISTRADOR_PERMISSIONS,
     },
     'director-faena': {
         label: 'Director de Faena',
@@ -314,6 +341,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'safety_observations:create', 'safety_observations:review',
             'material_requests:create', 'purchase_requests:create', 'return_requests:create',
             'reports:view',
+            // Reportes de Trabajo (observador)
+            'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
         ],
     },
     'cphs': {
@@ -406,18 +435,65 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         description: 'Operador de la faena. Puede ver y usar las herramientas que le han sido asignadas.',
         permissions: ['module_pagnol:view', 'tools:view_own'],
     },
+    'recursos-humanos': {
+        label: 'Recursos Humanos',
+        description: 'Gestiona la ficha de empleados, vacaciones/licencias, documentos, asistencia y usuarios.',
+        permissions: [
+            // RRHH
+            'module_rrhh:view',
+            'hr_employees:view', 'hr_employees:edit',
+            'hr_leave:view_all', 'hr_leave:approve',
+            'hr_documents:view', 'hr_documents:manage',
+            // Asistencia
+            'module_attendance:view', 'attendance:view', 'attendance:edit',
+            'contracts:manage', 'shifts:manage',
+            // Usuarios
+            'module_users:view', 'users:view', 'users:edit', 'users:create',
+            'users:change_password', 'users:print_qr',
+            // Reportes de Trabajo (observador)
+            'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
+        ],
+    },
+    'jefe-operaciones': {
+        label: 'Jefe de Operaciones',
+        description: 'Valida, firma y descarga los informes de terreno en revisión operacional.',
+        permissions: [
+            'module_work_reports:view', 'work_reports:view_all',
+            'work_reports:review_operations', 'work_reports:download_pdf',
+        ],
+    },
+    'adc': {
+        label: 'Administrador de Contratos (ADC)',
+        description: 'Valida, firma y descarga la aprobación final de los informes de terreno.',
+        permissions: [
+            'module_work_reports:view', 'work_reports:view_all',
+            'work_reports:final_approve', 'work_reports:download_pdf',
+        ],
+    },
+    'gerente-general': {
+        label: 'Gerente General',
+        description: 'Observador: visualiza y descarga los informes de terreno, sin editar ni aprobar.',
+        permissions: [
+            'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
+        ],
+    },
 };
 
 export const ROLES_ORDER: UserRole[] = [
     'super-admin',
     'administrador',
+    'soporte-pagnol',
     'director-faena',
+    'jefe-operaciones',
+    'adc',
+    'gerente-general',
     'jefe-oficina-tecnica',
     'jefe-terreno',
     'jefe-turno',
     'jefe-mantencion',
     'panolero',
     'finance',
+    'recursos-humanos',
     'supervisor',
     'apr',
     'cphs',
@@ -440,7 +516,11 @@ export const PLANS = {
         features: { basic: true, pro: true, enterprise: false },
         allowedRoles: [
             'administrador',
+            'soporte-pagnol',
             'director-faena',
+            'jefe-operaciones',
+            'adc',
+            'gerente-general',
             'panolero',
             'jefe-oficina-tecnica',
             'jefe-terreno',
@@ -449,6 +529,7 @@ export const PLANS = {
             'supervisor',
             'apr',
             'finance',
+            'recursos-humanos',
             'guardia',
             'operador',
             'cphs',

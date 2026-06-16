@@ -4,7 +4,8 @@ import {
     AssignedSafetyTask, ChecklistTemplate, SafetyInspection, BehaviorObservation,
     WorkItem, ProgressLog, PaymentState, DailyTalk, MaintenanceOrder, MaintenanceLog, EADocument,
     ProtocolTemplate, Protocol, ShiftSchedule, Contract, ContractWorker,
-    RentalParty, RentalContract, RentalAsset, RentalPayment, WorkReport
+    RentalParty, RentalContract, RentalAsset, RentalPayment, WorkReport,
+    LeaveRequest, HRDocument
 } from '@/modules/core/lib/data';
 
 export const mappers = {
@@ -61,6 +62,11 @@ export const mappers = {
         enrolledAt: item.enrolled_at || null,
         onboardingCompleted: item.onboarding_completed || false,
         grantedPermissions: item.granted_permissions || [],
+        address: item.address || undefined,
+        birthDate: item.birth_date ? new Date(item.birth_date) : null,
+        emergencyContactName: item.emergency_contact_name || undefined,
+        emergencyContactPhone: item.emergency_contact_phone || undefined,
+        employmentStatus: item.employment_status || 'active',
     }),
     tool_logs: (item: any): ToolLog => ({
         id: item.id,
@@ -241,6 +247,39 @@ export const mappers = {
         submittedAt: item.submitted_at ? new Date(item.submitted_at) : null,
         operationsApprovedAt: item.operations_approved_at ? new Date(item.operations_approved_at) : null,
         finalApprovedAt: item.final_approved_at ? new Date(item.final_approved_at) : null,
+    }),
+    hr_leave_requests: (item: any): LeaveRequest => ({
+        id: item.id,
+        tenantId: item.tenant_id,
+        userId: item.user_id,
+        userName: item.user_name || '',
+        type: item.type,
+        startDate: item.start_date,
+        endDate: item.end_date,
+        daysCount: Number(item.days_count) || 1,
+        reason: item.reason || null,
+        status: item.status,
+        supportingDocumentUrl: item.supporting_document_url || null,
+        reviewedBy: item.reviewed_by || null,
+        reviewedByName: item.reviewed_by_name || null,
+        reviewedAt: item.reviewed_at ? new Date(item.reviewed_at) : null,
+        rejectionReason: item.rejection_reason || null,
+        createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+    }),
+    hr_documents: (item: any): HRDocument => ({
+        id: item.id,
+        tenantId: item.tenant_id,
+        userId: item.user_id,
+        userName: item.user_name || '',
+        documentType: item.document_type,
+        name: item.name,
+        fileUrl: item.file_url || null,
+        filePath: item.file_path || null,
+        issueDate: item.issue_date || null,
+        expiryDate: item.expiry_date || null,
+        notes: item.notes || null,
+        createdBy: item.created_by || null,
+        createdAt: item.created_at ? new Date(item.created_at) : new Date(),
     }),
     material_requests: (item: any): MaterialRequest => ({
         id: item.id,

@@ -3,7 +3,7 @@
 
 export type FieldValue = any;
 
-export type UserRole = "administrador" | "director-faena" | "jefe-turno" | "jefe-mantencion" | "geologo" | "topografo" | "supervisor" | "operador" | "apr" | "guardia" | "finance" | "super-admin" | "panolero" | "cphs" | "jefe-terreno" | "quality" | "jefe-oficina-tecnica" | "contratista";
+export type UserRole = "administrador" | "director-faena" | "jefe-turno" | "jefe-mantencion" | "geologo" | "topografo" | "supervisor" | "operador" | "apr" | "guardia" | "finance" | "super-admin" | "panolero" | "cphs" | "jefe-terreno" | "quality" | "jefe-oficina-tecnica" | "contratista" | "recursos-humanos" | "jefe-operaciones" | "adc" | "gerente-general" | "soporte-pagnol";
 
 export interface Tenant {
   id: string;
@@ -91,6 +91,52 @@ export interface User {
   grantedPermissions?: string[]; // Dynamically granted permissions for this user
   enrolledBy?: string | null; // Name/ID of admin who did the enrollment
   enrolledAt?: Date | string | null;
+  // Ficha RRHH
+  address?: string;
+  birthDate?: Date | string | null;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  employmentStatus?: 'active' | 'on_leave' | 'terminated';
+}
+
+export type LeaveType = 'vacation' | 'sick_leave' | 'permit' | 'other';
+export type LeaveStatus = 'pending' | 'approved' | 'rejected';
+
+export interface LeaveRequest {
+  id: string;
+  tenantId: string;
+  userId: string;
+  userName: string;
+  type: LeaveType;
+  startDate: Date | string;
+  endDate: Date | string;
+  daysCount: number;
+  reason?: string | null;
+  status: LeaveStatus;
+  supportingDocumentUrl?: string | null;
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: Date | string | null;
+  rejectionReason?: string | null;
+  createdAt: Date | string;
+}
+
+export type HRDocumentType = 'contract' | 'certificate' | 'license' | 'exam' | 'other';
+
+export interface HRDocument {
+  id: string;
+  tenantId: string;
+  userId: string;
+  userName: string;
+  documentType: HRDocumentType;
+  name: string;
+  fileUrl?: string | null;
+  filePath?: string | null;
+  issueDate?: Date | string | null;
+  expiryDate?: Date | string | null;
+  notes?: string | null;
+  createdBy?: string | null;
+  createdAt: Date | string;
 }
 
 export interface Unit {

@@ -5,23 +5,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { BarChart3, CheckCircle2, ClipboardList, Clock, FileText, Plus, Users, Wrench } from 'lucide-react';
+import { BarChart3, CheckCircle2, ClipboardList, Clock, FileText, Plus, Trash2, Users, Wrench } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import type { WorkReport } from '@/modules/core/lib/data';
-
-const STATUS_LABEL: Record<WorkReport['status'], string> = {
-  draft: 'Borrador',
-  pending_review: 'Pendiente revision',
-  observed: 'Observado',
-  operations_approved: 'Aprobado operaciones',
-  final_approved: 'Aprobado final',
-  archived: 'Archivado',
-};
+import { WORK_REPORT_STATUS_LABEL as STATUS_LABEL } from '@/modules/core/lib/work-report-labels';
 
 const STATUS_BADGE: Record<WorkReport['status'], string> = {
   draft: 'bg-muted text-muted-foreground',
@@ -34,8 +30,10 @@ const STATUS_BADGE: Record<WorkReport['status'], string> = {
 
 export default function WorkReportsDashboard() {
   const router = useRouter();
-  const { workReports, createWorkReport, can, isLoading, notify } = useAppState();
+  const { workReports, createWorkReport, deleteWorkReport, can, isLoading, notify } = useAppState();
   const reports = workReports || [];
+  const [toDelete, setToDelete] = React.useState<WorkReport | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
 
   const stats = useMemo(() => {
     const today = reports.filter((r) => isToday(new Date(r.createdAt as any))).length;
@@ -51,9 +49,24 @@ export default function WorkReportsDashboard() {
   const handleNew = async () => {
     try {
       const report = await createWorkReport({});
+      sessionStorage.setItem(`wr_new_${report.id}`, JSON.stringify(report));
       router.push(`/dashboard/work-reports/${report.id}`);
     } catch (error: any) {
       notify(error?.message || 'No se pudo crear el reporte de trabajo.', 'destructive');
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await deleteWorkReport(toDelete.id);
+      notify('Informe eliminado.', 'success');
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo eliminar el informe.', 'destructive');
+    } finally {
+      setDeleting(false);
+      setToDelete(null);
     }
   };
 
@@ -68,6 +81,17 @@ export default function WorkReportsDashboard() {
       key: 'status',
       header: 'Estado',
       cell: (r) => <Badge className={`rounded-xl ${STATUS_BADGE[r.status]}`}>{STATUS_LABEL[r.status]}</Badge>,
+    },
+    {
+      key: 'actions', header: '', headerClassName: 'text-right', className: 'text-right',
+      cell: (r) => can('work_reports:delete') ? (
+        <Button
+          variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10"
+          onClick={(e) => { e.stopPropagation(); setToDelete(r); }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ) : null,
     },
   ];
 
@@ -108,6 +132,23 @@ export default function WorkReportsDashboard() {
           description: 'Crea el primer reporte desde celular o computador.',
         }}
       />
+
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar el informe {toDelete?.internalCode}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará el informe y sus fotos de forma permanente. No se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" disabled={deleting} onClick={confirmDelete}>
+              {deleting ? 'Eliminando…' : 'Sí, eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageShell>
   );
 }

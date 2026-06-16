@@ -8,6 +8,18 @@ import type {
 } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUUID = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
+
+const VALID_TRANSITIONS: Record<WorkReportStatus, WorkReportStatus[]> = {
+  draft: ['pending_review'],
+  pending_review: ['operations_approved', 'observed'],
+  observed: ['pending_review'],
+  operations_approved: ['final_approved', 'observed'],
+  final_approved: ['archived'],
+  archived: [],
+};
+
 type WorkReportInput = Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>;
 
 const BUCKET = 'work-report-photos';
@@ -35,12 +47,12 @@ function toRow(data: WorkReportInput, ctx: Context): Record<string, any> {
   const row: Record<string, any> = { updated_by: ctx.user?.id || null };
 
   if (data.status !== undefined) row.status = data.status;
-  if (data.workItemId !== undefined) row.work_item_id = data.workItemId || null;
+  if (data.workItemId !== undefined) row.work_item_id = isUUID(data.workItemId) ? data.workItemId : null;
   if (data.otNumber !== undefined) row.ot_number = data.otNumber;
   if (data.client !== undefined) row.client = data.client;
   if (data.faena !== undefined) row.faena = data.faena;
   if (data.area !== undefined) row.area = data.area;
-  if (data.supervisorId !== undefined) row.supervisor_id = data.supervisorId || null;
+  if (data.supervisorId !== undefined) row.supervisor_id = isUUID(data.supervisorId) ? data.supervisorId : null;
   if (data.supervisorName !== undefined) row.supervisor_name = data.supervisorName;
   if (data.workDate !== undefined) row.work_date = data.workDate;
   if (data.startTime !== undefined) row.start_time = data.startTime || null;
@@ -56,24 +68,27 @@ function toRow(data: WorkReportInput, ctx: Context): Record<string, any> {
   if (data.progressObservations !== undefined) row.progress_observations = data.progressObservations || null;
   if (data.progressHistory !== undefined) row.progress_history = data.progressHistory;
   if (data.signatures !== undefined) row.signatures = data.signatures;
-  if (data.auditLog !== undefined) row.audit_log = data.auditLog;
   if (data.rejectionReason !== undefined) row.rejection_reason = data.rejectionReason || null;
   if (data.sentTo !== undefined) row.sent_to = data.sentTo || [];
 
   return row;
 }
 
-async function nextInternalCode(tenantId: string) {
+async function nextInternalCode(tenantId: string): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `IT-${year}-`;
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('work_reports')
-    .select('id', { count: 'exact', head: true })
+    .select('internal_code')
     .eq('tenant_id', tenantId)
-    .gte('created_at', `${year}-01-01T00:00:00.000Z`);
+    .like('internal_code', `${prefix}%`)
+    .order('internal_code', { ascending: false })
+    .limit(1);
 
   if (error) throw error;
-  return `${prefix}${String((count || 0) + 1).padStart(4, '0')}`;
+  const last = data?.[0]?.internal_code as string | undefined;
+  const seq = last ? parseInt(last.slice(prefix.length), 10) : 0;
+  return `${prefix}${String(seq + 1).padStart(4, '0')}`;
 }
 
 export async function createWorkReport(
@@ -83,46 +98,50 @@ export async function createWorkReport(
   const { user, tenantId } = ctx;
   if (!user || !tenantId) throw new Error('No autenticado.');
 
-  const internalCode = await nextInternalCode(tenantId);
   const firstAudit = audit('created', ctx, null, 'draft', 'Reporte creado como borrador.');
+  const baseRow = {
+    tenant_id: tenantId,
+    status: 'draft',
+    work_item_id: data.workItemId || null,
+    ot_number: data.otNumber || '',
+    client: data.client || '',
+    faena: data.faena || '',
+    area: data.area || '',
+    supervisor_id: data.supervisorId || user.id,
+    supervisor_name: data.supervisorName || user.name,
+    work_date: data.workDate || new Date().toISOString().slice(0, 10),
+    start_time: data.startTime || null,
+    end_time: data.endTime || null,
+    location: data.location || null,
+    activities: data.activities || '',
+    labor: data.labor || [],
+    equipment: data.equipment || [],
+    materials: data.materials || [],
+    photos: data.photos || [],
+    progress_percent: data.progressPercent || 0,
+    execution_status: data.executionStatus || 'not_started',
+    progress_observations: data.progressObservations || null,
+    progress_history: data.progressHistory || [],
+    signatures: data.signatures || [],
+    audit_log: [firstAudit],
+    created_by: user.id,
+    created_by_name: user.name,
+    updated_by: user.id,
+  };
 
-  const { data: inserted, error } = await supabase
-    .from('work_reports')
-    .insert({
-      tenant_id: tenantId,
-      internal_code: internalCode,
-      status: 'draft',
-      work_item_id: data.workItemId || null,
-      ot_number: data.otNumber || '',
-      client: data.client || '',
-      faena: data.faena || '',
-      area: data.area || '',
-      supervisor_id: data.supervisorId || user.id,
-      supervisor_name: data.supervisorName || user.name,
-      work_date: data.workDate || new Date().toISOString().slice(0, 10),
-      start_time: data.startTime || null,
-      end_time: data.endTime || null,
-      location: data.location || null,
-      activities: data.activities || '',
-      labor: data.labor || [],
-      equipment: data.equipment || [],
-      materials: data.materials || [],
-      photos: data.photos || [],
-      progress_percent: data.progressPercent || 0,
-      execution_status: data.executionStatus || 'not_started',
-      progress_observations: data.progressObservations || null,
-      progress_history: data.progressHistory || [],
-      signatures: data.signatures || [],
-      audit_log: [firstAudit],
-      created_by: user.id,
-      created_by_name: user.name,
-      updated_by: user.id,
-    })
-    .select()
-    .single();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const internalCode = await nextInternalCode(tenantId);
+    const { data: inserted, error } = await supabase
+      .from('work_reports')
+      .insert({ ...baseRow, internal_code: internalCode })
+      .select()
+      .single();
 
-  if (error) throw error;
-  return mappers.work_reports(inserted);
+    if (!error) return mappers.work_reports(inserted);
+    // 23505 = unique_violation — otro usuario tomó el mismo código; reintenta
+    if ((error as any).code !== '23505') throw error;
+  }
+  throw new Error('No se pudo generar un código único. Intenta nuevamente.');
 }
 
 export async function updateWorkReport(
@@ -133,19 +152,6 @@ export async function updateWorkReport(
   if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
 
   const row = toRow(data, ctx);
-  const { data: current, error: readError } = await supabase
-    .from('work_reports')
-    .select('audit_log')
-    .eq('id', id)
-    .eq('tenant_id', ctx.tenantId)
-    .single();
-  if (readError) throw readError;
-
-  row.audit_log = [
-    ...(current?.audit_log || []),
-    audit('updated', ctx, undefined, undefined, 'Borrador actualizado.'),
-  ];
-
   const { error } = await supabase
     .from('work_reports')
     .update(row)
@@ -171,6 +177,10 @@ export async function transitionWorkReport(
   if (readError) throw readError;
 
   const fromStatus = current.status as WorkReportStatus;
+  const isSuperAdmin = ctx.user.role === 'super-admin';
+  if (!isSuperAdmin && !VALID_TRANSITIONS[fromStatus]?.includes(toStatus)) {
+    throw new Error(`Transición no permitida: el reporte está en "${fromStatus}" y no puede pasar a "${toStatus}".`);
+  }
   const now = new Date().toISOString();
   const row: Record<string, any> = {
     status: toStatus,
@@ -214,10 +224,14 @@ export async function uploadWorkReportPhoto(
     .upload(path, file, { contentType: file.type, upsert: false });
   if (error) throw error;
 
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  // ~10 años en segundos; tiempo suficiente para informes de terreno de larga vida
+  const { data: signed, error: signError } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(path, 315360000);
+  if (signError) throw signError;
   return {
     id: photoId,
-    url: data.publicUrl,
+    url: signed.signedUrl,
     path,
     description,
     date: new Date().toISOString(),
@@ -226,9 +240,68 @@ export async function uploadWorkReportPhoto(
   };
 }
 
+export async function deleteWorkReport(id: string, ctx: Context): Promise<void> {
+  if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
+
+  const { data: current, error: readError } = await supabase
+    .from('work_reports')
+    .select('photos')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  if (readError) throw readError;
+
+  const photoPaths = ((current?.photos || []) as WorkReportPhoto[])
+    .map((p) => p.path)
+    .filter((p): p is string => !!p);
+  if (photoPaths.length > 0) {
+    await supabase.storage.from(BUCKET).remove(photoPaths);
+  }
+
+  const { error } = await supabase
+    .from('work_reports')
+    .delete()
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId);
+  if (error) throw error;
+}
+
 export async function deleteWorkReportPhoto(photo: WorkReportPhoto, ctx: Context): Promise<void> {
   if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
   if (!photo.path) return;
   const { error } = await supabase.storage.from(BUCKET).remove([photo.path]);
+  if (error) throw error;
+}
+
+export async function recordWorkReportSent(
+  id: string,
+  recipients: string[],
+  ctx: Context
+): Promise<void> {
+  if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
+
+  const { data: current, error: readError } = await supabase
+    .from('work_reports')
+    .select('sent_to, audit_log')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  if (readError) throw readError;
+
+  const existing: string[] = Array.isArray(current.sent_to) ? current.sent_to : [];
+  const merged = Array.from(new Set([...existing, ...recipients]));
+
+  const { error } = await supabase
+    .from('work_reports')
+    .update({
+      sent_to: merged,
+      updated_by: ctx.user.id,
+      audit_log: [
+        ...(current.audit_log || []),
+        audit('sent', ctx, null, null, `Enviado a ${recipients.join(', ')}`),
+      ],
+    })
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId);
   if (error) throw error;
 }

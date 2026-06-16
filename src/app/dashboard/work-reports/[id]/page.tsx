@@ -7,6 +7,7 @@ import {
   Mail, Plus, Save, Send, Signature, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
+import { LoadingState } from '@/components/loading-state';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,6 +16,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import SignaturePad from '@/components/signature-pad';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import type {
@@ -28,26 +33,15 @@ import type {
   WorkReportStatus,
 } from '@/modules/core/lib/data';
 import { generateWorkReportPdf } from '@/lib/work-report-pdf-generator';
+import { supabase } from '@/modules/core/lib/supabase';
+import {
+  WORK_REPORT_STATUS_LABEL as STATUS_LABEL,
+  WORK_EXECUTION_LABEL as EXECUTION_LABEL,
+} from '@/modules/core/lib/work-report-labels';
 
 const EMPTY_LABOR: WorkReportLaborItem = { id: '', name: '', role: '', hours: 0 };
 const EMPTY_EQUIPMENT: WorkReportEquipmentItem = { id: '', equipment: '', type: '', hours: 0, activity: '' };
 const EMPTY_MATERIAL: WorkReportMaterialItem = { id: '', material: '', unit: '', quantity: 0 };
-
-const STATUS_LABEL: Record<WorkReportStatus, string> = {
-  draft: 'Borrador',
-  pending_review: 'Pendiente revision',
-  observed: 'Observado',
-  operations_approved: 'Aprobado jefe operaciones',
-  final_approved: 'Aprobado final',
-  archived: 'Archivado',
-};
-
-const EXECUTION_LABEL: Record<WorkExecutionStatus, string> = {
-  not_started: 'No iniciado',
-  in_progress: 'En ejecucion',
-  suspended: 'Suspendido',
-  finished: 'Finalizado',
-};
 
 function uid() {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -69,16 +63,49 @@ export default function WorkReportDetailPage() {
     currentTenant,
     updateWorkReport,
     transitionWorkReport,
+    recordWorkReportSent,
     uploadWorkReportPhoto,
     deleteWorkReportPhoto,
+    deleteWorkReport,
     notify,
     can,
+    isLoading,
   } = useAppState();
   const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super-admin';
 
   const report = (workReports || []).find((r) => r.id === params.id);
-  const [draft, setDraft] = React.useState<WorkReport | null>(report ? cloneReport(report) : null);
-  const [dirty, setDirty] = React.useState(false);
+  const localKey = `wr_draft_${params.id}`;
+  // Tracks whether localStorage was used as source so dirty can start true
+  const restoredFromLocalRef = React.useRef(false);
+  const [draft, setDraft] = React.useState<WorkReport | null>(() => {
+    if (typeof window === 'undefined') return null;
+    // Priority 1: newly-created report not yet in Realtime
+    const newCached = sessionStorage.getItem(`wr_new_${params.id}`);
+    if (newCached) {
+      try {
+        sessionStorage.removeItem(`wr_new_${params.id}`);
+        return JSON.parse(newCached) as WorkReport;
+      } catch {}
+    }
+    // Priority 2: in-progress local draft (supervisor left and came back)
+    try {
+      const local = localStorage.getItem(localKey);
+      if (local) {
+        const parsed = JSON.parse(local) as WorkReport;
+        if (parsed?.id === params.id) {
+          restoredFromLocalRef.current = true;
+          return parsed;
+        }
+      }
+    } catch {}
+    // Priority 3: DB version already in state
+    if (report) return cloneReport(report);
+    return null;
+  });
+  const [dirty, setDirty] = React.useState(() => restoredFromLocalRef.current);
+  // Once draft is initialized from any source, this ref prevents Realtime from resetting it
+  const draftInitializedRef = React.useRef(draft !== null);
   const [saving, setSaving] = React.useState(false);
   const [photoDescription, setPhotoDescription] = React.useState('');
   const [signatureOpen, setSignatureOpen] = React.useState<null | 'supervisor' | 'operations' | 'final'>(null);
@@ -86,12 +113,27 @@ export default function WorkReportDetailPage() {
   const [reviewNotes, setReviewNotes] = React.useState('');
   const [sendOpen, setSendOpen] = React.useState(false);
   const [sendTo, setSendTo] = React.useState('');
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const [forceStatus, setForceStatus] = React.useState<WorkReportStatus | ''>('');
 
+  // Initialize draft from DB only when it hasn't been set yet (avoids resetting after autosave)
   React.useEffect(() => {
-    if (report && !dirty) setDraft(cloneReport(report));
-  }, [report, dirty]);
+    if (report && !draftInitializedRef.current) {
+      draftInitializedRef.current = true;
+      setDraft(cloneReport(report));
+    }
+  }, [report]);
 
-  const editable = !!draft && (draft.status === 'draft' || draft.status === 'observed') && can('work_reports:edit');
+  // Notify once on mount if we restored unsaved local changes
+  React.useEffect(() => {
+    if (restoredFromLocalRef.current) {
+      notify('Se restauraron cambios sin guardar. Guarda el borrador cuando estés listo.', 'default');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const editable = !!draft && (isSuperAdmin || ((draft.status === 'draft' || draft.status === 'observed') && can('work_reports:edit')));
   const totals = React.useMemo(() => ({
     workers: draft?.labor?.length || 0,
     hh: (draft?.labor || []).reduce((s, l) => s + Number(l.hours || 0), 0),
@@ -99,7 +141,12 @@ export default function WorkReportDetailPage() {
   }), [draft]);
 
   const patchDraft = (patch: Partial<WorkReport>) => {
-    setDraft((prev) => prev ? { ...prev, ...patch } : prev);
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      try { localStorage.setItem(localKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
     setDirty(true);
   };
 
@@ -109,13 +156,14 @@ export default function WorkReportDetailPage() {
     try {
       await updateWorkReport(draft.id, draft);
       setDirty(false);
-      if (!silent) notify('Reporte guardado.', 'success');
+      try { localStorage.removeItem(localKey); } catch {}
+      if (!silent) notify('Borrador guardado.', 'success');
     } catch (error: any) {
       notify(error?.message || 'No se pudo guardar el reporte.', 'destructive');
     } finally {
       setSaving(false);
     }
-  }, [draft, dirty, notify, updateWorkReport]);
+  }, [draft, dirty, notify, updateWorkReport, localKey]);
 
   const saveRef = React.useRef(save);
   React.useEffect(() => {
@@ -128,6 +176,7 @@ export default function WorkReportDetailPage() {
   }, []);
 
   if (!draft) {
+    if (isLoading) return <LoadingState />;
     return (
       <PageShell title="Reporte no encontrado" description="El informe no existe o no tienes acceso.">
         <Button variant="outline" onClick={() => router.push('/dashboard/work-reports')}>Volver</Button>
@@ -137,12 +186,13 @@ export default function WorkReportDetailPage() {
 
   const setOt = (workItemId: string) => {
     const item = workItems.find((w) => w.id === workItemId);
+    const project = workItems.find((w) => w.id === item?.projectId);
     patchDraft({
       workItemId,
       otNumber: item?.name || '',
       client: currentTenant?.name || draft.client,
-      faena: item?.projectId || draft.faena,
-      area: item?.path || draft.area,
+      faena: project?.name || item?.name || draft.faena,
+      area: item?.name || draft.area,
     });
   };
 
@@ -239,6 +289,7 @@ export default function WorkReportDetailPage() {
       setSignatureData('');
       setReviewNotes('');
       setDirty(false);
+      try { localStorage.removeItem(localKey); } catch {}
       notify('Flujo actualizado.', 'success');
     } catch (error: any) {
       notify(error?.message || 'No se pudo realizar la firma y transición.', 'destructive');
@@ -261,11 +312,17 @@ export default function WorkReportDetailPage() {
         notify('Ingresa al menos un correo.', 'destructive');
         return;
       }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) {
+        notify('Sesión expirada. Vuelve a iniciar sesión.', 'destructive');
+        return;
+      }
       const doc = await generateWorkReportPdf(draft, currentTenant);
       const pdfBase64 = doc.output('datauristring');
       const res = await fetch('/api/work-reports/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           to: recipients,
           reportCode: draft.internalCode,
@@ -277,12 +334,38 @@ export default function WorkReportDetailPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'No se pudo enviar el reporte.');
       }
-      await transitionWorkReport(draft.id, draft.status, { sentTo: recipients, notes: `Enviado a ${recipients.join(', ')}` });
+      await recordWorkReportSent(draft.id, recipients);
       setSendOpen(false);
       setSendTo('');
       notify('Reporte enviado por correo.', 'success');
     } catch (error: any) {
       notify(error?.message || 'No se pudo enviar el reporte por correo.', 'destructive');
+    }
+  };
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteWorkReport(draft.id);
+      try { localStorage.removeItem(localKey); } catch {}
+      notify('Informe eliminado.', 'success');
+      router.push('/dashboard/work-reports');
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo eliminar el informe.', 'destructive');
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  };
+
+  const applyForceStatus = async () => {
+    if (!forceStatus) return;
+    try {
+      await transitionWorkReport(draft.id, forceStatus);
+      notify(`Estado forzado a "${STATUS_LABEL[forceStatus]}".`, 'success');
+      setForceStatus('');
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo forzar el estado.', 'destructive');
     }
   };
 
@@ -297,7 +380,8 @@ export default function WorkReportDetailPage() {
           </Button>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => save(false)} disabled={!dirty || saving} className="rounded-xl">
-              <Save className="h-4 w-4 mr-2" /> {saving ? 'Guardando' : 'Guardar'}
+              <Save className="h-4 w-4 mr-2" />
+              {saving ? 'Guardando…' : (draft.status === 'draft' || draft.status === 'observed') ? 'Guardar borrador' : 'Guardar'}
             </Button>
             {can('work_reports:download_pdf') && (
               <Button variant="outline" onClick={downloadPdf} className="rounded-xl">
@@ -307,6 +391,11 @@ export default function WorkReportDetailPage() {
             {can('work_reports:send') && (
               <Button variant="outline" onClick={() => setSendOpen(true)} className="rounded-xl">
                 <Mail className="h-4 w-4 mr-2" /> Enviar
+              </Button>
+            )}
+            {can('work_reports:delete') && (
+              <Button variant="destructive" onClick={() => setDeleteOpen(true)} className="rounded-xl">
+                <Trash2 className="h-4 w-4 mr-2" /> Eliminar
               </Button>
             )}
           </div>
@@ -449,6 +538,20 @@ export default function WorkReportDetailPage() {
               {can('work_reports:final_approve') && draft.status === 'operations_approved' && (
                 <Button className="w-full rounded-xl" onClick={() => setSignatureOpen('final')}><Signature className="h-4 w-4 mr-2" /> Firma final</Button>
               )}
+              {isSuperAdmin && (
+                <div className="space-y-2 rounded-xl border border-dashed p-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Forzar estado (Super Admin)</p>
+                  <Select value={forceStatus} onValueChange={(v) => setForceStatus(v as WorkReportStatus)}>
+                    <SelectTrigger className="rounded-xl"><SelectValue placeholder="Selecciona un estado" /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(STATUS_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" className="w-full rounded-xl" disabled={!forceStatus || forceStatus === draft.status} onClick={applyForceStatus}>
+                    Aplicar estado
+                  </Button>
+                </div>
+              )}
               <div className="space-y-2">
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Historial de avance</p>
                 {(draft.progressHistory || []).slice(-5).reverse().map((h) => (
@@ -484,6 +587,23 @@ export default function WorkReportDetailPage() {
           <DialogFooter><Button onClick={sendPdf}><Mail className="h-4 w-4 mr-2" /> Enviar PDF</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar el informe {draft.internalCode}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará el informe y sus fotos de forma permanente. No se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" disabled={deleting} onClick={confirmDelete}>
+              {deleting ? 'Eliminando…' : 'Sí, eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageShell>
   );
 }

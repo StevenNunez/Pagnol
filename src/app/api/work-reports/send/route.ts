@@ -1,9 +1,27 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { isEmailConfigured, sendEmail } from '@/modules/core/lib/email';
 import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
-export async function POST(request: Request) {
+async function verifySession(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7);
+  const client = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+  const { data: { user }, error } = await client.auth.getUser(token);
+  return error || !user ? null : user;
+}
+
+export async function POST(request: NextRequest) {
   try {
+    const caller = await verifySession(request);
+    if (!caller) {
+      return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
+    }
+
     if (!(await rateLimitByIp(request, 'work-report-send', 20, 3600))) {
       return NextResponse.json({ error: 'Demasiados intentos. Intenta mas tarde.' }, { status: 429 });
     }

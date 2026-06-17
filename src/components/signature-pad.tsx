@@ -16,6 +16,7 @@ const SignaturePad = forwardRef<any, SignaturePadProps>(
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const isDrawing = useRef(false);
     const lastPos = useRef<{ x: number; y: number } | null>(null);
+    const hasInk = useRef(false);
 
     const getCanvas = () => {
       const canvas = canvasRef.current;
@@ -54,13 +55,16 @@ const SignaturePad = forwardRef<any, SignaturePadProps>(
       ctx.lineTo(currentPos.x, currentPos.y);
       ctx.stroke();
       lastPos.current = currentPos;
+      hasInk.current = true;
     };
 
     const stopDrawing = () => {
       if (!isDrawing.current) return;
       isDrawing.current = false;
       lastPos.current = null;
-      if (onEnd) {
+      // Un click/tap sin arrastre no deja tinta: getTrimmedCanvas() haría
+      // getImageData con ancho/alto negativo y lanzaría IndexSizeError.
+      if (onEnd && hasInk.current) {
         const dataUrl = getTrimmedCanvas().toDataURL("image/png");
         onEnd(dataUrl);
       }
@@ -70,6 +74,7 @@ const SignaturePad = forwardRef<any, SignaturePadProps>(
       const canvas = getCanvas();
       const ctx = getContext();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      hasInk.current = false;
       if (onEnd) {
         onEnd("");
       }
@@ -99,6 +104,13 @@ const SignaturePad = forwardRef<any, SignaturePadProps>(
           if (x < bound.left) bound.left = x;
           if (x > bound.right) bound.right = x;
         }
+      }
+
+      // Sin tinta (canvas completamente transparente): bound nunca se actualiza
+      // y queda invertido (right < left), lo que volvería negativo el ancho/alto
+      // y getImageData lanzaría IndexSizeError. Devuelve el canvas vacío tal cual.
+      if (bound.right < bound.left || bound.bottom < bound.top) {
+        return copy;
       }
 
       const trimHeight = bound.bottom - bound.top + 1;

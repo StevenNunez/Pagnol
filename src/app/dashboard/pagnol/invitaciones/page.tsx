@@ -28,7 +28,8 @@ import { useAuth } from "@/modules/auth/useAuth";
 import { supabase } from "@/modules/core/lib/supabase";
 import { nanoid } from "nanoid";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import { UserRole } from "@/modules/core/lib/data";
+import { Tenant, UserRole } from "@/modules/core/lib/data";
+import { PLANS, ROLES, ROLES_ORDER } from "@/modules/core/lib/permissions";
 
 interface Invitation {
     id: string;
@@ -47,13 +48,34 @@ import { es } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function InvitacionesPage() {
-    const { user, currentTenantId } = useAuth();
+    const { user, currentTenantId, tenants } = useAuth();
     const { toast } = useToast();
     const [email, setEmail] = useState("");
     const [role, setRole] = useState<UserRole>("supervisor");
     const [isInviting, setIsInviting] = useState(false);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    const currentTenant = React.useMemo(() => {
+        if (!currentTenantId) return null;
+        return (tenants || []).find((t: Tenant) => t.id === currentTenantId || t.tenantId === currentTenantId);
+    }, [currentTenantId, tenants]);
+
+    const plan = PLANS[(currentTenant as Tenant & { plan?: keyof typeof PLANS })?.plan as keyof typeof PLANS] || PLANS.professional;
+
+    const allowedRoles = React.useMemo(() => {
+        const ordered = ROLES_ORDER.filter((r) => plan.allowedRoles.includes(r));
+        if (user?.role !== "super-admin") {
+            return ordered.filter((r) => r !== "super-admin");
+        }
+        return ordered;
+    }, [plan, user]);
+
+    React.useEffect(() => {
+        if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+            setRole(allowedRoles[0]);
+        }
+    }, [allowedRoles, role]);
 
     useEffect(() => {
         if (!currentTenantId) return;
@@ -260,7 +282,7 @@ export default function InvitacionesPage() {
         <div className="space-y-8 animate-in fade-in duration-700">
             <PageHeader
                 title="Centro de Invitaciones"
-                description="Delegue responsabilidades invitando a Administradores de Obra y Supervisores de forma segura"
+                description="Invita colaboradores asignando cualquier rol disponible en tu plan"
             />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -290,10 +312,16 @@ export default function InvitacionesPage() {
                                 <SelectTrigger className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-slate-100 transition-all text-xs font-black uppercase tracking-widest">
                                     <SelectValue />
                                 </SelectTrigger>
-                                <SelectContent className="rounded-2xl">
-                                    <SelectItem value="administrador" className="text-xs font-black uppercase text-slate-700">Administrador (Control Total)</SelectItem>
-                                    <SelectItem value="supervisor" className="text-xs font-black uppercase text-slate-700">Supervisor (Operaciones)</SelectItem>
-                                    <SelectItem value="panolero" className="text-xs font-black uppercase text-slate-700">Pañolero (Operador Bodega)</SelectItem>
+                                <SelectContent className="rounded-2xl max-h-72">
+                                    {allowedRoles.map((roleKey) => (
+                                        <SelectItem
+                                            key={roleKey}
+                                            value={roleKey}
+                                            className="text-xs font-black uppercase text-slate-700"
+                                        >
+                                            {ROLES[roleKey]?.label || roleKey}
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -366,7 +394,7 @@ export default function InvitacionesPage() {
                                                         <div className="flex flex-col gap-1">
                                                             <span className="font-black text-xs text-slate-700 uppercase">{inv.email}</span>
                                                             <Badge variant="outline" className="w-fit text-[8px] font-black px-2 border-slate-200 text-muted-foreground uppercase tracking-widest">
-                                                                {inv.role}
+                                                                {ROLES[inv.role]?.label || inv.role}
                                                             </Badge>
                                                         </div>
                                                     </td>

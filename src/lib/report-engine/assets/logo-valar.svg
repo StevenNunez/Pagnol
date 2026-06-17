@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 150">
+  <g fill="#141414">
+    <polygon points="40,28 70,28 96,108 78,108"/>
+    <polygon points="96,108 122,28 152,28 118,122 100,122"/>
+    <polygon points="150,108 176,28 206,28 232,108 214,108 191,40 168,108"/>
+  </g>
+  <text x="150" y="142" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="30" text-anchor="middle" letter-spacing="14" fill="#141414">VALAR</text>
+</svg>

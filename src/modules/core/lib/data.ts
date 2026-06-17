@@ -508,12 +508,27 @@ export type WorkReportStatus =
 
 export type WorkExecutionStatus = 'not_started' | 'in_progress' | 'suspended' | 'finished';
 
+// OT trabajada en el reporte del día. Su `id` (estable) es la clave de las
+// horas en la matriz HH y, a futuro, de fotos/actividades. Define las columnas
+// dinámicas de la matriz de personal.
+export interface WorkReportDailyOt {
+  id: string;
+  otNumber: string;      // ej. "SER-07887"
+  description?: string;
+}
+
 export interface WorkReportLaborItem {
   id: string;
   workerId?: string | null;
   name: string;
-  role: string;
-  hours: number;
+  role: string;                   // cargo
+  absenceReason?: string;         // causa/motivo de ausencia
+  hours: Record<string, number>;  // clave = WorkReportDailyOt.id → horas en esa OT
+  colacion?: number;
+  documentacion?: number;
+  traslados?: number;
+  overtimeHours?: number;         // horas extra (hext)
+  // subtotal HH y total son DERIVADOS (no se almacenan).
 }
 
 export interface WorkReportEquipmentItem {
@@ -592,7 +607,20 @@ export interface WorkReport {
   startTime?: string | null;
   endTime?: string | null;
   location?: string | null;
+  // Cabecera SQM (parte superior de las 4 páginas)
+  obra?: string | null;
+  contractNumber?: string | null;   // N° CTTO
+  addendumNumber?: string | null;
+  shift?: string | null;            // turno (ej. 39/44)
+  specialty?: string | null;        // especialidad
+  emittedBy?: string | null;
+  emittedByRole?: string | null;    // cargo emisor
+  workSchedule?: string | null;     // jornada (ej. 7x7)
+  dayNight?: string | null;         // Diurno / Nocturno
+  lunchStart?: string | null;       // hora almuerzo
+  restartTime?: string | null;      // hora reinicio
   activities: string;
+  dailyOts: WorkReportDailyOt[];
   labor: WorkReportLaborItem[];
   equipment: WorkReportEquipmentItem[];
   materials: WorkReportMaterialItem[];

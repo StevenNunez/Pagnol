@@ -58,7 +58,19 @@ function toRow(data: WorkReportInput, ctx: Context): Record<string, any> {
   if (data.startTime !== undefined) row.start_time = data.startTime || null;
   if (data.endTime !== undefined) row.end_time = data.endTime || null;
   if (data.location !== undefined) row.location = data.location || null;
+  if (data.obra !== undefined) row.obra = data.obra || null;
+  if (data.contractNumber !== undefined) row.contract_number = data.contractNumber || null;
+  if (data.addendumNumber !== undefined) row.addendum_number = data.addendumNumber || null;
+  if (data.shift !== undefined) row.shift = data.shift || null;
+  if (data.specialty !== undefined) row.specialty = data.specialty || null;
+  if (data.emittedBy !== undefined) row.emitted_by = data.emittedBy || null;
+  if (data.emittedByRole !== undefined) row.emitted_by_role = data.emittedByRole || null;
+  if (data.workSchedule !== undefined) row.work_schedule = data.workSchedule || null;
+  if (data.dayNight !== undefined) row.day_night = data.dayNight || null;
+  if (data.lunchStart !== undefined) row.lunch_start = data.lunchStart || null;
+  if (data.restartTime !== undefined) row.restart_time = data.restartTime || null;
   if (data.activities !== undefined) row.activities = data.activities;
+  if (data.dailyOts !== undefined) row.daily_ots = data.dailyOts;
   if (data.labor !== undefined) row.labor = data.labor;
   if (data.equipment !== undefined) row.equipment = data.equipment;
   if (data.materials !== undefined) row.materials = data.materials;
@@ -114,6 +126,7 @@ export async function createWorkReport(
     end_time: data.endTime || null,
     location: data.location || null,
     activities: data.activities || '',
+    daily_ots: data.dailyOts || [],
     labor: data.labor || [],
     equipment: data.equipment || [],
     materials: data.materials || [],
@@ -198,7 +211,75 @@ export async function transitionWorkReport(
   if (toStatus === 'operations_approved') row.operations_approved_at = now;
   if (toStatus === 'final_approved') row.final_approved_at = now;
   if (toStatus === 'observed') row.rejection_reason = details.notes || null;
+  // Reenvío tras observación: limpiar las aprobaciones parciales previas para
+  // que Jefe de Operaciones y ADC vuelvan a revisar la versión corregida
+  // (ver signWorkReportApproval — el modelo de aprobación es en paralelo).
+  if (fromStatus === 'observed' && toStatus === 'pending_review') {
+    row.operations_approved_at = null;
+    row.final_approved_at = null;
+  }
   if (details.sentTo) row.sent_to = details.sentTo;
+
+  const { error } = await supabase
+    .from('work_reports')
+    .update(row)
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId);
+  if (error) throw error;
+}
+
+/**
+ * Aprobación en paralelo: Jefe de Operaciones (`step: 'operations'`) y
+ * Administrador de Contratos (`step: 'final'`) pueden firmar en cualquier
+ * orden sobre el mismo informe en revisión. El informe pasa a
+ * `final_approved` recién cuando AMBAS marcas de tiempo
+ * (operations_approved_at / final_approved_at) están presentes; mientras
+ * falte una, el status queda en `operations_approved` (que aquí significa
+ * "1 de 2 firmas", sin importar cuál de los dos firmó primero).
+ */
+export async function signWorkReportApproval(
+  id: string,
+  step: 'operations' | 'final',
+  details: { signature: WorkReportSignature; notes?: string },
+  ctx: Context
+): Promise<void> {
+  if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
+
+  const { data: current, error: readError } = await supabase
+    .from('work_reports')
+    .select('status, signatures, audit_log, operations_approved_at, final_approved_at')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  if (readError) throw readError;
+
+  const fromStatus = current.status as WorkReportStatus;
+  const isSuperAdmin = ctx.user.role === 'super-admin';
+  if (!isSuperAdmin && fromStatus !== 'pending_review' && fromStatus !== 'operations_approved') {
+    throw new Error('El informe no está disponible para aprobación en este momento.');
+  }
+  const alreadySigned = step === 'operations' ? !!current.operations_approved_at : !!current.final_approved_at;
+  if (!isSuperAdmin && alreadySigned) {
+    throw new Error('Ya registraste tu aprobación para este informe.');
+  }
+
+  const now = new Date().toISOString();
+  const operationsApprovedAt = step === 'operations' ? now : current.operations_approved_at;
+  const finalApprovedAt = step === 'final' ? now : current.final_approved_at;
+  const bothApproved = !!operationsApprovedAt && !!finalApprovedAt;
+  const toStatus: WorkReportStatus = bothApproved ? 'final_approved' : 'operations_approved';
+
+  const row: Record<string, any> = {
+    status: toStatus,
+    updated_by: ctx.user.id,
+    operations_approved_at: operationsApprovedAt,
+    final_approved_at: finalApprovedAt,
+    signatures: [...(current.signatures || []), details.signature],
+    audit_log: [
+      ...(current.audit_log || []),
+      audit(step === 'operations' ? 'operations_approved' : 'final_approved', ctx, fromStatus, toStatus, details.notes),
+    ],
+  };
 
   const { error } = await supabase
     .from('work_reports')

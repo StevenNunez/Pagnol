@@ -563,6 +563,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         createWorkReport: bindContext(workReportMutations.createWorkReport),
         updateWorkReport: bindContext(workReportMutations.updateWorkReport),
         transitionWorkReport: bindContext(workReportMutations.transitionWorkReport),
+        signWorkReportApproval: bindContext(workReportMutations.signWorkReportApproval),
         recordWorkReportSent: bindContext(workReportMutations.recordWorkReportSent),
         uploadWorkReportPhoto: bindContext(workReportMutations.uploadWorkReportPhoto),
         deleteWorkReportPhoto: bindContext(workReportMutations.deleteWorkReportPhoto),

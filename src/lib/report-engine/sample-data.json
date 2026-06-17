@@ -1,0 +1,140 @@
+{
+  "logos": { "valar": "assets/logo-valar.svg", "sqm": "assets/logo-sqm.svg" },
+  "meta": {
+    "faena": "SQM \"Planta Química de Litio Carmen\"",
+    "obra": "Servicios misceláneos en planta química litio carmen",
+    "fecha": "25-04-2026",
+    "ctto": "SC 9500013862",
+    "addendum": "N/A",
+    "supervisor": "Carlos Zapata Hernández",
+    "turno": "39",
+    "area": "Misceláneo",
+    "especialidad": "Misceláneos",
+    "emitidoPor": "Carlos Zapata",
+    "cargoEmisor": "Supervisor"
+  },
+  "jornada": { "tipo": "7×7", "modalidad": "Diurno", "inicio": "07:00", "almuerzo": "13:00", "reinicio": "14:00", "final": "19:00" },
+
+  "ots": ["07887", "07479", "07891", "07864", "07892", "07905", "07789", "0XXXX"],
+
+  "personal": [
+    { "n": 1,  "nombre": "Juan Rojas",        "cargo": "APR",                "ausencia": "",                "horas": {},                          "colacion": 1, "doc": 4, "traslado": 7, "subhh": 12,   "hext": 0, "total": 12   },
+    { "n": 2,  "nombre": "Rodrigo Guerrero",  "cargo": "Soldador mecánico",  "ausencia": "Licencia médica", "horas": {},                          "colacion": "", "doc": "", "traslado": "", "subhh": 0,   "hext": 0, "total": 0    },
+    { "n": 3,  "nombre": "Abraham Ayala",     "cargo": "Soldador mecánico",  "ausencia": "",                "horas": {"07905": 10},               "colacion": 1, "doc": 0.5, "traslado": 0.5, "subhh": 12, "hext": 0, "total": 12 },
+    { "n": 4,  "nombre": "Rubén Monardes",    "cargo": "Soldador mecánico",  "ausencia": "",                "horas": {"07887": 5, "07864": 1, "07892": 4}, "colacion": 1, "doc": 0.5, "traslado": 0.5, "subhh": 12, "hext": 0, "total": 12 },
+    { "n": 5,  "nombre": "Jeremy Alcahuala",  "cargo": "Soldador mecánico",  "ausencia": "Abandono",        "horas": {},                          "colacion": 1, "doc": 0.5, "traslado": 0.5, "subhh": 2,  "hext": 0, "total": 2 },
+    { "n": 6,  "nombre": "Carlos Rodríguez",  "cargo": "Maestro HDPE-CPVC",  "ausencia": "Ausente",         "horas": {},                          "colacion": "", "doc": "", "traslado": "", "subhh": 0,  "hext": 0, "total": 0 },
+    { "n": 7,  "nombre": "Walter Rodríguez",  "cargo": "Maestro HDPE-CPVC",  "ausencia": "Ausente",         "horas": {},                          "colacion": "", "doc": "", "traslado": "", "subhh": 0,  "hext": 0, "total": 0 },
+    { "n": 8,  "nombre": "Nicolás González",  "cargo": "Andamiero M1",       "ausencia": "",                "horas": {"07891": 7},                "colacion": 1, "doc": 0.5, "traslado": 3, "subhh": 11.5, "hext": 0, "total": 11.5 },
+    { "n": 9,  "nombre": "Francisco Ochoa",   "cargo": "Andamiero M1",       "ausencia": "",                "horas": {"07891": 7},                "colacion": 1, "doc": 0.5, "traslado": 3, "subhh": 11.5, "hext": 0, "total": 11.5 },
+    { "n": 10, "nombre": "Germán Órdenes",    "cargo": "Andamiero M1",       "ausencia": "",                "horas": {"07891": 7},                "colacion": 1, "doc": 0.5, "traslado": 3, "subhh": 11.5, "hext": 0, "total": 11.5 },
+    { "n": 11, "nombre": "Víctor Fuentes",    "cargo": "M1 FRP",             "ausencia": "",                "horas": {"07479": 9},                "colacion": 1, "doc": 0.5, "traslado": 0.5, "subhh": 11, "hext": 0, "total": 11 },
+    { "n": 12, "nombre": "Juan Durán",        "cargo": "M1 FRP",             "ausencia": "",                "horas": {"0XXXX": 8},                "colacion": 1, "doc": 0.5, "traslado": 0.5, "subhh": 10, "hext": 0, "total": 10 },
+    { "n": 13, "nombre": "Luis Huenche",      "cargo": "M1 OO.CC.",          "ausencia": "",                "horas": {"07789": 4.5},              "colacion": 1, "doc": 0.5, "traslado": 6, "subhh": 12, "hext": 0, "total": 12 },
+    { "n": 14, "nombre": "Fabián Rivera",     "cargo": "Eléctrico",          "ausencia": "",                "horas": {"07479": 9},                "colacion": 1, "doc": 0.5, "traslado": 1, "subhh": 11.5, "hext": 0, "total": 11.5 },
+    { "n": 15, "nombre": "Carlos Zapata",     "cargo": "Supervisor",         "ausencia": "",                "horas": {},                          "colacion": 1, "doc": 2, "traslado": 9, "subhh": 12, "hext": 0, "total": 12 },
+    { "n": 16, "nombre": "Sergio Cerda",      "cargo": "Soldador mecánico",  "ausencia": "",                "horas": {"07887": 5, "07864": 1, "07892": 4}, "colacion": 1, "doc": 0.5, "traslado": 0.5, "subhh": 12, "hext": 0, "total": 12 },
+    { "n": 17, "nombre": "Yovanni Álvarez",   "cargo": "Maestro HDPE-CPVC",  "ausencia": "Reemplazo",       "horas": {"07789": 5},                "colacion": 1, "doc": 0.5, "traslado": 0.5, "subhh": 7, "hext": 0, "total": 7 }
+  ],
+
+  "actividades": [
+    { "n": 1, "descripcion": "Confección e instalación de malla en harnero automático",          "area": "Carpa recuperación producto", "unidad": "Unidad", "cantidad": 1, "programado": "",                              "ot": "SER-07887", "avance": 100 },
+    { "n": 2, "descripcion": "Energización 5 containers empresa Santa Laura en Polígono 12",      "area": "POL-12",                      "unidad": "GL",     "cantidad": 1, "programado": "Excavación canalización",        "ot": "SER-07479", "avance": 90 },
+    { "n": 3, "descripcion": "Retiro de andamio por trabajo SER-07777 (gran altura y banquillo)", "area": "SX5",                         "unidad": "GL",     "cantidad": 1, "programado": "",                              "ot": "SER-07891", "avance": 100 },
+    { "n": 4, "descripcion": "Fabricar 3 flautas de lavado planta carbonato",                     "area": "L5",                          "unidad": "UN",     "cantidad": 3, "programado": "Levantamiento de materiales",    "ot": "SER-07864", "avance": 20 },
+    { "n": 5, "descripcion": "Reparación soporte harnero",                                        "area": "Harnero frente a poza 11",    "unidad": "GL",     "cantidad": 1, "programado": "Retiro de soporte desde harnero","ot": "SER-07892", "avance": 70 },
+    { "n": 6, "descripcion": "Fabricación chimenea para vahos cilo cal L3 LIOH",                  "area": "L3 LIOH",                     "unidad": "UN",     "cantidad": 1, "programado": "En proceso de fabricación",      "ot": "SER-07905", "avance": 50 },
+    { "n": 7, "descripcion": "Fabricación de puchos e instalación de bomba impulsora planta TAS", "area": "P. TAS",                      "unidad": "GL",     "cantidad": 1, "programado": "",                              "ot": "SER-07789", "avance": 100 },
+    { "n": 8, "descripcion": "Fabricación puchos de fibra distintas medidas",                     "area": "Polígono 12",                 "unidad": "GL",     "cantidad": 1, "programado": "",                              "ot": "SER-0XXXX", "avance": 30 }
+  ],
+
+  "equipos": [
+    { "cod": 1,  "equipo": "Camioneta Changan",     "horas": 12, "actividad": "Traslado de personal de contrato" },
+    { "cod": 2,  "equipo": "Máquina de soldar",     "horas": 4,  "actividad": "Reparación soporte harnero" },
+    { "cod": 3,  "equipo": "Esmeril angular 7\"",   "horas": 4,  "actividad": "Reparación soporte harnero" },
+    { "cod": 4,  "equipo": "Esmeril de 4 1/2\"",    "horas": 4,  "actividad": "Reparación soporte harnero" },
+    { "cod": 5,  "equipo": "Pistola de impacto 3/4","horas": 4,  "actividad": "Reparación soporte harnero" },
+    { "cod": 6,  "equipo": "Máquina de soldar",     "horas": 2,  "actividad": "Fabricación malla harnero automático" },
+    { "cod": 7,  "equipo": "Esmeril 4 1/2\"",       "horas": 2,  "actividad": "Fabricación malla harnero automático" },
+    { "cod": 8,  "equipo": "Escala",                "horas": 5,  "actividad": "Energización container Santa Laura" },
+    { "cod": 9,  "equipo": "Taladro inalámbrico",   "horas": 5,  "actividad": "Energización container Santa Laura" },
+    { "cod": 10, "equipo": "Esmeril inalámbrico",   "horas": 5,  "actividad": "Energización container Santa Laura" },
+    { "cod": 11, "equipo": "Máquina de soldar",     "horas": 8,  "actividad": "Fabricación chimenea vahos" },
+    { "cod": 12, "equipo": "Esmeril angular 7\"",   "horas": 8,  "actividad": "Fabricación chimenea vahos" },
+    { "cod": 13, "equipo": "Esmeril de 4 1/2\"",    "horas": 8,  "actividad": "Fabricación chimenea vahos" },
+    { "cod": 14, "equipo": "Extensión eléctrica (×2)","horas": 8,"actividad": "Fabricación chimenea vahos" },
+    { "cod": 15, "equipo": "Rotomartillo",          "horas": 5,  "actividad": "Instalación bomba planta TAS" }
+  ],
+
+  "improductividad": [],
+
+  "materiales": [
+    { "cod": 1,  "descripcion": "Electrodo 316L 3/32",        "cantidad": 1,  "unidad": "KG",  "observaciones": "Fabricación chimenea vahos" },
+    { "cod": 2,  "descripcion": "Disco de corte 4 1/2\"",     "cantidad": 1,  "unidad": "Un.", "observaciones": "Fabricación chimenea vahos" },
+    { "cod": 3,  "descripcion": "Disco de desbaste 4 1/2\"",  "cantidad": 1,  "unidad": "Un.", "observaciones": "Fabricación chimenea vahos" },
+    { "cod": 4,  "descripcion": "Disco de corte 7\"",         "cantidad": 1,  "unidad": "Un.", "observaciones": "Fabricación chimenea vahos" },
+    { "cod": 5,  "descripcion": "Codo inox 90º 4\"",          "cantidad": 1,  "unidad": "Un.", "observaciones": "Fabricación chimenea vahos" },
+    { "cod": 6,  "descripcion": "Codo inox 45º 4\"",          "cantidad": 1,  "unidad": "Un.", "observaciones": "Fabricación chimenea vahos" },
+    { "cod": 7,  "descripcion": "Tubería inox 4\"",           "cantidad": 1,  "unidad": "ML",  "observaciones": "Fabricación chimenea vahos" },
+    { "cod": 8,  "descripcion": "Disco corte 4 1/2\"",        "cantidad": 3,  "unidad": "Un.", "observaciones": "Retiro soporte harnero poza 11" },
+    { "cod": 9,  "descripcion": "Soldadura 6011 3/32",        "cantidad": 1,  "unidad": "KG",  "observaciones": "Retiro soporte harnero poza 11" },
+    { "cod": 10, "descripcion": "Soldadura 7018 1 1/8",       "cantidad": 1,  "unidad": "KG",  "observaciones": "Retiro soporte harnero poza 12" },
+    { "cod": 11, "descripcion": "Cordón alimentador 3×2,5mm", "cantidad": 25, "unidad": "ML",  "observaciones": "Energizar container Santa Laura" },
+    { "cod": 12, "descripcion": "Tubería EMT 25mm 3m",        "cantidad": 4,  "unidad": "Un.", "observaciones": "Energizar container Santa Laura" },
+    { "cod": 13, "descripcion": "Caja metálica",              "cantidad": 4,  "unidad": "Un.", "observaciones": "Energizar container Santa Laura" }
+  ],
+
+  "observaciones": "",
+
+  "programacion": [
+    { "descripcion": "Instalación chimenea vahos L3 LIOH",                "area": "L3",     "equipos": "Camioneta, generador", "herramienta": "Máquina de soldar, esmeriles" },
+    { "descripcion": "Trabajos eléctricos instalación Santa Laura",       "area": "POL-12", "equipos": "",                     "herramienta": "Taladro inalámbrico, esmeril angular" },
+    { "descripcion": "Excavación y fabricación línea HDPE planta TAS",    "area": "P.TAS",  "equipos": "Camioneta",            "herramienta": "Cincelador, termofusora, sierra sable" },
+    { "descripcion": "Reparación soporte motor harnero frente a poza 11", "area": "Harnero","equipos": "",                     "herramienta": "Máquina de soldar, esmeriles" }
+  ],
+
+  "fotos": [
+    { "ot": "SER-07887", "titulo": "Malla harnero",    "ejecutor": "A. Ayala",    "visado": "ITO", "img": "" },
+    { "ot": "SER-07479", "titulo": "Energización",     "ejecutor": "F. Rivera",   "visado": "ITO", "img": "" },
+    { "ot": "SER-07891", "titulo": "Retiro andamio",   "ejecutor": "N. González", "visado": "ITO", "img": "" },
+    { "ot": "SER-07892", "titulo": "Soporte harnero",  "ejecutor": "S. Cerda",    "visado": "ITO", "img": "" },
+    { "ot": "SER-07905", "titulo": "Chimenea vahos",   "ejecutor": "R. Monardes", "visado": "ITO", "img": "" },
+    { "ot": "SER-07789", "titulo": "Bomba planta TAS", "ejecutor": "L. Huenche",  "visado": "ITO", "img": "" },
+    { "ot": "SER-07864", "titulo": "Flautas lavado",   "ejecutor": "V. Fuentes",  "visado": "ITO", "img": "" },
+    { "ot": "SER-0XXXX", "titulo": "Puchos fibra",     "ejecutor": "J. Durán",    "visado": "ITO", "img": "" }
+  ],
+
+  "firmas": {
+    "supervisor": { "nombre": "Carlos Zapata",  "cargo": "Supervisor Valar" },
+    "jefe":       { "nombre": "Giovanni Maconi", "cargo": "Jefe de operaciones" },
+    "ito":        { "nombre": "Ismael Segovia",  "cargo": "ITO SQM" }
+  },
+
+  "housekeeping": {
+    "subtitulo": "INSTALACIÓN DE FAENA POLÍGONO 12",
+    "codigo": "PRO-SM-SQM-HK",
+    "rev": "REV. 0",
+    "sector": "Instalación de faena, Valar, polígono 12",
+    "inspeccion": "18:20 – 18:30 · 25-04-2026",
+    "items": [
+      { "texto": "2.1 Área de trabajo limpia y ordenada (talleres, HDPE, FRP, soldadura, torre)", "estado": "cumple", "responsable": "", "observaciones": "" },
+      { "texto": "2.2 Salas de cambio limpias",                       "estado": "cumple",   "responsable": "", "observaciones": "" },
+      { "texto": "2.3 Bodegas ordenadas",                            "estado": "cumple",   "responsable": "", "observaciones": "" },
+      { "texto": "2.4 Sector de acopio limpio",                      "estado": "cumple",   "responsable": "", "observaciones": "" },
+      { "texto": "2.5 Perímetro de instalaciones limpio",            "estado": "cumple",   "responsable": "", "observaciones": "" },
+      { "texto": "2.6 Residuos retirados",                           "estado": "na",       "responsable": "", "observaciones": "" },
+      { "texto": "2.7 Materiales correctamente almacenados",         "estado": "cumple",   "responsable": "", "observaciones": "" },
+      { "texto": "2.8 Herramientas guardadas",                       "estado": "cumple",   "responsable": "", "observaciones": "" },
+      { "texto": "2.9 No existen riesgos visibles",                  "estado": "cumple",   "responsable": "", "observaciones": "" },
+      { "texto": "2.10 Evidencia fotográfica enviada a WhatsApp",    "estado": "cumple",   "responsable": "", "observaciones": "" }
+    ],
+    "observaciones": "",
+    "fotos": ["", "", "", ""],
+    "jefeItems": [
+      { "texto": "5.1 Revisión de fotos",        "estado": "", "observaciones": "" },
+      { "texto": "5.2 Revisión checklist",       "estado": "", "observaciones": "" },
+      { "texto": "5.3 Área en condiciones",      "estado": "", "observaciones": "" },
+      { "texto": "5.4 Desviaciones detectadas",  "estado": "", "observaciones": "" }
+    ]
+  }
+}

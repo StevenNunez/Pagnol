@@ -25,6 +25,7 @@ import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import type {
   WorkExecutionStatus,
   WorkReport,
+  WorkReportDailyOt,
   WorkReportEquipmentItem,
   WorkReportLaborItem,
   WorkReportMaterialItem,
@@ -32,14 +33,21 @@ import type {
   WorkReportSignature,
   WorkReportStatus,
 } from '@/modules/core/lib/data';
-import { generateWorkReportPdf } from '@/lib/work-report-pdf-generator';
 import { supabase } from '@/modules/core/lib/supabase';
 import {
   WORK_REPORT_STATUS_LABEL as STATUS_LABEL,
   WORK_EXECUTION_LABEL as EXECUTION_LABEL,
 } from '@/modules/core/lib/work-report-labels';
 
-const EMPTY_LABOR: WorkReportLaborItem = { id: '', name: '', role: '', hours: 0 };
+const EMPTY_LABOR: WorkReportLaborItem = { id: '', name: '', role: '', hours: {} };
+
+function laborSubtotal(item: WorkReportLaborItem) {
+  const sumHoras = Object.values(item.hours || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+  return sumHoras + (Number(item.colacion) || 0) + (Number(item.documentacion) || 0) + (Number(item.traslados) || 0);
+}
+function laborTotal(item: WorkReportLaborItem) {
+  return laborSubtotal(item) + (Number(item.overtimeHours) || 0);
+}
 const EMPTY_EQUIPMENT: WorkReportEquipmentItem = { id: '', equipment: '', type: '', hours: 0, activity: '' };
 const EMPTY_MATERIAL: WorkReportMaterialItem = { id: '', material: '', unit: '', quantity: 0 };
 
@@ -63,6 +71,7 @@ export default function WorkReportDetailPage() {
     currentTenant,
     updateWorkReport,
     transitionWorkReport,
+    signWorkReportApproval,
     recordWorkReportSent,
     uploadWorkReportPhoto,
     deleteWorkReportPhoto,
@@ -110,7 +119,15 @@ export default function WorkReportDetailPage() {
   const [photoDescription, setPhotoDescription] = React.useState('');
   const [signatureOpen, setSignatureOpen] = React.useState<null | 'supervisor' | 'operations' | 'final'>(null);
   const [signatureData, setSignatureData] = React.useState('');
+  const [useSavedSignature, setUseSavedSignature] = React.useState(true);
   const [reviewNotes, setReviewNotes] = React.useState('');
+  const savedSignature = user?.signature || null;
+
+  const openSignatureDialog = (step: 'supervisor' | 'operations' | 'final') => {
+    setUseSavedSignature(!!savedSignature);
+    setSignatureData(savedSignature || '');
+    setSignatureOpen(step);
+  };
   const [sendOpen, setSendOpen] = React.useState(false);
   const [sendTo, setSendTo] = React.useState('');
   const [deleteOpen, setDeleteOpen] = React.useState(false);
@@ -134,9 +151,10 @@ export default function WorkReportDetailPage() {
   }, []);
 
   const editable = !!draft && (isSuperAdmin || ((draft.status === 'draft' || draft.status === 'observed') && can('work_reports:edit')));
+  const isAwaitingApproval = !!draft && (draft.status === 'pending_review' || draft.status === 'operations_approved');
   const totals = React.useMemo(() => ({
     workers: draft?.labor?.length || 0,
-    hh: (draft?.labor || []).reduce((s, l) => s + Number(l.hours || 0), 0),
+    hh: (draft?.labor || []).reduce((s, l) => s + laborTotal(l), 0),
     hm: (draft?.equipment || []).reduce((s, e) => s + Number(e.hours || 0), 0),
   }), [draft]);
 
@@ -196,8 +214,17 @@ export default function WorkReportDetailPage() {
     });
   };
 
-  const updateArray = <T extends { id: string }>(key: 'labor' | 'equipment' | 'materials' | 'photos', items: T[]) => {
+  const updateArray = <T extends { id: string }>(key: 'labor' | 'equipment' | 'materials' | 'photos' | 'dailyOts', items: T[]) => {
     patchDraft({ [key]: items } as Partial<WorkReport>);
+  };
+
+  // Actualiza las horas de un trabajador en una OT puntual (celda de la matriz).
+  const setLaborHours = (index: number, otId: string, raw: string) => {
+    const item = draft!.labor[index];
+    const hours = { ...(item.hours || {}) };
+    if (raw === '' || Number(raw) === 0) delete hours[otId];
+    else hours[otId] = Number(raw);
+    updateArray('labor', replaceAt(draft!.labor, index, { ...item, hours }));
   };
 
   const addProgressSnapshot = (next: Partial<WorkReport>) => {
@@ -265,12 +292,12 @@ export default function WorkReportDetailPage() {
     return true;
   };
 
-  const signedTransition = async (toStatus: WorkReportStatus, action: string, step: WorkReportSignature['step']) => {
+  const signedTransition = async (step: WorkReportSignature['step'], action: string, toStatus?: WorkReportStatus) => {
     if (!signatureData) {
       notify('La firma digital es obligatoria.', 'destructive');
       return;
     }
-    if (toStatus === 'pending_review' && !validateForSubmit()) return;
+    if (step === 'supervisor' && !validateForSubmit()) return;
     try {
       await save(true);
       const signature: WorkReportSignature = {
@@ -284,7 +311,11 @@ export default function WorkReportDetailPage() {
         action,
         notes: reviewNotes,
       };
-      await transitionWorkReport(draft.id, toStatus, { signature, notes: reviewNotes });
+      if (step === 'supervisor' && toStatus) {
+        await transitionWorkReport(draft.id, toStatus, { signature, notes: reviewNotes });
+      } else {
+        await signWorkReportApproval(draft.id, step as 'operations' | 'final', { signature, notes: reviewNotes });
+      }
       setSignatureOpen(null);
       setSignatureData('');
       setReviewNotes('');
@@ -296,10 +327,30 @@ export default function WorkReportDetailPage() {
     }
   };
 
+  // Genera el PDF en el backend (motor Handlebars + Puppeteer), lo guarda en
+  // Storage y devuelve la URL firmada. Guarda el borrador antes para que el PDF
+  // refleje los últimos cambios.
+  const requestPdfUrl = async (): Promise<string> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
+    if (dirty) await save(true);
+    const res = await fetch(`/api/work-reports/${draft.id}/pdf`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'No se pudo generar el PDF.');
+    }
+    const { url } = await res.json();
+    return url as string;
+  };
+
   const downloadPdf = async () => {
     try {
-      const doc = await generateWorkReportPdf(draft, currentTenant);
-      doc.save(`${draft.internalCode}.pdf`);
+      const url = await requestPdfUrl();
+      window.open(url, '_blank', 'noopener');
     } catch (error: any) {
       notify(error?.message || 'No se pudo generar o descargar el PDF.', 'destructive');
     }
@@ -318,8 +369,14 @@ export default function WorkReportDetailPage() {
         notify('Sesión expirada. Vuelve a iniciar sesión.', 'destructive');
         return;
       }
-      const doc = await generateWorkReportPdf(draft, currentTenant);
-      const pdfBase64 = doc.output('datauristring');
+      const url = await requestPdfUrl();
+      const blob = await (await fetch(url)).blob();
+      const pdfBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
       const res = await fetch('/api/work-reports/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -355,6 +412,15 @@ export default function WorkReportDetailPage() {
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
+    }
+  };
+
+  const sendBackToObserved = async () => {
+    try {
+      await transitionWorkReport(draft.id, 'observed', { notes: 'Solicita correcciones.' });
+      notify('Informe devuelto a observado.', 'success');
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo observar el informe.', 'destructive');
     }
   };
 
@@ -431,6 +497,25 @@ export default function WorkReportDetailPage() {
               <TextField label="Hora inicio" type="time" value={draft.startTime || ''} onChange={(v) => patchDraft({ startTime: v })} disabled={!editable} />
               <TextField label="Hora termino" type="time" value={draft.endTime || ''} onChange={(v) => patchDraft({ endTime: v })} disabled={!editable} />
               <TextField label="Ubicacion" value={draft.location || ''} onChange={(v) => patchDraft({ location: v })} disabled={!editable} />
+              <TextField label="Obra" value={draft.obra || ''} onChange={(v) => patchDraft({ obra: v })} disabled={!editable} />
+              <TextField label="N° Contrato" value={draft.contractNumber || ''} onChange={(v) => patchDraft({ contractNumber: v })} disabled={!editable} />
+              <TextField label="Addendum N°" value={draft.addendumNumber || ''} onChange={(v) => patchDraft({ addendumNumber: v })} disabled={!editable} />
+              <TextField label="Turno" value={draft.shift || ''} onChange={(v) => patchDraft({ shift: v })} disabled={!editable} />
+              <TextField label="Especialidad" value={draft.specialty || ''} onChange={(v) => patchDraft({ specialty: v })} disabled={!editable} />
+              <TextField label="Emitido por" value={draft.emittedBy || ''} onChange={(v) => patchDraft({ emittedBy: v })} disabled={!editable} />
+              <TextField label="Cargo emisor" value={draft.emittedByRole || ''} onChange={(v) => patchDraft({ emittedByRole: v })} disabled={!editable} />
+              <TextField label="Jornada (ej. 7x7)" value={draft.workSchedule || ''} onChange={(v) => patchDraft({ workSchedule: v })} disabled={!editable} />
+              <Field label="Modalidad">
+                <Select value={draft.dayNight || ''} onValueChange={(v) => patchDraft({ dayNight: v })} disabled={!editable}>
+                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="Diurno / Nocturno" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Diurno">Diurno</SelectItem>
+                    <SelectItem value="Nocturno">Nocturno</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <TextField label="Hora almuerzo" type="time" value={draft.lunchStart || ''} onChange={(v) => patchDraft({ lunchStart: v })} disabled={!editable} />
+              <TextField label="Hora reinicio" type="time" value={draft.restartTime || ''} onChange={(v) => patchDraft({ restartTime: v })} disabled={!editable} />
             </div>
           </Section>
 
@@ -444,15 +529,53 @@ export default function WorkReportDetailPage() {
             />
           </Section>
 
-          <DynamicSection title="Mano de obra" action="+ Agregar Trabajador" onAdd={() => updateArray('labor', [...draft.labor, { ...EMPTY_LABOR, id: uid() }])} disabled={!editable}>
-            {(draft.labor || []).map((item, index) => (
-              <CompactRow key={item.id} onDelete={() => updateArray('labor', draft.labor.filter((x) => x.id !== item.id))} disabled={!editable}>
-                <Input className="rounded-xl" placeholder="Nombre" value={item.name} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, name: e.target.value }))} />
-                <Input className="rounded-xl" placeholder="Cargo" value={item.role} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, role: e.target.value }))} />
-                <Input className="rounded-xl" type="number" placeholder="HH" value={item.hours} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, hours: Number(e.target.value) }))} />
+          <DynamicSection title="OTs del día" action="+ Agregar OT" onAdd={() => updateArray('dailyOts', [...(draft.dailyOts || []), { id: uid(), otNumber: '', description: '' }])} disabled={!editable}>
+            <p className="text-[10px] text-muted-foreground mb-1">Las OTs definen las columnas de horas en el detalle del personal.</p>
+            {(draft.dailyOts || []).map((ot, index) => (
+              <CompactRow key={ot.id} onDelete={() => updateArray('dailyOts', (draft.dailyOts || []).filter((x) => x.id !== ot.id))} disabled={!editable}>
+                <Input className="rounded-xl" placeholder="N° OT (ej. SER-07887)" value={ot.otNumber} disabled={!editable} onChange={(e) => updateArray('dailyOts', replaceAt(draft.dailyOts || [], index, { ...ot, otNumber: e.target.value }))} />
+                <Input className="rounded-xl sm:col-span-2" placeholder="Descripción (opcional)" value={ot.description || ''} disabled={!editable} onChange={(e) => updateArray('dailyOts', replaceAt(draft.dailyOts || [], index, { ...ot, description: e.target.value }))} />
               </CompactRow>
             ))}
           </DynamicSection>
+
+          <Section title="Detalle del personal en obra">
+            <div className="space-y-3">
+              {(draft.labor || []).map((item, index) => (
+                <div key={item.id} className="rounded-[1.5rem] border p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-3">
+                    <Input className="rounded-xl" placeholder="Nombre y apellidos" value={item.name} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, name: e.target.value }))} />
+                    <Input className="rounded-xl" placeholder="Cargo" value={item.role} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, role: e.target.value }))} />
+                    <Input className="rounded-xl" placeholder="Causa ausencia (opcional)" value={item.absenceReason || ''} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, absenceReason: e.target.value }))} />
+                    <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => updateArray('labor', draft.labor.filter((x) => x.id !== item.id))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                  {(draft.dailyOts || []).length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Horas por OT</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {(draft.dailyOts || []).map((ot) => (
+                          <Field key={ot.id} label={ot.otNumber || 'OT'}>
+                            <Input className="rounded-xl" type="number" inputMode="decimal" value={item.hours?.[ot.id] ?? ''} disabled={!editable} onChange={(e) => setLaborHours(index, ot.id, e.target.value)} />
+                          </Field>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <Field label="Colación"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.colacion ?? ''} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, colacion: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                    <Field label="Documentación"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.documentacion ?? ''} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, documentacion: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                    <Field label="Traslados"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.traslados ?? ''} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, traslados: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                    <Field label="H. Extra"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.overtimeHours ?? ''} disabled={!editable} onChange={(e) => updateArray('labor', replaceAt(draft.labor, index, { ...item, overtimeHours: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                  </div>
+                  <div className="flex justify-end gap-4 text-xs border-t pt-2">
+                    <span className="text-muted-foreground">Sub HH: <b className="text-foreground tabular-nums">{laborSubtotal(item)}</b></span>
+                    <span className="text-muted-foreground">Total: <b className="text-foreground tabular-nums">{laborTotal(item)}</b></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('labor', [...draft.labor, { ...EMPTY_LABOR, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Trabajador</Button>
+          </Section>
 
           <DynamicSection title="Equipos y maquinaria" action="+ Agregar Equipo" onAdd={() => updateArray('equipment', [...draft.equipment, { ...EMPTY_EQUIPMENT, id: uid() }])} disabled={!editable}>
             {(draft.equipment || []).map((item, index) => (
@@ -525,18 +648,35 @@ export default function WorkReportDetailPage() {
                 <Mini label="HM" value={totals.hm} />
               </div>
               {can('work_reports:submit') && (draft.status === 'draft' || draft.status === 'observed') && (
-                <Button className="w-full rounded-xl" onClick={() => setSignatureOpen('supervisor')}>
+                <Button className="w-full rounded-xl" onClick={() => openSignatureDialog('supervisor')}>
                   <Send className="h-4 w-4 mr-2" /> Firmar y enviar
                 </Button>
               )}
-              {can('work_reports:review_operations') && draft.status === 'pending_review' && (
+              {/* Aprobación en paralelo: Jefe de Operaciones y ADC pueden firmar en
+                  cualquier orden mientras el informe esté en revisión (pending_review)
+                  o con una sola de las dos firmas (operations_approved = "1 de 2"). */}
+              {isAwaitingApproval && (
                 <div className="space-y-2">
-                  <Button className="w-full rounded-xl" onClick={() => setSignatureOpen('operations')}><CheckCircle2 className="h-4 w-4 mr-2" /> Aprobar operaciones</Button>
-                  <Button variant="outline" className="w-full rounded-xl" onClick={() => transitionWorkReport(draft.id, 'observed', { notes: 'Solicita correcciones.' })}><XCircle className="h-4 w-4 mr-2" /> Observar</Button>
+                  {draft.operationsApprovedAt && (
+                    <p className="text-[10px] font-bold text-success-subtle-foreground flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Jefe de Operaciones firmó el {new Date(draft.operationsApprovedAt as any).toLocaleString('es-CL')}
+                    </p>
+                  )}
+                  {draft.finalApprovedAt && (
+                    <p className="text-[10px] font-bold text-success-subtle-foreground flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> ADC firmó el {new Date(draft.finalApprovedAt as any).toLocaleString('es-CL')}
+                    </p>
+                  )}
+                  {can('work_reports:review_operations') && !draft.operationsApprovedAt && (
+                    <Button className="w-full rounded-xl" onClick={() => openSignatureDialog('operations')}><CheckCircle2 className="h-4 w-4 mr-2" /> Aprobar como Jefe de Operaciones</Button>
+                  )}
+                  {can('work_reports:final_approve') && !draft.finalApprovedAt && (
+                    <Button className="w-full rounded-xl" onClick={() => openSignatureDialog('final')}><Signature className="h-4 w-4 mr-2" /> Firma final (ADC)</Button>
+                  )}
+                  {(can('work_reports:review_operations') || can('work_reports:final_approve')) && (
+                    <Button variant="outline" className="w-full rounded-xl" onClick={sendBackToObserved}><XCircle className="h-4 w-4 mr-2" /> Observar</Button>
+                  )}
                 </div>
-              )}
-              {can('work_reports:final_approve') && draft.status === 'operations_approved' && (
-                <Button className="w-full rounded-xl" onClick={() => setSignatureOpen('final')}><Signature className="h-4 w-4 mr-2" /> Firma final</Button>
               )}
               {isSuperAdmin && (
                 <div className="space-y-2 rounded-xl border border-dashed p-3">
@@ -569,12 +709,35 @@ export default function WorkReportDetailPage() {
       <Dialog open={!!signatureOpen} onOpenChange={(open) => !open && setSignatureOpen(null)}>
         <DialogContent className="rounded-[1.5rem]">
           <DialogHeader><DialogTitle>Firma digital</DialogTitle></DialogHeader>
-          <div className="h-48 rounded-xl border bg-card overflow-hidden"><SignaturePad onEnd={setSignatureData} /></div>
+          {savedSignature && useSavedSignature ? (
+            <div className="space-y-2">
+              <div className="h-40 rounded-xl border bg-card overflow-hidden flex items-center justify-center p-4">
+                <img src={savedSignature} alt="Firma guardada" className="max-h-full object-contain" />
+              </div>
+              <p className="text-[10px] text-muted-foreground text-center">
+                Se usará tu firma digital guardada en tu perfil.{' '}
+                <button type="button" className="underline font-bold" onClick={() => { setUseSavedSignature(false); setSignatureData(''); }}>
+                  Firmar manualmente en su lugar
+                </button>
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="h-48 rounded-xl border bg-card overflow-hidden"><SignaturePad onEnd={setSignatureData} /></div>
+              {savedSignature && (
+                <p className="text-[10px] text-muted-foreground text-center">
+                  <button type="button" className="underline font-bold" onClick={() => { setUseSavedSignature(true); setSignatureData(savedSignature); }}>
+                    Usar mi firma guardada en su lugar
+                  </button>
+                </p>
+              )}
+            </div>
+          )}
           <Textarea className="rounded-xl" value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Notas u observaciones" />
           <DialogFooter>
-            {signatureOpen === 'supervisor' && <Button onClick={() => signedTransition('pending_review', 'Enviado a revision', 'supervisor')}>Enviar a revision</Button>}
-            {signatureOpen === 'operations' && <Button onClick={() => signedTransition('operations_approved', 'Aprobado por operaciones', 'operations')}>Aprobar</Button>}
-            {signatureOpen === 'final' && <Button onClick={() => signedTransition('final_approved', 'Aprobacion final', 'final')}>Aprobar final</Button>}
+            {signatureOpen === 'supervisor' && <Button onClick={() => signedTransition('supervisor', 'Enviado a revision', 'pending_review')}>Enviar a revision</Button>}
+            {signatureOpen === 'operations' && <Button onClick={() => signedTransition('operations', 'Aprobado por operaciones')}>Aprobar</Button>}
+            {signatureOpen === 'final' && <Button onClick={() => signedTransition('final', 'Aprobacion final')}>Aprobar final</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>

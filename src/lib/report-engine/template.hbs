@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --tinta:#1f2937; --suave:#6b7280; --linea:#cbd5e1; --linea2:#94a3b8;
+    --barra:#16463a; --barra2:#0f6e56; --acento:#7ab800; --cab:#243746;
+    --zebra:#f1f5f4; --valar:#111827;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:Arial,Helvetica,sans-serif;color:var(--tinta);margin:0;font-size:9px;}
+  @page land{ size:A4 landscape; margin:7mm; }
+  @page port{ size:A4 portrait;  margin:9mm; }
+  .pland{ page:land; } .pport{ page:port; }
+  .page{ page-break-after:always; } .page:last-child{ page-break-after:auto; }
+
+  .brand{display:flex;align-items:stretch;border:1.5px solid var(--valar);border-radius:4px;overflow:hidden;margin-bottom:6px;}
+  .brand .logo{width:130px;display:flex;align-items:center;justify-content:center;border-right:1.5px solid var(--valar);padding:6px;}
+  .brand .logo img{max-width:118px;max-height:46px;object-fit:contain;}
+  .brand .logo .v{font-weight:800;font-size:26px;letter-spacing:6px;color:var(--valar);line-height:1;text-align:center;}
+  .brand .logo .v small{display:block;font-size:9px;letter-spacing:10px;font-weight:700;margin-top:2px;}
+  .brand .titulo{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .brand .titulo h1{margin:0;font-size:16px;letter-spacing:2px;color:var(--barra);}
+  .brand .titulo .sub{font-size:8px;color:var(--suave);letter-spacing:3px;margin-top:2px;}
+  .brand .sqm{width:130px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-left:1.5px solid var(--valar);padding:6px;}
+  .brand .sqm img{max-width:90px;max-height:38px;object-fit:contain;}
+  .brand .sqm .b{background:var(--barra2);color:#fff;font-weight:800;font-size:16px;padding:2px 12px;border-radius:3px;letter-spacing:1px;}
+  .brand .sqm .pg{font-size:7.5px;color:var(--suave);margin-top:3px;}
+
+  .sec{background:var(--barra);color:#fff;font-weight:700;font-size:9.5px;letter-spacing:1px;padding:4px 8px;border-radius:3px;margin:7px 0 3px;display:flex;justify-content:space-between;}
+  .sec .r{color:#bfe3cf;font-weight:600;}
+  .meta{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;font-size:8.5px;}
+  .f{display:flex;border:0.7px solid var(--linea);border-radius:3px;overflow:hidden;}
+  .f .k{background:var(--zebra);color:var(--suave);font-weight:700;padding:3px 5px;white-space:nowrap;}
+  .f .val{padding:3px 5px;font-weight:600;flex:1;}
+
+  table{border-collapse:collapse;width:100%;font-size:8px;}
+  th,td{border:0.6px solid var(--linea);padding:3px 4px;text-align:center;}
+  thead th{background:var(--cab);color:#fff;font-weight:700;letter-spacing:.3px;}
+  tbody tr:nth-child(even){background:var(--zebra);}
+  .txl{text-align:left;}
+  .tot{background:#dbe7e2 !important;font-weight:800;}
+  .num{font-variant-numeric:tabular-nums;}
+  .ausente{color:#b91c1c;font-weight:700;font-size:7.5px;}
+  .pill{display:inline-block;background:var(--barra2);color:#fff;border-radius:8px;padding:1px 6px;font-weight:700;font-size:7.5px;}
+  .av{height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden;display:inline-block;width:46px;vertical-align:middle;margin-right:4px;}
+  .av > i{display:block;height:100%;background:var(--acento);}
+
+  .firmas{display:flex;gap:14px;margin-top:14px;}
+  .firma{flex:1;text-align:center;}
+  .firma .ln{border-top:1px solid var(--tinta);margin:22px 10px 3px;}
+  .firma .ro{font-weight:700;font-size:8.5px;}
+  .firma .nm{font-size:8px;color:var(--suave);}
+
+  .fotogrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;}
+  .fcard{border:0.7px solid var(--linea);border-radius:4px;overflow:hidden;}
+  .fcard .ot{background:var(--barra);color:#fff;font-size:8px;font-weight:700;padding:3px 5px;display:flex;justify-content:space-between;}
+  .fcard .ph{height:115px;background:repeating-linear-gradient(45deg,#eef2f1,#eef2f1 8px,#e2e8e6 8px,#e2e8e6 16px);display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:8px;}
+  .fcard .ph img{width:100%;height:100%;object-fit:cover;display:block;}
+  .fcard .cap{font-size:7.5px;padding:3px 5px;color:var(--suave);}
+  .chk td.c{color:var(--barra2);font-weight:800;}
+  .leg{font-size:7.5px;color:var(--suave);margin-top:4px;}
+</style>
+</head>
+<body>
+
+{{!-- ============ helpers de marca ============ --}}
+{{#*inline "logoValar"}}
+  {{#if logos.valar}}<img src="{{logos.valar}}" alt="VALAR">{{else}}<div class="v">VA<small>VALAR</small></div>{{/if}}
+{{/inline}}
+{{#*inline "logoSqm"}}
+  {{#if logos.sqm}}<img src="{{logos.sqm}}" alt="SQM">{{else}}<div class="b">SQM</div>{{/if}}
+{{/inline}}
+
+{{!-- ================= PAGINA 1 ================= --}}
+<section class="page pland">
+  <div class="brand">
+    <div class="logo">{{> logoValar}}</div>
+    <div class="titulo"><h1>REPORTE DIARIO DE TRABAJO</h1><div class="sub">CONTROL DE OBRA · PAÑOL</div></div>
+    <div class="sqm">{{> logoSqm}}<div class="pg">Página 1 de 4</div></div>
+  </div>
+
+  <div class="meta">
+    <div class="f" style="grid-column:span 6"><div class="k">FAENA</div><div class="val">{{meta.faena}}</div></div>
+    <div class="f" style="grid-column:span 4"><div class="k">OBRA</div><div class="val">{{meta.obra}}</div></div>
+    <div class="f" style="grid-column:span 2"><div class="k">FECHA</div><div class="val">{{meta.fecha}}</div></div>
+    <div class="f" style="grid-column:span 3"><div class="k">N° CTTO</div><div class="val">{{meta.ctto}}</div></div>
+    <div class="f" style="grid-column:span 2"><div class="k">ADDENDUM</div><div class="val">{{meta.addendum}}</div></div>
+    <div class="f" style="grid-column:span 4"><div class="k">SUPERVISOR</div><div class="val">{{meta.supervisor}}</div></div>
+    <div class="f" style="grid-column:span 1"><div class="k">TURNO</div><div class="val">{{meta.turno}}</div></div>
+    <div class="f" style="grid-column:span 2"><div class="k">ÁREA</div><div class="val">{{meta.area}}</div></div>
+  </div>
+
+  <div class="sec">JORNADA DE TRABAJO {{jornada.tipo}} <span class="r">{{jornada.modalidad}}</span></div>
+  <div class="meta">
+    <div class="f" style="grid-column:span 3"><div class="k">Hora inicio real</div><div class="val">{{jornada.inicio}}</div></div>
+    <div class="f" style="grid-column:span 3"><div class="k">Hora almuerzo</div><div class="val">{{jornada.almuerzo}}</div></div>
+    <div class="f" style="grid-column:span 3"><div class="k">Hora reinicio</div><div class="val">{{jornada.reinicio}}</div></div>
+    <div class="f" style="grid-column:span 3"><div class="k">Hora final</div><div class="val">{{jornada.final}}</div></div>
+  </div>
+
+  <div class="sec">DETALLE DEL PERSONAL EN OBRA <span class="r">Emitido por: {{meta.emitidoPor}} · {{meta.cargoEmisor}}</span></div>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:18px">N°</th>
+        <th rowspan="2" class="txl" style="width:120px">Nombre y apellidos</th>
+        <th rowspan="2" style="width:90px">Cargo</th>
+        <th rowspan="2" style="width:70px">Ausencia</th>
+        <th colspan="{{ots.length}}">Horas trabajadas por actividad (N° OT)</th>
+        <th colspan="3">Indirectos</th>
+        <th rowspan="2">Sub HH</th>
+        <th rowspan="2">H. Ext</th>
+        <th rowspan="2">Total</th>
+      </tr>
+      <tr>
+        {{#each ots}}<th>{{this}}</th>{{/each}}
+        <th>Col.</th><th>Doc.</th><th>Tras.</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each personal}}
+      <tr>
+        <td>{{n}}</td>
+        <td class="txl">{{nombre}}</td>
+        <td>{{cargo}}</td>
+        <td class="ausente">{{ausencia}}</td>
+        {{#each cols}}<td>{{this}}</td>{{/each}}
+        <td>{{colacion}}</td><td>{{doc}}</td><td>{{traslado}}</td>
+        <td class="num">{{subhh}}</td><td>{{hext}}</td><td class="num">{{total}}</td>
+      </tr>
+      {{/each}}
+      <tr class="tot">
+        <td colspan="4" class="txl">TOTAL HORAS</td>
+        {{#each totales.cols}}<td>{{this}}</td>{{/each}}
+        <td>{{totales.colacion}}</td><td>{{totales.doc}}</td><td>{{totales.traslado}}</td>
+        <td class="num">{{totales.subhh}}</td><td>{{totales.hext}}</td><td class="num">{{totales.total}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="sec">ACTIVIDADES EJECUTADAS</div>
+  <table>
+    <thead><tr><th style="width:18px">N°</th><th class="txl">Actividad ejecutada</th><th style="width:130px">Área específica</th><th style="width:50px">Unidad</th><th style="width:40px">Cant.</th><th style="width:150px">Programado / Desvío</th><th style="width:60px">N° OT</th><th style="width:80px">% Avance</th></tr></thead>
+    <tbody>
+      {{#each actividades}}
+      <tr>
+        <td>{{n}}</td>
+        <td class="txl">{{descripcion}}</td>
+        <td>{{area}}</td>
+        <td>{{unidad}}</td>
+        <td>{{cantidad}}</td>
+        <td>{{programado}}</td>
+        <td><span class="pill">{{ot}}</span></td>
+        <td><span class="av"><i style="width:{{avancePct}}%"></i></span>{{avancePct}}%</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</section>
+
+{{!-- ================= PAGINA 2 ================= --}}
+<section class="page pport">
+  <div class="brand">
+    <div class="logo">{{> logoValar}}</div>
+    <div class="titulo"><h1>REPORTE DIARIO DE TRABAJO</h1><div class="sub">EQUIPOS · MATERIALES · PROGRAMACIÓN</div></div>
+    <div class="sqm">{{> logoSqm}}<div class="pg">Página 2 de 4</div></div>
+  </div>
+
+  <div class="meta">
+    <div class="f" style="grid-column:span 5"><div class="k">ESPECIALIDAD</div><div class="val">{{meta.especialidad}}</div></div>
+    <div class="f" style="grid-column:span 4"><div class="k">CARGO</div><div class="val">{{meta.cargoEmisor}}</div></div>
+    <div class="f" style="grid-column:span 3"><div class="k">FECHA</div><div class="val">{{meta.fecha}}</div></div>
+  </div>
+
+  <div class="sec">EQUIPO Y/O MAQUINARIA</div>
+  <table>
+    <thead><tr><th style="width:30px">Cód</th><th class="txl">Equipo y/o maquinaria</th><th style="width:55px">Hrs. activ.</th><th class="txl" style="width:230px">Actividad</th></tr></thead>
+    <tbody>
+      {{#each equipos}}
+      <tr><td>{{cod}}</td><td class="txl">{{equipo}}</td><td>{{horas}}</td><td class="txl">{{actividad}}</td></tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="sec">IMPRODUCTIVIDAD / INTERFERENCIAS</div>
+  <table>
+    <thead><tr><th style="width:55px">N° OT</th><th class="txl">Motivo</th><th style="width:90px">Responsable</th><th style="width:40px">Horas</th><th style="width:55px">N° trab.</th><th style="width:50px">Total HH</th></tr></thead>
+    <tbody>
+      {{#if improductividad.length}}
+        {{#each improductividad}}
+        <tr><td>{{ot}}</td><td class="txl">{{motivo}}</td><td>{{responsable}}</td><td>{{horas}}</td><td>{{ntrab}}</td><td>{{totalhh}}</td></tr>
+        {{/each}}
+      {{else}}
+        <tr><td>—</td><td class="txl" style="color:var(--suave)">Sin interferencias registradas</td><td></td><td></td><td></td><td></td></tr>
+      {{/if}}
+    </tbody>
+  </table>
+
+  <div class="sec">MATERIALES</div>
+  <table>
+    <thead><tr><th style="width:30px">Cód</th><th class="txl">Descripción</th><th style="width:40px">Cant.</th><th style="width:45px">Unid.</th><th class="txl" style="width:200px">Observaciones</th></tr></thead>
+    <tbody>
+      {{#each materiales}}
+      <tr><td>{{cod}}</td><td class="txl">{{descripcion}}</td><td>{{cantidad}}</td><td>{{unidad}}</td><td class="txl">{{observaciones}}</td></tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="sec">OBSERVACIONES GENERALES</div>
+  <div style="border:0.7px solid var(--linea);border-radius:3px;min-height:38px;padding:4px 6px;font-size:8.5px;">{{observaciones}}</div>
+
+  <div class="sec">PROGRAMACIÓN DE ACTIVIDADES PARA EL DÍA SIGUIENTE</div>
+  <table>
+    <thead><tr><th class="txl">Descripción de actividades</th><th style="width:60px">Área</th><th class="txl" style="width:130px">Equipos a ocupar</th><th class="txl" style="width:160px">Herramienta mayor a ocupar</th></tr></thead>
+    <tbody>
+      {{#each programacion}}
+      <tr><td class="txl">{{descripcion}}</td><td>{{area}}</td><td class="txl">{{equipos}}</td><td class="txl">{{herramienta}}</td></tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="firmas">
+    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.supervisor.nombre}}</div><div class="ro">{{firmas.supervisor.cargo}}</div></div>
+    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.jefe.nombre}}</div><div class="ro">{{firmas.jefe.cargo}}</div></div>
+    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.ito.nombre}}</div><div class="ro">{{firmas.ito.cargo}}</div></div>
+  </div>
+</section>
+
+{{!-- ================= PAGINA 3 ================= --}}
+<section class="page pland">
+  <div class="brand">
+    <div class="logo">{{> logoValar}}</div>
+    <div class="titulo"><h1>REGISTRO FOTOGRÁFICO DE OT'S</h1><div class="sub">EVIDENCIA POR ORDEN DE TRABAJO</div></div>
+    <div class="sqm">{{> logoSqm}}<div class="pg">Página 3 de 4</div></div>
+  </div>
+
+  <div class="meta">
+    <div class="f" style="grid-column:span 5"><div class="k">PROYECTO</div><div class="val">{{meta.obra}}</div></div>
+    <div class="f" style="grid-column:span 2"><div class="k">FECHA</div><div class="val">{{meta.fecha}}</div></div>
+    <div class="f" style="grid-column:span 2"><div class="k">SUPERVISOR</div><div class="val">{{meta.supervisor}}</div></div>
+    <div class="f" style="grid-column:span 3"><div class="k">ITO SQM</div><div class="val">{{firmas.ito.nombre}}</div></div>
+  </div>
+
+  <div class="sec">FOTOGRAFÍAS</div>
+  <div class="fotogrid">
+    {{#each fotos}}
+    <div class="fcard">
+      <div class="ot"><span>{{ot}}</span><span>{{titulo}}</span></div>
+      <div class="ph">{{#if img}}<img src="{{img}}" alt="{{ot}}">{{else}}FOTOGRAFÍA{{/if}}</div>
+      <div class="cap">Ejecutor: {{ejecutor}} · Visado: {{visado}}</div>
+    </div>
+    {{/each}}
+  </div>
+  <p class="leg">Cada bloque se genera automáticamente por cada OT del día. Las fotos se suben desde la cámara del móvil y quedan asociadas al N° de OT.</p>
+
+  <div class="firmas">
+    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.supervisor.nombre}}</div><div class="ro">Supervisor</div></div>
+    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.jefe.nombre}}</div><div class="ro">Jefe de operaciones</div></div>
+    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.ito.nombre}}</div><div class="ro">ITO SQM</div></div>
+  </div>
+</section>
+
+{{!-- ================= PAGINA 4 ================= --}}
+<section class="page pport">
+  <div class="brand">
+    <div class="logo">{{> logoValar}}</div>
+    <div class="titulo"><h1>PROTOCOLO DE HOUSEKEEPING</h1><div class="sub">{{housekeeping.subtitulo}}</div></div>
+    <div class="sqm">{{> logoSqm}}<div class="pg">Página 4 de 4</div></div>
+  </div>
+
+  <div class="meta">
+    <div class="f" style="grid-column:span 7"><div class="k">PROYECTO</div><div class="val">{{meta.obra}}</div></div>
+    <div class="f" style="grid-column:span 5"><div class="k">CÓDIGO</div><div class="val">{{housekeeping.codigo}} · {{housekeeping.rev}}</div></div>
+    <div class="f" style="grid-column:span 7"><div class="k">SECTOR</div><div class="val">{{housekeeping.sector}}</div></div>
+    <div class="f" style="grid-column:span 5"><div class="k">N° CONTRATO</div><div class="val">{{meta.ctto}}</div></div>
+    <div class="f" style="grid-column:span 5"><div class="k">SUPERVISOR</div><div class="val">{{meta.supervisor}}</div></div>
+    <div class="f" style="grid-column:span 2"><div class="k">TURNO</div><div class="val">{{meta.turno}}</div></div>
+    <div class="f" style="grid-column:span 5"><div class="k">INSPECCIÓN</div><div class="val">{{housekeeping.inspeccion}}</div></div>
+  </div>
+
+  <div class="sec">VERIFICACIÓN DE CUMPLIMIENTOS</div>
+  <table class="chk">
+    <thead><tr><th class="txl">Ítem</th><th style="width:50px">Cumple</th><th style="width:55px">No cumple</th><th style="width:40px">N/A</th><th style="width:70px">Responsable</th><th class="txl" style="width:120px">Observaciones</th></tr></thead>
+    <tbody>
+      {{#each housekeeping.items}}
+      <tr>
+        <td class="txl">{{texto}}</td>
+        <td class="c">{{#if (eq estado "cumple")}}✓{{/if}}</td>
+        <td class="c">{{#if (eq estado "nocumple")}}✗{{/if}}</td>
+        <td class="c">{{#if (eq estado "na")}}✓{{/if}}</td>
+        <td>{{responsable}}</td>
+        <td class="txl">{{observaciones}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div style="display:flex;gap:8px;">
+    <div style="flex:1"><div class="sec">OBSERVACIONES GENERALES</div><div style="border:0.7px solid var(--linea);border-radius:3px;min-height:90px;padding:4px 6px;font-size:8.5px;">{{housekeeping.observaciones}}</div></div>
+    <div style="flex:1"><div class="sec">REGISTRO FOTOGRÁFICO</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+        {{#each housekeeping.fotos}}
+        <div class="fcard"><div class="ph" style="height:40px">{{#if this}}<img src="{{this}}" alt="foto">{{else}}FOTO{{/if}}</div></div>
+        {{/each}}
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">VERIFICACIÓN DE CUMPLIMIENTO (JEFE DE OPERACIONES)</div>
+  <table class="chk">
+    <thead><tr><th class="txl">Ítem</th><th style="width:50px">Cumple</th><th style="width:55px">No cumple</th><th style="width:40px">N/A</th><th class="txl">Observaciones</th></tr></thead>
+    <tbody>
+      {{#each housekeeping.jefeItems}}
+      <tr>
+        <td class="txl">{{texto}}</td>
+        <td class="c">{{#if (eq estado "cumple")}}✓{{/if}}</td>
+        <td class="c">{{#if (eq estado "nocumple")}}✗{{/if}}</td>
+        <td class="c">{{#if (eq estado "na")}}✓{{/if}}</td>
+        <td class="txl">{{observaciones}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="firmas">
+    <div class="firma"><div class="ln"></div><div class="ro">Supervisor</div><div class="nm">Nombre / Firma / Fecha</div></div>
+    <div class="firma"><div class="ln"></div><div class="ro">Jefe de operaciones</div><div class="nm">Nombre / Firma / Fecha</div></div>
+    <div class="firma"><div class="ln"></div><div class="ro">Control documental</div><div class="nm">Nombre / Firma / Fecha</div></div>
+  </div>
+</section>
+
+</body>
+</html>

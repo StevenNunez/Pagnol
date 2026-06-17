@@ -4,7 +4,7 @@ export const WORK_REPORT_STATUS_LABEL: Record<WorkReportStatus, string> = {
   draft: 'Borrador',
   pending_review: 'Pendiente revision',
   observed: 'Observado',
-  operations_approved: 'Aprobado jefe operaciones',
+  operations_approved: 'Aprobación parcial (1 de 2 firmas)',
   final_approved: 'Aprobado final',
   archived: 'Archivado',
 };

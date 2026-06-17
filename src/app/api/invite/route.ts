@@ -1,6 +1,8 @@
 
 import { NextResponse } from 'next/server';
+import type { UserRole } from '@/modules/core/lib/data';
 import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
+import { ROLES } from '@/modules/core/lib/permissions';
 
 export async function POST(request: Request) {
     try {
@@ -17,19 +19,7 @@ export async function POST(request: Request) {
 
         const inviteLink = `${appUrl}/invite/${token}`;
 
-        const roleLabel: Record<string, string> = {
-            administrador: 'Administrador',
-            panolero: 'Pañolero',
-            supervisor: 'Supervisor',
-            operador: 'Operador',
-            guardia: 'Guardia',
-            'jefe-turno': 'Jefe de Turno',
-            'jefe-mantencion': 'Jefe de Mantención',
-            finance: 'Finanzas',
-            cphs: 'CPHS',
-            contratista: 'Contratista',
-        };
-        const roleDisplay = roleLabel[role] || role?.toUpperCase() || 'Usuario';
+        const roleDisplay = ROLES[role as UserRole]?.label || role?.toUpperCase() || 'Usuario';
 
         await sendEmail({
             to: email,

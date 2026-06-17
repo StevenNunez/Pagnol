@@ -219,6 +219,7 @@ export interface AppStateContextType extends AppDataState {
   createWorkReport: (data: Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>) => Promise<WorkReport>;
   updateWorkReport: (id: string, data: Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
   transitionWorkReport: (id: string, toStatus: WorkReportStatus, details?: { signature?: WorkReportSignature; notes?: string; sentTo?: string[] }) => Promise<void>;
+  signWorkReportApproval: (id: string, step: 'operations' | 'final', details: { signature: WorkReportSignature; notes?: string }) => Promise<void>;
   recordWorkReportSent: (id: string, recipients: string[]) => Promise<void>;
   uploadWorkReportPhoto: (reportId: string, file: File, description: string) => Promise<WorkReportPhoto>;
   deleteWorkReportPhoto: (photo: WorkReportPhoto) => Promise<void>;

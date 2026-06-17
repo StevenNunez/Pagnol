@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="98" fill="#76B82A"/>
+  <path d="M14 130 Q100 100 186 130 Q100 182 14 130 Z" fill="#ffffff"/>
+  <path d="M22 138 Q100 113 178 138 Q100 178 22 138 Z" fill="#16479E"/>
+  <text x="100" y="100" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="60" text-anchor="middle" fill="#ffffff" letter-spacing="1">SQM</text>
+</svg>

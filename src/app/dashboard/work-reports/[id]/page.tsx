@@ -48,6 +48,7 @@ import {
   WORK_EXECUTION_LABEL as EXECUTION_LABEL,
 } from '@/modules/core/lib/work-report-labels';
 import { createDefaultHousekeeping } from '@/modules/core/lib/work-report-housekeeping';
+import { compressImage } from '@/lib/compress-image';
 
 const EMPTY_LABOR: WorkReportLaborItem = { id: '', name: '', role: '', hours: {} };
 
@@ -269,7 +270,8 @@ export default function WorkReportDetailPage() {
     try {
       const uploaded: WorkReportPhoto[] = [];
       for (const file of Array.from(files)) {
-        uploaded.push(await uploadWorkReportPhoto(draft.id, file, photoDescription));
+        const compressed = await compressImage(file);
+        uploaded.push(await uploadWorkReportPhoto(draft.id, compressed, photoDescription));
       }
       const photos = [...(draft.photos || []), ...uploaded];
       patchDraft({ photos });
@@ -310,7 +312,8 @@ export default function WorkReportDetailPage() {
     if (!files?.length) return;
     setSaving(true);
     try {
-      const uploaded = await uploadWorkReportPhoto(draft.id, files[0], `Housekeeping ${index + 1}`);
+      const compressed = await compressImage(files[0]);
+      const uploaded = await uploadWorkReportPhoto(draft.id, compressed, `Housekeeping ${index + 1}`);
       const photos = [...(hk.photos || ['', '', '', ''])];
       photos[index] = uploaded.url;
       const housekeeping = { ...hk, photos };
@@ -379,7 +382,8 @@ export default function WorkReportDetailPage() {
   // Genera el PDF en el backend (motor Handlebars + Puppeteer), lo guarda en
   // Storage y devuelve la URL firmada. Guarda el borrador antes para que el PDF
   // refleje los últimos cambios.
-  const requestPdfUrl = async (): Promise<string> => {
+  // Genera el PDF al vuelo y devuelve el binario (no se persiste en Storage).
+  const requestPdfBlob = async (): Promise<Blob> => {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
     if (!token) throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
@@ -392,14 +396,20 @@ export default function WorkReportDetailPage() {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || 'No se pudo generar el PDF.');
     }
-    const { url } = await res.json();
-    return url as string;
+    return res.blob();
   };
 
   const downloadPdf = async () => {
     try {
-      const url = await requestPdfUrl();
-      window.open(url, '_blank', 'noopener');
+      const blob = await requestPdfBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${draft.internalCode}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (error: any) {
       notify(error?.message || 'No se pudo generar o descargar el PDF.', 'destructive');
     }
@@ -418,8 +428,7 @@ export default function WorkReportDetailPage() {
         notify('Sesión expirada. Vuelve a iniciar sesión.', 'destructive');
         return;
       }
-      const url = await requestPdfUrl();
-      const blob = await (await fetch(url)).blob();
+      const blob = await requestPdfBlob();
       const pdfBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);

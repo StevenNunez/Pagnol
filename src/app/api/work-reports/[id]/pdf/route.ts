@@ -4,17 +4,15 @@ import { mappers } from '@/modules/data/mappers';
 import { construirDatosReporte } from '@/lib/report-engine/build-report-data';
 import { generarReportePdf } from '@/lib/report-engine/generate-pdf';
 
-// Genera el PDF del Reporte Diario (motor Handlebars + Puppeteer), lo guarda en
-// el bucket privado work-report-pdfs y devuelve una URL firmada.
+// Genera el PDF del Reporte Diario (motor Handlebars + Puppeteer) y lo devuelve
+// al vuelo como binario, SIN persistirlo en Storage. El PDF siempre refleja el
+// estado actual del reporte; no ocupa espacio en Supabase.
 //
-//   POST /api/work-reports/:id/pdf  ->  { url, path }
+//   POST /api/work-reports/:id/pdf  ->  application/pdf (binario)
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
-
-const BUCKET = 'work-report-pdfs';
-const SIGNED_URL_TTL = 315360000; // ~10 años
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -41,18 +39,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const datos = await construirDatosReporte(report);
     const pdf = await generarReportePdf(datos);
 
-    const path = `${row.tenant_id}/${id}.pdf`;
-    const { error: uploadError } = await ctx.admin.storage
-      .from(BUCKET)
-      .upload(path, pdf, { contentType: 'application/pdf', upsert: true });
-    if (uploadError) throw uploadError;
-
-    const { data: signed, error: signError } = await ctx.admin.storage
-      .from(BUCKET)
-      .createSignedUrl(path, SIGNED_URL_TTL);
-    if (signError || !signed) throw signError || new Error('No se pudo firmar la URL.');
-
-    return NextResponse.json({ url: signed.signedUrl, path });
+    return new NextResponse(new Uint8Array(pdf), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${id}.pdf"`,
+        'Cache-Control': 'no-store',
+      },
+    });
   } catch (error: any) {
     console.error('[WorkReports] pdf error:', error);
     return NextResponse.json(

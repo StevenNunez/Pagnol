@@ -49,7 +49,9 @@
 
   .firmas{display:flex;gap:14px;margin-top:14px;}
   .firma{flex:1;text-align:center;}
+  .firma .sig{display:block;height:30px;margin:0 auto -4px;object-fit:contain;}
   .firma .ln{border-top:1px solid var(--tinta);margin:22px 10px 3px;}
+  .firma .sig + .ln{margin-top:0;}
   .firma .ro{font-weight:700;font-size:8.5px;}
   .firma .nm{font-size:8px;color:var(--suave);}
 
@@ -222,9 +224,9 @@
   </table>
 
   <div class="firmas">
-    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.supervisor.nombre}}</div><div class="ro">{{firmas.supervisor.cargo}}</div></div>
-    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.jefe.nombre}}</div><div class="ro">{{firmas.jefe.cargo}}</div></div>
-    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.ito.nombre}}</div><div class="ro">{{firmas.ito.cargo}}</div></div>
+    <div class="firma">{{#if firmas.supervisor.firma}}<img class="sig" src="{{firmas.supervisor.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="nm">{{firmas.supervisor.nombre}}</div><div class="ro">{{firmas.supervisor.cargo}}</div></div>
+    <div class="firma">{{#if firmas.jefe.firma}}<img class="sig" src="{{firmas.jefe.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="nm">{{firmas.jefe.nombre}}</div><div class="ro">{{firmas.jefe.cargo}}</div></div>
+    <div class="firma">{{#if firmas.ito.firma}}<img class="sig" src="{{firmas.ito.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="nm">{{firmas.ito.nombre}}</div><div class="ro">{{firmas.ito.cargo}}</div></div>
   </div>
 </section>
 
@@ -256,9 +258,9 @@
   <p class="leg">Cada bloque se genera automáticamente por cada OT del día. Las fotos se suben desde la cámara del móvil y quedan asociadas al N° de OT.</p>
 
   <div class="firmas">
-    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.supervisor.nombre}}</div><div class="ro">Supervisor</div></div>
-    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.jefe.nombre}}</div><div class="ro">Jefe de operaciones</div></div>
-    <div class="firma"><div class="ln"></div><div class="nm">{{firmas.ito.nombre}}</div><div class="ro">ITO SQM</div></div>
+    <div class="firma">{{#if firmas.supervisor.firma}}<img class="sig" src="{{firmas.supervisor.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="nm">{{firmas.supervisor.nombre}}</div><div class="ro">Supervisor</div></div>
+    <div class="firma">{{#if firmas.jefe.firma}}<img class="sig" src="{{firmas.jefe.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="nm">{{firmas.jefe.nombre}}</div><div class="ro">Jefe de operaciones</div></div>
+    <div class="firma">{{#if firmas.ito.firma}}<img class="sig" src="{{firmas.ito.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="nm">{{firmas.ito.nombre}}</div><div class="ro">ITO SQM</div></div>
   </div>
 </section>
 
@@ -325,9 +327,9 @@
   </table>
 
   <div class="firmas">
-    <div class="firma"><div class="ln"></div><div class="ro">Supervisor</div><div class="nm">Nombre / Firma / Fecha</div></div>
-    <div class="firma"><div class="ln"></div><div class="ro">Jefe de operaciones</div><div class="nm">Nombre / Firma / Fecha</div></div>
-    <div class="firma"><div class="ln"></div><div class="ro">Control documental</div><div class="nm">Nombre / Firma / Fecha</div></div>
+    <div class="firma">{{#if firmas.supervisor.firma}}<img class="sig" src="{{firmas.supervisor.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="ro">Supervisor</div><div class="nm">{{#if firmas.supervisor.nombre}}{{firmas.supervisor.nombre}}{{else}}Nombre / Firma / Fecha{{/if}}</div></div>
+    <div class="firma">{{#if firmas.jefe.firma}}<img class="sig" src="{{firmas.jefe.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="ro">Jefe de operaciones</div><div class="nm">{{#if firmas.jefe.nombre}}{{firmas.jefe.nombre}}{{else}}Nombre / Firma / Fecha{{/if}}</div></div>
+    <div class="firma">{{#if firmas.ito.firma}}<img class="sig" src="{{firmas.ito.firma}}" alt="firma">{{/if}}<div class="ln"></div><div class="ro">Control documental</div><div class="nm">{{#if firmas.ito.nombre}}{{firmas.ito.nombre}}{{else}}Nombre / Firma / Fecha{{/if}}</div></div>
   </div>
 </section>
 

@@ -7,6 +7,7 @@ import {
     RentalParty, RentalContract, RentalAsset, RentalPayment, WorkReport,
     LeaveRequest, HRDocument
 } from '@/modules/core/lib/data';
+import { createDefaultHousekeeping } from '@/modules/core/lib/work-report-housekeeping';
 
 export const mappers = {
     materials: (item: any): Material => ({
@@ -238,6 +239,7 @@ export const mappers = {
         lunchStart: item.lunch_start || null,
         restartTime: item.restart_time || null,
         activities: item.activities || '',
+        structuredActivities: item.structured_activities || [],
         dailyOts: item.daily_ots || [],
         // Coerción de formato legacy: `hours` antes era número escalar; ahora es
         // un objeto {otId: horas}. Normaliza para que la UI/PDF no rompan.
@@ -246,7 +248,10 @@ export const mappers = {
             hours: l.hours && typeof l.hours === 'object' ? l.hours : {},
         })),
         equipment: item.equipment || [],
+        interferences: item.interferences || [],
         materials: item.materials || [],
+        nextDayPlan: item.next_day_plan || [],
+        housekeeping: item.housekeeping || createDefaultHousekeeping(),
         photos: item.photos || [],
         progressPercent: Number(item.progress_percent) || 0,
         executionStatus: item.execution_status || 'not_started',

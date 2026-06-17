@@ -1,4 +1,5 @@
 import { supabase } from '@/modules/core/lib/supabase';
+import { createDefaultHousekeeping } from '@/modules/core/lib/work-report-housekeeping';
 import { mappers } from '../mappers';
 import type {
   WorkReport,
@@ -70,10 +71,14 @@ function toRow(data: WorkReportInput, ctx: Context): Record<string, any> {
   if (data.lunchStart !== undefined) row.lunch_start = data.lunchStart || null;
   if (data.restartTime !== undefined) row.restart_time = data.restartTime || null;
   if (data.activities !== undefined) row.activities = data.activities;
+  if (data.structuredActivities !== undefined) row.structured_activities = data.structuredActivities;
   if (data.dailyOts !== undefined) row.daily_ots = data.dailyOts;
   if (data.labor !== undefined) row.labor = data.labor;
   if (data.equipment !== undefined) row.equipment = data.equipment;
+  if (data.interferences !== undefined) row.interferences = data.interferences;
   if (data.materials !== undefined) row.materials = data.materials;
+  if (data.nextDayPlan !== undefined) row.next_day_plan = data.nextDayPlan;
+  if (data.housekeeping !== undefined) row.housekeeping = data.housekeeping;
   if (data.photos !== undefined) row.photos = data.photos;
   if (data.progressPercent !== undefined) row.progress_percent = data.progressPercent;
   if (data.executionStatus !== undefined) row.execution_status = data.executionStatus;
@@ -126,10 +131,14 @@ export async function createWorkReport(
     end_time: data.endTime || null,
     location: data.location || null,
     activities: data.activities || '',
+    structured_activities: data.structuredActivities || [],
     daily_ots: data.dailyOts || [],
     labor: data.labor || [],
     equipment: data.equipment || [],
+    interferences: data.interferences || [],
     materials: data.materials || [],
+    next_day_plan: data.nextDayPlan || [],
+    housekeeping: data.housekeeping || createDefaultHousekeeping(),
     photos: data.photos || [],
     progress_percent: data.progressPercent || 0,
     execution_status: data.executionStatus || 'not_started',

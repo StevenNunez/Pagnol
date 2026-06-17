@@ -517,6 +517,20 @@ export interface WorkReportDailyOt {
   description?: string;
 }
 
+// Actividad ejecutada del día (reemplaza el textarea libre). Cada fila alimenta
+// la tabla de actividades del PDF SQM. `otId` referencia un WorkReportDailyOt.id
+// (igual que la matriz HH); build-report-data lo traduce al número de OT.
+export interface WorkReportActivity {
+  id: string;
+  description: string;
+  area?: string;
+  unit?: string;             // unidad (m2, ml, un, etc.)
+  plannedQuantity?: number;  // cantidad programada
+  quantity?: number;         // cantidad ejecutada
+  otId?: string;             // clave de WorkReportDailyOt
+  progress?: number;         // % avance de la actividad
+}
+
 export interface WorkReportLaborItem {
   id: string;
   workerId?: string | null;
@@ -533,11 +547,24 @@ export interface WorkReportLaborItem {
 
 export interface WorkReportEquipmentItem {
   id: string;
-  equipmentId?: string | null;
+  equipmentId?: string | null;   // FK al activo del catálogo (Material) si se eligió
+  code?: string;                 // código interno (Material.internalCode) o manual
   equipment: string;
   type: string;
   hours: number;
   activity: string;
+}
+
+// Interferencia / improductividad del día (tabla de la página 3 del PDF SQM).
+// `otId` referencia un WorkReportDailyOt.id (build-report-data lo traduce al N° OT).
+// Total HH es DERIVADO (hours × workerCount); no se almacena.
+export interface WorkReportInterference {
+  id: string;
+  otId?: string;
+  reason: string;        // motivo
+  responsible?: string;  // responsable
+  hours?: number;        // horas perdidas
+  workerCount?: number;  // N° de trabajadores afectados
 }
 
 export interface WorkReportMaterialItem {
@@ -546,6 +573,41 @@ export interface WorkReportMaterialItem {
   material: string;
   unit: string;
   quantity: number;
+  observations?: string;   // columna "Observaciones" del PDF SQM
+}
+
+// Programación del día siguiente (tabla de la página 3 del PDF SQM). Texto libre.
+export interface WorkReportNextDayPlan {
+  id: string;
+  description: string;   // descripción de actividades
+  area?: string;
+  equipment?: string;    // equipos a ocupar (texto libre)
+  tools?: string;        // herramienta mayor a ocupar (texto libre)
+}
+
+// Housekeeping (página 4 del PDF SQM): checklist de cumplimientos + checklist
+// del jefe de operaciones + observaciones + 4 fotos. Los textos de los ítems son
+// estándar (ver work-report-housekeeping.ts); el usuario marca estado/obs.
+export type HousekeepingStatus = '' | 'cumple' | 'nocumple' | 'na';
+
+export interface WorkReportHousekeepingItem {
+  id: string;
+  text: string;
+  status?: HousekeepingStatus;
+  responsible?: string;   // solo en el checklist principal
+  observations?: string;
+}
+
+export interface WorkReportHousekeeping {
+  subtitle?: string;
+  code?: string;          // ej. PRO-SM-SQM-HK
+  rev?: string;           // ej. REV. 0
+  sector?: string;
+  inspection?: string;    // ej. "18:20 – 18:30 · 25-04-2026"
+  items: WorkReportHousekeepingItem[];
+  observations?: string;
+  photos: string[];       // hasta 4 URLs
+  jefeItems: WorkReportHousekeepingItem[];
 }
 
 export interface WorkReportPhoto {
@@ -556,6 +618,9 @@ export interface WorkReportPhoto {
   date: string;
   userId: string;
   userName: string;
+  otId?: string;       // OT a la que pertenece la foto (WorkReportDailyOt.id)
+  executor?: string;   // ejecutor del trabajo fotografiado
+  approver?: string;   // visado / revisado por
 }
 
 export interface WorkReportProgressEntry {
@@ -619,11 +684,15 @@ export interface WorkReport {
   dayNight?: string | null;         // Diurno / Nocturno
   lunchStart?: string | null;       // hora almuerzo
   restartTime?: string | null;      // hora reinicio
-  activities: string;
+  activities: string;                       // legacy: descripción libre (fallback)
+  structuredActivities: WorkReportActivity[];
   dailyOts: WorkReportDailyOt[];
   labor: WorkReportLaborItem[];
   equipment: WorkReportEquipmentItem[];
+  interferences: WorkReportInterference[];
   materials: WorkReportMaterialItem[];
+  nextDayPlan: WorkReportNextDayPlan[];
+  housekeeping?: WorkReportHousekeeping;
   photos: WorkReportPhoto[];
   progressPercent: number;
   executionStatus: WorkExecutionStatus;

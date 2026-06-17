@@ -1,5 +1,6 @@
 import 'server-only';
 import type { WorkReport, WorkReportSignature } from '@/modules/core/lib/data';
+import { createDefaultHousekeeping, HOUSEKEEPING_CODE, HOUSEKEEPING_REV } from '@/modules/core/lib/work-report-housekeeping';
 
 // Traduce un WorkReport (modelo actual de la app) al contrato de datos del motor
 // PDF (ver sample-data.json). Los campos que el modelo todavía NO captura (matriz
@@ -34,27 +35,6 @@ function lastSignature(signatures: WorkReportSignature[], step: WorkReportSignat
   return [...signatures].reverse().find((s) => s.step === step);
 }
 
-// Checklist estándar de housekeeping (página 4). Hasta que se modele en datos,
-// se entrega la estructura sin marcar para que la página conserve su formato.
-const HOUSEKEEPING_ITEMS = [
-  '2.1 Área de trabajo limpia y ordenada (talleres, HDPE, FRP, soldadura, torre)',
-  '2.2 Salas de cambio limpias',
-  '2.3 Bodegas ordenadas',
-  '2.4 Sector de acopio limpio',
-  '2.5 Perímetro de instalaciones limpio',
-  '2.6 Residuos retirados',
-  '2.7 Materiales correctamente almacenados',
-  '2.8 Herramientas guardadas',
-  '2.9 No existen riesgos visibles',
-  '2.10 Evidencia fotográfica enviada a WhatsApp',
-];
-const HOUSEKEEPING_JEFE_ITEMS = [
-  '5.1 Revisión de fotos',
-  '5.2 Revisión checklist',
-  '5.3 Área en condiciones',
-  '5.4 Desviaciones detectadas',
-];
-
 export async function construirDatosReporte(report: WorkReport, tenantName?: string | null): Promise<any> {
   const otNumber = report.otNumber || '';
 
@@ -65,10 +45,10 @@ export async function construirDatosReporte(report: WorkReport, tenantName?: str
 
   const fotos = await Promise.all(
     (report.photos || []).map(async (p) => ({
-      ot: '', // las fotos aún no se asocian a OT (fase de modelo de datos)
+      ot: (p.otId && otIdToNumber.get(p.otId)) || '',
       titulo: p.description || '',
-      ejecutor: p.userName || '',
-      visado: '',
+      ejecutor: p.executor || p.userName || '',
+      visado: p.approver || '',
       img: await fetchAsDataUri(p.url),
     })),
   );
@@ -77,6 +57,16 @@ export async function construirDatosReporte(report: WorkReport, tenantName?: str
   const sup = lastSignature(signatures, 'supervisor');
   const ops = lastSignature(signatures, 'operations');
   const fin = lastSignature(signatures, 'final');
+
+  const hk = report.housekeeping || createDefaultHousekeeping();
+  const hkFotos = await Promise.all((hk.photos || []).map((u) => fetchAsDataUri(u)));
+
+  // Imagen del trazo de cada firma (SignaturePad la guarda como data URI PNG).
+  const [firmaSup, firmaJefe, firmaIto] = await Promise.all([
+    fetchAsDataUri(sup?.signature),
+    fetchAsDataUri(ops?.signature),
+    fetchAsDataUri(fin?.signature),
+  ]);
 
   return {
     meta: {
@@ -128,52 +118,88 @@ export async function construirDatosReporte(report: WorkReport, tenantName?: str
         total: subhh + hext,
       };
     }),
-    actividades: report.activities
-      ? [
-          {
-            n: 1,
-            descripcion: report.activities,
-            area: report.area || '',
-            unidad: '',
-            cantidad: '',
-            programado: '',
-            ot: otNumber,
-            avance: report.progressPercent || 0,
-          },
-        ]
-      : [],
+    actividades: (report.structuredActivities && report.structuredActivities.length)
+      ? report.structuredActivities.map((a, i) => ({
+          n: i + 1,
+          descripcion: a.description || '',
+          area: a.area || '',
+          unidad: a.unit || '',
+          cantidad: a.quantity ?? '',
+          programado: a.plannedQuantity ?? '',
+          ot: (a.otId && otIdToNumber.get(a.otId)) || otNumber,
+          avance: Number(a.progress) || 0,
+        }))
+      : report.activities
+        ? [
+            {
+              n: 1,
+              descripcion: report.activities,
+              area: report.area || '',
+              unidad: '',
+              cantidad: '',
+              programado: '',
+              ot: otNumber,
+              avance: report.progressPercent || 0,
+            },
+          ]
+        : [],
     equipos: (report.equipment || []).map((e, i) => ({
       cod: i + 1,
       equipo: e.equipment || '',
       horas: Number(e.hours) || 0,
       actividad: e.activity || '',
     })),
-    improductividad: [],
+    improductividad: (report.interferences || []).map((it) => {
+      const horas = Number(it.hours) || 0;
+      const ntrab = Number(it.workerCount) || 0;
+      return {
+        ot: (it.otId && otIdToNumber.get(it.otId)) || '',
+        motivo: it.reason || '',
+        responsable: it.responsible || '',
+        horas: horas || '',
+        ntrab: ntrab || '',
+        totalhh: horas * ntrab || '',
+      };
+    }),
     materiales: (report.materials || []).map((m, i) => ({
       cod: i + 1,
       descripcion: m.material || '',
       cantidad: Number(m.quantity) || 0,
       unidad: m.unit || '',
-      observaciones: '',
+      observaciones: m.observations || '',
     })),
     observaciones: report.progressObservations || '',
-    programacion: [],
+    programacion: (report.nextDayPlan || []).map((p) => ({
+      descripcion: p.description || '',
+      area: p.area || '',
+      equipos: p.equipment || '',
+      herramienta: p.tools || '',
+    })),
     fotos,
     firmas: {
-      supervisor: { nombre: sup?.userName || report.supervisorName || '', cargo: sup?.userRole || 'Supervisor' },
-      jefe: { nombre: ops?.userName || '', cargo: ops?.userRole || 'Jefe de operaciones' },
-      ito: { nombre: fin?.userName || '', cargo: fin?.userRole || 'ITO SQM' },
+      supervisor: { nombre: sup?.userName || report.supervisorName || '', cargo: sup?.userRole || 'Supervisor', firma: firmaSup },
+      jefe: { nombre: ops?.userName || '', cargo: ops?.userRole || 'Jefe de operaciones', firma: firmaJefe },
+      ito: { nombre: fin?.userName || '', cargo: fin?.userRole || 'ITO SQM', firma: firmaIto },
     },
     housekeeping: {
-      subtitulo: '',
-      codigo: '',
-      rev: '',
-      sector: '',
-      inspeccion: '',
-      items: HOUSEKEEPING_ITEMS.map((texto) => ({ texto, estado: '', responsable: '', observaciones: '' })),
-      observaciones: '',
-      fotos: ['', '', '', ''],
-      jefeItems: HOUSEKEEPING_JEFE_ITEMS.map((texto) => ({ texto, estado: '', observaciones: '' })),
+      subtitulo: hk.subtitle || '',
+      codigo: hk.code || HOUSEKEEPING_CODE,
+      rev: hk.rev || HOUSEKEEPING_REV,
+      sector: hk.sector || '',
+      inspeccion: hk.inspection || '',
+      items: (hk.items || []).map((it) => ({
+        texto: it.text || '',
+        estado: it.status || '',
+        responsable: it.responsible || '',
+        observaciones: it.observations || '',
+      })),
+      observaciones: hk.observations || '',
+      fotos: [hkFotos[0] || '', hkFotos[1] || '', hkFotos[2] || '', hkFotos[3] || ''],
+      jefeItems: (hk.jefeItems || []).map((it) => ({
+        texto: it.text || '',
+        estado: it.status || '',
+        observaciones: it.observations || '',
+      })),
     },
     // logos: undefined → el motor usa los assets por defecto (VALAR/SQM)
   };

@@ -3,7 +3,7 @@
 import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, FileText, ImagePlus,
+  ArrowDown, ArrowLeft, ArrowUp, Camera, Check, CheckCircle2, ChevronsUpDown, FileText, ImagePlus,
   Mail, Plus, Save, Send, Signature, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
@@ -15,6 +15,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -23,12 +26,18 @@ import {
 import SignaturePad from '@/components/signature-pad';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import type {
+  Material,
   WorkExecutionStatus,
   WorkReport,
+  WorkReportActivity,
   WorkReportDailyOt,
   WorkReportEquipmentItem,
+  WorkReportHousekeeping,
+  WorkReportHousekeepingItem,
+  WorkReportInterference,
   WorkReportLaborItem,
   WorkReportMaterialItem,
+  WorkReportNextDayPlan,
   WorkReportPhoto,
   WorkReportSignature,
   WorkReportStatus,
@@ -38,6 +47,7 @@ import {
   WORK_REPORT_STATUS_LABEL as STATUS_LABEL,
   WORK_EXECUTION_LABEL as EXECUTION_LABEL,
 } from '@/modules/core/lib/work-report-labels';
+import { createDefaultHousekeeping } from '@/modules/core/lib/work-report-housekeeping';
 
 const EMPTY_LABOR: WorkReportLaborItem = { id: '', name: '', role: '', hours: {} };
 
@@ -50,6 +60,13 @@ function laborTotal(item: WorkReportLaborItem) {
 }
 const EMPTY_EQUIPMENT: WorkReportEquipmentItem = { id: '', equipment: '', type: '', hours: 0, activity: '' };
 const EMPTY_MATERIAL: WorkReportMaterialItem = { id: '', material: '', unit: '', quantity: 0 };
+const EMPTY_ACTIVITY: WorkReportActivity = { id: '', description: '' };
+const EMPTY_INTERFERENCE: WorkReportInterference = { id: '', reason: '' };
+const EMPTY_NEXT_DAY: WorkReportNextDayPlan = { id: '', description: '' };
+
+function interferenceTotalHH(item: WorkReportInterference) {
+  return (Number(item.hours) || 0) * (Number(item.workerCount) || 0);
+}
 
 function uid() {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -68,6 +85,7 @@ export default function WorkReportDetailPage() {
     workReports,
     workItems,
     users,
+    materials,
     currentTenant,
     updateWorkReport,
     transitionWorkReport,
@@ -121,9 +139,14 @@ export default function WorkReportDetailPage() {
   const [signatureData, setSignatureData] = React.useState('');
   const [useSavedSignature, setUseSavedSignature] = React.useState(true);
   const [reviewNotes, setReviewNotes] = React.useState('');
+  const [missingFields, setMissingFields] = React.useState<string[] | null>(null);
   const savedSignature = user?.signature || null;
 
   const openSignatureDialog = (step: 'supervisor' | 'operations' | 'final') => {
+    if (step === 'supervisor') {
+      const missing = getMissingForSubmit();
+      if (missing.length) { setMissingFields(missing); return; }
+    }
     setUseSavedSignature(!!savedSignature);
     setSignatureData(savedSignature || '');
     setSignatureOpen(step);
@@ -214,7 +237,7 @@ export default function WorkReportDetailPage() {
     });
   };
 
-  const updateArray = <T extends { id: string }>(key: 'labor' | 'equipment' | 'materials' | 'photos' | 'dailyOts', items: T[]) => {
+  const updateArray = <T extends { id: string }>(key: 'labor' | 'equipment' | 'interferences' | 'materials' | 'nextDayPlan' | 'photos' | 'dailyOts' | 'structuredActivities', items: T[]) => {
     patchDraft({ [key]: items } as Partial<WorkReport>);
   };
 
@@ -277,27 +300,53 @@ export default function WorkReportDetailPage() {
     }
   };
 
-  const validateForSubmit = () => {
-    const missing = [
-      !draft.otNumber && 'Numero OT',
-      !draft.client && 'Cliente',
-      !draft.faena && 'Faena',
-      !draft.area && 'Area',
-      !draft.activities && 'Actividades ejecutadas',
-    ].filter(Boolean);
-    if (missing.length) {
-      notify(`Faltan campos obligatorios: ${missing.join(', ')}`, 'destructive');
-      return false;
+  // Housekeeping (página 4). Siempre hay un objeto (el mapper inicializa el default).
+  const hk: WorkReportHousekeeping = draft.housekeeping || createDefaultHousekeeping();
+  const patchHk = (patch: Partial<WorkReportHousekeeping>) => patchDraft({ housekeeping: { ...hk, ...patch } });
+  const patchHkItem = (key: 'items' | 'jefeItems', index: number, patch: Partial<WorkReportHousekeepingItem>) =>
+    patchHk({ [key]: replaceAt(hk[key], index, { ...hk[key][index], ...patch }) });
+
+  const handleHkPhoto = async (index: number, files: FileList | null) => {
+    if (!files?.length) return;
+    setSaving(true);
+    try {
+      const uploaded = await uploadWorkReportPhoto(draft.id, files[0], `Housekeeping ${index + 1}`);
+      const photos = [...(hk.photos || ['', '', '', ''])];
+      photos[index] = uploaded.url;
+      const housekeeping = { ...hk, photos };
+      patchDraft({ housekeeping });
+      await updateWorkReport(draft.id, { ...draft, housekeeping });
+      setDirty(false);
+      notify('Foto de housekeeping cargada.', 'success');
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo subir la foto.', 'destructive');
+    } finally {
+      setSaving(false);
     }
-    return true;
   };
+
+  // Devuelve la lista de campos obligatorios que faltan para enviar a revisión.
+  const getMissingForSubmit = (): string[] => [
+    !draft.otNumber?.trim() && 'Número de OT',
+    !draft.client?.trim() && 'Cliente',
+    !draft.faena?.trim() && 'Faena',
+    !draft.area?.trim() && 'Área',
+    !draft.workDate && 'Fecha de trabajo',
+    !draft.supervisorName?.trim() && 'Supervisor',
+    !(draft.dailyOts || []).some((o) => o.otNumber?.trim()) && 'Al menos una OT del día',
+    !(draft.structuredActivities || []).some((a) => a.description?.trim()) && 'Al menos una actividad ejecutada',
+    !(draft.labor || []).some((l) => l.name?.trim()) && 'Al menos un trabajador en obra',
+  ].filter(Boolean) as string[];
 
   const signedTransition = async (step: WorkReportSignature['step'], action: string, toStatus?: WorkReportStatus) => {
     if (!signatureData) {
       notify('La firma digital es obligatoria.', 'destructive');
       return;
     }
-    if (step === 'supervisor' && !validateForSubmit()) return;
+    if (step === 'supervisor') {
+      const missing = getMissingForSubmit();
+      if (missing.length) { setSignatureOpen(null); setMissingFields(missing); return; }
+    }
     try {
       await save(true);
       const signature: WorkReportSignature = {
@@ -519,18 +568,8 @@ export default function WorkReportDetailPage() {
             </div>
           </Section>
 
-          <Section title="Actividades ejecutadas">
-            <Textarea
-              className="min-h-[180px] rounded-xl"
-              value={draft.activities}
-              disabled={!editable}
-              onChange={(e) => patchDraft({ activities: e.target.value })}
-              placeholder="Describe actividades realizadas, avances y pendientes."
-            />
-          </Section>
-
           <DynamicSection title="OTs del día" action="+ Agregar OT" onAdd={() => updateArray('dailyOts', [...(draft.dailyOts || []), { id: uid(), otNumber: '', description: '' }])} disabled={!editable}>
-            <p className="text-[10px] text-muted-foreground mb-1">Las OTs definen las columnas de horas en el detalle del personal.</p>
+            <p className="text-[10px] text-muted-foreground mb-1">Las OTs definen las columnas de horas en el detalle del personal y se pueden asignar a cada actividad.</p>
             {(draft.dailyOts || []).map((ot, index) => (
               <CompactRow key={ot.id} onDelete={() => updateArray('dailyOts', (draft.dailyOts || []).filter((x) => x.id !== ot.id))} disabled={!editable}>
                 <Input className="rounded-xl" placeholder="N° OT (ej. SER-07887)" value={ot.otNumber} disabled={!editable} onChange={(e) => updateArray('dailyOts', replaceAt(draft.dailyOts || [], index, { ...ot, otNumber: e.target.value }))} />
@@ -538,6 +577,37 @@ export default function WorkReportDetailPage() {
               </CompactRow>
             ))}
           </DynamicSection>
+
+          <Section title="Actividades ejecutadas">
+            <div className="space-y-3">
+              {(draft.structuredActivities || []).map((item, index) => (
+                <div key={item.id} className="rounded-[1.5rem] border p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+                    <Input className="rounded-xl" placeholder="Descripción de la actividad" value={item.description} disabled={!editable} onChange={(e) => updateArray('structuredActivities', replaceAt(draft.structuredActivities || [], index, { ...item, description: e.target.value }))} />
+                    <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => updateArray('structuredActivities', (draft.structuredActivities || []).filter((x) => x.id !== item.id))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    <Field label="Área"><Input className="rounded-xl" value={item.area || ''} disabled={!editable} onChange={(e) => updateArray('structuredActivities', replaceAt(draft.structuredActivities || [], index, { ...item, area: e.target.value }))} /></Field>
+                    <Field label="OT">
+                      <Select value={item.otId || ''} onValueChange={(v) => updateArray('structuredActivities', replaceAt(draft.structuredActivities || [], index, { ...item, otId: v }))} disabled={!editable || !(draft.dailyOts || []).length}>
+                        <SelectTrigger className="rounded-xl"><SelectValue placeholder="Sin OT" /></SelectTrigger>
+                        <SelectContent>
+                          {(draft.dailyOts || []).map((ot) => (
+                            <SelectItem key={ot.id} value={ot.id}>{ot.otNumber || 'OT'}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Unidad"><Input className="rounded-xl" value={item.unit || ''} disabled={!editable} onChange={(e) => updateArray('structuredActivities', replaceAt(draft.structuredActivities || [], index, { ...item, unit: e.target.value }))} /></Field>
+                    <Field label="Programado"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.plannedQuantity ?? ''} disabled={!editable} onChange={(e) => updateArray('structuredActivities', replaceAt(draft.structuredActivities || [], index, { ...item, plannedQuantity: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                    <Field label="Cantidad"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.quantity ?? ''} disabled={!editable} onChange={(e) => updateArray('structuredActivities', replaceAt(draft.structuredActivities || [], index, { ...item, quantity: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                    <Field label="Avance %"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.progress ?? ''} disabled={!editable} onChange={(e) => updateArray('structuredActivities', replaceAt(draft.structuredActivities || [], index, { ...item, progress: e.target.value === '' ? undefined : Math.max(0, Math.min(100, Number(e.target.value))) }))} /></Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('structuredActivities', [...(draft.structuredActivities || []), { ...EMPTY_ACTIVITY, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Actividad</Button>
+          </Section>
 
           <Section title="Detalle del personal en obra">
             <div className="space-y-3">
@@ -577,16 +647,61 @@ export default function WorkReportDetailPage() {
             <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('labor', [...draft.labor, { ...EMPTY_LABOR, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Trabajador</Button>
           </Section>
 
-          <DynamicSection title="Equipos y maquinaria" action="+ Agregar Equipo" onAdd={() => updateArray('equipment', [...draft.equipment, { ...EMPTY_EQUIPMENT, id: uid() }])} disabled={!editable}>
-            {(draft.equipment || []).map((item, index) => (
-              <CompactRow key={item.id} onDelete={() => updateArray('equipment', draft.equipment.filter((x) => x.id !== item.id))} disabled={!editable}>
-                <Input className="rounded-xl" placeholder="Equipo" value={item.equipment} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, equipment: e.target.value }))} />
-                <Input className="rounded-xl" placeholder="Tipo" value={item.type} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, type: e.target.value }))} />
-                <Input className="rounded-xl" type="number" placeholder="HM" value={item.hours} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, hours: Number(e.target.value) }))} />
-                <Input className="rounded-xl sm:col-span-3" placeholder="Actividad realizada" value={item.activity} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, activity: e.target.value }))} />
-              </CompactRow>
-            ))}
-          </DynamicSection>
+          <Section title="Equipos y maquinaria">
+            <div className="space-y-3">
+              {(draft.equipment || []).map((item, index) => (
+                <div key={item.id} className="rounded-[1.5rem] border p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+                    <AssetCombobox
+                      materials={materials || []}
+                      value={item.equipmentId || null}
+                      disabled={!editable}
+                      onSelect={(m) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, equipmentId: m.id, equipment: m.name, code: m.internalCode || item.code || '' }))}
+                    />
+                    <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => updateArray('equipment', draft.equipment.filter((x) => x.id !== item.id))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <Field label="Equipo"><Input className="rounded-xl" placeholder="Equipo" value={item.equipment} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, equipment: e.target.value, equipmentId: null }))} /></Field>
+                    <Field label="Código"><Input className="rounded-xl" placeholder="Cód. interno" value={item.code || ''} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, code: e.target.value }))} /></Field>
+                    <Field label="Tipo"><Input className="rounded-xl" placeholder="Tipo" value={item.type} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, type: e.target.value }))} /></Field>
+                    <Field label="Hrs. activ."><Input className="rounded-xl" type="number" inputMode="decimal" placeholder="HM" value={item.hours} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, hours: Number(e.target.value) }))} /></Field>
+                  </div>
+                  <Field label="Actividad"><Input className="rounded-xl" placeholder="Actividad realizada" value={item.activity} disabled={!editable} onChange={(e) => updateArray('equipment', replaceAt(draft.equipment, index, { ...item, activity: e.target.value }))} /></Field>
+                </div>
+              ))}
+            </div>
+            <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('equipment', [...draft.equipment, { ...EMPTY_EQUIPMENT, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Equipo</Button>
+          </Section>
+
+          <Section title="Improductividad / interferencias">
+            <div className="space-y-3">
+              {(draft.interferences || []).map((item, index) => (
+                <div key={item.id} className="rounded-[1.5rem] border p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+                    <Input className="rounded-xl" placeholder="Motivo de la interferencia / improductividad" value={item.reason} disabled={!editable} onChange={(e) => updateArray('interferences', replaceAt(draft.interferences || [], index, { ...item, reason: e.target.value }))} />
+                    <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => updateArray('interferences', (draft.interferences || []).filter((x) => x.id !== item.id))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <Field label="OT">
+                      <Select value={item.otId || ''} onValueChange={(v) => updateArray('interferences', replaceAt(draft.interferences || [], index, { ...item, otId: v }))} disabled={!editable || !(draft.dailyOts || []).length}>
+                        <SelectTrigger className="rounded-xl"><SelectValue placeholder="Sin OT" /></SelectTrigger>
+                        <SelectContent>
+                          {(draft.dailyOts || []).map((ot) => (
+                            <SelectItem key={ot.id} value={ot.id}>{ot.otNumber || 'OT'}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Responsable"><Input className="rounded-xl" value={item.responsible || ''} disabled={!editable} onChange={(e) => updateArray('interferences', replaceAt(draft.interferences || [], index, { ...item, responsible: e.target.value }))} /></Field>
+                    <Field label="Horas"><Input className="rounded-xl" type="number" inputMode="decimal" value={item.hours ?? ''} disabled={!editable} onChange={(e) => updateArray('interferences', replaceAt(draft.interferences || [], index, { ...item, hours: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                    <Field label="N° trab."><Input className="rounded-xl" type="number" inputMode="numeric" value={item.workerCount ?? ''} disabled={!editable} onChange={(e) => updateArray('interferences', replaceAt(draft.interferences || [], index, { ...item, workerCount: e.target.value === '' ? undefined : Number(e.target.value) }))} /></Field>
+                    <Field label="Total HH"><div className="flex h-10 items-center rounded-xl border bg-muted/40 px-3 text-sm tabular-nums">{interferenceTotalHH(item)}</div></Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('interferences', [...(draft.interferences || []), { ...EMPTY_INTERFERENCE, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Interferencia</Button>
+          </Section>
 
           <DynamicSection title="Materiales utilizados" action="+ Agregar Material" onAdd={() => updateArray('materials', [...draft.materials, { ...EMPTY_MATERIAL, id: uid() }])} disabled={!editable}>
             {(draft.materials || []).map((item, index) => (
@@ -594,9 +709,29 @@ export default function WorkReportDetailPage() {
                 <Input className="rounded-xl" placeholder="Material" value={item.material} disabled={!editable} onChange={(e) => updateArray('materials', replaceAt(draft.materials, index, { ...item, material: e.target.value }))} />
                 <Input className="rounded-xl" placeholder="Unidad" value={item.unit} disabled={!editable} onChange={(e) => updateArray('materials', replaceAt(draft.materials, index, { ...item, unit: e.target.value }))} />
                 <Input className="rounded-xl" type="number" placeholder="Cantidad" value={item.quantity} disabled={!editable} onChange={(e) => updateArray('materials', replaceAt(draft.materials, index, { ...item, quantity: Number(e.target.value) }))} />
+                <Input className="rounded-xl sm:col-span-3" placeholder="Observaciones" value={item.observations || ''} disabled={!editable} onChange={(e) => updateArray('materials', replaceAt(draft.materials, index, { ...item, observations: e.target.value }))} />
               </CompactRow>
             ))}
           </DynamicSection>
+
+          <Section title="Programación día siguiente">
+            <div className="space-y-3">
+              {(draft.nextDayPlan || []).map((item, index) => (
+                <div key={item.id} className="rounded-[1.5rem] border p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+                    <Input className="rounded-xl" placeholder="Descripción de actividades a ejecutar" value={item.description} disabled={!editable} onChange={(e) => updateArray('nextDayPlan', replaceAt(draft.nextDayPlan || [], index, { ...item, description: e.target.value }))} />
+                    <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => updateArray('nextDayPlan', (draft.nextDayPlan || []).filter((x) => x.id !== item.id))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <Field label="Área"><Input className="rounded-xl" value={item.area || ''} disabled={!editable} onChange={(e) => updateArray('nextDayPlan', replaceAt(draft.nextDayPlan || [], index, { ...item, area: e.target.value }))} /></Field>
+                    <Field label="Equipos a ocupar"><Input className="rounded-xl" value={item.equipment || ''} disabled={!editable} onChange={(e) => updateArray('nextDayPlan', replaceAt(draft.nextDayPlan || [], index, { ...item, equipment: e.target.value }))} /></Field>
+                    <Field label="Herramienta mayor"><Input className="rounded-xl" value={item.tools || ''} disabled={!editable} onChange={(e) => updateArray('nextDayPlan', replaceAt(draft.nextDayPlan || [], index, { ...item, tools: e.target.value }))} /></Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('nextDayPlan', [...(draft.nextDayPlan || []), { ...EMPTY_NEXT_DAY, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Actividad</Button>
+          </Section>
 
           <Section title="Registro fotografico">
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3">
@@ -609,7 +744,21 @@ export default function WorkReportDetailPage() {
                 <Card key={p.id} className="rounded-[1.5rem] overflow-hidden">
                   <img src={p.url} alt={p.description || 'Foto del reporte'} className="h-48 w-full object-cover" />
                   <CardContent className="p-4 space-y-3">
-                    <Input className="rounded-xl" value={p.description} disabled={!editable} onChange={(e) => updateArray('photos', replaceAt(draft.photos, index, { ...p, description: e.target.value }))} />
+                    <Input className="rounded-xl" placeholder="Título / descripción" value={p.description} disabled={!editable} onChange={(e) => updateArray('photos', replaceAt(draft.photos, index, { ...p, description: e.target.value }))} />
+                    <Field label="OT">
+                      <Select value={p.otId || ''} onValueChange={(v) => updateArray('photos', replaceAt(draft.photos, index, { ...p, otId: v }))} disabled={!editable || !(draft.dailyOts || []).length}>
+                        <SelectTrigger className="rounded-xl"><SelectValue placeholder="Sin OT" /></SelectTrigger>
+                        <SelectContent>
+                          {(draft.dailyOts || []).map((ot) => (
+                            <SelectItem key={ot.id} value={ot.id}>{ot.otNumber || 'OT'}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Ejecutor"><Input className="rounded-xl" value={p.executor || ''} disabled={!editable} onChange={(e) => updateArray('photos', replaceAt(draft.photos, index, { ...p, executor: e.target.value }))} /></Field>
+                      <Field label="Visado"><Input className="rounded-xl" value={p.approver || ''} disabled={!editable} onChange={(e) => updateArray('photos', replaceAt(draft.photos, index, { ...p, approver: e.target.value }))} /></Field>
+                    </div>
                     <div className="flex gap-2">
                       <Button size="icon" variant="outline" disabled={!editable || index === 0} onClick={() => updateArray('photos', moveAt(draft.photos, index, index - 1))}><ArrowUp className="h-4 w-4" /></Button>
                       <Button size="icon" variant="outline" disabled={!editable || index === draft.photos.length - 1} onClick={() => updateArray('photos', moveAt(draft.photos, index, index + 1))}><ArrowDown className="h-4 w-4" /></Button>
@@ -635,6 +784,71 @@ export default function WorkReportDetailPage() {
               </div>
             </div>
             <Textarea className="mt-4 rounded-xl" value={draft.progressObservations || ''} disabled={!editable} onChange={(e) => patchDraft({ progressObservations: e.target.value })} placeholder="Observaciones: falta material, clima, autorizaciones." />
+          </Section>
+
+          <Section title="Housekeeping (página 4)">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <TextField label="Subtítulo" value={hk.subtitle || ''} onChange={(v) => patchHk({ subtitle: v })} disabled={!editable} />
+              <TextField label="Sector" value={hk.sector || ''} onChange={(v) => patchHk({ sector: v })} disabled={!editable} />
+              <TextField label="Inspección (hora · fecha)" value={hk.inspection || ''} onChange={(v) => patchHk({ inspection: v })} disabled={!editable} />
+              <TextField label="Código" value={hk.code || ''} onChange={(v) => patchHk({ code: v })} disabled={!editable} />
+              <TextField label="Rev." value={hk.rev || ''} onChange={(v) => patchHk({ rev: v })} disabled={!editable} />
+            </div>
+
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-6 mb-2">Verificación de cumplimientos</p>
+            <div className="space-y-2">
+              {(hk.items || []).map((item, index) => (
+                <div key={item.id} className="rounded-[1.25rem] border p-3 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-sm">{item.text}</span>
+                    <HkStatus value={item.status} disabled={!editable} onChange={(v) => patchHkItem('items', index, { status: v })} />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Input className="rounded-xl" placeholder="Responsable" value={item.responsible || ''} disabled={!editable} onChange={(e) => patchHkItem('items', index, { responsible: e.target.value })} />
+                    <Input className="rounded-xl" placeholder="Observaciones" value={item.observations || ''} disabled={!editable} onChange={(e) => patchHkItem('items', index, { observations: e.target.value })} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-6 mb-2">Observaciones generales</p>
+            <Textarea className="rounded-xl" value={hk.observations || ''} disabled={!editable} onChange={(e) => patchHk({ observations: e.target.value })} placeholder="Observaciones del protocolo de housekeeping." />
+
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-6 mb-2">Registro fotográfico (4 fotos)</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[0, 1, 2, 3].map((i) => {
+                const url = (hk.photos || [])[i] || '';
+                return (
+                  <div key={i} className="rounded-[1.25rem] border overflow-hidden">
+                    {url ? (
+                      <>
+                        <img src={url} alt={`Housekeeping ${i + 1}`} className="h-32 w-full object-cover" />
+                        <div className="p-2">
+                          <Button size="sm" variant="destructive" className="w-full rounded-xl" disabled={!editable} onClick={() => patchHk({ photos: Object.assign([...(hk.photos || ['', '', '', ''])], { [i]: '' }) })}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="h-32 flex items-center justify-center p-2">
+                        <FileButton icon={<ImagePlus className="h-4 w-4" />} label={`Foto ${i + 1}`} files={(files) => handleHkPhoto(i, files)} disabled={!editable} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-6 mb-2">Verificación de cumplimiento (Jefe de Operaciones)</p>
+            <div className="space-y-2">
+              {(hk.jefeItems || []).map((item, index) => (
+                <div key={item.id} className="rounded-[1.25rem] border p-3 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-sm">{item.text}</span>
+                    <HkStatus value={item.status} disabled={!editable} onChange={(v) => patchHkItem('jefeItems', index, { status: v })} />
+                  </div>
+                  <Input className="rounded-xl" placeholder="Observaciones" value={item.observations || ''} disabled={!editable} onChange={(e) => patchHkItem('jefeItems', index, { observations: e.target.value })} />
+                </div>
+              ))}
+            </div>
           </Section>
         </div>
 
@@ -705,6 +919,23 @@ export default function WorkReportDetailPage() {
           </Card>
         </aside>
       </div>
+
+      <AlertDialog open={!!missingFields} onOpenChange={(open) => !open && setMissingFields(null)}>
+        <AlertDialogContent className="rounded-[1.5rem]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Faltan datos para enviar a revisión</AlertDialogTitle>
+            <AlertDialogDescription>
+              Completa los siguientes campos antes de firmar y enviar el informe:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="list-disc pl-5 space-y-1.5 text-sm text-foreground">
+            {(missingFields || []).map((m) => <li key={m}>{m}</li>)}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogAction className="rounded-xl" onClick={() => setMissingFields(null)}>Entendido</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={!!signatureOpen} onOpenChange={(open) => !open && setSignatureOpen(null)}>
         <DialogContent className="rounded-[1.5rem]">
@@ -802,6 +1033,54 @@ function CompactRow({ children, onDelete, disabled }: { children: React.ReactNod
     <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_110px_auto] gap-3 rounded-[1.5rem] border p-3">
       {children}
       <Button size="icon" variant="ghost" className="rounded-xl" onClick={onDelete} disabled={disabled}><Trash2 className="h-4 w-4" /></Button>
+    </div>
+  );
+}
+
+function AssetCombobox({ materials, value, onSelect, disabled }: { materials: Material[]; value: string | null; onSelect: (m: Material) => void; disabled?: boolean }) {
+  const [open, setOpen] = React.useState(false);
+  const selected = materials.find((m) => m.id === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" className="w-full justify-between rounded-xl font-normal" disabled={disabled}>
+          <span className="truncate">{selected ? selected.name : 'Buscar en catálogo de activos…'}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <Command>
+          <CommandInput placeholder="Buscar activo…" />
+          <CommandList>
+            <CommandEmpty>No se encontró el activo.</CommandEmpty>
+            <CommandGroup>
+              {materials.map((m) => (
+                <CommandItem key={m.id} value={m.name} onSelect={() => { onSelect(m); setOpen(false); }} className="flex justify-between">
+                  <div className="flex items-center"><Check className={cn('mr-2 h-4 w-4', value === m.id ? 'opacity-100' : 'opacity-0')} />{m.name}</div>
+                  {m.internalCode && <span className="text-xs text-muted-foreground">{m.internalCode}</span>}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function HkStatus({ value, onChange, disabled }: { value?: string; onChange: (v: 'cumple' | 'nocumple' | 'na' | '') => void; disabled?: boolean }) {
+  const opts: { v: 'cumple' | 'nocumple' | 'na'; label: string }[] = [
+    { v: 'cumple', label: 'Cumple' },
+    { v: 'nocumple', label: 'No cumple' },
+    { v: 'na', label: 'N/A' },
+  ];
+  return (
+    <div className="flex gap-1 shrink-0">
+      {opts.map((o) => (
+        <Button key={o.v} type="button" size="sm" variant={value === o.v ? 'default' : 'outline'} className="rounded-xl h-8 px-2.5 text-xs" disabled={disabled} onClick={() => onChange(value === o.v ? '' : o.v)}>
+          {o.label}
+        </Button>
+      ))}
     </div>
   );
 }

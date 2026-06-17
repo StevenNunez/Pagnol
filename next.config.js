@@ -31,8 +31,15 @@ const nextConfig = {
   serverExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
   // El motor PDF lee template.hbs + assets en runtime; inclúyelos en el
   // file-tracing de las funciones de la API de reportes (Vercel).
+  // Además: aunque @sparticuz/chromium está externalizado (no se bundlea),
+  // Next.js NO copia sus binarios .br (bin/chromium.br, etc.) porque no hay un
+  // require() estático que los referencie. Hay que incluir bin/ explícitamente,
+  // si no, en Vercel falla con "input directory .../@sparticuz/chromium/bin does not exist".
   outputFileTracingIncludes: {
-    '/api/work-reports/**': ['./src/lib/report-engine/**'],
+    '/api/work-reports/**': [
+      './src/lib/report-engine/**',
+      './node_modules/@sparticuz/chromium/bin/**',
+    ],
   },
 };
 

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --tinta:#1f2937; --suave:#6b7280; --linea:#cbd5e1; --linea2:#94a3b8;
+    --barra:#16463a; --barra2:#0f6e56; --acento:#7ab800; --cab:#243746;
+    --zebra:#f1f5f4; --valar:#111827;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:Arial,Helvetica,sans-serif;color:var(--tinta);margin:0;font-size:9px;}
+  @page{ size:A4 portrait; margin:9mm; }
+
+  .brand{display:flex;align-items:stretch;border:1.5px solid var(--valar);border-radius:4px;overflow:hidden;margin-bottom:6px;}
+  .brand .logo{width:130px;display:flex;align-items:center;justify-content:center;border-right:1.5px solid var(--valar);padding:6px;}
+  .brand .logo img{max-width:118px;max-height:46px;object-fit:contain;}
+  .brand .logo .v{font-weight:800;font-size:26px;letter-spacing:6px;color:var(--valar);line-height:1;text-align:center;}
+  .brand .logo .v small{display:block;font-size:9px;letter-spacing:10px;font-weight:700;margin-top:2px;}
+  .brand .titulo{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .brand .titulo h1{margin:0;font-size:16px;letter-spacing:2px;color:var(--barra);}
+  .brand .titulo .sub{font-size:8px;color:var(--suave);letter-spacing:3px;margin-top:2px;}
+  .brand .sqm{width:130px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-left:1.5px solid var(--valar);padding:6px;}
+  .brand .sqm img{max-width:90px;max-height:38px;object-fit:contain;}
+  .brand .sqm .b{background:var(--barra2);color:#fff;font-weight:800;font-size:16px;padding:2px 12px;border-radius:3px;letter-spacing:1px;}
+  .brand .sqm .pg{font-size:7.5px;color:var(--suave);margin-top:3px;}
+
+  .sec{background:var(--barra);color:#fff;font-weight:700;font-size:9.5px;letter-spacing:1px;padding:4px 8px;border-radius:3px;margin:7px 0 3px;display:flex;justify-content:space-between;}
+  .sec .r{color:#bfe3cf;font-weight:600;}
+  .meta{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;font-size:8.5px;}
+  .f{display:flex;border:0.7px solid var(--linea);border-radius:3px;overflow:hidden;}
+  .f .k{background:var(--zebra);color:var(--suave);font-weight:700;padding:3px 5px;white-space:nowrap;}
+  .f .val{padding:3px 5px;font-weight:600;flex:1;}
+
+  .desc{border:0.7px solid var(--linea);border-radius:3px;padding:5px 7px;min-height:38px;font-size:8.5px;}
+
+  table{border-collapse:collapse;width:100%;font-size:8px;}
+  th,td{border:0.6px solid var(--linea);padding:3px 4px;text-align:center;}
+  thead th{background:var(--cab);color:#fff;font-weight:700;letter-spacing:.3px;}
+  tbody tr:nth-child(even){background:var(--zebra);}
+  .txl{text-align:left;}
+  .empty{color:var(--suave);font-style:italic;}
+
+  .avance{display:flex;gap:8px;margin-top:2px;}
+  .avance .box{flex:1;border:0.7px solid var(--linea);border-radius:4px;padding:7px;text-align:center;}
+  .avance .box .n{font-size:20px;font-weight:800;color:var(--barra2);line-height:1;}
+  .avance .box .k{font-size:7.5px;color:var(--suave);text-transform:uppercase;letter-spacing:.6px;margin-top:3px;}
+
+  .fotogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px;}
+  .fcard{border:0.7px solid var(--linea);border-radius:4px;overflow:hidden;}
+  .fcard .ph{height:110px;background:repeating-linear-gradient(45deg,#eef2f1,#eef2f1 8px,#e2e8e6 8px,#e2e8e6 16px);display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:8px;}
+  .fcard .ph img{width:100%;height:100%;object-fit:cover;display:block;}
+  .fcard .cap{font-size:7.5px;padding:3px 5px;color:var(--suave);}
+
+  .firmas{display:flex;gap:14px;margin-top:18px;}
+  .firma{flex:1;text-align:center;}
+  .firma .ln{border-top:1px solid var(--tinta);margin:22px 10px 3px;}
+  .firma .ro{font-weight:700;font-size:8.5px;}
+  .firma .nm{font-size:8px;color:var(--suave);}
+</style>
+</head>
+<body>
+
+{{#*inline "logoValar"}}
+  {{#if logos.valar}}<img src="{{logos.valar}}" alt="VALAR">{{else}}<div class="v">VA<small>VALAR</small></div>{{/if}}
+{{/inline}}
+{{#*inline "logoSqm"}}
+  {{#if logos.sqm}}<img src="{{logos.sqm}}" alt="SQM">{{else}}<div class="b">SQM</div>{{/if}}
+{{/inline}}
+
+<div class="brand">
+  <div class="logo">{{> logoValar}}</div>
+  <div class="titulo"><h1>REPORTE DE TRABAJO (OT)</h1><div class="sub">CONTROL DE OBRA · PAÑOL</div></div>
+  <div class="sqm">{{> logoSqm}}<div class="pg">OT N° {{meta.otNumber}}</div></div>
+</div>
+
+<div class="sec">INFORMACIÓN GENERAL <span class="r">{{meta.tenant}}</span></div>
+<div class="meta">
+  <div class="f" style="grid-column:span 3"><div class="k">N° OT</div><div class="val">{{meta.otNumber}}</div></div>
+  <div class="f" style="grid-column:span 5"><div class="k">CLIENTE</div><div class="val">{{meta.client}}</div></div>
+  <div class="f" style="grid-column:span 4"><div class="k">CONTRATO</div><div class="val">{{meta.contract}}</div></div>
+  <div class="f" style="grid-column:span 4"><div class="k">ÁREA</div><div class="val">{{meta.area}}</div></div>
+  <div class="f" style="grid-column:span 4"><div class="k">UBICACIÓN</div><div class="val">{{meta.location}}</div></div>
+  <div class="f" style="grid-column:span 4"><div class="k">ESPECIALIDAD</div><div class="val">{{meta.specialty}}</div></div>
+  <div class="f" style="grid-column:span 5"><div class="k">SUPERVISOR</div><div class="val">{{meta.supervisor}}</div></div>
+  <div class="f" style="grid-column:span 2"><div class="k">TURNO</div><div class="val">{{meta.shift}}</div></div>
+  <div class="f" style="grid-column:span 5"><div class="k">JORNADA</div><div class="val">{{meta.schedule}}</div></div>
+  <div class="f" style="grid-column:span 8"><div class="k">HITO</div><div class="val">{{meta.milestone}}</div></div>
+  <div class="f" style="grid-column:span 4"><div class="k">FECHA</div><div class="val">{{meta.date}}</div></div>
+</div>
+
+<div class="sec">DESCRIPCIÓN DE LA ACTIVIDAD</div>
+<div class="desc">{{description}}</div>
+
+<div class="sec">PERSONAL EN OBRA</div>
+<table>
+  <thead><tr><th class="txl">Nombre</th><th class="txl">Cargo</th><th style="width:70px">Horas</th></tr></thead>
+  <tbody>
+    {{#if personal.length}}
+      {{#each personal}}<tr><td class="txl">{{nombre}}</td><td class="txl">{{cargo}}</td><td>{{horas}}</td></tr>{{/each}}
+    {{else}}<tr><td colspan="3" class="empty">Sin personal registrado</td></tr>{{/if}}
+  </tbody>
+</table>
+
+<div class="sec">EQUIPOS Y MAQUINARIA</div>
+<table>
+  <thead><tr><th class="txl">Equipo</th><th style="width:70px">Horas</th></tr></thead>
+  <tbody>
+    {{#if equipos.length}}
+      {{#each equipos}}<tr><td class="txl">{{equipo}}</td><td>{{horas}}</td></tr>{{/each}}
+    {{else}}<tr><td colspan="2" class="empty">Sin equipos registrados</td></tr>{{/if}}
+  </tbody>
+</table>
+
+<div class="sec">MATERIALES</div>
+<table>
+  <thead><tr><th class="txl">Material</th><th style="width:80px">Cantidad</th><th style="width:70px">Unidad</th></tr></thead>
+  <tbody>
+    {{#if materiales.length}}
+      {{#each materiales}}<tr><td class="txl">{{material}}</td><td>{{cantidad}}</td><td>{{unidad}}</td></tr>{{/each}}
+    {{else}}<tr><td colspan="3" class="empty">Sin materiales registrados</td></tr>{{/if}}
+  </tbody>
+</table>
+
+<div class="sec">AVANCE DEL TRABAJO</div>
+<div class="avance">
+  <div class="box"><div class="n">{{avance.programado}}%</div><div class="k">Programado</div></div>
+  <div class="box"><div class="n">{{avance.ejecutado}}%</div><div class="k">Ejecutado</div></div>
+</div>
+
+{{#if fotos.length}}
+<div class="sec">REGISTRO FOTOGRÁFICO</div>
+<div class="fotogrid">
+  {{#each fotos}}
+  <div class="fcard"><div class="ph">{{#if img}}<img src="{{img}}" alt="foto">{{else}}FOTO{{/if}}</div><div class="cap">{{titulo}}</div></div>
+  {{/each}}
+</div>
+{{/if}}
+
+<div class="firmas">
+  <div class="firma"><div class="ln"></div><div class="ro">{{meta.supervisor}}</div><div class="nm">Supervisor responsable</div></div>
+</div>
+
+</body>
+</html>

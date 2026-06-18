@@ -100,14 +100,14 @@ export default function WorkReportsDashboard() {
 
   return (
     <PageShell
-      title="Reportes de Trabajo"
-      description="Informes diarios de terreno, fotografias, recursos y aprobaciones."
+      title="Reportes Diarios"
+      description="Informe diario de terreno (consolida las OT del día), fotografías, recursos y aprobaciones."
       toolbar={
         <div className="w-full flex justify-end">
           {can('work_reports:create') && (
             <Button onClick={handleNew} className="rounded-[1.5rem] shadow-lg shadow-primary/10">
               <Plus className="h-4 w-4 mr-2" />
-              Nuevo Reporte de Trabajo
+              Nuevo Reporte Diario
             </Button>
           )}
         </div>

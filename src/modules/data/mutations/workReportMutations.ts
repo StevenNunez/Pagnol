@@ -73,6 +73,7 @@ function toRow(data: WorkReportInput, ctx: Context): Record<string, any> {
   if (data.activities !== undefined) row.activities = data.activities;
   if (data.structuredActivities !== undefined) row.structured_activities = data.structuredActivities;
   if (data.dailyOts !== undefined) row.daily_ots = data.dailyOts;
+  if (data.consolidatedOrderIds !== undefined) row.consolidated_order_ids = data.consolidatedOrderIds;
   if (data.labor !== undefined) row.labor = data.labor;
   if (data.equipment !== undefined) row.equipment = data.equipment;
   if (data.interferences !== undefined) row.interferences = data.interferences;
@@ -133,6 +134,7 @@ export async function createWorkReport(
     activities: data.activities || '',
     structured_activities: data.structuredActivities || [],
     daily_ots: data.dailyOts || [],
+    consolidated_order_ids: data.consolidatedOrderIds || [],
     labor: data.labor || [],
     equipment: data.equipment || [],
     interferences: data.interferences || [],

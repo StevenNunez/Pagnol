@@ -160,6 +160,18 @@
       {{/each}}
     </tbody>
   </table>
+
+  {{#if porEspecialidad.length}}
+  <div class="sec">DISTRIBUCIÓN DE HH POR ESPECIALIDAD</div>
+  <table>
+    <thead><tr><th class="txl">Especialidad</th><th style="width:120px">HH</th></tr></thead>
+    <tbody>
+      {{#each porEspecialidad}}
+      <tr><td class="txl">{{especialidad}}</td><td class="num">{{hh}}</td></tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
 </section>
 
 {{!-- ================= PAGINA 2 ================= --}}

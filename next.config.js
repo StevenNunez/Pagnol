@@ -40,6 +40,14 @@ const nextConfig = {
       './src/lib/report-engine/**',
       './node_modules/@sparticuz/chromium/bin/**',
     ],
+    '/api/work-orders/**': [
+      './src/lib/report-engine/**',
+      './node_modules/@sparticuz/chromium/bin/**',
+    ],
+    '/api/work-weekly-reports/**': [
+      './src/lib/report-engine/**',
+      './node_modules/@sparticuz/chromium/bin/**',
+    ],
   },
 };
 

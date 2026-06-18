@@ -1,6 +1,7 @@
 import 'server-only';
-import type { WorkReport, WorkReportSignature } from '@/modules/core/lib/data';
+import type { WorkOrder, WorkReport, WorkReportSignature } from '@/modules/core/lib/data';
 import { createDefaultHousekeeping, HOUSEKEEPING_CODE, HOUSEKEEPING_REV } from '@/modules/core/lib/work-report-housekeeping';
+import { consolidateWorkOrders } from '@/modules/core/lib/work-order-consolidation';
 
 // Traduce un WorkReport (modelo actual de la app) al contrato de datos del motor
 // PDF (ver sample-data.json). Los campos que el modelo todavía NO captura (matriz
@@ -35,23 +36,50 @@ function lastSignature(signatures: WorkReportSignature[], step: WorkReportSignat
   return [...signatures].reverse().find((s) => s.step === step);
 }
 
-export async function construirDatosReporte(report: WorkReport, tenantName?: string | null): Promise<any> {
+export async function construirDatosReporte(
+  report: WorkReport,
+  tenantName?: string | null,
+  orders?: WorkOrder[],
+): Promise<any> {
   const otNumber = report.otNumber || '';
 
-  // OTs del día → columnas de la matriz. Mapa id→número para traducir las horas.
-  const dailyOts = report.dailyOts || [];
-  const otIdToNumber = new Map(dailyOts.map((o) => [o.id, o.otNumber || '']));
-  const otColumns = dailyOts.map((o) => o.otNumber || '').filter(Boolean);
+  // Modo cascada: si el Diario consolida OT (work_orders), personal/matriz HH/
+  // actividades/equipos/materiales/fotos se DERIVAN de esas OT (decisión: 100%
+  // desde las OT). Si no hay OT consolidadas, se usa la captura manual (legacy).
+  const consolidating = !!(orders && orders.length);
+  const cons = consolidating ? consolidateWorkOrders(orders!) : null;
 
-  const fotos = await Promise.all(
-    (report.photos || []).map(async (p) => ({
-      ot: (p.otId && otIdToNumber.get(p.otId)) || '',
-      titulo: p.description || '',
-      ejecutor: p.executor || p.userName || '',
-      visado: p.approver || '',
-      img: await fetchAsDataUri(p.url),
-    })),
-  );
+  // OTs del día → columnas de la matriz. Mapa id→número para traducir las horas.
+  // En modo cascada las columnas son las OT consolidadas (clave horas = OT.id).
+  const dailyOts = report.dailyOts || [];
+  const otIdToNumber = consolidating
+    ? new Map(orders!.map((o) => [o.id, o.otNumber || '']))
+    : new Map(dailyOts.map((o) => [o.id, o.otNumber || '']));
+  const otColumns = consolidating
+    ? cons!.ots.map((c) => c.otNumber).filter(Boolean)
+    : dailyOts.map((o) => o.otNumber || '').filter(Boolean);
+
+  const fotos = consolidating
+    ? await Promise.all(
+        orders!.flatMap((o) =>
+          (o.photos || []).map(async (p) => ({
+            ot: o.otNumber || '',
+            titulo: p.description || '',
+            ejecutor: p.executor || p.userName || '',
+            visado: p.approver || '',
+            img: await fetchAsDataUri(p.url),
+          })),
+        ),
+      )
+    : await Promise.all(
+        (report.photos || []).map(async (p) => ({
+          ot: (p.otId && otIdToNumber.get(p.otId)) || '',
+          titulo: p.description || '',
+          ejecutor: p.executor || p.userName || '',
+          visado: p.approver || '',
+          img: await fetchAsDataUri(p.url),
+        })),
+      );
 
   const signatures = report.signatures || [];
   const sup = lastSignature(signatures, 'supervisor');
@@ -91,7 +119,29 @@ export async function construirDatosReporte(report: WorkReport, tenantName?: str
       final: report.endTime || '',
     },
     ots: otColumns.length ? otColumns : otNumber ? [otNumber] : [],
-    personal: (report.labor || []).map((l, i) => {
+    personal: consolidating
+      ? cons!.personal.map((p, i) => {
+          // horas vienen indexadas por OT.id → traducir a número de OT.
+          const horas: Record<string, number> = {};
+          for (const [otId, val] of Object.entries(p.horas || {})) {
+            const num = otIdToNumber.get(otId);
+            if (num) horas[num] = Number(val) || 0;
+          }
+          return {
+            n: i + 1,
+            nombre: p.nombre,
+            cargo: p.cargo,
+            ausencia: '',
+            horas,
+            colacion: '',
+            doc: '',
+            traslado: '',
+            subhh: p.total,
+            hext: 0,
+            total: p.total,
+          };
+        })
+      : (report.labor || []).map((l, i) => {
       // Traduce las horas internas (clave = otId) al número de OT que usa el motor.
       const horas: Record<string, number> = {};
       for (const [otId, val] of Object.entries(l.hours || {})) {
@@ -118,7 +168,18 @@ export async function construirDatosReporte(report: WorkReport, tenantName?: str
         total: subhh + hext,
       };
     }),
-    actividades: (report.structuredActivities && report.structuredActivities.length)
+    actividades: consolidating
+      ? cons!.porOt.map((r, i) => ({
+          n: i + 1,
+          descripcion: r.actividad,
+          area: r.area,
+          unidad: '',
+          cantidad: '',
+          programado: '',
+          ot: r.otNumber,
+          avance: Number(r.avance) || 0,
+        }))
+      : (report.structuredActivities && report.structuredActivities.length)
       ? report.structuredActivities.map((a, i) => ({
           n: i + 1,
           descripcion: a.description || '',
@@ -143,12 +204,19 @@ export async function construirDatosReporte(report: WorkReport, tenantName?: str
             },
           ]
         : [],
-    equipos: (report.equipment || []).map((e, i) => ({
-      cod: i + 1,
-      equipo: e.equipment || '',
-      horas: Number(e.hours) || 0,
-      actividad: e.activity || '',
-    })),
+    equipos: consolidating
+      ? cons!.equipos.map((e, i) => ({
+          cod: i + 1,
+          equipo: e.equipo,
+          horas: Number(e.horas) || 0,
+          actividad: '',
+        }))
+      : (report.equipment || []).map((e, i) => ({
+          cod: i + 1,
+          equipo: e.equipment || '',
+          horas: Number(e.hours) || 0,
+          actividad: e.activity || '',
+        })),
     improductividad: (report.interferences || []).map((it) => {
       const horas = Number(it.hours) || 0;
       const ntrab = Number(it.workerCount) || 0;
@@ -161,14 +229,26 @@ export async function construirDatosReporte(report: WorkReport, tenantName?: str
         totalhh: horas * ntrab || '',
       };
     }),
-    materiales: (report.materials || []).map((m, i) => ({
-      cod: i + 1,
-      descripcion: m.material || '',
-      cantidad: Number(m.quantity) || 0,
-      unidad: m.unit || '',
-      observaciones: m.observations || '',
-    })),
+    materiales: consolidating
+      ? cons!.materiales.map((m, i) => ({
+          cod: i + 1,
+          descripcion: m.material,
+          cantidad: Number(m.cantidad) || 0,
+          unidad: m.unidad || '',
+          observaciones: '',
+        }))
+      : (report.materials || []).map((m, i) => ({
+          cod: i + 1,
+          descripcion: m.material || '',
+          cantidad: Number(m.quantity) || 0,
+          unidad: m.unit || '',
+          observaciones: m.observations || '',
+        })),
     observaciones: report.progressObservations || '',
+    // Distribución de HH por especialidad (solo modo cascada: derivada de las OT).
+    porEspecialidad: consolidating
+      ? cons!.porEspecialidad.map((s) => ({ especialidad: s.especialidad, hh: s.hh }))
+      : [],
     programacion: (report.nextDayPlan || []).map((p) => ({
       descripcion: p.description || '',
       area: p.area || '',

@@ -156,6 +156,20 @@ export interface MaterialCategory {
   name: string;
 }
 
+// Catálogos de precarga para Reportes de Trabajo (OT). Name-only, tenant-scoped.
+export interface WorkReportArea {
+  id: string;
+  name: string;
+}
+export interface WorkReportSpecialty {
+  id: string;
+  name: string;
+}
+export interface WorkReportMilestone {
+  id: string;
+  name: string;
+}
+
 export interface Material {
   id: string;
   name: string;
@@ -687,6 +701,7 @@ export interface WorkReport {
   activities: string;                       // legacy: descripción libre (fallback)
   structuredActivities: WorkReportActivity[];
   dailyOts: WorkReportDailyOt[];
+  consolidatedOrderIds: string[];           // OT (work_orders) que este Diario consolida
   labor: WorkReportLaborItem[];
   equipment: WorkReportEquipmentItem[];
   interferences: WorkReportInterference[];
@@ -710,6 +725,92 @@ export interface WorkReport {
   submittedAt?: Date | string | null;
   operationsApprovedAt?: Date | string | null;
   finalApprovedAt?: Date | string | null;
+}
+
+// ── OT / Reporte de Trabajo (entidad granular de la cascada) ─────────────────
+// Formulario rápido del supervisor. Personal SOLO nombre/cargo/horas (sin
+// colación/doc/traslados). Alimenta el Reporte Diario (consolidado).
+export type WorkOrderStatus = 'draft' | 'ready';
+
+export interface WorkOrderLaborItem {
+  id: string;
+  name: string;
+  role: string;
+  hours: number;
+}
+
+export interface WorkOrderEquipmentItem {
+  id: string;
+  equipment: string;
+  hours: number;
+}
+
+export interface WorkOrderMaterialItem {
+  id: string;
+  material: string;
+  quantity: number;
+  unit?: string;
+}
+
+export interface WorkOrder {
+  id: string;
+  tenantId: string;
+  otNumber: string;
+  client: string;
+  contractNumber?: string | null;
+  area?: string | null;
+  location?: string | null;
+  specialty?: string | null;
+  milestone?: string | null;
+  supervisorId?: string | null;
+  supervisorName: string;
+  shift?: string | null;
+  workSchedule?: string | null;
+  workDate: Date | string;
+  description: string;
+  labor: WorkOrderLaborItem[];
+  equipment: WorkOrderEquipmentItem[];
+  materials: WorkOrderMaterialItem[];
+  photos: WorkReportPhoto[];
+  plannedPercent: number;
+  executedPercent: number;
+  status: WorkOrderStatus;
+  createdBy?: string | null;
+  createdByName?: string | null;
+  updatedBy?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export type WorkWeeklyReportStatus = 'draft' | 'ready';
+
+// Reporte Semanal (cascada, Fase 3): consolida varios Reportes Diarios
+// (work_reports) en un rango de fechas. consolidatedReportIds = IDs de los
+// diarios que agrupa; el resumen (HH totales, OT, por día) se deriva de ellos.
+export interface WorkWeeklyReport {
+  id: string;
+  tenantId: string;
+  title: string;
+  client: string;
+  faena: string;
+  obra?: string | null;
+  contractNumber?: string | null;
+  area?: string | null;
+  specialty?: string | null;
+  supervisorId?: string | null;
+  supervisorName: string;
+  startDate: Date | string;
+  endDate: Date | string;
+  consolidatedReportIds: string[];
+  observations?: string | null;
+  shiftHandover?: string | null;
+  signatures: WorkReportSignature[];
+  status: WorkWeeklyReportStatus;
+  createdBy?: string | null;
+  createdByName?: string | null;
+  updatedBy?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 export interface Supplier {

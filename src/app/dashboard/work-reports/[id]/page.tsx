@@ -41,6 +41,7 @@ import type {
   WorkReportPhoto,
   WorkReportSignature,
   WorkReportStatus,
+  WorkOrder,
 } from '@/modules/core/lib/data';
 import { supabase } from '@/modules/core/lib/supabase';
 import {
@@ -49,6 +50,7 @@ import {
 } from '@/modules/core/lib/work-report-labels';
 import { createDefaultHousekeeping } from '@/modules/core/lib/work-report-housekeeping';
 import { compressImage } from '@/lib/compress-image';
+import { consolidateWorkOrders } from '@/modules/core/lib/work-order-consolidation';
 
 const EMPTY_LABOR: WorkReportLaborItem = { id: '', name: '', role: '', hours: {} };
 
@@ -87,6 +89,7 @@ export default function WorkReportDetailPage() {
     workItems,
     users,
     materials,
+    workOrders,
     currentTenant,
     updateWorkReport,
     transitionWorkReport,
@@ -176,11 +179,33 @@ export default function WorkReportDetailPage() {
 
   const editable = !!draft && (isSuperAdmin || ((draft.status === 'draft' || draft.status === 'observed') && can('work_reports:edit')));
   const isAwaitingApproval = !!draft && (draft.status === 'pending_review' || draft.status === 'operations_approved');
-  const totals = React.useMemo(() => ({
-    workers: draft?.labor?.length || 0,
-    hh: (draft?.labor || []).reduce((s, l) => s + laborTotal(l), 0),
-    hm: (draft?.equipment || []).reduce((s, e) => s + Number(e.hours || 0), 0),
-  }), [draft]);
+  // OT (work_orders) que este Diario consolida. Si hay alguna, el reporte deriva
+  // personal/equipos/materiales/matriz HH desde ellas (modo cascada).
+  const consolidatedOrders = React.useMemo(
+    () => (draft?.consolidatedOrderIds || [])
+      .map((oid) => (workOrders || []).find((o) => o.id === oid))
+      .filter((o): o is WorkOrder => !!o),
+    [draft?.consolidatedOrderIds, workOrders],
+  );
+  const consolidating = consolidatedOrders.length > 0;
+  const consolidation = React.useMemo(
+    () => (consolidating ? consolidateWorkOrders(consolidatedOrders) : null),
+    [consolidating, consolidatedOrders],
+  );
+
+  const totals = React.useMemo(() => {
+    if (consolidation) {
+      const workers = consolidation.personal.length;
+      const hh = consolidation.hhTotal;
+      const hm = consolidation.equipos.reduce((s, e) => s + Number(e.horas || 0), 0);
+      return { workers, hh, hm };
+    }
+    return {
+      workers: draft?.labor?.length || 0,
+      hh: (draft?.labor || []).reduce((s, l) => s + laborTotal(l), 0),
+      hm: (draft?.equipment || []).reduce((s, e) => s + Number(e.hours || 0), 0),
+    };
+  }, [draft, consolidation]);
 
   const patchDraft = (patch: Partial<WorkReport>) => {
     setDraft((prev) => {
@@ -236,6 +261,20 @@ export default function WorkReportDetailPage() {
       faena: project?.name || item?.name || draft.faena,
       area: item?.name || draft.area,
     });
+  };
+
+  // Marca/desmarca una OT consolidada. Las OT seleccionadas se reflejan en
+  // dailyOts para que definan las columnas de la matriz y los selects de OT.
+  const toggleConsolidatedOrder = (order: WorkOrder) => {
+    const ids = draft.consolidatedOrderIds || [];
+    const nextIds = ids.includes(order.id)
+      ? ids.filter((x) => x !== order.id)
+      : [...ids, order.id];
+    const nextDailyOts = nextIds
+      .map((oid) => (workOrders || []).find((o) => o.id === oid))
+      .filter((o): o is WorkOrder => !!o)
+      .map((o) => ({ id: o.id, otNumber: o.otNumber || '', description: o.description || '' }));
+    patchDraft({ consolidatedOrderIds: nextIds, dailyOts: nextDailyOts });
   };
 
   const updateArray = <T extends { id: string }>(key: 'labor' | 'equipment' | 'interferences' | 'materials' | 'nextDayPlan' | 'photos' | 'dailyOts' | 'structuredActivities', items: T[]) => {
@@ -336,9 +375,12 @@ export default function WorkReportDetailPage() {
     !draft.area?.trim() && 'Área',
     !draft.workDate && 'Fecha de trabajo',
     !draft.supervisorName?.trim() && 'Supervisor',
-    !(draft.dailyOts || []).some((o) => o.otNumber?.trim()) && 'Al menos una OT del día',
-    !(draft.structuredActivities || []).some((a) => a.description?.trim()) && 'Al menos una actividad ejecutada',
-    !(draft.labor || []).some((l) => l.name?.trim()) && 'Al menos un trabajador en obra',
+    // Modo cascada: validar contra las OT consolidadas; modo legacy: captura manual.
+    consolidating
+      ? (!consolidation || consolidation.personal.length === 0) && 'Las OT consolidadas no tienen personal'
+      : !(draft.dailyOts || []).some((o) => o.otNumber?.trim()) && 'Al menos una OT del día',
+    !consolidating && !(draft.structuredActivities || []).some((a) => a.description?.trim()) && 'Al menos una actividad ejecutada',
+    !consolidating && !(draft.labor || []).some((l) => l.name?.trim()) && 'Al menos un trabajador en obra',
   ].filter(Boolean) as string[];
 
   const signedTransition = async (step: WorkReportSignature['step'], action: string, toStatus?: WorkReportStatus) => {
@@ -577,6 +619,132 @@ export default function WorkReportDetailPage() {
             </div>
           </Section>
 
+          <Section title="OT consolidadas (cascada)">
+            <p className="text-[10px] text-muted-foreground mb-3">Selecciona las Órdenes de Trabajo del día. El personal, equipos, materiales y la matriz de horas del reporte se consolidan automáticamente desde ellas.</p>
+            {(workOrders || []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No hay Órdenes de Trabajo creadas. Crea OT en <button type="button" className="text-primary underline" onClick={() => router.push('/dashboard/work-reports/ot')}>OT / Reportes de Trabajo</button>.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[...(workOrders || [])]
+                  .sort((a, b) => (a.otNumber || '').localeCompare(b.otNumber || ''))
+                  .map((o) => {
+                    const selected = (draft.consolidatedOrderIds || []).includes(o.id);
+                    const hh = (o.labor || []).reduce((a, l) => a + (Number(l.hours) || 0), 0);
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        disabled={!editable}
+                        onClick={() => toggleConsolidatedOrder(o)}
+                        className={`text-left rounded-xl border p-3 transition disabled:opacity-60 ${selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/40'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-sm truncate">{o.otNumber || '(sin N°)'}</span>
+                          <Badge variant="outline" className="rounded-lg shrink-0">{o.status === 'ready' ? 'Lista' : 'Borrador'}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{o.description || 'Sin descripción'}</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground mt-1">
+                          {o.area && <span>Área: {o.area}</span>}
+                          {o.specialty && <span>Esp.: {o.specialty}</span>}
+                          <span>HH: {Math.round(hh * 100) / 100}</span>
+                          <span>{(o.labor || []).length} pers.</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </Section>
+
+          {consolidating && consolidation && (
+            <Section title="Consolidación · vista previa del PDF">
+              <div className="space-y-6">
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <span className="text-muted-foreground">OT: <b className="text-foreground">{consolidation.ots.length}</b></span>
+                  <span className="text-muted-foreground">Personal: <b className="text-foreground">{consolidation.personal.length}</b></span>
+                  <span className="text-muted-foreground">HH total: <b className="text-foreground tabular-nums">{consolidation.hhTotal}</b></span>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Resumen por OT</p>
+                  <div className="overflow-x-auto rounded-xl border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50 text-muted-foreground">
+                        <tr><th className="text-left p-2">OT</th><th className="text-left p-2">Actividad</th><th className="text-left p-2">Área</th><th className="text-right p-2">HH</th><th className="text-right p-2">Avance</th></tr>
+                      </thead>
+                      <tbody>
+                        {consolidation.porOt.map((r) => (
+                          <tr key={r.id} className="border-t">
+                            <td className="p-2 font-medium">{r.otNumber || '—'}</td>
+                            <td className="p-2 text-muted-foreground truncate max-w-[16rem]">{r.actividad}</td>
+                            <td className="p-2 text-muted-foreground">{r.area}</td>
+                            <td className="p-2 text-right tabular-nums">{r.hh}</td>
+                            <td className="p-2 text-right tabular-nums">{r.avance}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Matriz de horas (persona × OT)</p>
+                  <div className="overflow-x-auto rounded-xl border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50 text-muted-foreground">
+                        <tr>
+                          <th className="text-left p-2 sticky left-0 bg-muted/50">Persona</th>
+                          {consolidation.ots.map((c) => <th key={c.id} className="text-right p-2">{c.otNumber}</th>)}
+                          <th className="text-right p-2">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {consolidation.personal.map((p, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="p-2 sticky left-0 bg-card"><span className="font-medium">{p.nombre}</span> <span className="text-muted-foreground">{p.cargo}</span></td>
+                            {consolidation.ots.map((c) => <td key={c.id} className="p-2 text-right tabular-nums">{p.horas[c.id] || ''}</td>)}
+                            <td className="p-2 text-right tabular-nums font-semibold">{p.total}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {consolidation.porEspecialidad.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">HH por especialidad</p>
+                    <div className="flex flex-wrap gap-2">
+                      {consolidation.porEspecialidad.map((s) => (
+                        <Badge key={s.especialidad} variant="outline" className="rounded-lg">{s.especialidad}: <b className="ml-1 tabular-nums">{s.hh}</b></Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Equipos ({consolidation.equipos.length})</p>
+                    {consolidation.equipos.length === 0 ? <p className="text-xs text-muted-foreground">—</p> : (
+                      <ul className="text-xs space-y-1">
+                        {consolidation.equipos.map((e, i) => <li key={i} className="flex justify-between gap-2"><span className="truncate">{e.equipo}</span><span className="tabular-nums text-muted-foreground">{e.horas} h</span></li>)}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Materiales ({consolidation.materiales.length})</p>
+                    {consolidation.materiales.length === 0 ? <p className="text-xs text-muted-foreground">—</p> : (
+                      <ul className="text-xs space-y-1">
+                        {consolidation.materiales.map((m, i) => <li key={i} className="flex justify-between gap-2"><span className="truncate">{m.material}</span><span className="tabular-nums text-muted-foreground">{m.cantidad} {m.unidad}</span></li>)}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Section>
+          )}
+
+          {!consolidating && (
           <DynamicSection title="OTs del día" action="+ Agregar OT" onAdd={() => updateArray('dailyOts', [...(draft.dailyOts || []), { id: uid(), otNumber: '', description: '' }])} disabled={!editable}>
             <p className="text-[10px] text-muted-foreground mb-1">Las OTs definen las columnas de horas en el detalle del personal y se pueden asignar a cada actividad.</p>
             {(draft.dailyOts || []).map((ot, index) => (
@@ -586,7 +754,9 @@ export default function WorkReportDetailPage() {
               </CompactRow>
             ))}
           </DynamicSection>
+          )}
 
+          {!consolidating && (
           <Section title="Actividades ejecutadas">
             <div className="space-y-3">
               {(draft.structuredActivities || []).map((item, index) => (
@@ -617,7 +787,9 @@ export default function WorkReportDetailPage() {
             </div>
             <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('structuredActivities', [...(draft.structuredActivities || []), { ...EMPTY_ACTIVITY, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Actividad</Button>
           </Section>
+          )}
 
+          {!consolidating && (
           <Section title="Detalle del personal en obra">
             <div className="space-y-3">
               {(draft.labor || []).map((item, index) => (
@@ -655,7 +827,9 @@ export default function WorkReportDetailPage() {
             </div>
             <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('labor', [...draft.labor, { ...EMPTY_LABOR, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Trabajador</Button>
           </Section>
+          )}
 
+          {!consolidating && (
           <Section title="Equipos y maquinaria">
             <div className="space-y-3">
               {(draft.equipment || []).map((item, index) => (
@@ -681,6 +855,7 @@ export default function WorkReportDetailPage() {
             </div>
             <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('equipment', [...draft.equipment, { ...EMPTY_EQUIPMENT, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Equipo</Button>
           </Section>
+          )}
 
           <Section title="Improductividad / interferencias">
             <div className="space-y-3">
@@ -712,6 +887,7 @@ export default function WorkReportDetailPage() {
             <Button variant="outline" className="mt-4 rounded-xl" onClick={() => updateArray('interferences', [...(draft.interferences || []), { ...EMPTY_INTERFERENCE, id: uid() }])} disabled={!editable}><Plus className="h-4 w-4 mr-2" /> + Agregar Interferencia</Button>
           </Section>
 
+          {!consolidating && (
           <DynamicSection title="Materiales utilizados" action="+ Agregar Material" onAdd={() => updateArray('materials', [...draft.materials, { ...EMPTY_MATERIAL, id: uid() }])} disabled={!editable}>
             {(draft.materials || []).map((item, index) => (
               <CompactRow key={item.id} onDelete={() => updateArray('materials', draft.materials.filter((x) => x.id !== item.id))} disabled={!editable}>
@@ -722,6 +898,7 @@ export default function WorkReportDetailPage() {
               </CompactRow>
             ))}
           </DynamicSection>
+          )}
 
           <Section title="Programación día siguiente">
             <div className="space-y-3">

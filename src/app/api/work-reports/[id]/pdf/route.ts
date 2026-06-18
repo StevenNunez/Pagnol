@@ -36,7 +36,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const report = mappers.work_reports(row);
-    const datos = await construirDatosReporte(report);
+
+    // Modo cascada: si el Diario consolida OT, cargarlas para derivar el PDF.
+    let orders = undefined;
+    if (report.consolidatedOrderIds?.length) {
+      const { data: orderRows } = await ctx.admin
+        .from('work_orders')
+        .select('*')
+        .in('id', report.consolidatedOrderIds);
+      orders = (orderRows || []).map((r) => mappers.work_orders(r));
+    }
+
+    const datos = await construirDatosReporte(report, null, orders);
     const pdf = await generarReportePdf(datos);
 
     return new NextResponse(new Uint8Array(pdf), {

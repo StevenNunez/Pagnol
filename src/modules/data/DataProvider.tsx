@@ -44,6 +44,9 @@ import * as protocolMutations from './mutations/protocolMutations';
 import * as contractMutations from './mutations/contractMutations';
 import * as rentalMutations from './mutations/rentalMutations';
 import * as workReportMutations from './mutations/workReportMutations';
+import * as workReportCatalogMutations from './mutations/workReportCatalogMutations';
+import * as workOrderMutations from './mutations/workOrderMutations';
+import * as workWeeklyReportMutations from './mutations/workWeeklyReportMutations';
 import * as hrMutations from './mutations/hrMutations';
 import { WORK_ITEMS_SEED } from '@/lib/work-items-seed';
 
@@ -90,6 +93,11 @@ const initialState: AppDataState = {
     workReports: [],
     leaveRequests: [],
     hrDocuments: [],
+    workReportAreas: [],
+    workReportSpecialties: [],
+    workReportMilestones: [],
+    workOrders: [],
+    workWeeklyReports: [],
 };
 
 
@@ -208,6 +216,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const workReportsData = useSupabaseCollection('work_reports', { tenantId, mapper: mappers.work_reports, orderBy: { column: 'created_at', ascending: false } });
     const leaveRequestsData = useSupabaseCollection('hr_leave_requests', { tenantId, mapper: mappers.hr_leave_requests, orderBy: { column: 'created_at', ascending: false } });
     const hrDocumentsData = useSupabaseCollection('hr_documents', { tenantId, mapper: mappers.hr_documents, orderBy: { column: 'expiry_date', ascending: true } });
+    const workReportAreasData = useSupabaseCollection('wr_areas', { tenantId, orderBy: { column: 'name', ascending: true } });
+    const workReportSpecialtiesData = useSupabaseCollection('wr_specialties', { tenantId, orderBy: { column: 'name', ascending: true } });
+    const workReportMilestonesData = useSupabaseCollection('wr_milestones', { tenantId, orderBy: { column: 'name', ascending: true } });
+    const workOrdersData = useSupabaseCollection('work_orders', { tenantId, mapper: mappers.work_orders, orderBy: { column: 'work_date', ascending: false } });
+    const workWeeklyReportsData = useSupabaseCollection('work_weekly_reports', { tenantId, mapper: mappers.work_weekly_reports, orderBy: { column: 'start_date', ascending: false } });
 
     // Dynamic / specialized data
     const rolesArray = useSupabaseCollection<any>('roles', { enabled: !!tenantId });
@@ -300,6 +313,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             shiftSchedulesData, contractsData, contractWorkersData,
             rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData,
             workReportsData, leaveRequestsData, hrDocumentsData,
+            workReportAreasData, workReportSpecialtiesData, workReportMilestonesData,
+            workOrdersData, workWeeklyReportsData,
         ].every(data => data !== undefined);
 
         if (!allDataLoaded) {
@@ -371,6 +386,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 workReports: processData(workReportsData),
                 leaveRequests: processData(leaveRequestsData),
                 hrDocuments: processData(hrDocumentsData),
+                workReportAreas: processData(workReportAreasData),
+                workReportSpecialties: processData(workReportSpecialtiesData),
+                workReportMilestones: processData(workReportMilestonesData),
+                workOrders: processData(workOrdersData),
+                workWeeklyReports: processData(workWeeklyReportsData),
                 roles: rolesToUse,
                 subscriptionPlans: plansToUse,
                 isLoading: false,
@@ -388,7 +408,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         protocolTemplatesData, protocolsData,
         shiftSchedulesData, contractsData, contractWorkersData,
         rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData, workReportsData,
-        leaveRequestsData, hrDocumentsData, refreshVersion
+        leaveRequestsData, hrDocumentsData,
+        workReportAreasData, workReportSpecialtiesData, workReportMilestonesData,
+        workOrdersData, workWeeklyReportsData, refreshVersion
     ]);
 
 
@@ -568,6 +590,24 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         uploadWorkReportPhoto: bindContext(workReportMutations.uploadWorkReportPhoto),
         deleteWorkReportPhoto: bindContext(workReportMutations.deleteWorkReportPhoto),
         deleteWorkReport: bindContext(workReportMutations.deleteWorkReport),
+
+        addWorkReportArea: bindContext(workReportCatalogMutations.addWorkReportArea),
+        updateWorkReportArea: bindContext(workReportCatalogMutations.updateWorkReportArea),
+        deleteWorkReportArea: bindContext(workReportCatalogMutations.deleteWorkReportArea),
+        addWorkReportSpecialty: bindContext(workReportCatalogMutations.addWorkReportSpecialty),
+        updateWorkReportSpecialty: bindContext(workReportCatalogMutations.updateWorkReportSpecialty),
+        deleteWorkReportSpecialty: bindContext(workReportCatalogMutations.deleteWorkReportSpecialty),
+        addWorkReportMilestone: bindContext(workReportCatalogMutations.addWorkReportMilestone),
+        updateWorkReportMilestone: bindContext(workReportCatalogMutations.updateWorkReportMilestone),
+        deleteWorkReportMilestone: bindContext(workReportCatalogMutations.deleteWorkReportMilestone),
+
+        createWorkOrder: bindContext(workOrderMutations.createWorkOrder),
+        updateWorkOrder: bindContext(workOrderMutations.updateWorkOrder),
+        deleteWorkOrder: bindContext(workOrderMutations.deleteWorkOrder),
+
+        createWorkWeeklyReport: bindContext(workWeeklyReportMutations.createWorkWeeklyReport),
+        updateWorkWeeklyReport: bindContext(workWeeklyReportMutations.updateWorkWeeklyReport),
+        deleteWorkWeeklyReport: bindContext(workWeeklyReportMutations.deleteWorkWeeklyReport),
 
         // Recursos Humanos
         addLeaveRequest: bindContext(hrMutations.addLeaveRequest),

@@ -29,6 +29,7 @@ import {
   RotateCcw,
   ArrowLeft,
   ListChecks,
+  Tags,
   DollarSign,
   ShieldAlert,
   ClipboardPaste,
@@ -63,6 +64,7 @@ import {
   Link2,
   KeyRound,
   CalendarClock,
+  CalendarRange,
   Contact,
   NotebookPen,
   UserCog,
@@ -194,7 +196,10 @@ const getRentalsNavItems = () => [
 ];
 
 const getWorkReportsNavItems = () => [
-  { href: '/dashboard/work-reports', icon: NotebookPen, label: 'Informes de Terreno' },
+  { href: '/dashboard/work-reports/ot', icon: ClipboardList, label: 'OT / Reportes de Trabajo' },
+  { href: '/dashboard/work-reports', icon: NotebookPen, label: 'Reportes Diarios' },
+  { href: '/dashboard/work-reports/semanal', icon: CalendarRange, label: 'Reportes Semanales' },
+  { href: '/dashboard/work-reports/catalogos', icon: Tags, label: 'Catálogos' },
 ];
 
 const getRrhhNavItems = (can: (p: Permission) => boolean) => [

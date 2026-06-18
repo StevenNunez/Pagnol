@@ -47,6 +47,11 @@ import {
   LeaveRequest,
   LeaveStatus,
   HRDocument,
+  WorkReportArea,
+  WorkReportSpecialty,
+  WorkReportMilestone,
+  WorkOrder,
+  WorkWeeklyReport,
 } from '../core/lib/data';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 
@@ -93,6 +98,11 @@ export interface AppDataState {
   workReports: WorkReport[];
   leaveRequests: LeaveRequest[];
   hrDocuments: HRDocument[];
+  workReportAreas: WorkReportArea[];
+  workReportSpecialties: WorkReportSpecialty[];
+  workReportMilestones: WorkReportMilestone[];
+  workOrders: WorkOrder[];
+  workWeeklyReports: WorkWeeklyReport[];
 }
 
 // This defines the shape of the context, including all functions
@@ -224,6 +234,27 @@ export interface AppStateContextType extends AppDataState {
   uploadWorkReportPhoto: (reportId: string, file: File, description: string) => Promise<WorkReportPhoto>;
   deleteWorkReportPhoto: (photo: WorkReportPhoto) => Promise<void>;
   deleteWorkReport: (id: string) => Promise<void>;
+
+  // Catálogos de Reportes de Trabajo (áreas, especialidades, hitos)
+  addWorkReportArea: (name: string) => Promise<void>;
+  updateWorkReportArea: (id: string, name: string) => Promise<void>;
+  deleteWorkReportArea: (id: string) => Promise<void>;
+  addWorkReportSpecialty: (name: string) => Promise<void>;
+  updateWorkReportSpecialty: (id: string, name: string) => Promise<void>;
+  deleteWorkReportSpecialty: (id: string) => Promise<void>;
+  addWorkReportMilestone: (name: string) => Promise<void>;
+  updateWorkReportMilestone: (id: string, name: string) => Promise<void>;
+  deleteWorkReportMilestone: (id: string) => Promise<void>;
+
+  // OT / Reportes de Trabajo
+  createWorkOrder: (data: Partial<WorkOrder>) => Promise<WorkOrder>;
+  updateWorkOrder: (id: string, data: Partial<WorkOrder>) => Promise<void>;
+  deleteWorkOrder: (id: string) => Promise<void>;
+
+  // Reporte Semanal (consolida diarios)
+  createWorkWeeklyReport: (data: Partial<WorkWeeklyReport>) => Promise<WorkWeeklyReport>;
+  updateWorkWeeklyReport: (id: string, data: Partial<WorkWeeklyReport>) => Promise<void>;
+  deleteWorkWeeklyReport: (id: string) => Promise<void>;
 
   // Recursos Humanos
   addLeaveRequest: (data: Omit<LeaveRequest, 'id' | 'tenantId' | 'userId' | 'userName' | 'status' | 'createdAt' | 'reviewedBy' | 'reviewedByName' | 'reviewedAt' | 'rejectionReason'>) => Promise<LeaveRequest>;

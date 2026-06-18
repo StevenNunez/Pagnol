@@ -74,13 +74,15 @@ export function prepararDatos(d: any): any {
   return d;
 }
 
-let templateCache: HandlebarsTemplateDelegate | null = null;
-function getTemplate(): HandlebarsTemplateDelegate {
-  if (!templateCache) {
-    const src = fs.readFileSync(path.join(ENGINE_DIR, 'template.hbs'), 'utf8');
-    templateCache = Handlebars.compile(src);
+const templateCache = new Map<string, HandlebarsTemplateDelegate>();
+function getTemplate(file: string): HandlebarsTemplateDelegate {
+  let tpl = templateCache.get(file);
+  if (!tpl) {
+    const src = fs.readFileSync(path.join(ENGINE_DIR, file), 'utf8');
+    tpl = Handlebars.compile(src);
+    templateCache.set(file, tpl);
   }
-  return templateCache;
+  return tpl;
 }
 
 const isServerless = !!process.env.VERCEL || !!process.env.AWS_REGION || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
@@ -133,11 +135,7 @@ async function launchBrowser(): Promise<Browser> {
   );
 }
 
-// Genera el PDF de 4 páginas y devuelve el Buffer (para subir a Storage o stream).
-export async function generarReportePdf(datos: any): Promise<Buffer> {
-  const datosOk = prepararDatos(JSON.parse(JSON.stringify(datos)));
-  const html = getTemplate()(datosOk);
-
+async function renderHtmlToPdf(html: string): Promise<Buffer> {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
@@ -149,4 +147,33 @@ export async function generarReportePdf(datos: any): Promise<Buffer> {
   } finally {
     await browser.close();
   }
+}
+
+// Genera el PDF de 4 páginas del Reporte Diario (SQM) y devuelve el Buffer.
+export async function generarReportePdf(datos: any): Promise<Buffer> {
+  const datosOk = prepararDatos(JSON.parse(JSON.stringify(datos)));
+  const html = getTemplate('template.hbs')(datosOk);
+  return renderHtmlToPdf(html);
+}
+
+// Genera el PDF de 1 página de una OT / Reporte de Trabajo individual.
+// Misma identidad visual que el Reporte Diario (logos VALAR/SQM + paleta).
+export async function generarOrdenTrabajoPdf(datos: any): Promise<Buffer> {
+  const d = JSON.parse(JSON.stringify(datos));
+  d.logos = d.logos || {};
+  d.logos.valar = imgToDataUri(d.logos.valar || 'assets/logo-valar.svg');
+  d.logos.sqm = imgToDataUri(d.logos.sqm || 'assets/logo-sqm.svg');
+  const html = getTemplate('work-order-template.hbs')(d);
+  return renderHtmlToPdf(html);
+}
+
+// Genera el PDF de 1 página del Reporte Semanal (consolida los diarios).
+// Misma identidad visual que el Reporte Diario (logos VALAR/SQM + paleta).
+export async function generarSemanalPdf(datos: any): Promise<Buffer> {
+  const d = JSON.parse(JSON.stringify(datos));
+  d.logos = d.logos || {};
+  d.logos.valar = imgToDataUri(d.logos.valar || 'assets/logo-valar.svg');
+  d.logos.sqm = imgToDataUri(d.logos.sqm || 'assets/logo-sqm.svg');
+  const html = getTemplate('weekly-template.hbs')(d);
+  return renderHtmlToPdf(html);
 }

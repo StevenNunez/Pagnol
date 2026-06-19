@@ -7,7 +7,7 @@ import { DataProvider } from '@/modules/data/DataProvider';
 import { useAuth } from '@/modules/auth/useAuth';
 import { useAppState } from '@/modules/data/useData';
 import { Sidebar } from '@/components/sidebar';
-import { Menu, Loader2, Bell, Volume2, VolumeX, AlertCircle, ShoppingCart, ClipboardList, Users, LogOut, FileText } from 'lucide-react';
+import { Menu, Loader2, Bell, Volume2, VolumeX, AlertCircle, ShoppingCart, ClipboardList, Users, LogOut, FileText, Truck, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +44,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     supplierPayments,
     suppliers,
     purchaseOrders,
+    goodsReceipts,
+    costCenters,
     can,
   } = useAppState();
   const router = useRouter();
@@ -128,6 +130,35 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const pendingPurchaseRequests = React.useMemo(() => (purchaseRequests || []).filter((pr: PurchaseRequest) => pr.status === 'pending').length, [purchaseRequests]);
   const pendingCotizaciones = React.useMemo(() => (purchaseOrders || []).filter(po => po.status === 'generated').length, [purchaseOrders]);
 
+  // Abastecimiento (F5): OC activas que aún no se reciben por completo.
+  const pendingReceptions = React.useMemo(() => {
+    const receivedByPO = new Map<string, Map<string, number>>();
+    for (const r of (goodsReceipts || [])) {
+      const inner = receivedByPO.get(r.purchaseOrderId) || new Map<string, number>();
+      for (const it of (r.items || [])) inner.set(it.itemId, (inner.get(it.itemId) || 0) + (it.receivedQuantity || 0));
+      receivedByPO.set(r.purchaseOrderId, inner);
+    }
+    return (purchaseOrders || []).filter(po => {
+      if (!['generated', 'sent', 'issued'].includes(po.status)) return false;
+      const rec = receivedByPO.get(po.id);
+      return (po.items || []).some((it, idx) => {
+        const key = it.id || `${it.name}#${idx}`;
+        return (rec?.get(key) || 0) < (it.totalQuantity || 0);
+      });
+    }).length;
+  }, [purchaseOrders, goodsReceipts]);
+
+  // Abastecimiento (F5): centros de costo cuyo comprometido excede el presupuesto.
+  const overBudgetCostCenters = React.useMemo(() => {
+    return (costCenters || []).filter(cc => {
+      if (!cc.budget || cc.budget <= 0) return false;
+      const committed = (purchaseOrders || [])
+        .filter(po => po.costCenterId === cc.id && po.status !== 'cancelled')
+        .reduce((a, po) => a + (po.totalAmount || 0), 0);
+      return committed > cc.budget;
+    }).length;
+  }, [costCenters, purchaseOrders]);
+
   const totalNotifications = React.useMemo(() => {
     let count = 0;
     if (can('material_requests:approve_class_c')) count += pendingMaterialRequests;
@@ -139,8 +170,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     if (can('finance:manage_purchase_orders')) {
       count += pendingCotizaciones;
     }
+    if (can('stock:receive_order')) count += pendingReceptions;
+    if (can('cost_centers:manage')) count += overBudgetCostCenters;
     return count;
-  }, [can, pendingMaterialRequests, pendingPurchaseRequests, overduePayments, dueSoonPayments, pendingCotizaciones]);
+  }, [can, pendingMaterialRequests, pendingPurchaseRequests, overduePayments, dueSoonPayments, pendingCotizaciones, pendingReceptions, overBudgetCostCenters]);
 
   const supplierMap = React.useMemo(() => new Map<string, string>((suppliers || []).map((s: Supplier) => [s.id, s.name])), [suppliers]);
 
@@ -290,6 +323,22 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                           <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40">
                             <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg mr-3"><FileText className="h-4 w-4 text-indigo-600 dark:text-indigo-400" /></div>
                             <span className="text-[11px] font-bold uppercase tracking-tight">{pendingCotizaciones} Cotizaciones por Procesar</span>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
+                      {can('stock:receive_order') && pendingReceptions > 0 && (
+                        <Link href="/dashboard/abastecimiento/recepcion">
+                          <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-emerald-50/50 dark:hover:bg-emerald-950/40">
+                            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg mr-3"><Truck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /></div>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{pendingReceptions} OC por Recibir</span>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
+                      {can('cost_centers:manage') && overBudgetCostCenters > 0 && (
+                        <Link href="/dashboard/abastecimiento/costos">
+                          <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-red-50/50 dark:hover:bg-red-950/40">
+                            <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg mr-3"><Target className="h-4 w-4 text-red-600 dark:text-red-400" /></div>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{overBudgetCostCenters} Centro(s) sobre Presupuesto</span>
                           </DropdownMenuItem>
                         </Link>
                       )}

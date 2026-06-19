@@ -112,20 +112,43 @@ export default function WorkReportCatalogsPage() {
     workReportAreas,
     workReportSpecialties,
     workReportMilestones,
+    workReportCatalogs,
     addWorkReportArea, updateWorkReportArea, deleteWorkReportArea,
     addWorkReportSpecialty, updateWorkReportSpecialty, deleteWorkReportSpecialty,
     addWorkReportMilestone, updateWorkReportMilestone, deleteWorkReportMilestone,
+    addWorkReportCatalog, updateWorkReportCatalog, deleteWorkReportCatalog,
     can,
   } = useAppState();
 
   const editable = can('work_reports:create');
+  const catBy = (kind: string) => (workReportCatalogs || []).filter((c) => c.kind === kind);
 
   return (
     <PageShell
       title="Catálogos de Reportes de Trabajo"
-      description="Precarga áreas, especialidades e hitos del contrato para agilizar el llenado de las OT."
+      description="Precarga la información general (cliente, contrato, área, especialidad, ubicación, turno, jornada, hitos) para agilizar el llenado de las OT. También puedes crear valores nuevos directamente desde cada campo de la OT."
     >
       <div className="grid gap-6 lg:grid-cols-3">
+        <CatalogManager
+          title="Clientes"
+          description="Mandantes / clientes del contrato."
+          placeholder="Nuevo cliente"
+          items={catBy('client')}
+          editable={editable}
+          onAdd={(name) => addWorkReportCatalog('client', name)}
+          onUpdate={updateWorkReportCatalog}
+          onDelete={deleteWorkReportCatalog}
+        />
+        <CatalogManager
+          title="Contratos"
+          description="N° o nombre de contratos vigentes."
+          placeholder="Nuevo contrato"
+          items={catBy('contract')}
+          editable={editable}
+          onAdd={(name) => addWorkReportCatalog('contract', name)}
+          onUpdate={updateWorkReportCatalog}
+          onDelete={deleteWorkReportCatalog}
+        />
         <CatalogManager
           title="Áreas"
           description="Ej: Carbonato, Hidróxido, Línea 3."
@@ -145,6 +168,36 @@ export default function WorkReportCatalogsPage() {
           onAdd={addWorkReportSpecialty}
           onUpdate={updateWorkReportSpecialty}
           onDelete={deleteWorkReportSpecialty}
+        />
+        <CatalogManager
+          title="Ubicaciones"
+          description="Sectores / frentes de trabajo."
+          placeholder="Nueva ubicación"
+          items={catBy('location')}
+          editable={editable}
+          onAdd={(name) => addWorkReportCatalog('location', name)}
+          onUpdate={updateWorkReportCatalog}
+          onDelete={deleteWorkReportCatalog}
+        />
+        <CatalogManager
+          title="Turnos"
+          description="Ej: Día, Noche, Turno A, Turno B."
+          placeholder="Nuevo turno"
+          items={catBy('shift')}
+          editable={editable}
+          onAdd={(name) => addWorkReportCatalog('shift', name)}
+          onUpdate={updateWorkReportCatalog}
+          onDelete={deleteWorkReportCatalog}
+        />
+        <CatalogManager
+          title="Jornadas"
+          description="Ej: 7x7, 4x3, 5x2, 14x14."
+          placeholder="Nueva jornada"
+          items={catBy('workschedule')}
+          editable={editable}
+          onAdd={(name) => addWorkReportCatalog('workschedule', name)}
+          onUpdate={updateWorkReportCatalog}
+          onDelete={deleteWorkReportCatalog}
         />
         <CatalogManager
           title="Hitos del contrato"

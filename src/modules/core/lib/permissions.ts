@@ -23,6 +23,7 @@ export const ALL_PERMISSIONS = {
     'module_construction_control:view': { label: 'Acceder a Control de Obra', group: 'Acceso a Módulos' },
     'module_dte:view': { label: 'Acceder a Facturación DTE', group: 'Acceso a Módulos' },
     'module_work_reports:view': { label: 'Acceder a Reportes de Trabajo', group: 'Acceso a Módulos' },
+    'module_abastecimiento:view': { label: 'Acceder a Abastecimiento', group: 'Acceso a Módulos' },
     'pagnol:enroll_personal': { label: 'Enrolar Personal y Biometría', group: 'Módulo Pagnol' },
 
 
@@ -73,6 +74,7 @@ export const ALL_PERMISSIONS = {
     'orders:cancel': { label: 'Anular Cotizaciones', group: 'Compras' },
 
     'finance:manage_purchase_orders': { label: 'Generar OC Oficiales', group: 'Finanzas' },
+    'cost_centers:manage': { label: 'Gestionar Centros de Costo', group: 'Finanzas' },
 
     'users:create': { label: 'Crear Usuarios', group: 'Usuarios' },
     'users:view': { label: 'Ver Usuarios', group: 'Usuarios' },
@@ -163,6 +165,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             'module_purchasing:view', 'module_users:view', 'module_safety:view',
             'module_attendance:view', 'module_payments:view', 'module_reports:view',
             'module_permissions:view', 'module_construction_control:view', 'module_dte:view', 'module_work_reports:view',
+            'module_abastecimiento:view',
             // Activos y Stock
             'materials:create', 'materials:view_all', 'materials:edit', 'materials:delete', 'materials:archive',
             'tools:create', 'tools:view_all', 'tools:edit', 'tools:delete', 'tools:checkout', 'tools:return',
@@ -176,7 +179,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             'lots:create', 'lots:assign', 'lots:delete',
             'orders:create', 'orders:view_all', 'orders:cancel',
             // Finanzas
-            'finance:manage_purchase_orders',
+            'finance:manage_purchase_orders', 'cost_centers:manage',
             'payments:create', 'payments:view', 'payments:mark_as_paid', 'payments:edit', 'payments:delete',
             // Usuarios
             'users:create', 'users:view', 'users:edit', 'users:delete', 'users:change_password', 'users:print_qr',
@@ -454,6 +457,33 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
         ],
     },
+    'abastecimiento': {
+        label: 'Abastecimiento',
+        description: 'Gestiona el ciclo completo de compras: solicitudes, RFQ, órdenes de compra, recepción, proveedores y pagos.',
+        permissions: [
+            // Módulos (acceso al hub + los módulos que orquesta)
+            'module_abastecimiento:view',
+            'module_purchasing:view', 'module_payments:view',
+            'module_warehouse:view', 'module_bodega:view',
+            // Solicitudes de Compra (ciclo completo)
+            'purchase_requests:create', 'purchase_requests:view_all',
+            'purchase_requests:approve', 'purchase_requests:delete',
+            // Lotes y Órdenes
+            'lots:create', 'lots:assign', 'lots:delete',
+            'orders:create', 'orders:view_all', 'orders:cancel',
+            // Finanzas / OC oficiales
+            'finance:manage_purchase_orders', 'cost_centers:manage',
+            // Pagos a proveedores
+            'payments:create', 'payments:view', 'payments:mark_as_paid', 'payments:edit',
+            // Proveedores
+            'suppliers:create', 'suppliers:view', 'suppliers:edit', 'suppliers:delete',
+            // Recepción / Stock
+            'stock:add_manual', 'stock:receive_order',
+            'materials:view_all',
+            // Catálogos de apoyo
+            'categories:view', 'units:view',
+        ],
+    },
     'jefe-operaciones': {
         label: 'Jefe de Operaciones',
         description: 'Valida, firma y descarga los informes de terreno en revisión operacional.',
@@ -493,6 +523,7 @@ export const ROLES_ORDER: UserRole[] = [
     'jefe-mantencion',
     'panolero',
     'finance',
+    'abastecimiento',
     'recursos-humanos',
     'supervisor',
     'apr',
@@ -529,6 +560,7 @@ export const PLANS = {
             'supervisor',
             'apr',
             'finance',
+            'abastecimiento',
             'recursos-humanos',
             'guardia',
             'operador',

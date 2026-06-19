@@ -22,6 +22,8 @@ const FormSchema = z.object({
   accountType: z.string().optional(),
   accountNumber: z.string().optional(),
   email: z.string().email('Correo no válido').optional().or(z.literal('')),
+  phone: z.string().optional(),
+  address: z.string().optional(),
 });
 
 type FormData = z.infer<typeof FormSchema>;
@@ -84,10 +86,20 @@ export function CreateSupplierForm() {
         <Label htmlFor="rut">RUT del Proveedor (Opcional, para facturación)</Label>
         <Input id="rut" placeholder="Ej: 76.123.456-7" {...register('rut')} />
       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+            <Label htmlFor="email">Correo de Cobranza (Opcional)</Label>
+            <Input id="email" type="email" placeholder="Ej: cobranza@proveedor.cl" {...register('email')} />
+            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+        </div>
+        <div className="space-y-2">
+            <Label htmlFor="phone">Teléfono (Opcional)</Label>
+            <Input id="phone" placeholder="Ej: +56 9 1234 5678" {...register('phone')} />
+        </div>
+      </div>
       <div className="space-y-2">
-        <Label htmlFor="email">Correo de Cobranza (Opcional)</Label>
-        <Input id="email" type="email" placeholder="Ej: cobranza@proveedor.cl" {...register('email')} />
-         {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+        <Label htmlFor="address">Dirección (Opcional)</Label>
+        <Input id="address" placeholder="Ej: Av. Siempre Viva 742, Santiago" {...register('address')} />
       </div>
        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">

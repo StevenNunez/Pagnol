@@ -86,7 +86,6 @@ export default function WorkReportDetailPage() {
   const router = useRouter();
   const {
     workReports,
-    workItems,
     users,
     materials,
     workOrders,
@@ -192,6 +191,11 @@ export default function WorkReportDetailPage() {
     () => (consolidating ? consolidateWorkOrders(consolidatedOrders) : null),
     [consolidating, consolidatedOrders],
   );
+  // Fotos del Diario en modo cascada: se toman de las OT consolidadas.
+  const consolidatedPhotos = React.useMemo(
+    () => consolidatedOrders.flatMap((o) => (o.photos || []).map((p) => ({ ...p, otNumber: o.otNumber }))),
+    [consolidatedOrders],
+  );
 
   const totals = React.useMemo(() => {
     if (consolidation) {
@@ -251,18 +255,6 @@ export default function WorkReportDetailPage() {
     );
   }
 
-  const setOt = (workItemId: string) => {
-    const item = workItems.find((w) => w.id === workItemId);
-    const project = workItems.find((w) => w.id === item?.projectId);
-    patchDraft({
-      workItemId,
-      otNumber: item?.name || '',
-      client: currentTenant?.name || draft.client,
-      faena: project?.name || item?.name || draft.faena,
-      area: item?.name || draft.area,
-    });
-  };
-
   // Marca/desmarca una OT consolidada. Las OT seleccionadas se reflejan en
   // dailyOts para que definan las columnas de la matriz y los selects de OT.
   const toggleConsolidatedOrder = (order: WorkOrder) => {
@@ -270,11 +262,27 @@ export default function WorkReportDetailPage() {
     const nextIds = ids.includes(order.id)
       ? ids.filter((x) => x !== order.id)
       : [...ids, order.id];
-    const nextDailyOts = nextIds
+    const nextOrders = nextIds
       .map((oid) => (workOrders || []).find((o) => o.id === oid))
-      .filter((o): o is WorkOrder => !!o)
-      .map((o) => ({ id: o.id, otNumber: o.otNumber || '', description: o.description || '' }));
-    patchDraft({ consolidatedOrderIds: nextIds, dailyOts: nextDailyOts });
+      .filter((o): o is WorkOrder => !!o);
+    const nextDailyOts = nextOrders.map((o) => ({ id: o.id, otNumber: o.otNumber || '', description: o.description || '' }));
+    // El Diario HEREDA la cabecera de la primera OT seleccionada: el contexto
+    // (cliente, contrato, área, especialidad, supervisor, fecha, turno) viene de
+    // las OT, no se re-captura a mano.
+    const rep = nextOrders[0];
+    const header: Partial<WorkReport> = rep ? {
+      client: rep.client || draft.client,
+      contractNumber: rep.contractNumber || draft.contractNumber,
+      area: rep.area || draft.area,
+      specialty: rep.specialty || draft.specialty,
+      location: rep.location || draft.location,
+      shift: rep.shift || draft.shift,
+      workSchedule: rep.workSchedule || draft.workSchedule,
+      workDate: rep.workDate || draft.workDate,
+      supervisorId: rep.supervisorId || draft.supervisorId,
+      supervisorName: rep.supervisorName || draft.supervisorName,
+    } : {};
+    patchDraft({ consolidatedOrderIds: nextIds, dailyOts: nextDailyOts, ...header });
   };
 
   const updateArray = <T extends { id: string }>(key: 'labor' | 'equipment' | 'interferences' | 'materials' | 'nextDayPlan' | 'photos' | 'dailyOts' | 'structuredActivities', items: T[]) => {
@@ -369,7 +377,8 @@ export default function WorkReportDetailPage() {
 
   // Devuelve la lista de campos obligatorios que faltan para enviar a revisión.
   const getMissingForSubmit = (): string[] => [
-    !draft.otNumber?.trim() && 'Número de OT',
+    // En cascada el número de OT lo aportan las OT consolidadas (no hay un único N°).
+    !consolidating && !draft.otNumber?.trim() && 'Número de OT',
     !draft.client?.trim() && 'Cliente',
     !draft.faena?.trim() && 'Faena',
     !draft.area?.trim() && 'Área',
@@ -570,57 +579,10 @@ export default function WorkReportDetailPage() {
     >
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
         <div className="space-y-6">
-          <Section title="Informacion general">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="OT existente">
-                <Select value={draft.workItemId || ''} onValueChange={setOt} disabled={!editable}>
-                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="Seleccionar OT" /></SelectTrigger>
-                  <SelectContent>
-                    {workItems.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <TextField label="Numero OT" value={draft.otNumber} onChange={(v) => patchDraft({ otNumber: v })} disabled={!editable} />
-              <TextField label="Cliente" value={draft.client} onChange={(v) => patchDraft({ client: v })} disabled={!editable} />
-              <TextField label="Faena" value={draft.faena} onChange={(v) => patchDraft({ faena: v })} disabled={!editable} />
-              <TextField label="Area" value={draft.area} onChange={(v) => patchDraft({ area: v })} disabled={!editable} />
-              <Field label="Supervisor responsable">
-                <Select value={draft.supervisorId || ''} onValueChange={(id) => {
-                  const u = users.find((x) => x.id === id);
-                  patchDraft({ supervisorId: id, supervisorName: u?.name || draft.supervisorName });
-                }} disabled={!editable}>
-                  <SelectTrigger className="rounded-xl"><SelectValue placeholder={draft.supervisorName || 'Supervisor'} /></SelectTrigger>
-                  <SelectContent>{users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </Field>
-              <TextField label="Fecha trabajo" type="date" value={String(draft.workDate).slice(0, 10)} onChange={(v) => patchDraft({ workDate: v })} disabled={!editable} />
-              <TextField label="Hora inicio" type="time" value={draft.startTime || ''} onChange={(v) => patchDraft({ startTime: v })} disabled={!editable} />
-              <TextField label="Hora termino" type="time" value={draft.endTime || ''} onChange={(v) => patchDraft({ endTime: v })} disabled={!editable} />
-              <TextField label="Ubicacion" value={draft.location || ''} onChange={(v) => patchDraft({ location: v })} disabled={!editable} />
-              <TextField label="Obra" value={draft.obra || ''} onChange={(v) => patchDraft({ obra: v })} disabled={!editable} />
-              <TextField label="N° Contrato" value={draft.contractNumber || ''} onChange={(v) => patchDraft({ contractNumber: v })} disabled={!editable} />
-              <TextField label="Addendum N°" value={draft.addendumNumber || ''} onChange={(v) => patchDraft({ addendumNumber: v })} disabled={!editable} />
-              <TextField label="Turno" value={draft.shift || ''} onChange={(v) => patchDraft({ shift: v })} disabled={!editable} />
-              <TextField label="Especialidad" value={draft.specialty || ''} onChange={(v) => patchDraft({ specialty: v })} disabled={!editable} />
-              <TextField label="Emitido por" value={draft.emittedBy || ''} onChange={(v) => patchDraft({ emittedBy: v })} disabled={!editable} />
-              <TextField label="Cargo emisor" value={draft.emittedByRole || ''} onChange={(v) => patchDraft({ emittedByRole: v })} disabled={!editable} />
-              <TextField label="Jornada (ej. 7x7)" value={draft.workSchedule || ''} onChange={(v) => patchDraft({ workSchedule: v })} disabled={!editable} />
-              <Field label="Modalidad">
-                <Select value={draft.dayNight || ''} onValueChange={(v) => patchDraft({ dayNight: v })} disabled={!editable}>
-                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="Diurno / Nocturno" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Diurno">Diurno</SelectItem>
-                    <SelectItem value="Nocturno">Nocturno</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <TextField label="Hora almuerzo" type="time" value={draft.lunchStart || ''} onChange={(v) => patchDraft({ lunchStart: v })} disabled={!editable} />
-              <TextField label="Hora reinicio" type="time" value={draft.restartTime || ''} onChange={(v) => patchDraft({ restartTime: v })} disabled={!editable} />
-            </div>
-          </Section>
-
-          <Section title="OT consolidadas (cascada)">
-            <p className="text-[10px] text-muted-foreground mb-3">Selecciona las Órdenes de Trabajo del día. El personal, equipos, materiales y la matriz de horas del reporte se consolidan automáticamente desde ellas.</p>
+          {/* Fuente principal del Diario: las OT del día. Al seleccionarlas se
+              hereda la cabecera y se consolidan personal/equipos/materiales/HH/fotos. */}
+          <Section title="OT / Reportes de Trabajo del día">
+            <p className="text-[10px] text-muted-foreground mb-3">El reporte diario se construye desde las OT. Selecciona las del día: el personal, equipos, materiales, la matriz de horas y las fotografías se consolidan automáticamente, y la información general se hereda de ellas.</p>
             {(workOrders || []).length === 0 ? (
               <p className="text-sm text-muted-foreground">No hay Órdenes de Trabajo creadas. Crea OT en <button type="button" className="text-primary underline" onClick={() => router.push('/dashboard/work-reports/ot')}>OT / Reportes de Trabajo</button>.</p>
             ) : (
@@ -648,6 +610,7 @@ export default function WorkReportDetailPage() {
                           {o.specialty && <span>Esp.: {o.specialty}</span>}
                           <span>HH: {Math.round(hh * 100) / 100}</span>
                           <span>{(o.labor || []).length} pers.</span>
+                          <span>{(o.photos || []).length} fotos</span>
                         </div>
                       </button>
                     );
@@ -655,6 +618,80 @@ export default function WorkReportDetailPage() {
               </div>
             )}
           </Section>
+
+          {consolidating ? (
+            <Section title="Información general · heredada de las OT">
+              <p className="text-[10px] text-muted-foreground mb-3">Estos datos provienen de las OT seleccionadas. Para cambiarlos, edita la OT correspondiente.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Field label="Cliente"><ReadOnly value={draft.client} /></Field>
+                <Field label="N° Contrato"><ReadOnly value={draft.contractNumber} /></Field>
+                <Field label="Área"><ReadOnly value={draft.area} /></Field>
+                <Field label="Especialidad"><ReadOnly value={draft.specialty} /></Field>
+                <Field label="Supervisor"><ReadOnly value={draft.supervisorName} /></Field>
+                <Field label="Ubicación"><ReadOnly value={draft.location} /></Field>
+                <Field label="Turno"><ReadOnly value={draft.shift} /></Field>
+                <Field label="Jornada"><ReadOnly value={draft.workSchedule} /></Field>
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-6 mb-2">Datos del día (no provienen de las OT)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <TextField label="Faena" value={draft.faena} onChange={(v) => patchDraft({ faena: v })} disabled={!editable} />
+                <TextField label="Obra" value={draft.obra || ''} onChange={(v) => patchDraft({ obra: v })} disabled={!editable} />
+                <TextField label="Fecha trabajo" type="date" value={String(draft.workDate).slice(0, 10)} onChange={(v) => patchDraft({ workDate: v })} disabled={!editable} />
+                <TextField label="Hora inicio" type="time" value={draft.startTime || ''} onChange={(v) => patchDraft({ startTime: v })} disabled={!editable} />
+                <TextField label="Hora término" type="time" value={draft.endTime || ''} onChange={(v) => patchDraft({ endTime: v })} disabled={!editable} />
+                <Field label="Modalidad">
+                  <Select value={draft.dayNight || ''} onValueChange={(v) => patchDraft({ dayNight: v })} disabled={!editable}>
+                    <SelectTrigger className="rounded-xl"><SelectValue placeholder="Diurno / Nocturno" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Diurno">Diurno</SelectItem>
+                      <SelectItem value="Nocturno">Nocturno</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+            </Section>
+          ) : (
+            <Section title="Informacion general">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <TextField label="Numero OT" value={draft.otNumber} onChange={(v) => patchDraft({ otNumber: v })} disabled={!editable} />
+                <TextField label="Cliente" value={draft.client} onChange={(v) => patchDraft({ client: v })} disabled={!editable} />
+                <TextField label="Faena" value={draft.faena} onChange={(v) => patchDraft({ faena: v })} disabled={!editable} />
+                <TextField label="Area" value={draft.area} onChange={(v) => patchDraft({ area: v })} disabled={!editable} />
+                <Field label="Supervisor responsable">
+                  <Select value={draft.supervisorId || ''} onValueChange={(id) => {
+                    const u = users.find((x) => x.id === id);
+                    patchDraft({ supervisorId: id, supervisorName: u?.name || draft.supervisorName });
+                  }} disabled={!editable}>
+                    <SelectTrigger className="rounded-xl"><SelectValue placeholder={draft.supervisorName || 'Supervisor'} /></SelectTrigger>
+                    <SelectContent>{users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </Field>
+                <TextField label="Fecha trabajo" type="date" value={String(draft.workDate).slice(0, 10)} onChange={(v) => patchDraft({ workDate: v })} disabled={!editable} />
+                <TextField label="Hora inicio" type="time" value={draft.startTime || ''} onChange={(v) => patchDraft({ startTime: v })} disabled={!editable} />
+                <TextField label="Hora termino" type="time" value={draft.endTime || ''} onChange={(v) => patchDraft({ endTime: v })} disabled={!editable} />
+                <TextField label="Ubicacion" value={draft.location || ''} onChange={(v) => patchDraft({ location: v })} disabled={!editable} />
+                <TextField label="Obra" value={draft.obra || ''} onChange={(v) => patchDraft({ obra: v })} disabled={!editable} />
+                <TextField label="N° Contrato" value={draft.contractNumber || ''} onChange={(v) => patchDraft({ contractNumber: v })} disabled={!editable} />
+                <TextField label="Addendum N°" value={draft.addendumNumber || ''} onChange={(v) => patchDraft({ addendumNumber: v })} disabled={!editable} />
+                <TextField label="Turno" value={draft.shift || ''} onChange={(v) => patchDraft({ shift: v })} disabled={!editable} />
+                <TextField label="Especialidad" value={draft.specialty || ''} onChange={(v) => patchDraft({ specialty: v })} disabled={!editable} />
+                <TextField label="Emitido por" value={draft.emittedBy || ''} onChange={(v) => patchDraft({ emittedBy: v })} disabled={!editable} />
+                <TextField label="Cargo emisor" value={draft.emittedByRole || ''} onChange={(v) => patchDraft({ emittedByRole: v })} disabled={!editable} />
+                <TextField label="Jornada (ej. 7x7)" value={draft.workSchedule || ''} onChange={(v) => patchDraft({ workSchedule: v })} disabled={!editable} />
+                <Field label="Modalidad">
+                  <Select value={draft.dayNight || ''} onValueChange={(v) => patchDraft({ dayNight: v })} disabled={!editable}>
+                    <SelectTrigger className="rounded-xl"><SelectValue placeholder="Diurno / Nocturno" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Diurno">Diurno</SelectItem>
+                      <SelectItem value="Nocturno">Nocturno</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <TextField label="Hora almuerzo" type="time" value={draft.lunchStart || ''} onChange={(v) => patchDraft({ lunchStart: v })} disabled={!editable} />
+                <TextField label="Hora reinicio" type="time" value={draft.restartTime || ''} onChange={(v) => patchDraft({ restartTime: v })} disabled={!editable} />
+              </div>
+            </Section>
+          )}
 
           {consolidating && consolidation && (
             <Section title="Consolidación · vista previa del PDF">
@@ -920,6 +957,24 @@ export default function WorkReportDetailPage() {
           </Section>
 
           <Section title="Registro fotografico">
+            {consolidating ? (
+              consolidatedPhotos.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Las fotografías se cargan en cada <button type="button" className="text-primary underline" onClick={() => router.push('/dashboard/work-reports/ot')}>OT / Reporte de Trabajo</button> y se consolidan aquí automáticamente.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {consolidatedPhotos.map((p) => (
+                    <Card key={p.id} className="rounded-[1.5rem] overflow-hidden">
+                      <img src={p.url} alt={p.description || 'Foto'} className="h-48 w-full object-cover" />
+                      <CardContent className="p-4 space-y-2">
+                        <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">{p.description || 'Sin descripción'}</p>
+                        <Badge variant="outline" className="rounded-lg">OT {p.otNumber || '—'}</Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )
+            ) : (
+            <>
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3">
               <Input className="rounded-xl" value={photoDescription} onChange={(e) => setPhotoDescription(e.target.value)} placeholder="Descripcion para las proximas fotografias" disabled={!editable} />
               <FileButton icon={<Camera className="h-4 w-4" />} label="Camara" capture files={(files) => handleFiles(files)} disabled={!editable} />
@@ -954,6 +1009,8 @@ export default function WorkReportDetailPage() {
                 </Card>
               ))}
             </div>
+            </>
+            )}
           </Section>
 
           <Section title="Avance del trabajo">
@@ -1212,6 +1269,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function TextField({ label, value, onChange, type = 'text', disabled }: { label: string; value: string; onChange: (v: string) => void; type?: string; disabled?: boolean }) {
   return <Field label={label}><Input className="rounded-xl" type={type} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} /></Field>;
+}
+
+function ReadOnly({ value }: { value?: string | null }) {
+  return <div className="flex h-10 items-center rounded-xl border bg-muted/40 px-3 text-sm text-foreground">{value || '—'}</div>;
 }
 
 function CompactRow({ children, onDelete, disabled }: { children: React.ReactNode; onDelete: () => void; disabled?: boolean }) {

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Loader2, Save, Check, X } from 'lucide-react';
@@ -23,6 +24,9 @@ const FormSchema = z.object({
   accountType: z.string().optional(),
   accountNumber: z.string().optional(),
   email: z.string().email('Correo no válido').optional().or(z.literal('')),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  notes: z.string().optional(),
 });
 
 type FormData = z.infer<typeof FormSchema>;
@@ -59,6 +63,9 @@ export function EditSupplierForm({ supplier, isOpen, onClose }: EditSupplierForm
             accountType: supplier.accountType || '',
             accountNumber: supplier.accountNumber || '',
             email: supplier.email || '',
+            phone: supplier.phone || '',
+            address: supplier.address || '',
+            notes: supplier.notes || '',
         };
         reset(defaultValues);
         setSelectedCategories(supplier.categories);
@@ -110,10 +117,20 @@ export function EditSupplierForm({ supplier, isOpen, onClose }: EditSupplierForm
                     <Label htmlFor="rut">RUT (Opcional)</Label>
                     <Input id="rut" placeholder="Ej: 76.123.456-7" {...register('rut')} />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="email">Correo de Cobranza (Opcional)</Label>
+                        <Input id="email" type="email" placeholder="Ej: cobranza@proveedor.cl" {...register('email')} />
+                        {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="phone">Teléfono (Opcional)</Label>
+                        <Input id="phone" placeholder="Ej: +56 9 1234 5678" {...register('phone')} />
+                    </div>
+                </div>
                 <div className="space-y-2">
-                    <Label htmlFor="email">Correo de Cobranza (Opcional)</Label>
-                    <Input id="email" type="email" placeholder="Ej: cobranza@proveedor.cl" {...register('email')} />
-                    {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+                    <Label htmlFor="address">Dirección (Opcional)</Label>
+                    <Input id="address" placeholder="Ej: Av. Siempre Viva 742, Santiago" {...register('address')} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -176,6 +193,11 @@ export function EditSupplierForm({ supplier, isOpen, onClose }: EditSupplierForm
                          <p className="text-xs text-muted-foreground">Haz clic en una categoría para agregarla o quitarla.</p>
                          {errors.categories && <p className="text-xs text-destructive">{errors.categories.message}</p>}
                     </div>
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="notes">Notas Internas (Opcional)</Label>
+                    <Textarea id="notes" placeholder="Observaciones, condiciones especiales, recordatorios…" rows={3} {...register('notes')} />
                 </div>
 
                 <DialogFooter>

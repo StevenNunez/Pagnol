@@ -4,7 +4,7 @@ import { supabase } from '@/modules/core/lib/supabase';
 import { authHeaders } from '@/modules/core/lib/auth-header';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 import { nanoid } from 'nanoid';
-import type { UserRole, Tenant, WorkItem, ProgressLog, PaymentState } from '@/modules/core/lib/data';
+import type { UserRole, Tenant, WorkItem, ProgressLog, PaymentState, SupplierDocument } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import type { MutationContext as Context } from './context';
 
@@ -370,19 +370,83 @@ export async function deleteUnit(id: string, { }: Context) {
 }
 
 // --- Suppliers ---
+// Mapea el modelo camelCase de la app a las columnas snake_case de la tabla.
+// Solo incluye las claves presentes en `data` (update parcial seguro).
+function toSupplierRow(data: any) {
+    const row: any = {};
+    if ('name' in data) row.name = data.name;
+    if ('categories' in data) row.categories = data.categories;
+    if ('rut' in data) row.rut = data.rut || null;
+    if ('bank' in data) row.bank = data.bank || null;
+    if ('accountType' in data) row.account_type = data.accountType || null;
+    if ('accountNumber' in data) row.account_number = data.accountNumber || null;
+    if ('email' in data) row.email = data.email || null;
+    if ('address' in data) row.address = data.address || null;
+    if ('phone' in data) row.phone = data.phone || null;
+    if ('contacts' in data) row.contacts = data.contacts;
+    if ('documents' in data) row.documents = data.documents;
+    if ('evaluations' in data) row.evaluations = data.evaluations;
+    if ('costCenterId' in data) row.cost_center_id = data.costCenterId || null;
+    if ('notes' in data) row.notes = data.notes || null;
+    return row;
+}
+
 export async function addSupplier(data: any, { tenantId }: Context) {
     if (!tenantId) throw new Error("Inquilino no válido.");
     const { error } = await supabase
         .from('suppliers')
-        .insert({ ...data, tenant_id: tenantId });
+        .insert({ ...toSupplierRow(data), tenant_id: tenantId });
     if (error) throw error;
 }
 
 export async function updateSupplier(id: string, data: any, { }: Context) {
     const { error } = await supabase
         .from('suppliers')
-        .update(data)
+        .update(toSupplierRow(data))
         .eq('id', id);
+    if (error) throw error;
+}
+
+// Sube un documento del proveedor al bucket privado y devuelve el metadato
+// (con URL firmada de larga duración) para anexarlo al array `documents`.
+export async function uploadSupplierDocument(
+    supplierId: string,
+    file: File,
+    meta: { name: string; type?: string; expiresAt?: string },
+    { user, tenantId }: Context
+): Promise<SupplierDocument> {
+    if (!user || !tenantId) throw new Error("No autenticado.");
+    const ext = file.name.split('.').pop() || 'bin';
+    const docId = nanoid();
+    const path = `${tenantId}/${supplierId}/${docId}.${ext}`;
+    const { error } = await supabase.storage
+        .from('supplier-documents')
+        .upload(path, file, { contentType: file.type, upsert: false });
+    if (error) throw error;
+
+    // ~10 años en segundos.
+    const { data: signed, error: signError } = await supabase.storage
+        .from('supplier-documents')
+        .createSignedUrl(path, 315360000);
+    if (signError) throw signError;
+
+    return {
+        id: docId,
+        name: meta.name || file.name,
+        type: meta.type,
+        url: signed.signedUrl,
+        path,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: user.name,
+        expiresAt: meta.expiresAt,
+    };
+}
+
+// Borra el archivo físico de un documento del proveedor (el array `documents`
+// se actualiza aparte vía updateSupplier).
+export async function deleteSupplierDocumentFile(path: string, { user, tenantId }: Context) {
+    if (!user || !tenantId) throw new Error("No autenticado.");
+    const { error } = await supabase.storage.from('supplier-documents').remove([path]);
     if (error) throw error;
 }
 

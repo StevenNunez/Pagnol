@@ -25,7 +25,8 @@ import {
     Receipt,
     KeyRound,
     NotebookPen,
-    UserCog
+    UserCog,
+    PackageSearch
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Permission } from '@/modules/core/lib/permissions';
@@ -77,6 +78,17 @@ export default function DashboardHub() {
             border: "hover:border-emerald-300 dark:hover:border-emerald-500/50",
             shadow: "hover:shadow-emerald-500/20 dark:hover:shadow-emerald-500/10",
             permission: 'module_purchasing:view'
+        },
+        {
+            title: "Abastecimiento",
+            description: "Ciclo completo de compras: solicitud → RFQ → OC → recepción → pago, con control de costos.",
+            icon: PackageSearch,
+            href: "/dashboard/abastecimiento",
+            color: "text-emerald-600 dark:text-emerald-400",
+            bg: "bg-emerald-100 dark:bg-emerald-500/10",
+            border: "hover:border-emerald-300 dark:hover:border-emerald-500/50",
+            shadow: "hover:shadow-emerald-500/20 dark:hover:shadow-emerald-500/10",
+            permission: 'module_abastecimiento:view'
         },
         {
             title: "Gestión de Usuarios y Permisos",

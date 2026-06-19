@@ -41,8 +41,12 @@ export default function WorkReportsDashboard() {
     const observed = reports.filter((r) => r.status === 'observed').length;
     const finished = reports.filter((r) => r.status === 'final_approved').length;
     const hh = reports.reduce((s, r) => s + (r.labor || []).reduce((a, l) => {
-      const horas = l.hours && typeof l.hours === 'object' ? Object.values(l.hours).reduce((x, y) => x + (Number(y) || 0), 0) : 0;
-      return a + horas + (Number(l.colacion) || 0) + (Number(l.documentacion) || 0) + (Number(l.traslados) || 0) + (Number(l.overtimeHours) || 0);
+      // Solo horas trabajadas. Personal = nombre/cargo/horas (rediseño en cascada);
+      // los campos legacy colación/documentación/traslados/horas extra ya no cuentan.
+      const horas = l.hours && typeof l.hours === 'object'
+        ? Object.values(l.hours).reduce((x, y) => x + (Number(y) || 0), 0)
+        : (Number(l.hours) || 0);
+      return a + horas;
     }, 0), 0);
     const hm = reports.reduce((s, r) => s + (r.equipment || []).reduce((a, e) => a + Number(e.hours || 0), 0), 0);
     const avg = reports.length ? Math.round(reports.reduce((s, r) => s + Number(r.progressPercent || 0), 0) / reports.length) : 0;

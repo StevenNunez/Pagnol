@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { supabase } from '@/modules/core/lib/supabase';
 import { compressImage } from '@/lib/compress-image';
+import { CatalogCombobox } from '@/components/catalog-combobox';
 import type {
   WorkOrder,
   WorkOrderLaborItem,
@@ -45,14 +46,22 @@ export default function WorkOrderDetailPage() {
     workReportAreas,
     workReportSpecialties,
     workReportMilestones,
+    workReportCatalogs,
     users,
     updateWorkOrder,
     uploadWorkReportPhoto,
     deleteWorkReportPhoto,
+    addWorkReportArea,
+    addWorkReportSpecialty,
+    addWorkReportMilestone,
+    addWorkReportCatalog,
     can,
     notify,
     isLoading,
   } = useAppState();
+
+  // Listas por tipo del catálogo genérico (cliente/contrato/ubicación/turno/jornada).
+  const catBy = (kind: string) => (workReportCatalogs || []).filter((c) => c.kind === kind);
 
   const editable = can('work_reports:create');
   const wo = (workOrders || []).find((w) => w.id === params.id);
@@ -169,12 +178,30 @@ export default function WorkOrderDetailPage() {
       <Section title="Información general">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <TextField label="Número OT" value={draft.otNumber} onChange={(v) => patchDraft({ otNumber: v })} disabled={!editable} />
-          <TextField label="Cliente" value={draft.client} onChange={(v) => patchDraft({ client: v })} disabled={!editable} />
-          <TextField label="Contrato" value={draft.contractNumber || ''} onChange={(v) => patchDraft({ contractNumber: v })} disabled={!editable} />
-          <CatalogSelect label="Área" value={draft.area || ''} options={workReportAreas} onChange={(v) => patchDraft({ area: v })} disabled={!editable} />
-          <TextField label="Ubicación" value={draft.location || ''} onChange={(v) => patchDraft({ location: v })} disabled={!editable} />
-          <CatalogSelect label="Especialidad" value={draft.specialty || ''} options={workReportSpecialties} onChange={(v) => patchDraft({ specialty: v })} disabled={!editable} />
-          <CatalogSelect label="Hito del contrato" value={draft.milestone || ''} options={workReportMilestones} onChange={(v) => patchDraft({ milestone: v })} disabled={!editable} />
+          <Field label="Cliente">
+            <CatalogCombobox value={draft.client} options={catBy('client')} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ client: v })} onCreate={(n) => addWorkReportCatalog('client', n)} />
+          </Field>
+          <Field label="Contrato">
+            <CatalogCombobox value={draft.contractNumber || ''} options={catBy('contract')} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ contractNumber: v })} onCreate={(n) => addWorkReportCatalog('contract', n)} />
+          </Field>
+          <Field label="Área">
+            <CatalogCombobox value={draft.area || ''} options={workReportAreas} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ area: v })} onCreate={(n) => addWorkReportArea(n)} />
+          </Field>
+          <Field label="Ubicación">
+            <CatalogCombobox value={draft.location || ''} options={catBy('location')} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ location: v })} onCreate={(n) => addWorkReportCatalog('location', n)} />
+          </Field>
+          <Field label="Especialidad">
+            <CatalogCombobox value={draft.specialty || ''} options={workReportSpecialties} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ specialty: v })} onCreate={(n) => addWorkReportSpecialty(n)} />
+          </Field>
+          <Field label="Hito del contrato">
+            <CatalogCombobox value={draft.milestone || ''} options={workReportMilestones} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ milestone: v })} onCreate={(n) => addWorkReportMilestone(n)} />
+          </Field>
           <Field label="Supervisor responsable">
             <Select value={draft.supervisorId || ''} onValueChange={(id) => patchDraft({ supervisorId: id, supervisorName: (users || []).find((u) => u.id === id)?.name || draft.supervisorName })} disabled={!editable}>
               <SelectTrigger className="rounded-xl"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
@@ -183,8 +210,14 @@ export default function WorkOrderDetailPage() {
               </SelectContent>
             </Select>
           </Field>
-          <TextField label="Turno" value={draft.shift || ''} onChange={(v) => patchDraft({ shift: v })} disabled={!editable} />
-          <TextField label="Jornada" value={draft.workSchedule || ''} onChange={(v) => patchDraft({ workSchedule: v })} disabled={!editable} />
+          <Field label="Turno">
+            <CatalogCombobox value={draft.shift || ''} options={catBy('shift')} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ shift: v })} onCreate={(n) => addWorkReportCatalog('shift', n)} />
+          </Field>
+          <Field label="Jornada">
+            <CatalogCombobox value={draft.workSchedule || ''} options={catBy('workschedule')} disabled={!editable} placeholder="Selecciona o crea…"
+              onChange={(v) => patchDraft({ workSchedule: v })} onCreate={(n) => addWorkReportCatalog('workschedule', n)} />
+          </Field>
           <TextField label="Fecha" type="date" value={String(draft.workDate).slice(0, 10)} onChange={(v) => patchDraft({ workDate: v })} disabled={!editable} />
         </div>
       </Section>
@@ -296,19 +329,6 @@ function TextField({ label, value, onChange, type, disabled }: { label: string; 
   return (
     <Field label={label}>
       <Input className="rounded-xl" type={type} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />
-    </Field>
-  );
-}
-
-function CatalogSelect({ label, value, options, onChange, disabled }: { label: string; value: string; options: { id: string; name: string }[]; onChange: (v: string) => void; disabled?: boolean }) {
-  return (
-    <Field label={label}>
-      <Select value={value} onValueChange={onChange} disabled={disabled || !(options || []).length}>
-        <SelectTrigger className="rounded-xl"><SelectValue placeholder={(options || []).length ? 'Selecciona…' : 'Sin opciones (ver Catálogos)'} /></SelectTrigger>
-        <SelectContent>
-          {(options || []).map((o) => <SelectItem key={o.id} value={o.name}>{o.name}</SelectItem>)}
-        </SelectContent>
-      </Select>
     </Field>
   );
 }

@@ -3,7 +3,7 @@
 
 export type FieldValue = any;
 
-export type UserRole = "administrador" | "director-faena" | "jefe-turno" | "jefe-mantencion" | "geologo" | "topografo" | "supervisor" | "operador" | "apr" | "guardia" | "finance" | "super-admin" | "panolero" | "cphs" | "jefe-terreno" | "quality" | "jefe-oficina-tecnica" | "contratista" | "recursos-humanos" | "jefe-operaciones" | "adc" | "gerente-general" | "soporte-pagnol";
+export type UserRole = "administrador" | "director-faena" | "jefe-turno" | "jefe-mantencion" | "geologo" | "topografo" | "supervisor" | "operador" | "apr" | "guardia" | "finance" | "super-admin" | "panolero" | "cphs" | "jefe-terreno" | "quality" | "jefe-oficina-tecnica" | "contratista" | "recursos-humanos" | "jefe-operaciones" | "adc" | "gerente-general" | "soporte-pagnol" | "abastecimiento";
 
 export interface Tenant {
   id: string;
@@ -167,6 +167,14 @@ export interface WorkReportSpecialty {
 }
 export interface WorkReportMilestone {
   id: string;
+  name: string;
+}
+
+// Catálogo genérico de precarga (cliente, contrato, ubicación, turno, jornada…).
+export type WorkReportCatalogKind = 'client' | 'contract' | 'location' | 'shift' | 'workschedule';
+export interface WorkReportCatalogItem {
+  id: string;
+  kind: WorkReportCatalogKind;
   name: string;
 }
 
@@ -813,6 +821,39 @@ export interface WorkWeeklyReport {
   updatedAt: Date | string;
 }
 
+export interface SupplierContact {
+  id: string;
+  name: string;
+  role?: string;       // Cargo / rol comercial
+  email?: string;
+  phone?: string;
+  isPrimary?: boolean; // Contacto principal
+}
+
+export interface SupplierDocument {
+  id: string;
+  name: string;
+  /** Tipo: Tributario, Bancario, Contrato, Certificado, Seguro, Otro */
+  type?: string;
+  url: string;         // URL firmada (bucket privado)
+  path: string;        // Ruta en storage: {tenantId}/{supplierId}/{docId}.ext
+  uploadedAt: string;  // ISO
+  uploadedBy?: string;
+  expiresAt?: string;  // ISO, para documentos con vencimiento (seguros, certificados)
+}
+
+export interface SupplierEvaluation {
+  id: string;
+  date: string;        // ISO
+  userId?: string;
+  userName?: string;
+  quality: number;     // 1-5 — Calidad del producto/servicio
+  delivery: number;    // 1-5 — Cumplimiento de plazos
+  price: number;       // 1-5 — Competitividad de precios
+  service: number;     // 1-5 — Atención / postventa
+  comment?: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;
@@ -824,6 +865,11 @@ export interface Supplier {
   email?: string;
   address?: string;
   phone?: string;
+  contacts?: SupplierContact[];
+  documents?: SupplierDocument[];
+  evaluations?: SupplierEvaluation[];
+  costCenterId?: string;
+  notes?: string;
 }
 
 export interface PurchaseOrder {
@@ -842,6 +888,28 @@ export interface PurchaseOrder {
   processedAt?: Date;
   processedBy?: string;
   totalAmount?: number;
+  costCenterId?: string | null; // Imputación de costo (F4)
+  tenantId: string;
+}
+
+// ── Centros de Costo (F4) ────────────────────────────────────────────────────
+export type CostCenterType = 'Operaciones' | 'Mantención' | 'Ingeniería' | 'TI' | 'Administración' | 'Abastecimiento';
+
+export interface CostCenter {
+  id: string;
+  code: string;
+  name: string;
+  type: CostCenterType;
+  budget: number;             // Presupuesto asignado
+  status: 'active' | 'closed';
+  responsibleId?: string;
+  responsibleName?: string;
+  startDate?: string;         // ISO date
+  endDate?: string;           // ISO date
+  notes?: string;
+  createdBy?: string;
+  createdAt: Date;
+  updatedAt?: Date;
   tenantId: string;
 }
 
@@ -867,6 +935,100 @@ export interface PurchaseLot {
   creatorName: string;
   status: 'open' | 'ordered';
   supplierId: string;
+}
+
+// ── RFQ (Cotizaciones) ───────────────────────────────────────────────────────
+export type QuoteRequestStatus = 'draft' | 'sent' | 'closed' | 'awarded' | 'cancelled';
+
+export interface QuoteItem {
+  id: string;          // id de la purchase_request de origen (o generado)
+  name: string;
+  unit: string;
+  quantity: number;
+  category?: string;
+}
+
+export interface QuoteItemPrice {
+  itemId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface QuoteResponse {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  totalPrice: number;            // Obligatorio
+  deliveryDays: number;          // Plazo de entrega (días) — obligatorio
+  warranty: string;              // Garantía — obligatorio
+  commercialConditions: string;  // Condiciones comerciales — obligatorio
+  validityDate?: string;         // Validez de la oferta (ISO date)
+  itemPrices?: QuoteItemPrice[]; // Detalle por ítem (opcional)
+  attachmentUrl?: string;        // Adjunto del proveedor (bucket privado)
+  attachmentPath?: string;
+  attachmentName?: string;
+  notes?: string;
+  createdAt: string;             // ISO
+  createdBy?: string;
+}
+
+export interface QuoteRequest {
+  id: string;
+  internalCode: string;
+  title: string;
+  status: QuoteRequestStatus;
+  requestIds: string[];          // purchase_requests incluidas
+  items: QuoteItem[];
+  supplierIds: string[];         // proveedores invitados
+  responses: QuoteResponse[];
+  deadline?: string;             // ISO date — fecha límite de respuesta
+  notes?: string;
+  awardedSupplierId?: string;
+  awardedQuoteId?: string;
+  awardedAt?: string;
+  purchaseOrderId?: string;
+  createdBy?: string;
+  createdByName: string;
+  createdAt: Date;
+  updatedAt?: Date;
+  tenantId: string;
+}
+
+// ── Recepción de Mercadería (ligada a OC) ────────────────────────────────────
+export interface ReceiptItem {
+  itemId: string;          // id del ítem en la OC (o nombre normalizado)
+  name: string;
+  unit: string;
+  orderedQuantity: number; // cantidad de la OC para este ítem
+  receivedQuantity: number;// cantidad recibida en ESTE evento de recepción
+  materialId?: string;     // material de bodega donde ingresó el stock
+}
+
+export interface ReceiptPhoto {
+  id: string;
+  url: string;             // URL firmada (bucket privado reception-photos)
+  path: string;            // {tenantId}/{receiptId}/{photoId}.ext
+  name?: string;
+  date: string;            // ISO
+}
+
+export interface GoodsReceipt {
+  id: string;
+  internalCode: string;
+  purchaseOrderId: string;
+  purchaseOrderCode: string;
+  supplierId?: string;
+  supplierName: string;
+  items: ReceiptItem[];
+  photos: ReceiptPhoto[];
+  notes?: string;
+  receivedBy?: string;
+  receivedByName: string;
+  receivedAt: string;      // ISO
+  createdAt: Date;
+  tenantId: string;
 }
 
 // ── Construction Protocols ───────────────────────────────────────────────────

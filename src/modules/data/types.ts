@@ -8,6 +8,14 @@ import {
   ReturnRequest,
   PurchaseRequest,
   Supplier,
+  SupplierDocument,
+  QuoteRequest,
+  QuoteResponse,
+  QuoteItem,
+  GoodsReceipt,
+  ReceiptItem,
+  ReceiptPhoto,
+  CostCenter,
   MaterialCategory,
   Unit,
   PurchaseLot,
@@ -50,6 +58,8 @@ import {
   WorkReportArea,
   WorkReportSpecialty,
   WorkReportMilestone,
+  WorkReportCatalogItem,
+  WorkReportCatalogKind,
   WorkOrder,
   WorkWeeklyReport,
 } from '../core/lib/data';
@@ -71,6 +81,9 @@ export interface AppDataState {
   units: Unit[];
   purchaseLots: PurchaseLot[];
   purchaseOrders: PurchaseOrder[];
+  quoteRequests: QuoteRequest[];
+  goodsReceipts: GoodsReceipt[];
+  costCenters: CostCenter[];
   supplierPayments: SupplierPayment[];
   salaryAdvances: SalaryAdvance[];
   attendanceLogs: AttendanceLog[];
@@ -101,6 +114,7 @@ export interface AppDataState {
   workReportAreas: WorkReportArea[];
   workReportSpecialties: WorkReportSpecialty[];
   workReportMilestones: WorkReportMilestone[];
+  workReportCatalogs: WorkReportCatalogItem[];
   workOrders: WorkOrder[];
   workWeeklyReports: WorkWeeklyReport[];
 }
@@ -152,6 +166,25 @@ export interface AppStateContextType extends AppDataState {
   addSupplier: (data: any) => Promise<void>;
   updateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
+  uploadSupplierDocument: (supplierId: string, file: File, meta: { name: string; type?: string; expiresAt?: string }) => Promise<SupplierDocument>;
+  deleteSupplierDocumentFile: (path: string) => Promise<void>;
+  addQuoteRequest: (data: { title: string; requestIds: string[]; items: QuoteItem[]; supplierIds: string[]; deadline?: string; notes?: string }) => Promise<void>;
+  updateQuoteRequest: (id: string, data: Partial<QuoteRequest>) => Promise<void>;
+  deleteQuoteRequest: (id: string) => Promise<void>;
+  sendQuoteRequest: (id: string) => Promise<void>;
+  closeQuoteRequest: (id: string) => Promise<void>;
+  addQuoteResponse: (rfqId: string, response: Omit<QuoteResponse, "id" | "createdAt" | "createdBy">) => Promise<void>;
+  updateQuoteResponse: (rfqId: string, responseId: string, data: Partial<QuoteResponse>) => Promise<void>;
+  deleteQuoteResponse: (rfqId: string, responseId: string) => Promise<void>;
+  uploadQuoteAttachment: (rfqId: string, file: File) => Promise<{ url: string; path: string; name: string }>;
+  awardQuote: (rfqId: string, quoteId: string) => Promise<string>;
+  uploadReceptionPhoto: (purchaseOrderId: string, file: File) => Promise<ReceiptPhoto>;
+  receiveGoodsReceipt: (data: { purchaseOrderId: string; items: ReceiptItem[]; photos: ReceiptPhoto[]; notes?: string }) => Promise<void>;
+  deleteGoodsReceipt: (id: string) => Promise<void>;
+  addCostCenter: (data: Partial<CostCenter>) => Promise<void>;
+  updateCostCenter: (id: string, data: Partial<CostCenter>) => Promise<void>;
+  deleteCostCenter: (id: string) => Promise<void>;
+  assignOrderCostCenter: (orderId: string, costCenterId: string | null) => Promise<void>;
   createLot: (name: string) => Promise<void>;
   addRequestToLot: (requestId: string, lotId: string) => Promise<void>;
   removeRequestFromLot: (requestId: string) => Promise<void>;
@@ -245,6 +278,9 @@ export interface AppStateContextType extends AppDataState {
   addWorkReportMilestone: (name: string) => Promise<void>;
   updateWorkReportMilestone: (id: string, name: string) => Promise<void>;
   deleteWorkReportMilestone: (id: string) => Promise<void>;
+  addWorkReportCatalog: (kind: WorkReportCatalogKind, name: string) => Promise<void>;
+  updateWorkReportCatalog: (id: string, name: string) => Promise<void>;
+  deleteWorkReportCatalog: (id: string) => Promise<void>;
 
   // OT / Reportes de Trabajo
   createWorkOrder: (data: Partial<WorkOrder>) => Promise<WorkOrder>;

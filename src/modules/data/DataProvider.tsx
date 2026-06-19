@@ -34,6 +34,9 @@ import { AppDataState, AppStateAction, AppStateContextType } from './types';
 import * as materialRequestMutations from './mutations/materialRequestMutations';
 import * as purchaseRequestMutations from './mutations/purchaseRequestMutations';
 import * as genericMutations from './mutations/genericMutations';
+import * as rfqMutations from './mutations/rfqMutations';
+import * as receptionMutations from './mutations/receptionMutations';
+import * as costCenterMutations from './mutations/costCenterMutations';
 import * as toolMutations from './mutations/toolMutations';
 import * as safetyMutations from './mutations/safetyMutations';
 import * as attendanceMutations from './mutations/attendanceMutations';
@@ -66,6 +69,9 @@ const initialState: AppDataState = {
     units: [],
     purchaseLots: [],
     purchaseOrders: [],
+    quoteRequests: [],
+    goodsReceipts: [],
+    costCenters: [],
     supplierPayments: [],
     salaryAdvances: [],
     attendanceLogs: [],
@@ -96,6 +102,7 @@ const initialState: AppDataState = {
     workReportAreas: [],
     workReportSpecialties: [],
     workReportMilestones: [],
+    workReportCatalogs: [],
     workOrders: [],
     workWeeklyReports: [],
 };
@@ -176,11 +183,14 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const requestsData = useSupabaseCollection('material_requests', { tenantId, mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const purchaseRequestsData = useSupabaseCollection('purchase_requests', { tenantId, mapper: mappers.purchase_requests, orderBy: { column: 'created_at', ascending: false } });
-    const suppliersData = useSupabaseCollection('suppliers', { tenantId });
+    const suppliersData = useSupabaseCollection('suppliers', { tenantId, mapper: mappers.suppliers });
     const materialCategoriesData = useSupabaseCollection('material_categories', { tenantId });
     const unitsData = useSupabaseCollection('units', { tenantId });
     const purchaseLotsData = useSupabaseCollection('purchase_lots', { tenantId, mapper: mappers.purchase_lots });
     const purchaseOrdersData = useSupabaseCollection('purchase_orders', { tenantId, mapper: mappers.purchase_orders, orderBy: { column: 'created_at', ascending: false } });
+    const quoteRequestsData = useSupabaseCollection('quote_requests', { tenantId, mapper: mappers.quote_requests, orderBy: { column: 'created_at', ascending: false } });
+    const goodsReceiptsData = useSupabaseCollection('goods_receipts', { tenantId, mapper: mappers.goods_receipts, orderBy: { column: 'created_at', ascending: false } });
+    const costCentersData = useSupabaseCollection('cost_centers', { tenantId, mapper: mappers.cost_centers, orderBy: { column: 'created_at', ascending: false } });
     const supplierPaymentsData = useSupabaseCollection('supplier_payments', { tenantId, mapper: mappers.supplier_payments, orderBy: { column: 'due_date', ascending: true } });
     const salaryAdvancesData = useSupabaseCollection('salary_advances', { tenantId, mapper: mappers.salary_advances, orderBy: { column: 'requested_at', ascending: false } });
     const attendanceLogsData = useSupabaseCollection('attendance_logs', { tenantId, mapper: mappers.attendance_logs, orderBy: { column: 'timestamp', ascending: false } });
@@ -219,6 +229,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const workReportAreasData = useSupabaseCollection('wr_areas', { tenantId, orderBy: { column: 'name', ascending: true } });
     const workReportSpecialtiesData = useSupabaseCollection('wr_specialties', { tenantId, orderBy: { column: 'name', ascending: true } });
     const workReportMilestonesData = useSupabaseCollection('wr_milestones', { tenantId, orderBy: { column: 'name', ascending: true } });
+    const workReportCatalogsData = useSupabaseCollection('wr_catalogs', { tenantId, orderBy: { column: 'name', ascending: true } });
     const workOrdersData = useSupabaseCollection('work_orders', { tenantId, mapper: mappers.work_orders, orderBy: { column: 'work_date', ascending: false } });
     const workWeeklyReportsData = useSupabaseCollection('work_weekly_reports', { tenantId, mapper: mappers.work_weekly_reports, orderBy: { column: 'start_date', ascending: false } });
 
@@ -304,7 +315,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         const allDataLoaded = [
             usersData, materialsData, toolsData, toolLogsData, requestsData,
             returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
-            unitsData, purchaseLotsData, purchaseOrdersData, supplierPaymentsData,
+            unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, goodsReceiptsData, costCentersData, supplierPaymentsData,
             salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
             checklistTemplatesData, behaviorObservationsData, stockMovementsData,
             subscriptionPlansData, workItemsData, progressLogsData, dynamicRolesData, paymentStatesData,
@@ -313,7 +324,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             shiftSchedulesData, contractsData, contractWorkersData,
             rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData,
             workReportsData, leaveRequestsData, hrDocumentsData,
-            workReportAreasData, workReportSpecialtiesData, workReportMilestonesData,
+            workReportAreasData, workReportSpecialtiesData, workReportMilestonesData, workReportCatalogsData,
             workOrdersData, workWeeklyReportsData,
         ].every(data => data !== undefined);
 
@@ -359,6 +370,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 units: processData(unitsData),
                 purchaseLots: processData(purchaseLotsData),
                 purchaseOrders: processData(purchaseOrdersData),
+                quoteRequests: processData(quoteRequestsData),
+                goodsReceipts: processData(goodsReceiptsData),
+                costCenters: processData(costCentersData),
                 supplierPayments: processData(supplierPaymentsData),
                 salaryAdvances: processData(salaryAdvancesData),
                 attendanceLogs: processData(attendanceLogsData),
@@ -388,6 +402,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 hrDocuments: processData(hrDocumentsData),
                 workReportAreas: processData(workReportAreasData),
                 workReportSpecialties: processData(workReportSpecialtiesData),
+                workReportCatalogs: processData(workReportCatalogsData),
                 workReportMilestones: processData(workReportMilestonesData),
                 workOrders: processData(workOrdersData),
                 workWeeklyReports: processData(workWeeklyReportsData),
@@ -400,7 +415,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     }, [
         authLoading, user, usersData, materialsData, toolsData, toolLogsData, requestsData,
         returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
-        unitsData, purchaseLotsData, purchaseOrdersData, supplierPaymentsData,
+        unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, supplierPaymentsData,
         salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
         checklistTemplatesData, behaviorObservationsData, stockMovementsData,
         subscriptionPlansData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
@@ -485,6 +500,25 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         addSupplier: bindContext(genericMutations.addSupplier),
         updateSupplier: bindContext(genericMutations.updateSupplier),
         deleteSupplier: bindContext(genericMutations.deleteSupplier),
+        uploadSupplierDocument: bindContext(genericMutations.uploadSupplierDocument),
+        deleteSupplierDocumentFile: bindContext(genericMutations.deleteSupplierDocumentFile),
+        addQuoteRequest: bindContext(rfqMutations.addQuoteRequest),
+        updateQuoteRequest: bindContext(rfqMutations.updateQuoteRequest),
+        deleteQuoteRequest: bindContext(rfqMutations.deleteQuoteRequest),
+        sendQuoteRequest: bindContext(rfqMutations.sendQuoteRequest),
+        closeQuoteRequest: bindContext(rfqMutations.closeQuoteRequest),
+        addQuoteResponse: bindContext(rfqMutations.addQuoteResponse),
+        updateQuoteResponse: bindContext(rfqMutations.updateQuoteResponse),
+        deleteQuoteResponse: bindContext(rfqMutations.deleteQuoteResponse),
+        uploadQuoteAttachment: bindContext(rfqMutations.uploadQuoteAttachment),
+        awardQuote: bindContext(rfqMutations.awardQuote),
+        uploadReceptionPhoto: bindContext(receptionMutations.uploadReceptionPhoto),
+        receiveGoodsReceipt: bindContext(receptionMutations.receiveGoodsReceipt),
+        deleteGoodsReceipt: bindContext(receptionMutations.deleteGoodsReceipt),
+        addCostCenter: bindContext(costCenterMutations.addCostCenter),
+        updateCostCenter: bindContext(costCenterMutations.updateCostCenter),
+        deleteCostCenter: bindContext(costCenterMutations.deleteCostCenter),
+        assignOrderCostCenter: bindContext(costCenterMutations.assignOrderCostCenter),
         createLot: bindContext(genericMutations.createLot),
         addRequestToLot: bindContext(genericMutations.addRequestToLot),
         removeRequestFromLot: bindContext(genericMutations.removeRequestFromLot),
@@ -600,6 +634,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         addWorkReportMilestone: bindContext(workReportCatalogMutations.addWorkReportMilestone),
         updateWorkReportMilestone: bindContext(workReportCatalogMutations.updateWorkReportMilestone),
         deleteWorkReportMilestone: bindContext(workReportCatalogMutations.deleteWorkReportMilestone),
+        addWorkReportCatalog: bindContext(workReportCatalogMutations.addWorkReportCatalog),
+        updateWorkReportCatalog: bindContext(workReportCatalogMutations.updateWorkReportCatalog),
+        deleteWorkReportCatalog: bindContext(workReportCatalogMutations.deleteWorkReportCatalog),
 
         createWorkOrder: bindContext(workOrderMutations.createWorkOrder),
         updateWorkOrder: bindContext(workOrderMutations.updateWorkOrder),

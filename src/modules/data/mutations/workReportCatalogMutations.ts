@@ -1,4 +1,5 @@
 import { supabase } from '@/modules/core/lib/supabase';
+import type { WorkReportCatalogKind } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
 
 // CRUD de los catálogos de precarga de Reportes de Trabajo (áreas, especialidades,
@@ -38,3 +39,15 @@ export const deleteWorkReportSpecialty = (id: string, _ctx: Context) => deleteCa
 export const addWorkReportMilestone = (name: string, { tenantId }: Context) => addCatalogItem('wr_milestones', name, tenantId);
 export const updateWorkReportMilestone = (id: string, name: string, _ctx: Context) => updateCatalogItem('wr_milestones', id, name);
 export const deleteWorkReportMilestone = (id: string, _ctx: Context) => deleteCatalogItem('wr_milestones', id);
+
+// ── Catálogo genérico (cliente, contrato, ubicación, turno, jornada…) ─────────
+// Una sola tabla `wr_catalogs` discriminada por `kind`.
+export async function addWorkReportCatalog(kind: WorkReportCatalogKind, name: string, { tenantId }: Context) {
+  const value = name.trim();
+  if (!tenantId) throw new Error('Inquilino no válido.');
+  if (!value) throw new Error('El nombre es obligatorio.');
+  const { error } = await supabase.from('wr_catalogs').insert({ kind, name: value, tenant_id: tenantId });
+  if (error) throw error;
+}
+export const updateWorkReportCatalog = (id: string, name: string, _ctx: Context) => updateCatalogItem('wr_catalogs', id, name);
+export const deleteWorkReportCatalog = (id: string, _ctx: Context) => deleteCatalogItem('wr_catalogs', id);

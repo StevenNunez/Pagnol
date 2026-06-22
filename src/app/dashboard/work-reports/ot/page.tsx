@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { useAppState } from '@/modules/core/contexts/app-provider';
+import { useOfflineCollection } from '@/modules/offline/use-offline-collection';
 
 const STATUS_LABEL: Record<string, string> = { draft: 'Borrador', ready: 'Lista' };
 
@@ -20,6 +21,7 @@ function fmtDate(value: any) {
 
 export default function WorkOrdersListPage() {
   const { workOrders, createWorkOrder, deleteWorkOrder, can, notify } = useAppState();
+  const allWorkOrders = useOfflineCollection('work_orders', workOrders || []);
   const router = useRouter();
   const editable = can('work_reports:create');
   const [creating, setCreating] = React.useState(false);
@@ -38,7 +40,7 @@ export default function WorkOrdersListPage() {
     }
   };
 
-  const filtered = (workOrders || []).filter((wo) => {
+  const filtered = allWorkOrders.filter((wo) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return [wo.otNumber, wo.area, wo.specialty, wo.client, wo.description]

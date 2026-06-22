@@ -19,6 +19,85 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Agregado
+- **Offline First — Pulido del módulo**:
+  - **Tests del motor de sincronización** (vitest + fake-indexeddb): 12 tests sobre outbox
+    (FIFO, removePendingFor, mirror por-tenant, retry/discard) y `syncOutbox` (insert idempotente
+    con upsert, corte por error de red conservando el item, marca de error de validación sin
+    bloquear la cola, `upload_photo`, `delete_file`). Nuevo script `npm test`.
+  - **Aviso de nueva versión del Service Worker** (`ServiceWorkerUpdater`): el SW ya no se
+    auto-activa (sin `skipWaiting` en install); cuando hay una versión en espera se muestra un
+    toast "Nueva versión disponible" con acción **Actualizar** (envía `SKIP_WAITING` y recarga).
+  - **Limpieza de huérfanos en Storage**: nueva op `delete_file`; al eliminar sin conexión una
+    foto YA subida, se encola el borrado de su archivo en Storage (antes quedaba huérfano).
+- **Offline First — Fase 1 (app-shell) + Fase 2 (autosave de OT)**:
+  - Service Worker (`public/sw.js`) reescrito con *runtime caching*: navegaciones
+    network-first con fallback a caché, `/_next/static/*` cache-first, imágenes/fuentes
+    stale-while-revalidate; la API (`/api/*`) y Supabase nunca se cachean. La app ahora
+    **carga sin conexión** tras una primera visita online. Push notifications preservadas;
+    versionado de caché (`CACHE_VERSION`) con limpieza en `activate`.
+  - Indicador global de conexión en la barra superior (`OfflineIndicator` +
+    `useOnlineStatus`): "En línea" / "Sin conexión".
+  - Capa de almacenamiento local con **Dexie/IndexedDB** (`src/modules/offline/db.ts`),
+    con `requestPersistentStorage()` para evitar el desalojo en móviles.
+  - **Autosave del borrador de OT** (`useOfflineDraft`): cada edición se persiste en
+    IndexedDB con debounce y se vuelca al ocultar/cerrar la pestaña; sobrevive a recarga,
+    cierre de la app y reinicio del dispositivo. Al reabrir se restauran los cambios
+    locales sin sincronizar.
+  - Badge de estado por-registro (`DraftStatusBadge`): Sincronizado / Pendiente de
+    sincronizar / Pendiente (sin conexión) / Error de sincronización. Al guardar
+    sin conexión, los cambios quedan a salvo en local con aviso al usuario.
+  - Dependencia nueva: `dexie@^4`.
+- **Offline First — Fase 3 (cola de sincronización + lectura offline)**:
+  - **Outbox** FIFO en IndexedDB (`src/modules/offline/outbox.ts`): toda mutación de OT
+    sin conexión se encola (insert/update/delete) en lugar de fallar.
+  - **UUID generado en el cliente** para nuevas OT → el insert es idempotente (upsert por
+    `id`); reintentar la cola nunca duplica.
+  - **Motor de sincronización** (`sync.ts` + `useOfflineSync`, montado en el layout):
+    drena la cola al recuperar conexión y al encolar; error de red aborta la corrida y
+    reintenta (no marca error permanente); error de validación se marca y no bloquea la cola.
+  - **Espejo de lectura local** (`mirror`) + `useOfflineCollection`: las OT creadas/editadas
+    offline siguen visibles en lista y detalle aunque la colección del servidor venga vacía
+    (cold-start sin conexión). El registro local prevalece hasta sincronizar; luego manda el
+    servidor.
+  - Mutaciones `createWorkOrder`/`updateWorkOrder`/`deleteWorkOrder` ahora son offline-aware
+    (intentan red; si no hay, encolan + espejo). Al eliminar una OT con `insert` aún en cola,
+    se cancela lo encolado sin tocar el servidor.
+  - Indicador global ampliado: "Sin conexión · N" / "Sincronizando N…" / "En línea"; badge
+    por-registro basado en el estado real del outbox.
+- **Offline First — Fase 4 (fotos de OT sin conexión)**:
+  - Tabla `blobs` en IndexedDB (`blob-store.ts`): la foto comprimida se guarda local hasta
+    subirse. Nueva op de outbox `upload_photo`.
+  - Captura offline en la OT: comprime, guarda el Blob, encola la subida y agrega una entrada
+    "pendiente" visible al instante (object URL desde el Blob, vía `OfflinePhotoImg`); overlay
+    "Pendiente" sobre la miniatura.
+  - El motor de sync sube el Blob a Storage (`upsert` idempotente), firma la URL y la asocia al
+    array `photos` del registro (read-modify-write), limpiando las marcas locales; luego borra
+    el Blob. Respeta el orden FIFO (la OT se crea antes de subir sus fotos).
+  - Eliminar una foto aún no subida cancela su subida y borra el Blob local; degradación
+    automática a captura local si la subida online falla por red.
+  - `WorkReportPhoto` ganó `localBlobId?`/`pending?` (solo locales; se eliminan al sincronizar).
+- **Offline First — Endurecimiento (confiabilidad)**:
+  - **Panel de sincronización** (`SyncStatusDialog`, se abre al hacer clic en el indicador del
+    header): lista la cola, muestra errores con su mensaje y nº de intentos, y permite
+    **Reintentar** / **Descartar** por item, "Reintentar fallidos" y "Sincronizar ahora". Antes,
+    un error de validación dejaba el item atascado sin visibilidad.
+  - **Candado entre pestañas** (`navigator.locks`): si otra pestaña ya está sincronizando, la
+    corrida se omite (evita carreras update/delete). Degrada con gracia si no hay Web Locks API.
+  - **Aviso de almacenamiento bajo** (`StorageWarning` + `useStorageWarning`): banner cuando se
+    supera el 85% de la cuota o quedan <50 MB, para sincronizar antes de que falle un guardado.
+  - El indicador del header ahora refleja también el estado de error ("N errores", destructive).
+- **Offline First — Robustez (background sync, refresco y conflictos)**:
+  - **Más disparadores de sincronización** (`useOfflineSync`): además de `online`/encolado, ahora
+    reintenta al volver el foco/visibilidad de la pestaña y cada 30 s mientras haya pendientes
+    (cubre señal intermitente de terreno donde `online` no se dispara).
+  - **Background Sync best-effort**: el SW escucha el evento `sync` (`pagnol-sync`) y pide a las
+    pestañas abiertas que sincronicen al recuperar conexión en segundo plano. (El SW no puede
+    subir con la app totalmente cerrada porque la sesión de Supabase vive en localStorage de la
+    página; documentado.)
+  - **Refresco de la OT tras sincronizar**: cuando una foto local pendiente ya quedó subida, su
+    URL real se refleja en pantalla sin recargar y sin tocar otras ediciones del usuario.
+  - **Detección de conflicto**: al guardar con conexión, si la OT fue modificada por otra persona
+    desde que se abrió (`updated_at`/`updated_by`), se pide confirmación antes de sobrescribir.
 - **Panel Ejecutivo de Reportes** como página índice del módulo Work Reports
   (`/dashboard/work-reports`): KPIs (OT, diarios, semanales, HH, HM, % cumplimiento,
   OT incompletas, por aprobar), gráficos (HH por día, estado de reportes, HH por

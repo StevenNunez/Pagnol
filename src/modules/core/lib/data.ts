@@ -644,6 +644,10 @@ export interface WorkReportPhoto {
   otId?: string;       // OT a la que pertenece la foto (WorkReportDailyOt.id)
   executor?: string;   // ejecutor del trabajo fotografiado
   approver?: string;   // visado / revisado por
+  // Offline (Fase 4): mientras la foto no se sube, se referencia el Blob local
+  // guardado en IndexedDB; `pending` marca que falta sincronizar al servidor.
+  localBlobId?: string;
+  pending?: boolean;
 }
 
 export interface WorkReportProgressEntry {

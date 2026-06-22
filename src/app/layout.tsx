@@ -4,7 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/modules/auth/AuthProvider";
-import Script from "next/script";
+import { ServiceWorkerUpdater } from "@/components/service-worker-updater";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -50,13 +50,9 @@ export default function RootLayout({
           <AuthProvider>
             {children}
             <Toaster />
+            <ServiceWorkerUpdater />
           </AuthProvider>
         </ThemeProvider>
-        <Script id="register-sw" strategy="afterInteractive">{`
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').catch(console.error);
-          }
-        `}</Script>
       </body>
     </html>
   );

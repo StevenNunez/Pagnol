@@ -30,6 +30,9 @@ import { UserRole, type SupplierPayment, type MaterialRequest, type PurchaseRequ
 import { ROLES } from '@/modules/core/lib/permissions';
 import { InventoryAssistant } from '@/components/assistant/inventory-assistant';
 import { ThemeSwitcher } from '@/components/theme-switcher';
+import { OfflineIndicator } from '@/components/offline-indicator';
+import { useOfflineSync } from '@/modules/offline/sync';
+import { StorageWarning } from '@/components/storage-warning';
 import { FeedbackButton } from '@/components/feedback-button';
 import { OnboardingWizard } from '@/components/onboarding-wizard';
 import { OnboardingBanner } from '@/components/onboarding-banner';
@@ -59,6 +62,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     user?.id,
     getTenantId() ?? undefined
   );
+
+  // Drena la cola de sincronización offline al recuperar conexión / al encolar.
+  useOfflineSync();
 
   const today = startOfDay(new Date());
 
@@ -281,6 +287,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <OfflineIndicator />
             <ThemeSwitcher />
             {pushPermission !== 'unsupported' && !isSubscribed && pushPermission !== 'denied' && (
               <Button
@@ -416,6 +423,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
         <main className="flex-1 overflow-y-auto no-scrollbar relative">
           <OnboardingBanner />
+          <StorageWarning />
           <div className="p-4 sm:p-6 lg:p-10 max-w-[1600px] mx-auto animate-in fade-in duration-500">
             {children}
           </div>

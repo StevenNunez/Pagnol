@@ -153,6 +153,7 @@ export async function addMaterial(data: any, { user, tenantId }: Context) {
             stock: materialData.stock,
             in_use: materialData.inUse || 0,
             unit: materialData.unit,
+            min_stock: materialData.minStock ?? null,
             category: materialData.category,
             supplier_id: materialData.supplierId,
             archived: materialData.archived || false,
@@ -263,6 +264,7 @@ export async function updateMaterial(materialId: string, data: any, { user, tena
     let updatePayload: any = {
         name: otherData.name,
         unit: otherData.unit,
+        ...(otherData.minStock !== undefined && { min_stock: otherData.minStock === null ? null : otherData.minStock }),
         category: otherData.category,
         supplier_id: otherData.supplierId,
         archived: otherData.archived,
@@ -508,15 +510,16 @@ export async function deleteLot(lotId: string, { }: Context) {
 
 // --- Permissions ---
 export async function updateRolePermissions(role: UserRole, permission: any, checked: any, { tenantId }: Context) {
-    // This function will need a roles table in Supabase or we handle it in-app with profiles.
-    // For now, let's assume there's a 'roles' table as in the schema (though I might have missed it in my initial schema.sql, let's add it if needed).
-    // The previous schema did have 'roles' table.
+    if (!tenantId) throw new Error("Inquilino no válido.");
 
-    const { data: roleData, error: fetchError } = await supabase
+    // Permisos por-tenant: la fila de configuración es (id rol, tenant_id). Si aún
+    // no existe para este tenant, se parte de los permisos por defecto (ROLES_DEFAULT).
+    const { data: roleData } = await supabase
         .from('roles')
         .select('*')
         .eq('id', role)
-        .single();
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
 
     const currentPermissions = roleData?.permissions || ROLES_DEFAULT[role]?.permissions || [];
     let newPermissions;
@@ -530,9 +533,10 @@ export async function updateRolePermissions(role: UserRole, permission: any, che
         .from('roles')
         .upsert({
             id: role,
+            tenant_id: tenantId,
             description: ROLES_DEFAULT[role]?.description,
             permissions: newPermissions
-        });
+        }, { onConflict: 'id,tenant_id' });
 
     if (error) throw error;
 }

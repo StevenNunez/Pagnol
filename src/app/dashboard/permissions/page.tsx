@@ -108,7 +108,39 @@ export default function PermissionsPage() {
   const { user, can } = useAuth();
   const { toast } = useToast();
 
+  // Override optimista: refleja el toggle al instante, sin depender del roundtrip
+  // de Realtime. Se reconcilia (limpia por-rol) en cuanto el servidor confirma.
+  const [optimistic, setOptimistic] = React.useState<Record<string, Permission[]>>({});
+
+  const serverPermsOf = React.useCallback((roleKey: UserRole): Permission[] => {
+    const dbRole = roles?.[roleKey];
+    return (dbRole?.permissions || ROLES[roleKey]?.permissions || []) as Permission[];
+  }, [roles]);
+
+  // Cuando el dato confirmado del servidor iguala al override, descarta el override
+  // para volver a depender de la fuente de verdad (y reflejar cambios externos).
+  React.useEffect(() => {
+    setOptimistic((prev) => {
+      const keys = Object.keys(prev);
+      if (keys.length === 0) return prev;
+      let changed = false;
+      const next = { ...prev };
+      for (const roleKey of keys) {
+        const server = serverPermsOf(roleKey as UserRole);
+        const opt = prev[roleKey];
+        const same = server.length === opt.length && server.every((p) => opt.includes(p));
+        if (same) { delete next[roleKey]; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [serverPermsOf]);
+
   const handlePermissionChange = async (role: UserRole, permission: Permission, checked: boolean) => {
+    const base = optimistic[role] ?? serverPermsOf(role);
+    const next = checked
+      ? [...new Set([...base, permission])]
+      : base.filter((p) => p !== permission);
+    setOptimistic((prev) => ({ ...prev, [role]: next }));
     try {
       await updateRolePermissions(role, permission, checked);
       toast({
@@ -116,6 +148,7 @@ export default function PermissionsPage() {
         description: `'${PERMISSIONS[permission]?.label || permission}' para '${ROLES[role]?.label || role}' fue ${checked ? 'activado' : 'desactivado'}.`,
       });
     } catch (error: any) {
+      setOptimistic((prev) => ({ ...prev, [role]: base })); // revertir
       toast({ variant: 'destructive', title: 'Error', description: error.message || "No se pudo actualizar el permiso" });
     }
   };
@@ -132,13 +165,13 @@ export default function PermissionsPage() {
           key: roleKey,
           label: defaultRole.label,
           description: defaultRole.description,
-          permissions: dbRole?.permissions || defaultRole.permissions,
+          permissions: optimistic[roleKey] ?? dbRole?.permissions ?? defaultRole.permissions,
           isEditable: canManage || user.role === 'super-admin',
         };
       })
       .filter(Boolean)
       .filter((r) => user.role === 'super-admin' || r!.key !== 'super-admin');
-  }, [user, roles, can]);
+  }, [user, roles, can, optimistic]);
 
   if (!can('module_permissions:view')) {
     return (

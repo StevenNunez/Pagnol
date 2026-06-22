@@ -47,6 +47,7 @@ export default function WorkOrderDetailPage() {
     workReportSpecialties,
     workReportMilestones,
     workReportCatalogs,
+    materials,
     users,
     updateWorkOrder,
     uploadWorkReportPhoto,
@@ -62,6 +63,15 @@ export default function WorkOrderDetailPage() {
 
   // Listas por tipo del catálogo genérico (cliente/contrato/ubicación/turno/jornada).
   const catBy = (kind: string) => (workReportCatalogs || []).filter((c) => c.kind === kind);
+
+  // Catálogo de materiales (bodega) para autocompletar nombre + materialId + unidad.
+  const materialOptions = React.useMemo(
+    () => (materials || [])
+      .filter((m) => !m.archived)
+      .map((m) => ({ id: m.id, name: m.name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [materials],
+  );
 
   const editable = can('work_reports:create');
   const wo = (workOrders || []).find((w) => w.id === params.id);
@@ -257,7 +267,17 @@ export default function WorkOrderDetailPage() {
         <div className="space-y-3">
           {(draft.materials || []).map((item, index) => (
             <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_110px_110px_auto] gap-3 rounded-[1.5rem] border p-3">
-              <Input className="rounded-xl" placeholder="Material" value={item.material} disabled={!editable} onChange={(e) => patchDraft({ materials: replaceAt(draft.materials, index, { ...item, material: e.target.value }) })} />
+              <CatalogCombobox
+                value={item.material}
+                options={materialOptions}
+                disabled={!editable}
+                placeholder="Material (del catálogo o libre)"
+                onCreate={async () => { /* permite material libre fuera del catálogo */ }}
+                onChange={(name) => {
+                  const matched = (materials || []).find((m) => m.name === name);
+                  patchDraft({ materials: replaceAt(draft.materials, index, { ...item, material: name, materialId: matched?.id, unit: item.unit || matched?.unit || '' }) });
+                }}
+              />
               <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="Cantidad" value={item.quantity} disabled={!editable} onChange={(e) => patchDraft({ materials: replaceAt(draft.materials, index, { ...item, quantity: Number(e.target.value) }) })} />
               <Input className="rounded-xl" placeholder="Unidad" value={item.unit || ''} disabled={!editable} onChange={(e) => patchDraft({ materials: replaceAt(draft.materials, index, { ...item, unit: e.target.value }) })} />
               <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => patchDraft({ materials: draft.materials.filter((x) => x.id !== item.id) })}><Trash2 className="h-4 w-4" /></Button>

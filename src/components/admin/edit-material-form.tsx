@@ -25,6 +25,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 const formSchema = z.object({
   name: z.string().min(1, "El nombre es obligatorio"),
   stock: z.coerce.number().min(0, "El stock no puede ser negativo"),
+  minStock: z.coerce.number().min(0, "El stock mínimo no puede ser negativo").optional(),
   unit: z.string().min(1, "Selecciona una unidad"),
   categoryId: z.string().optional(),
   supplierId: z.string().nullable(),
@@ -80,6 +81,7 @@ export function EditMaterialForm({
         name: material.name || "",
         description: material.description || "",
         stock: material.stock || 0,
+        minStock: material.minStock ?? undefined,
         unit: material.unit || "",
         categoryId: category?.id,
         supplierId: material.supplierId || null,
@@ -102,6 +104,7 @@ export function EditMaterialForm({
           name: data.name,
           description: data.description,
           unit: data.unit,
+          minStock: data.minStock ?? undefined,
           categoryId: data.categoryId,
           supplierId: data.supplierId === 'ninguno' ? null : data.supplierId,
           class: data.class,
@@ -269,6 +272,11 @@ export function EditMaterialForm({
             <div className="space-y-2">
               <Label htmlFor="unitCost">Costo Unitario (Opcional)</Label>
               <Input id="unitCost" type="number" {...register('unitCost')} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="minStock">Stock Mínimo (Crítico, opcional)</Label>
+              <Input id="minStock" type="number" placeholder="Ej: 5" {...register('minStock')} />
+              {errors.minStock && <p className="text-destructive text-sm mt-1">{errors.minStock.message}</p>}
             </div>
             <div className="space-y-2">
               <Label>Fecha de Adquisición</Label>

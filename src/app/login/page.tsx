@@ -163,7 +163,7 @@ export default function LoginPage() {
                                     <Input
                                         id="identifier"
                                         placeholder="12.345.678-9 o correo@empresa.cl"
-                                        className="pl-12 h-12 bg-slate-50 border-slate-200 rounded-xl focus:ring-pagnol-orange/20 font-medium"
+                                        className="pl-12 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:ring-pagnol-orange/20 font-medium"
                                         value={identifier}
                                         onChange={(e) => setIdentifier(e.target.value)}
                                         required
@@ -182,7 +182,7 @@ export default function LoginPage() {
                                         id="password"
                                         type={showPassword ? "text" : "password"}
                                         placeholder="••••••••"
-                                        className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl focus:ring-pagnol-orange/20 font-medium"
+                                        className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:ring-pagnol-orange/20 font-medium"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         required

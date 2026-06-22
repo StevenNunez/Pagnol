@@ -248,7 +248,7 @@ function UpdatePasswordInner() {
                                             <Input
                                                 type={showPassword ? "text" : "password"}
                                                 placeholder="••••••••"
-                                                className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium"
+                                                className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium"
                                                 value={password}
                                                 onChange={e => setPassword(e.target.value)}
                                                 required
@@ -268,7 +268,7 @@ function UpdatePasswordInner() {
                                             <Input
                                                 type={showConfirm ? "text" : "password"}
                                                 placeholder="••••••••"
-                                                className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium"
+                                                className="pl-12 pr-12 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium"
                                                 value={confirm}
                                                 onChange={e => setConfirm(e.target.value)}
                                                 required

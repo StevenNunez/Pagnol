@@ -296,7 +296,7 @@
 
   <div class="sec">VERIFICACIÓN DE CUMPLIMIENTOS</div>
   <table class="chk">
-    <thead><tr><th class="txl">Ítem</th><th style="width:50px">Cumple</th><th style="width:55px">No cumple</th><th style="width:40px">N/A</th><th style="width:70px">Responsable</th><th class="txl" style="width:120px">Observaciones</th></tr></thead>
+    <thead><tr><th class="txl">Ítem</th><th style="width:50px">Cumple</th><th style="width:55px">No cumple</th><th style="width:40px">N/A</th><th style="width:50px">Foto</th><th class="txl" style="width:120px">Observaciones</th></tr></thead>
     <tbody>
       {{#each housekeeping.items}}
       <tr>
@@ -304,7 +304,7 @@
         <td class="c">{{#if (eq estado "cumple")}}✓{{/if}}</td>
         <td class="c">{{#if (eq estado "nocumple")}}✗{{/if}}</td>
         <td class="c">{{#if (eq estado "na")}}✓{{/if}}</td>
-        <td>{{responsable}}</td>
+        <td class="c">{{#if foto}}<img src="{{foto}}" alt="foto" style="max-height:32px;max-width:44px;border-radius:2px;object-fit:cover;">{{/if}}</td>
         <td class="txl">{{observaciones}}</td>
       </tr>
       {{/each}}

@@ -205,7 +205,7 @@ function OAuthRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Razón Social</Label>
               <div className="relative">
                 <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('tenantName')} placeholder="Minera Norte S.A." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('tenantName')} placeholder="Minera Norte S.A." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
               {errors.tenantName && <p className="text-xs text-destructive">{errors.tenantName.message}</p>}
             </div>
@@ -213,7 +213,7 @@ function OAuthRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">RUT Empresa</Label>
               <div className="relative">
                 <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('tenantId')} placeholder="76.123.456-7" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('tenantId')} placeholder="76.123.456-7" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
               {errors.tenantId && <p className="text-xs text-destructive">{errors.tenantId.message}</p>}
             </div>
@@ -228,7 +228,7 @@ function OAuthRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre Completo</Label>
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('adminName')} placeholder="Tu nombre" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('adminName')} placeholder="Tu nombre" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
               {errors.adminName && <p className="text-xs text-destructive">{errors.adminName.message}</p>}
             </div>
@@ -236,7 +236,7 @@ function OAuthRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Teléfono</Label>
               <div className="relative">
                 <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('phone')} type="tel" placeholder="+56 9 ..." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('phone')} type="tel" placeholder="+56 9 ..." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
             </div>
           </div>
@@ -337,7 +337,7 @@ function EmailRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Razón Social</Label>
               <div className="relative">
                 <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('tenantName')} placeholder="Minera Norte S.A." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('tenantName')} placeholder="Minera Norte S.A." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
               {errors.tenantName && <p className="text-xs text-destructive">{errors.tenantName.message}</p>}
             </div>
@@ -345,7 +345,7 @@ function EmailRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">RUT Empresa</Label>
               <div className="relative">
                 <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('tenantId')} placeholder="76.123.456-7" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('tenantId')} placeholder="76.123.456-7" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
               {errors.tenantId && <p className="text-xs text-destructive">{errors.tenantId.message}</p>}
             </div>
@@ -360,7 +360,7 @@ function EmailRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre Completo</Label>
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('adminName')} placeholder="Administrador Jefe" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('adminName')} placeholder="Administrador Jefe" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
               {errors.adminName && <p className="text-xs text-destructive">{errors.adminName.message}</p>}
             </div>
@@ -368,7 +368,7 @@ function EmailRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Teléfono</Label>
               <div className="relative">
                 <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('phone')} type="tel" placeholder="+56 9 ..." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('phone')} type="tel" placeholder="+56 9 ..." className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
               </div>
             </div>
           </div>
@@ -377,7 +377,7 @@ function EmailRegisterForm() {
             <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Correo Electrónico</Label>
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-              <Input {...register('adminEmail')} type="email" placeholder="admin@empresa.cl" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+              <Input {...register('adminEmail')} type="email" placeholder="admin@empresa.cl" className="pl-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
             </div>
             {errors.adminEmail && <p className="text-xs text-destructive">{errors.adminEmail.message}</p>}
           </div>
@@ -391,7 +391,7 @@ function EmailRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Contraseña Maestra</Label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('password')} type={showPassword ? "text" : "password"} placeholder="Mín. 8 caracteres" className="pl-11 pr-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('password')} type={showPassword ? "text" : "password"} placeholder="Mín. 8 caracteres" className="pl-11 pr-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -402,7 +402,7 @@ function EmailRegisterForm() {
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Confirmar Contraseña</Label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <Input {...register('confirmPassword')} type={showConfirm ? "text" : "password"} placeholder="Repite la contraseña" className="pl-11 pr-11 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium" />
+                <Input {...register('confirmPassword')} type={showConfirm ? "text" : "password"} placeholder="Repite la contraseña" className="pl-11 pr-11 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium" />
                 <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
                   {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>

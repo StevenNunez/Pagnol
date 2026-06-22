@@ -197,8 +197,9 @@ const getRentalsNavItems = () => [
 ];
 
 const getWorkReportsNavItems = () => [
+  { href: '/dashboard/work-reports', icon: LayoutDashboard, label: 'Panel Ejecutivo' },
   { href: '/dashboard/work-reports/ot', icon: ClipboardList, label: 'OT / Reportes de Trabajo' },
-  { href: '/dashboard/work-reports', icon: NotebookPen, label: 'Reportes Diarios' },
+  { href: '/dashboard/work-reports/reportesdiarios', icon: NotebookPen, label: 'Reportes Diarios' },
   { href: '/dashboard/work-reports/semanal', icon: CalendarRange, label: 'Reportes Semanales' },
   { href: '/dashboard/work-reports/catalogos', icon: Tags, label: 'Catálogos' },
 ];

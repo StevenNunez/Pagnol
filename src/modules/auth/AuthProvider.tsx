@@ -41,6 +41,7 @@ interface AuthContextType {
     newPass: string
   ) => Promise<void>;
   can: (permission: Permission) => boolean;
+  setDynamicRoles: React.Dispatch<React.SetStateAction<Record<string, { permissions?: Permission[] }>>>;
   setCurrentTenantId: (tenantId: string | null) => void;
   getTenantId: () => string | null;
   pageHeader: { title: string; description?: string };
@@ -57,6 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentTenantId, _setCurrentTenantId] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionPlan | null>(null);
   const [pageHeader, setPageHeader] = useState<{ title: string; description?: string; }>({ title: 'Dashboard', description: 'Bienvenido' });
+  // Permisos por-tenant cargados desde la tabla `roles` (los inyecta DataProvider).
+  // Si un rol no tiene fila guardada, can() cae a ROLES_DEFAULT (base en código).
+  const [dynamicRoles, setDynamicRoles] = useState<Record<string, { permissions?: Permission[] }>>({});
   const router = useRouter();
 
   const can = useCallback(
@@ -64,10 +68,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!user) return false;
       if (user.role === 'super-admin') return true;
       if (user.grantedPermissions?.includes(permission)) return true;
-      const userPermissions = ROLES_DEFAULT[user.role]?.permissions;
+      const userPermissions = dynamicRoles[user.role]?.permissions ?? ROLES_DEFAULT[user.role]?.permissions;
       return !!userPermissions?.includes(permission);
     },
-    [user]
+    [user, dynamicRoles]
   );
 
   const setCurrentTenantId = (tenantId: string | null) => {
@@ -474,6 +478,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout,
     sendPasswordReset,
     can,
+    setDynamicRoles,
     getTenantId,
     reauthenticateAndChangeEmail,
     reauthenticateAndChangePassword,

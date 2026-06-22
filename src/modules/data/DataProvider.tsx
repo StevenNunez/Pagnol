@@ -132,7 +132,7 @@ const appReducer = (state: AppDataState, action: AppStateAction): AppDataState =
 // --- Provider value (custom hook consumed by react-tracked container) ---
 
 function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAction>] {
-    const { user, getTenantId, can, authLoading } = useAuth();
+    const { user, getTenantId, can, authLoading, setDynamicRoles } = useAuth();
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [refreshVersion, setRefreshVersion] = useState(0);
     const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
@@ -234,7 +234,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const workWeeklyReportsData = useSupabaseCollection('work_weekly_reports', { tenantId, mapper: mappers.work_weekly_reports, orderBy: { column: 'start_date', ascending: false } });
 
     // Dynamic / specialized data
-    const rolesArray = useSupabaseCollection<any>('roles', { enabled: !!tenantId });
+    const rolesArray = useSupabaseCollection<any>('roles', { tenantId, enabled: !!tenantId });
     const dynamicRolesData = useMemo(() => {
         if (!rolesArray || rolesArray.length === 0) return ROLES_DEFAULT;
         return rolesArray.reduce((acc: any, item: any) => {
@@ -242,6 +242,12 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             return acc;
         }, {} as any);
     }, [rolesArray]);
+
+    // Inyecta los permisos por-tenant en AuthProvider para que can() los respete.
+    // can() hace merge por-rol contra ROLES_DEFAULT, así que basta con pasar lo cargado.
+    useEffect(() => {
+        setDynamicRoles(dynamicRolesData);
+    }, [dynamicRolesData, setDynamicRoles]);
 
     const subscriptionPlansData = PLANS; // Local constants as base
 

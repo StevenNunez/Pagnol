@@ -250,7 +250,7 @@ export default function WorkReportDetailPage() {
     if (isLoading) return <LoadingState />;
     return (
       <PageShell title="Reporte no encontrado" description="El informe no existe o no tienes acceso.">
-        <Button variant="outline" onClick={() => router.push('/dashboard/work-reports')}>Volver</Button>
+        <Button variant="outline" onClick={() => router.push('/dashboard/work-reports/reportesdiarios')}>Volver</Button>
       </PageShell>
     );
   }
@@ -368,6 +368,26 @@ export default function WorkReportDetailPage() {
       await updateWorkReport(draft.id, { ...draft, housekeeping });
       setDirty(false);
       notify('Foto de housekeeping cargada.', 'success');
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo subir la foto.', 'destructive');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Foto opcional por punto del checklist (2.1, 2.2, …).
+  const handleHkItemPhoto = async (index: number, files: FileList | null) => {
+    if (!files?.length) return;
+    setSaving(true);
+    try {
+      const compressed = await compressImage(files[0]);
+      const uploaded = await uploadWorkReportPhoto(draft.id, compressed, `Housekeeping ${hk.items[index]?.text || index + 1}`);
+      const items = replaceAt(hk.items, index, { ...hk.items[index], photo: uploaded.url });
+      const housekeeping = { ...hk, items };
+      patchDraft({ housekeeping });
+      await updateWorkReport(draft.id, { ...draft, housekeeping });
+      setDirty(false);
+      notify('Foto del punto cargada.', 'success');
     } catch (error: any) {
       notify(error?.message || 'No se pudo subir la foto.', 'destructive');
     } finally {
@@ -515,7 +535,7 @@ export default function WorkReportDetailPage() {
       await deleteWorkReport(draft.id);
       try { localStorage.removeItem(localKey); } catch {}
       notify('Informe eliminado.', 'success');
-      router.push('/dashboard/work-reports');
+      router.push('/dashboard/work-reports/reportesdiarios');
     } catch (error: any) {
       notify(error?.message || 'No se pudo eliminar el informe.', 'destructive');
     } finally {
@@ -550,7 +570,7 @@ export default function WorkReportDetailPage() {
       description={`${STATUS_LABEL[draft.status]} · ${draft.otNumber || 'Sin OT asignada'}`}
       toolbar={
         <div className="w-full flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <Button variant="outline" onClick={() => router.push('/dashboard/work-reports')} className="rounded-xl">
+          <Button variant="outline" onClick={() => router.push('/dashboard/work-reports/reportesdiarios')} className="rounded-xl">
             <ArrowLeft className="h-4 w-4 mr-2" /> Volver
           </Button>
           <div className="flex flex-wrap gap-2">
@@ -1046,9 +1066,20 @@ export default function WorkReportDetailPage() {
                     <span className="text-sm">{item.text}</span>
                     <HkStatus value={item.status} disabled={!editable} onChange={(v) => patchHkItem('items', index, { status: v })} />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Input className="rounded-xl" placeholder="Responsable" value={item.responsible || ''} disabled={!editable} onChange={(e) => patchHkItem('items', index, { responsible: e.target.value })} />
-                    <Input className="rounded-xl" placeholder="Observaciones" value={item.observations || ''} disabled={!editable} onChange={(e) => patchHkItem('items', index, { observations: e.target.value })} />
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Input className="rounded-xl flex-1" placeholder="Observaciones" value={item.observations || ''} disabled={!editable} onChange={(e) => patchHkItem('items', index, { observations: e.target.value })} />
+                    {item.photo ? (
+                      <div className="relative h-16 w-16 shrink-0 rounded-xl overflow-hidden border">
+                        <img src={item.photo} alt="Foto del punto" className="h-full w-full object-cover" />
+                        <button type="button" disabled={!editable} onClick={() => patchHkItem('items', index, { photo: '' })} className="absolute top-0.5 right-0.5 rounded-full bg-destructive text-destructive-foreground p-0.5 disabled:opacity-50">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="shrink-0">
+                        <FileButton icon={<ImagePlus className="h-4 w-4" />} label="Foto (opcional)" files={(files) => handleHkItemPhoto(index, files)} disabled={!editable} />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

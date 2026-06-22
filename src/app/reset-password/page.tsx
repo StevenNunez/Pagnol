@@ -123,7 +123,7 @@ export default function ResetPasswordPage() {
                                             id="email"
                                             type="email"
                                             placeholder="usuario@empresa.cl"
-                                            className="pl-12 h-12 bg-slate-50 border-slate-200 rounded-xl font-medium"
+                                            className="pl-12 h-12 bg-slate-50 border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-medium"
                                             value={email}
                                             onChange={e => setEmail(e.target.value)}
                                             disabled={isSubmitting}

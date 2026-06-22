@@ -88,6 +88,8 @@ export async function construirDatosReporte(
 
   const hk = report.housekeeping || createDefaultHousekeeping();
   const hkFotos = await Promise.all((hk.photos || []).map((u) => fetchAsDataUri(u)));
+  // Foto opcional por punto del checklist (2.1, 2.2, …) → data URI para el PDF.
+  const hkItemFotos = await Promise.all((hk.items || []).map((it) => fetchAsDataUri(it.photo)));
 
   // Imagen del trazo de cada firma (SignaturePad la guarda como data URI PNG).
   const [firmaSup, firmaJefe, firmaIto] = await Promise.all([
@@ -267,10 +269,10 @@ export async function construirDatosReporte(
       rev: hk.rev || HOUSEKEEPING_REV,
       sector: hk.sector || '',
       inspeccion: hk.inspection || '',
-      items: (hk.items || []).map((it) => ({
+      items: (hk.items || []).map((it, i) => ({
         texto: it.text || '',
         estado: it.status || '',
-        responsable: it.responsible || '',
+        foto: hkItemFotos[i] || '',
         observaciones: it.observations || '',
       })),
       observaciones: hk.observations || '',

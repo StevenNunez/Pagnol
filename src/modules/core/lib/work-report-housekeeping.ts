@@ -38,7 +38,7 @@ export function createDefaultHousekeeping(): WorkReportHousekeeping {
       id: `hk-${i}`,
       text,
       status: '',
-      responsible: '',
+      photo: '',
       observations: '',
     })),
     observations: '',

@@ -15,6 +15,7 @@ export const mappers = {
         name: item.name,
         stock: Number(item.stock),
         inUse: Number(item.in_use),
+        minStock: item.min_stock != null ? Number(item.min_stock) : undefined,
         unit: item.unit,
         category: item.category,
         supplierId: item.supplier_id,

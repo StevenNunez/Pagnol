@@ -24,6 +24,7 @@ const FormSchema = z.object({
   name: z.string().min(3, 'El nombre debe tener al menos 3 caracteres.'),
   description: z.string().optional(),
   stock: z.coerce.number().min(0, 'El stock no puede ser negativo.'),
+  minStock: z.coerce.number().min(0, 'El stock mínimo no puede ser negativo.').optional(),
   unit: z.string({ required_error: 'La unidad no puede estar vacía.' }).min(1, 'La unidad no puede estar vacía.'),
   categoryId: z.string({ required_error: 'Debes seleccionar una categoría.' }),
   supplierId: z.string().nullable(),
@@ -243,6 +244,15 @@ export function CreateMaterialForm() {
             )}
           />
           {errors.unit && <p className="text-xs text-destructive">{errors.unit.message}</p>}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="minStock">Stock Mínimo (Crítico, opcional)</Label>
+          <Input id="minStock" type="number" placeholder="Ej: 5" {...register('minStock')} />
+          <p className="text-xs text-muted-foreground">Bajo este nivel el material aparece como stock crítico en el Panel de Reportes.</p>
+          {errors.minStock && <p className="text-xs text-destructive">{errors.minStock.message}</p>}
         </div>
       </div>
 

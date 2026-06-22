@@ -183,6 +183,7 @@ export interface Material {
   name: string;
   stock: number;
   inUse?: number;
+  minStock?: number; // Umbral de stock crítico (alertas Panel Reportes). undefined = sin umbral.
   unit: string;
   category: string;
   supplierId?: string | null;
@@ -616,7 +617,7 @@ export interface WorkReportHousekeepingItem {
   id: string;
   text: string;
   status?: HousekeepingStatus;
-  responsible?: string;   // solo en el checklist principal
+  photo?: string;         // foto opcional por punto (solo checklist principal); reemplaza al antiguo "responsable"
   observations?: string;
 }
 
@@ -755,7 +756,8 @@ export interface WorkOrderEquipmentItem {
 
 export interface WorkOrderMaterialItem {
   id: string;
-  material: string;
+  material: string;        // Nombre del material (texto libre o tomado del catálogo)
+  materialId?: string;     // Ref. al catálogo (materials.id) para costo exacto; opcional
   quantity: number;
   unit?: string;
 }

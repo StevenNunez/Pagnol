@@ -21,7 +21,7 @@ const HardwareIntegrationPage: React.FC = () => {
       title: "Lectores de Códigos QR/Barras",
       description: "Pistola láser USB/Bluetooth para identificación de activos y personal en tiempo real. Compatible con emulación de teclado HID.",
       status: "Activo",
-      statusColor: "bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300",
+      statusColor: "bg-success-subtle text-success-subtle-foreground",
     },
     {
       id: "label-printing",
@@ -30,7 +30,7 @@ const HardwareIntegrationPage: React.FC = () => {
       title: "Impresión de Etiquetas QR",
       description: "Genera e imprime etiquetas adhesivas 22×32mm con código QR único por activo y logo corporativo.",
       status: "Activo",
-      statusColor: "bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300",
+      statusColor: "bg-success-subtle text-success-subtle-foreground",
     },
     {
       id: "biometric-verification",
@@ -39,7 +39,7 @@ const HardwareIntegrationPage: React.FC = () => {
       title: "Verificación Biométrica Facial",
       description: "Estación de prueba del sistema de reconocimiento facial. Verifica enrolamientos y hardware de cámara antes del turno.",
       status: "Activo",
-      statusColor: "bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300",
+      statusColor: "bg-success-subtle text-success-subtle-foreground",
     },
   ];
 
@@ -54,7 +54,7 @@ const HardwareIntegrationPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {hardwareItems.map((item) => (
           <Link key={item.id} href={item.href}>
-            <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100 dark:bg-card overflow-hidden group hover:shadow-2xl transition-all h-full cursor-pointer">
+            <Card className="rounded-[2.5rem] border-none shadow-xl bg-card overflow-hidden group hover:shadow-2xl transition-all h-full cursor-pointer">
               <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center gap-6 p-8">
                 <div className="p-4 bg-primary/10 rounded-[1.5rem] text-primary group-hover:scale-110 transition-transform shrink-0">
                   <item.icon className="h-7 w-7" />
@@ -62,7 +62,7 @@ const HardwareIntegrationPage: React.FC = () => {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <CardTitle className="text-base font-black uppercase leading-tight">{item.title}</CardTitle>
-                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                    <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                   </div>
                   <CardDescription className="text-xs font-medium text-muted-foreground leading-relaxed">{item.description}</CardDescription>
                   <Badge className={`mt-3 text-[9px] font-black uppercase rounded-lg ${item.statusColor} border-none`}>
@@ -71,7 +71,7 @@ const HardwareIntegrationPage: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent className="px-8 pb-8">
-                <Button className="w-full bg-primary hover:bg-primary/90 text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all">
+                <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-black uppercase tracking-widest text-xs transition-all">
                   Acceder <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </CardContent>
@@ -104,7 +104,7 @@ const HardwareIntegrationPage: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent className="px-8 pb-8">
-                <Button className="w-full bg-pagnol-orange hover:bg-orange-600 text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all">
+                <Button className="w-full bg-pagnol-orange hover:bg-pagnol-orange/90 text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all">
                   Gestionar Contratos <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </CardContent>

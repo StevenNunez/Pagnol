@@ -520,15 +520,15 @@ export default function ActivosPage() {
 
   const getStatusColor = (status: AssetStatus) => {
     switch (status) {
-      case 'Disponible': return 'bg-green-100 text-green-700';
-      case 'En Uso': return 'bg-blue-100 text-blue-700';
-      case 'En Mantenimiento': return 'bg-yellow-100 text-yellow-700';
+      case 'Disponible': return 'bg-success-subtle text-success-subtle-foreground';
+      case 'En Uso': return 'bg-info-subtle text-info-subtle-foreground';
+      case 'En Mantenimiento': return 'bg-warning-subtle text-warning';
       case 'Para Baja':
-      case 'Extraviado': return 'bg-red-100 text-red-700';
-      case 'Agotado': return 'bg-red-100 text-red-700';
-      case 'Stock Crítico': return 'bg-amber-100 text-amber-700';
+      case 'Extraviado': return 'bg-destructive/10 text-destructive';
+      case 'Agotado': return 'bg-destructive/10 text-destructive';
+      case 'Stock Crítico': return 'bg-warning-subtle text-warning';
       case 'Archivado':
-      default: return 'bg-slate-100 text-slate-700';
+      default: return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -621,7 +621,7 @@ export default function ActivosPage() {
           </Button>
         </div>
 
-        <div className="ml-auto bg-slate-900 dark:bg-slate-800 text-white px-4 py-2 rounded-xl flex items-center gap-3 shrink-0">
+        <div className="ml-auto bg-pagnol-dark text-white px-4 py-2 rounded-xl flex items-center gap-3 shrink-0">
           <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
           <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">{filteredAssets.length} Activos</span>
         </div>
@@ -653,7 +653,7 @@ export default function ActivosPage() {
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                   {(overdue || soon) && (
-                    <div className={`absolute top-6 left-6 p-2.5 rounded-2xl shadow-xl animate-bounce z-10 ${overdue ? 'bg-red-600 text-white' : 'bg-yellow-500 text-white'}`}>
+                    <div className={`absolute top-6 left-6 p-2.5 rounded-2xl shadow-xl animate-bounce z-10 ${overdue ? 'bg-destructive text-destructive-foreground' : 'bg-warning text-warning-foreground'}`}>
                       <AlertTriangle size={20} />
                     </div>
                   )}
@@ -674,7 +674,7 @@ export default function ActivosPage() {
                   </h4>
                   <div className="space-y-3 mb-6">
                     {asset.nextMaintenanceDate && (
-                      <div className={`flex items-center gap-3 p-3 rounded-xl border ${overdue ? 'bg-red-50 border-red-100 text-red-600' : soon ? 'bg-yellow-50 border-yellow-100 text-yellow-600' : 'bg-slate-50 dark:bg-slate-800 dark:border-slate-700 text-muted-foreground'}`}>
+                      <div className={`flex items-center gap-3 p-3 rounded-xl border ${overdue ? 'bg-destructive/10 border-destructive/30 text-destructive' : soon ? 'bg-warning-subtle border-warning/20 text-warning' : 'bg-muted text-muted-foreground'}`}>
                         {overdue ? <AlertCircle size={14} className="shrink-0" /> : <CalendarClock size={14} className="shrink-0" />}
                         <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest">Mantenimiento: {toDate(asset.nextMaintenanceDate)?.toLocaleDateString('es-CL') || 'N/A'}</span>
                       </div>
@@ -695,11 +695,11 @@ export default function ActivosPage() {
                     <div className="flex items-center gap-3">
                       <div>
                         <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest">ID PAGNOL</p>
-                        <p className="text-[11px] font-black mt-0.5 text-slate-600 font-mono tracking-tighter">{asset.internalCode || asset.id}</p>
+                        <p className="text-[11px] font-black mt-0.5 text-muted-foreground font-mono tracking-tighter">{asset.internalCode || asset.id}</p>
                       </div>
                       <button
                         onClick={() => openQrModal(asset)}
-                        className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-all"
+                        className="p-2 bg-muted hover:bg-muted/70 rounded-lg text-muted-foreground transition-all"
                         title="Ver Código QR"
                       >
                         <QrCode size={14} />
@@ -720,11 +720,11 @@ export default function ActivosPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest mb-1">Costo Unit.</p>
-                      <p className="text-[12px] font-black text-pagnol-dark">{formatCLP(asset.unitCost || 0)}</p>
+                      <p className="text-[12px] font-black text-foreground">{formatCLP(asset.unitCost || 0)}</p>
                     </div>
                     {canManageCatalog && (
                       <div className="text-right">
-                        <button onClick={(e) => { e.stopPropagation(); openEditModal(asset); }} className="p-3 bg-slate-50 hover:bg-primary hover:text-white rounded-xl text-muted-foreground transition-all"><Edit3 size={16} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); openEditModal(asset); }} className="p-3 bg-muted hover:bg-primary hover:text-primary-foreground rounded-xl text-muted-foreground transition-all"><Edit3 size={16} /></button>
                       </div>
                     )}
                   </div>
@@ -733,11 +733,11 @@ export default function ActivosPage() {
             );
           })}
           {filteredAssets.length > visibleCount && (
-            <div className="col-span-full py-12 flex flex-col items-center gap-4 bg-slate-50/50 rounded-[3rem] border-2 border-dashed border-slate-200 animate-in fade-in slide-in-from-bottom-4">
+            <div className="col-span-full py-12 flex flex-col items-center gap-4 bg-muted/50 rounded-[3rem] border-2 border-dashed border-border animate-in fade-in slide-in-from-bottom-4">
               <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest">Mostrando {Math.min(visibleCount, filteredAssets.length)} de {filteredAssets.length} activos industriales</p>
               <Button
                 onClick={() => setVisibleCount(prev => prev + ITEMS_PER_LOAD)}
-                className="px-10 py-6 rounded-[1.5rem] bg-white text-slate-900 border shadow-xl hover:bg-slate-50 transition-all font-black text-xs uppercase tracking-widest"
+                className="px-10 py-6 rounded-[1.5rem] bg-background text-foreground border shadow-xl hover:bg-muted transition-all font-black text-xs uppercase tracking-widest"
               >
                 Cargar más Activos <ChevronDown size={18} className="ml-2" />
               </Button>
@@ -768,7 +768,7 @@ export default function ActivosPage() {
                   return (
                     <React.Fragment key={asset.id}>
                       <tr
-                        className={`hover:bg-muted/50 transition-all cursor-pointer group ${isExpanded ? 'bg-orange-50/40' : ''}`}
+                        className={`hover:bg-muted/50 transition-all cursor-pointer group ${isExpanded ? 'bg-pagnol-orange/10' : ''}`}
                         onClick={() => setExpandedRowId(isExpanded ? null : asset.id)}
                       >
                         <td className="px-10 py-6">
@@ -776,7 +776,7 @@ export default function ActivosPage() {
                             <div className="w-12 h-12 rounded-2xl bg-muted overflow-hidden flex-shrink-0 group-hover:scale-110 transition-transform relative">
                               {asset.photos && asset.photos.length > 0 ? <Image src={asset.photos[0]} className="w-full h-full object-cover" alt={asset.name} width={48} height={48} loading="lazy" /> : <Camera className="p-3 text-muted-foreground" />}
                               {(overdue || soon) && (
-                                <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-sm animate-pulse ${overdue ? 'bg-red-600' : 'bg-yellow-500'}`}>
+                                <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-sm animate-pulse ${overdue ? 'bg-destructive' : 'bg-warning'}`}>
                                   <AlertTriangle size={8} className="text-white" />
                                 </div>
                               )}
@@ -794,18 +794,18 @@ export default function ActivosPage() {
                         </td>
                         <td className="px-10 py-6">
                           {asset.nextMaintenanceDate ? (
-                            <div className={`flex items-center gap-2 font-black text-[9px] uppercase tracking-widest ${overdue ? 'text-red-500' : soon ? 'text-yellow-600' : 'text-muted-foreground'}`}>
+                            <div className={`flex items-center gap-2 font-black text-[9px] uppercase tracking-widest ${overdue ? 'text-destructive' : soon ? 'text-warning' : 'text-muted-foreground'}`}>
                               {overdue ? <AlertCircle size={14} className="animate-pulse" /> : soon ? <CalendarClock size={14} /> : <Calendar size={14} />}
                               {toDate(asset.nextMaintenanceDate)?.toLocaleDateString('es-CL')}
                             </div>
                           ) : (
-                            <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">No programado</span>
+                            <span className="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest">No programado</span>
                           )}
                         </td>
                         <td className="px-10 py-6 text-sm text-right font-black tracking-tight">{formatCLP(asset.unitCost || 0)}</td>
                         {canManageCatalog && (
                           <td className="px-10 py-6 text-center">
-                            <div className={`p-2.5 rounded-2xl transition-all ${isExpanded ? 'bg-primary text-white' : 'text-slate-300 group-hover:bg-muted/80 group-hover:text-primary'}`}>
+                            <div className={`p-2.5 rounded-2xl transition-all ${isExpanded ? 'bg-primary text-primary-foreground' : 'text-muted-foreground/50 group-hover:bg-muted/80 group-hover:text-primary'}`}>
                               {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                             </div>
                           </td>
@@ -825,7 +825,7 @@ export default function ActivosPage() {
                                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                     className="w-full h-full object-cover"
                                   />
-                                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-slate-900/80 backdrop-blur-md text-white rounded-xl text-[9px] font-black uppercase tracking-widest">
+                                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-pagnol-dark/80 backdrop-blur-md text-white rounded-xl text-[9px] font-black uppercase tracking-widest">
                                     Vista Técnica 01
                                   </div>
                                 </div>
@@ -836,15 +836,15 @@ export default function ActivosPage() {
                                     <Settings size={14} className="text-primary" /> Parámetros de Fábrica
                                   </p>
                                   <div className="space-y-4 pt-2">
-                                    <div className="flex flex-col border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <div className="flex flex-col border-b border-border pb-2">
                                       <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">N° de Serie / Manufacturer</span>
                                       <span className="text-xs font-bold text-foreground uppercase mt-0.5">{asset.serialNumber || 'N/A'}</span>
                                     </div>
-                                    <div className="flex flex-col border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <div className="flex flex-col border-b border-border pb-2">
                                       <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Fecha de Adquisición</span>
                                       <span className="text-xs font-bold text-foreground uppercase mt-0.5">{toDate(asset.acquisitionDate)?.toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' }) || 'N/A'}</span>
                                     </div>
-                                    <div className="flex flex-col border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <div className="flex flex-col border-b border-border pb-2">
                                       <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Modelo de Uso</span>
                                       <span className="text-xs font-bold text-foreground uppercase mt-0.5">{asset.usageType || 'N/A'}</span>
                                     </div>
@@ -856,15 +856,15 @@ export default function ActivosPage() {
                                     <Activity size={14} className="text-primary" /> Trazabilidad Operativa
                                   </p>
                                   <div className="space-y-4 pt-2">
-                                    <div className="flex flex-col border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <div className="flex flex-col border-b border-border pb-2">
                                       <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Clasificación Matriz</span>
                                       <span className="text-xs font-bold text-foreground uppercase mt-0.5">CLASE {asset.class} ({asset.class === 'A' ? 'CRÍTICO/ALTO VALOR' : asset.class === 'B' ? 'IMPORTANTE' : 'FUNGIBLE'})</span>
                                     </div>
-                                    <div className="flex flex-col border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <div className="flex flex-col border-b border-border pb-2">
                                       <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Criticidad del Recurso</span>
                                       <span className="text-xs font-bold text-primary uppercase mt-0.5">ALTA (SECTOR ESTRUCTURAS)</span>
                                     </div>
-                                    <div className="flex flex-col border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <div className="flex flex-col border-b border-border pb-2">
                                       <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Stock Disponible</span>
                                       <span className="text-xs font-bold text-foreground uppercase mt-0.5">{asset.stock} {asset.unit === 'unidad' ? 'Unidades Físicas' : asset.unit}</span>
                                     </div>
@@ -877,7 +877,7 @@ export default function ActivosPage() {
                                       <Wrench size={14} /> Gestión Administrativa
                                     </h6>
                                     <div className="flex flex-col gap-2 flex-grow justify-center">
-                                      <Button onClick={() => openQrModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 bg-slate-900 text-white hover:bg-black border-none">Imprimir QR <QrCode size={14} /></Button>
+                                      <Button onClick={() => openQrModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 bg-foreground text-background hover:bg-foreground/90 border-none">Imprimir QR <QrCode size={14} /></Button>
                                       {asset.technicalSheetUrl ? (
                                         <a
                                           href={asset.technicalSheetUrl}
@@ -886,14 +886,14 @@ export default function ActivosPage() {
                                           rel="noopener noreferrer"
                                           className="flex items-center"
                                         >
-                                          <Button variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 bg-pagnol-orange text-white hover:bg-orange-600 border-none">Descargar Ficha <Download size={14} /></Button>
+                                          <Button variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 bg-pagnol-orange text-white hover:bg-pagnol-orange/90 border-none">Descargar Ficha <Download size={14} /></Button>
                                         </a>
                                       ) : (
                                         <Button disabled variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 opacity-30">Sin Ficha Técnica <Download size={14} /></Button>
                                       )}
                                       <Button onClick={() => openEditModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Editar Ficha <Edit3 size={14} /></Button>
                                       <Button onClick={() => openMaintenanceModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Mantenimiento <Calendar size={14} /></Button>
-                                      {canManageCatalog && <Button onClick={() => openRetireModal(asset)} variant="destructive" className="w-full justify-between bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 rounded-[1.5rem] h-12 px-6 border-none shadow-sm">Solicitar Baja <Trash2 size={14} /></Button>}
+                                      {canManageCatalog && <Button onClick={() => openRetireModal(asset)} variant="destructive" className="w-full justify-between bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-[1.5rem] h-12 px-6 border-none shadow-sm">Solicitar Baja <Trash2 size={14} /></Button>}
                                     </div>
                                   </div>
                                 </div>
@@ -960,31 +960,31 @@ export default function ActivosPage() {
               </DialogHeader>
               {modalType === 'RETIRE' ? (
                 <div className="text-center py-10 px-10 space-y-8">
-                  <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto shadow-xl">
+                  <div className="w-24 h-24 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto shadow-xl">
                     <Trash2 size={48} />
                   </div>
                   <div>
-                    <h5 className="text-2xl font-black text-pagnol-dark uppercase tracking-tight">¿Confirmar solicitud de baja?</h5>
+                    <h5 className="text-2xl font-black text-foreground uppercase tracking-tight">¿Confirmar solicitud de baja?</h5>
                     <p className="text-muted-foreground font-medium mt-2">Esta acción marcará el activo {selectedAsset.name} como fuera de servicio permanente.</p>
                   </div>
                   <DialogFooter className="p-10 border-t flex flex-row justify-between items-center shrink-0 bg-card">
-                    <Button onClick={() => setIsModalOpen(false)} variant="ghost" className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-slate-600">Cancelar</Button>
-                    <Button onClick={() => handleUpdateStatus('Para Baja')} className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-destructive hover:bg-red-700 text-white shadow-xl shadow-destructive/20 transition-all transform hover:scale-105" variant="destructive">Ejecutar Baja</Button>
+                    <Button onClick={() => setIsModalOpen(false)} variant="ghost" className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground">Cancelar</Button>
+                    <Button onClick={() => handleUpdateStatus('Para Baja')} className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-destructive hover:bg-destructive/90 text-destructive-foreground shadow-xl shadow-destructive/20 transition-all transform hover:scale-105" variant="destructive">Ejecutar Baja</Button>
                   </DialogFooter>
                 </div>
               ) : modalType === 'MAINTENANCE' ? (
                 <form onSubmit={handleSubmit(handleSaveAsset)} className="flex flex-col flex-1 overflow-y-auto">
                   <div className="p-10 space-y-8">
-                    <div className="bg-yellow-50 border border-yellow-100 p-8 rounded-3xl flex gap-6 items-center uppercase tracking-tight">
-                      <div className="p-4 bg-white rounded-2xl text-yellow-600 shadow-sm"><Wrench size={32} /></div>
+                    <div className="bg-warning-subtle border border-warning/20 p-8 rounded-3xl flex gap-6 items-center uppercase tracking-tight">
+                      <div className="p-4 bg-card rounded-2xl text-warning shadow-sm"><Wrench size={32} /></div>
                       <div>
-                        <p className="text-[10px] font-black text-yellow-700 uppercase tracking-widest">Intervención Técnica</p>
-                        <h6 className="font-black text-pagnol-dark uppercase">{selectedAsset.name}</h6>
+                        <p className="text-[10px] font-black text-warning uppercase tracking-widest">Intervención Técnica</p>
+                        <h6 className="font-black text-foreground uppercase">{selectedAsset.name}</h6>
                       </div>
                     </div>
                     <div className="space-y-6">
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Próxima Fecha de Mantenimiento</Label>
+                        <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Próxima Fecha de Mantenimiento</Label>
                         <Controller control={control} name="nextMaintenanceDate" render={({ field }) => (
                           <Popover>
                             <PopoverTrigger asChild>
@@ -995,7 +995,7 @@ export default function ActivosPage() {
                         )} />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Nuevo Estado Operativo</Label>
+                        <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Nuevo Estado Operativo</Label>
                         <Controller control={control} name="status" render={({ field }) => (
                           <Select onValueChange={field.onChange} value={field.value}>
                             <SelectTrigger className="py-6 rounded-2xl"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
@@ -1009,26 +1009,26 @@ export default function ActivosPage() {
                     </div>
                   </div>
                   <DialogFooter className="p-10 border-t flex flex-row justify-between items-center shrink-0 bg-card">
-                    <Button type="button" onClick={() => setIsModalOpen(false)} variant="ghost" className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-slate-600">Cancelar</Button>
-                    <Button type="submit" className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-pagnol-orange hover:bg-orange-600 text-white shadow-xl shadow-pagnol-orange/20 transition-all transform hover:scale-105 active:scale-95"><Save size={16} className="mr-2" /> Actualizar Plan de Mantenimiento</Button>
+                    <Button type="button" onClick={() => setIsModalOpen(false)} variant="ghost" className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground">Cancelar</Button>
+                    <Button type="submit" className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-pagnol-orange hover:bg-pagnol-orange/90 text-white shadow-xl shadow-pagnol-orange/20 transition-all transform hover:scale-105 active:scale-95"><Save size={16} className="mr-2" /> Actualizar Plan de Mantenimiento</Button>
                   </DialogFooter>
                 </form>
               ) : (
                 <form onSubmit={handleSubmit(handleSaveAsset)} className="flex flex-col flex-1 overflow-y-auto">
                   <div className="p-10 space-y-6 custom-scrollbar">
                     <div className="space-y-2">
-                      <Label htmlFor="name" className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Descripción Técnica / Certificación</Label>
+                      <Label htmlFor="name" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Descripción Técnica / Certificación</Label>
                       <Input id="name" {...register("name")} placeholder="Marca, Modelo, Especificación..." className="py-6 rounded-2xl" />
                       {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
                     </div>
 
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <Label htmlFor="serialNumber" className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Número de Serie (SN)</Label>
+                        <Label htmlFor="serialNumber" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Número de Serie (SN)</Label>
                         <Input id="serialNumber" {...register("serialNumber")} placeholder="N/A" className="py-6 rounded-2xl" />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="categoryId" className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Categoría Logística</Label>
+                        <Label htmlFor="categoryId" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Categoría Logística</Label>
                         <Controller name="categoryId" control={control} render={({ field }) => (
                           <Select onValueChange={field.onChange} value={field.value}>
                             <SelectTrigger className="py-6 rounded-2xl"><SelectValue placeholder="EPP..." /></SelectTrigger>
@@ -1043,10 +1043,10 @@ export default function ActivosPage() {
 
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <Label htmlFor="class" className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Clase de Criticidad (Auto)</Label>
+                        <Label htmlFor="class" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Clase de Criticidad (Auto)</Label>
                         <Controller name="class" control={control} render={({ field }) => (
                           <Select onValueChange={field.onChange} value={field.value}>
-                            <SelectTrigger className="py-6 rounded-2xl bg-slate-50 border-dashed"><SelectValue placeholder="Clase C" /></SelectTrigger>
+                            <SelectTrigger className="py-6 rounded-2xl bg-muted border-dashed"><SelectValue placeholder="Clase C" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="A">Clase A (Crítico)</SelectItem>
                               <SelectItem value="B">Clase B (Importante)</SelectItem>
@@ -1057,12 +1057,12 @@ export default function ActivosPage() {
                         {errors.class && <p className="text-xs text-destructive">{errors.class.message}</p>}
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="unitCost" className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Costo Neto (CLP$)</Label>
+                        <Label htmlFor="unitCost" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Costo Neto (CLP$)</Label>
                         <Input id="unitCost" type="number" placeholder="0" {...register("unitCost")} className="py-6 rounded-2xl" />
                       </div>
                     </div>
 
-                    <div className="bg-orange-50 border border-orange-100 p-6 rounded-[2rem] space-y-6">
+                    <div className="bg-pagnol-orange/10 border border-pagnol-orange/20 p-6 rounded-[2rem] space-y-6">
                       <h6 className="text-[10px] font-black uppercase text-pagnol-orange tracking-widest flex items-center gap-2">
                         <ShieldCheck size={14} /> ISO 55001 - Matriz de Riesgo y Jerarquía
                       </h6>
@@ -1093,11 +1093,11 @@ export default function ActivosPage() {
                     </div>
 
                     <div className="space-y-4">
-                      <Label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">Ficha Técnica del Activo (PDF/DOC)</Label>
+                      <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Ficha Técnica del Activo (PDF/DOC)</Label>
                       <div className="relative group">
                         <div className={cn(
-                          "border-2 border-dashed rounded-[2rem] p-8 text-center transition-all cursor-pointer hover:bg-slate-50",
-                          techSheetFile ? "border-pagnol-orange bg-orange-50/30" : "border-slate-200"
+                          "border-2 border-dashed rounded-[2rem] p-8 text-center transition-all cursor-pointer hover:bg-muted",
+                          techSheetFile ? "border-pagnol-orange bg-pagnol-orange/10" : "border-border"
                         )}
                           onDragOver={handleDragOver}
                           onDrop={handleDrop}
@@ -1112,12 +1112,12 @@ export default function ActivosPage() {
                           {techSheetFile || selectedAsset.technicalSheetUrl ? (
                             <div className="flex flex-col items-center gap-2">
                               <FileText className="text-pagnol-orange" size={32} />
-                              <p className="text-xs font-black text-slate-700 uppercase tracking-tight">{techSheetFile?.name || selectedAsset.technicalSheetName || 'Archivo Cargado'}</p>
+                              <p className="text-xs font-black text-foreground uppercase tracking-tight">{techSheetFile?.name || selectedAsset.technicalSheetName || 'Archivo Cargado'}</p>
                               <p className="text-[9px] font-bold text-pagnol-orange uppercase tracking-widest">Haga clic para cambiar archivo</p>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center gap-2">
-                              <div className="p-4 bg-slate-100 rounded-2xl text-muted-foreground group-hover:text-primary transition-colors">
+                              <div className="p-4 bg-muted rounded-2xl text-muted-foreground group-hover:text-primary transition-colors">
                                 <FileUp size={32} />
                               </div>
                               <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-2">Arrastra o selecciona la ficha técnica</p>
@@ -1129,8 +1129,8 @@ export default function ActivosPage() {
                     </div>
                   </div>
                   <DialogFooter className="p-10 border-t flex flex-row justify-between items-center shrink-0 bg-card">
-                    <Button type="button" onClick={() => setIsModalOpen(false)} variant="ghost" className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-slate-600">Cancelar</Button>
-                    <Button type="submit" disabled={isSubmitting} className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-pagnol-orange hover:bg-orange-600 text-white shadow-xl shadow-pagnol-orange/20 transition-all transform hover:scale-105 active:scale-95">
+                    <Button type="button" onClick={() => setIsModalOpen(false)} variant="ghost" className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground">Cancelar</Button>
+                    <Button type="submit" disabled={isSubmitting} className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-pagnol-orange hover:bg-pagnol-orange/90 text-white shadow-xl shadow-pagnol-orange/20 transition-all transform hover:scale-105 active:scale-95">
                       {isSubmitting ? <Loader2 className="animate-spin" /> : <Plus size={20} />}
                       Finalizar Registro
                     </Button>
@@ -1147,7 +1147,7 @@ export default function ActivosPage() {
         <Dialog open={isQrModalOpen} onOpenChange={setIsQrModalOpen}>
           <DialogContent className="max-w-md p-0 border-none bg-transparent overflow-hidden rounded-[3rem] shadow-3xl">
             <div className="bg-card rounded-[3rem] overflow-hidden">
-              <DialogHeader className="p-10 bg-slate-900 text-white flex flex-row justify-between items-center shrink-0 relative">
+              <DialogHeader className="p-10 bg-pagnol-dark text-white flex flex-row justify-between items-center shrink-0 relative">
                 <div>
                   <DialogTitle className="text-2xl font-black tracking-tighter uppercase leading-none text-white font-outfit">Código QR del Activo</DialogTitle>
                   <DialogDescription className="text-white/40 text-[10px] font-black uppercase tracking-widest mt-2">{qrAsset.internalCode || qrAsset.id}</DialogDescription>
@@ -1155,18 +1155,18 @@ export default function ActivosPage() {
                 <Button variant="ghost" size="icon" onClick={() => setIsQrModalOpen(false)} className="p-3 bg-white/5 rounded-2xl text-white/40 hover:text-white hover:bg-white/10 transition-all absolute top-10 right-10"><X size={24} /></Button>
               </DialogHeader>
               <div className="p-10 flex flex-col items-center gap-8">
-                <div className="p-6 bg-white rounded-[2rem] shadow-lg border-2 border-slate-100 group hover:scale-105 transition-transform duration-500">
+                <div className="p-6 bg-white rounded-[2rem] shadow-lg border-2 border-border group hover:scale-105 transition-transform duration-500">
                   <div id="qr-print-area">
                     <QRWithPagnolLogo value={qrAsset.internalCode || qrAsset.id} size={200} />
                   </div>
                 </div>
                 <div className="text-center">
-                  <h4 className="font-black text-lg uppercase text-slate-900">{qrAsset.name}</h4>
+                  <h4 className="font-black text-lg uppercase text-foreground">{qrAsset.name}</h4>
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">ID ÚNICO DE RASTREO PAGNOL</p>
                 </div>
               </div>
               <DialogFooter className="p-10 pt-0 flex gap-4">
-                <Button onClick={handlePrintQR} className="w-full py-6 rounded-2xl bg-pagnol-orange hover:bg-orange-600 text-white shadow-xl shadow-orange-200 uppercase font-black text-xs tracking-widest flex items-center gap-3">
+                <Button onClick={handlePrintQR} className="w-full py-6 rounded-2xl bg-pagnol-orange hover:bg-pagnol-orange/90 text-white shadow-xl shadow-black/5 uppercase font-black text-xs tracking-widest flex items-center gap-3">
                   <Printer size={18} /> Imprimir Etiqueta
                 </Button>
               </DialogFooter>
@@ -1200,18 +1200,18 @@ export default function ActivosPage() {
                       <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-pagnol-orange animate-bounce" size={32} />
                     </div>
                     <div>
-                      <h5 className="text-2xl font-black text-pagnol-dark uppercase tracking-tighter">Procesando Inteligencia de Datos</h5>
+                      <h5 className="text-2xl font-black text-foreground uppercase tracking-tighter">Procesando Inteligencia de Datos</h5>
                       <p className="text-muted-foreground font-medium mt-2 max-w-sm mx-auto">Gemini está analizando las métricas de inventario.</p>
                     </div>
                   </div>
                 ) : (
-                  <div className="prose prose-slate max-w-none text-slate-600 leading-relaxed font-medium italic">
+                  <div className="prose prose-slate dark:prose-invert max-w-none text-muted-foreground leading-relaxed font-medium italic">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{smartReport}</ReactMarkdown>
                   </div>
                 )}
               </div>
               <DialogFooter className="p-10 border-t flex flex-row justify-end items-center shrink-0 bg-card">
-                <Button onClick={() => setIsReportModalOpen(false)} className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-pagnol-dark hover:bg-black text-white shadow-xl transition-all">Cerrar Reporte</Button>
+                <Button onClick={() => setIsReportModalOpen(false)} className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-pagnol-dark hover:bg-pagnol-dark/90 text-white shadow-xl transition-all">Cerrar Reporte</Button>
               </DialogFooter>
             </div>
           </DialogContent>

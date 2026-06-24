@@ -805,7 +805,7 @@ export default function MovimientosPagnolPage() {
             variant="outline"
             size="sm"
             onClick={() => setShowFaenaManager(true)}
-            className="shrink-0 rounded-xl gap-2 text-[10px] font-black uppercase tracking-widest border-slate-200"
+            className="shrink-0 rounded-xl gap-2 text-[10px] font-black uppercase tracking-widest border-border"
           >
             <Settings2 size={14} /> Gestionar Faenas
           </Button>
@@ -815,10 +815,10 @@ export default function MovimientosPagnolPage() {
       {/* Stats rápidas */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Despachos Completados', value: statsWithdrawals, color: 'text-pagnol-orange', bg: 'bg-orange-50 border-orange-100' },
-          { label: 'Devoluciones Completadas', value: statsReturns, color: 'text-green-600', bg: 'bg-green-50 border-green-100' },
-          { label: 'Solicitudes Pendientes', value: statsPending, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
-          { label: 'Actas Firmadas', value: statsWithContracts, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
+          { label: 'Despachos Completados', value: statsWithdrawals, color: 'text-pagnol-orange', bg: 'bg-pagnol-orange/10 border-pagnol-orange/20' },
+          { label: 'Devoluciones Completadas', value: statsReturns, color: 'text-success', bg: 'bg-success-subtle border-success/30' },
+          { label: 'Solicitudes Pendientes', value: statsPending, color: 'text-warning', bg: 'bg-warning-subtle border-warning/20' },
+          { label: 'Actas Firmadas', value: statsWithContracts, color: 'text-info', bg: 'bg-info-subtle border-info/20' },
         ].map(s => (
           <div key={s.label} className={`p-5 rounded-[1.5rem] border ${s.bg} flex flex-col gap-1`}>
             <span className={`text-3xl font-black ${s.color}`}>{s.value}</span>
@@ -828,7 +828,7 @@ export default function MovimientosPagnolPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-        <Card className="group border-none shadow-xl shadow-orange-100/50 hover:shadow-2xl hover:shadow-pagnol-orange/20 transition-all cursor-pointer overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] bg-slate-100 duration-500" onClick={() => startTransaction('WITHDRAWAL')}>
+        <Card className="group border-none shadow-xl shadow-pagnol-orange/10 hover:shadow-2xl hover:shadow-pagnol-orange/20 transition-all cursor-pointer overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] bg-card duration-500" onClick={() => startTransaction('WITHDRAWAL')}>
           <CardContent className="p-8 sm:p-12">
             <div className="flex flex-col sm:flex-row items-center sm:items-center gap-6 sm:gap-8 text-center sm:text-left">
               <div className="p-4 sm:p-6 bg-pagnol-orange/10 rounded-[1.5rem] sm:rounded-[2rem] text-pagnol-orange transition-transform group-hover:scale-110">
@@ -841,10 +841,10 @@ export default function MovimientosPagnolPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="group border-none shadow-xl shadow-green-100/50 hover:shadow-2xl hover:shadow-green-500/20 transition-all cursor-pointer overflow-hidden rounded-[2.5rem] bg-slate-100 duration-500" onClick={() => startTransaction('RETURN')}>
+        <Card className="group border-none shadow-xl shadow-success/10 hover:shadow-2xl hover:shadow-success/20 transition-all cursor-pointer overflow-hidden rounded-[2.5rem] bg-card duration-500" onClick={() => startTransaction('RETURN')}>
           <CardContent className="p-12">
             <div className="flex items-center gap-8">
-              <div className="p-6 bg-green-500/10 rounded-[2rem] text-green-500 transition-transform group-hover:scale-110"><ArrowDownRight size={40} /></div>
+              <div className="p-6 bg-success/10 rounded-[2rem] text-success transition-transform group-hover:scale-110"><ArrowDownRight size={40} /></div>
               <div>
                 <CardTitle className="text-3xl font-black uppercase font-outfit">Recepción</CardTitle>
                 <CardDescription className="font-black uppercase tracking-widest text-[10px]">Faena → Bodega</CardDescription>
@@ -854,7 +854,7 @@ export default function MovimientosPagnolPage() {
         </Card>
       </div>
 
-      <div className="bg-slate-100 rounded-[2rem] sm:rounded-[3rem] border-none shadow-2xl shadow-slate-200/60 overflow-hidden">
+      <div className="bg-card rounded-[2rem] sm:rounded-[3rem] border-none shadow-2xl shadow-black/5 overflow-hidden">
         <div className="overflow-x-auto no-scrollbar">
           <table className="w-full text-left min-w-[1000px]">
             <thead>
@@ -877,17 +877,17 @@ export default function MovimientosPagnolPage() {
                   <td className="px-6 sm:px-10 py-6 font-black text-xs font-mono">{tx.internalCode || tx.id}</td>
                   <td className="px-6 sm:px-10 py-6">
                     <div className="space-y-1.5">
-                      <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${tx.type === 'WITHDRAWAL' ? 'bg-orange-50 text-pagnol-orange' : 'bg-green-50 text-green-600'}`}>
+                      <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${tx.type === 'WITHDRAWAL' ? 'bg-pagnol-orange/10 text-pagnol-orange' : 'bg-success-subtle text-success'}`}>
                         {tx.type === 'WITHDRAWAL' ? 'Despacho' : 'Devolución'}
                       </span>
                       <div className="flex items-center gap-2">
                         <Badge
                           className={
                             tx.deliveryDate || tx.isApproved
-                              ? 'bg-green-100 text-green-700 hover:bg-green-100 text-[8px]'
+                              ? 'bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle text-[8px]'
                               : tx.status === 'pending'
-                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-100 text-[8px]'
-                                : 'bg-red-100 text-red-700 hover:bg-red-100 text-[8px]'
+                                ? 'bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle text-[8px]'
+                                : 'bg-destructive/10 text-destructive hover:bg-destructive/10 text-[8px]'
                           }
                         >
                           {tx.type === 'WITHDRAWAL'
@@ -904,7 +904,7 @@ export default function MovimientosPagnolPage() {
                           <Button
                             size="sm"
                             onClick={() => handleContinueDelivery(tx)}
-                            className="h-6 text-[8px] bg-primary text-white animate-pulse hover:animate-none"
+                            className="h-6 text-[8px] bg-primary text-primary-foreground animate-pulse hover:animate-none"
                           >
                             Entregar
                           </Button>
@@ -915,12 +915,12 @@ export default function MovimientosPagnolPage() {
                   <td className="px-6 sm:px-10 py-6">
                     <div className="flex flex-wrap gap-1">
                       {tx.assetIds.slice(0, 2).map(aid => (
-                        <span key={aid} className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded-lg text-[9px] font-black uppercase leading-tight">
+                        <span key={aid} className="px-2 py-0.5 bg-muted text-muted-foreground rounded-lg text-[9px] font-black uppercase leading-tight">
                           {materialsMap.get(aid)?.name || aid}
                         </span>
                       ))}
                       {tx.assetIds.length > 2 && (
-                        <span className="px-2 py-0.5 bg-slate-200 text-slate-500 rounded-lg text-[9px] font-black">
+                        <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-lg text-[9px] font-black">
                           +{tx.assetIds.length - 2} más
                         </span>
                       )}
@@ -929,17 +929,17 @@ export default function MovimientosPagnolPage() {
                   <td className="px-6 sm:px-10 py-6">
                     {tx.type === 'WITHDRAWAL' ? (
                       <div className="flex items-center gap-1 text-[9px] font-black uppercase">
-                        <span className="text-slate-400">Bodega</span>
-                        <ArrowRight size={10} className="text-slate-300" />
-                        <span className={tx.site ? 'text-pagnol-orange' : 'text-slate-300'}>
+                        <span className="text-muted-foreground">Bodega</span>
+                        <ArrowRight size={10} className="text-muted-foreground/50" />
+                        <span className={tx.site ? 'text-pagnol-orange' : 'text-muted-foreground/50'}>
                           {tx.site || '—'}
                         </span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 text-[9px] font-black uppercase">
-                        <span className="text-slate-400">Faena</span>
-                        <ArrowRight size={10} className="text-slate-300" />
-                        <span className="text-green-600">Bodega</span>
+                        <span className="text-muted-foreground">Faena</span>
+                        <ArrowRight size={10} className="text-muted-foreground/50" />
+                        <span className="text-success">Bodega</span>
                       </div>
                     )}
                   </td>
@@ -947,7 +947,7 @@ export default function MovimientosPagnolPage() {
                     {usersMap.get(tx.employeeId)?.name || 'Usuario desconocido'}
                   </td>
                   <td className="px-6 sm:px-10 py-6">
-                    <p className="text-[10px] font-black text-slate-700">
+                    <p className="text-[10px] font-black text-foreground">
                       {new Date(tx.timestamp).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </p>
                     <p className="text-[9px] text-muted-foreground font-bold">
@@ -960,14 +960,14 @@ export default function MovimientosPagnolPage() {
                         href={tx.contractUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 text-[9px] font-black text-pagnol-orange hover:text-orange-600 transition-colors"
+                        className="flex items-center gap-1.5 text-[9px] font-black text-pagnol-orange hover:text-pagnol-orange/90 transition-colors"
                       >
                         <Download size={13} /> Ver Acta
                       </a>
                     ) : tx.deliveryDate ? (
-                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Sin acta</span>
+                      <span className="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest">Sin acta</span>
                     ) : (
-                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">—</span>
+                      <span className="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest">—</span>
                     )}
                   </td>
                   {currentUser?.role === 'super-admin' && (
@@ -976,7 +976,7 @@ export default function MovimientosPagnolPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDeleteTransaction(tx)}
-                        className="text-muted-foreground hover:text-red-500 rounded-xl transition-colors"
+                        className="text-muted-foreground hover:text-destructive rounded-xl transition-colors"
                       >
                         <Trash2 size={16} />
                       </Button>
@@ -991,7 +991,7 @@ export default function MovimientosPagnolPage() {
 
       {/* Faena Manager Dialog */}
       <Dialog open={showFaenaManager} onOpenChange={setShowFaenaManager}>
-        <DialogContent className="max-w-md border-none bg-slate-100 sm:rounded-[2.5rem] p-8">
+        <DialogContent className="max-w-md border-none bg-card sm:rounded-[2.5rem] p-8">
           <DialogHeader>
             <DialogTitle className="text-xl font-black uppercase font-outfit flex items-center gap-2">
               <MapPin size={18} className="text-pagnol-orange" /> Faenas y Sectores
@@ -1003,10 +1003,10 @@ export default function MovimientosPagnolPage() {
             </p>
             <div className="space-y-2 max-h-60 overflow-y-auto no-scrollbar">
               {(currentTenant?.faenas || []).length === 0 ? (
-                <p className="text-[10px] text-slate-400 font-bold uppercase text-center py-4">Sin faenas configuradas</p>
+                <p className="text-[10px] text-muted-foreground/50 font-bold uppercase text-center py-4">Sin faenas configuradas</p>
               ) : (
                 (currentTenant?.faenas || []).map((f, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
+                  <div key={i} className="flex items-center justify-between p-3 bg-muted rounded-xl border">
                     <div className="flex items-center gap-2">
                       <MapPin size={12} className="text-pagnol-orange" />
                       <span className="text-[11px] font-black uppercase">{f}</span>
@@ -1014,7 +1014,7 @@ export default function MovimientosPagnolPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-slate-400 hover:text-red-500 rounded-lg"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive rounded-lg"
                       onClick={async () => {
                         const newList = (currentTenant?.faenas || []).filter((_, idx) => idx !== i);
                         await updateTenant(currentTenant!.id, { faenas: newList });
@@ -1027,7 +1027,7 @@ export default function MovimientosPagnolPage() {
                 ))
               )}
             </div>
-            <div className="flex gap-2 pt-2 border-t border-slate-200">
+            <div className="flex gap-2 pt-2 border-t border-border">
               <input
                 type="text"
                 placeholder="Ej: Faena Norte - Sector A"
@@ -1036,7 +1036,7 @@ export default function MovimientosPagnolPage() {
                 onKeyDown={e => {
                   if (e.key === 'Enter' && newFaenaInput.trim()) e.currentTarget.form?.requestSubmit();
                 }}
-                className="flex-1 px-4 py-2.5 rounded-xl border-2 border-slate-200 bg-white text-[11px] font-black uppercase outline-none focus:border-pagnol-orange/50"
+                className="flex-1 px-4 py-2.5 rounded-xl border-2 border-border bg-muted text-[11px] font-black uppercase outline-none focus:border-pagnol-orange/50"
               />
               <Button
                 className="bg-pagnol-dark text-white font-black uppercase text-[10px] px-5 rounded-xl"
@@ -1067,7 +1067,7 @@ export default function MovimientosPagnolPage() {
         }
       }}>
         <DialogContent className="max-w-4xl p-0 border-none bg-transparent overflow-hidden sm:rounded-[3rem] h-full sm:h-auto">
-          <div className="flex flex-col h-full sm:max-h-[90vh] bg-slate-100 dark:bg-slate-950 sm:rounded-[3rem] overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl">
+          <div className="flex flex-col h-full sm:max-h-[90vh] bg-card sm:rounded-[3rem] overflow-hidden border border-border shadow-2xl">
             <DialogHeader className="p-6 sm:p-10 industrial-gradient text-white flex flex-col gap-6 shrink-0 relative overflow-hidden">
               {/* Decorative background for dark mode */}
               <div className="absolute inset-0 bg-slate-900/50 dark:bg-black/50 pointer-events-none" />
@@ -1103,8 +1103,8 @@ export default function MovimientosPagnolPage() {
                         <React.Fragment key={step.state}>
                           <div className="flex flex-col items-center gap-1 shrink-0">
                             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black transition-all duration-300 ${isActive ? 'bg-pagnol-orange text-white scale-110 shadow-lg shadow-pagnol-orange/50' :
-                                isDone ? 'bg-slate-100/30 text-white' :
-                                  'bg-slate-100/10 text-white/30'
+                                isDone ? 'bg-white/30 text-white' :
+                                  'bg-white/10 text-white/30'
                               }`}>
                               {isDone ? '✓' : i + 1}
                             </div>
@@ -1114,7 +1114,7 @@ export default function MovimientosPagnolPage() {
                             </span>
                           </div>
                           {i < STEPS.length - 1 && (
-                            <div className={`h-px flex-1 mx-1 mb-4 min-w-[12px] transition-all duration-500 ${isDone ? 'bg-slate-100/40' : 'bg-slate-100/10'}`} />
+                            <div className={`h-px flex-1 mx-1 mb-4 min-w-[12px] transition-all duration-500 ${isDone ? 'bg-white/40' : 'bg-white/10'}`} />
                           )}
                         </React.Fragment>
                       );
@@ -1132,7 +1132,7 @@ export default function MovimientosPagnolPage() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20 backdrop-blur-[2px]">
                       <div className="relative">
                         <div className="w-32 h-32 border-4 border-white/30 rounded-full animate-ping absolute inset-0"></div>
-                        <div className="w-32 h-32 bg-slate-100/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/50 relative z-10 shadow-[0_0_40px_rgba(255,255,255,0.3)]">
+                        <div className="w-32 h-32 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/50 relative z-10 shadow-[0_0_40px_rgba(255,255,255,0.3)]">
                           <ScanFace size={48} className="text-white drop-shadow-lg" />
                         </div>
                       </div>
@@ -1147,7 +1147,7 @@ export default function MovimientosPagnolPage() {
                     <p className="text-[9px] font-bold text-muted-foreground mt-4">Sistema de Identificación Pagnol</p>
 
                     {/* Fallback Manual */}
-                    <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+                    <div className="mt-6 pt-6 border-t border-border">
                       <p className="text-[9px] text-muted-foreground mb-3 font-medium">¿Problemas con la biometría?</p>
                       <Button
                         variant="secondary"
@@ -1156,7 +1156,7 @@ export default function MovimientosPagnolPage() {
                           stopCamera();
                           setFlowStep('MANUAL USER SELECT');
                         }}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[10px] uppercase tracking-wider rounded-xl h-10 px-6"
+                        className="bg-muted hover:bg-muted/80 text-muted-foreground font-bold text-[10px] uppercase tracking-wider rounded-xl h-10 px-6"
                       >
                         Selección Manual de Operario
                       </Button>
@@ -1174,7 +1174,7 @@ export default function MovimientosPagnolPage() {
                   <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar px-1">
                     <Input
                       placeholder="Buscar operario..."
-                      className="h-12 rounded-xl border-slate-200 bg-slate-50"
+                      className="h-12 rounded-xl border-border bg-muted"
                       value={manualUserSearch}
                       onChange={(e) => setManualUserSearch(e.target.value)}
                     />
@@ -1187,20 +1187,20 @@ export default function MovimientosPagnolPage() {
                         <button
                           key={u.id}
                           onClick={() => handleIdentityVerified(u)}
-                          className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-pagnol-orange/50 hover:bg-orange-50/50 transition-all text-left group bg-slate-100"
+                          className="flex items-center gap-4 p-4 rounded-xl border hover:border-pagnol-orange/50 hover:bg-pagnol-orange/10 transition-all text-left group bg-card"
                         >
                           <Avatar>
-                            <AvatarFallback className="bg-slate-100 text-slate-600 font-bold text-xs">{u.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                            <AvatarFallback className="bg-muted text-muted-foreground font-bold text-xs">{u.name.substring(0, 2).toUpperCase()}</AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-bold text-sm text-slate-700 group-hover:text-pagnol-orange uppercase">{u.name}</p>
+                            <p className="font-bold text-sm text-foreground group-hover:text-pagnol-orange uppercase">{u.name}</p>
                             <p className="text-[10px] text-muted-foreground font-medium">{u.rut || 'Sin RUT'}</p>
                           </div>
                           <div className="ml-auto">
                             {u.biometric_template ? (
-                              <span className="px-2 py-1 bg-green-100 text-green-600 rounded-md text-[9px] font-bold uppercase">Enrolado</span>
+                              <span className="px-2 py-1 bg-success-subtle text-success rounded-md text-[9px] font-bold uppercase">Enrolado</span>
                             ) : (
-                              <span className="px-2 py-1 bg-red-100 text-red-600 rounded-md text-[9px] font-bold uppercase">No Enrolado</span>
+                              <span className="px-2 py-1 bg-destructive/10 text-destructive rounded-md text-[9px] font-bold uppercase">No Enrolado</span>
                             )}
                           </div>
                         </button>
@@ -1216,8 +1216,8 @@ export default function MovimientosPagnolPage() {
               {flowStep === 'ITEMS SELECTION' && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4">
                   {selectedType === 'WITHDRAWAL' && (
-                    <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100">
-                      <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <div className="p-4 bg-pagnol-orange/10 rounded-2xl border border-pagnol-orange/20">
+                      <p className="text-[9px] font-black text-pagnol-orange uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <MapPin size={11} /> Faena / Sector de Destino
                       </p>
                       {(currentTenant?.faenas && currentTenant.faenas.length > 0) ? (
@@ -1227,7 +1227,7 @@ export default function MovimientosPagnolPage() {
                               key={f}
                               type="button"
                               onClick={() => setSite(site === f ? '' : f)}
-                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${site === f ? 'bg-pagnol-orange text-white border-pagnol-orange shadow-md' : 'bg-white text-slate-600 border-orange-100 hover:border-orange-300'}`}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${site === f ? 'bg-pagnol-orange text-white border-pagnol-orange shadow-md' : 'bg-card text-muted-foreground border-pagnol-orange/20 hover:border-pagnol-orange/40'}`}
                             >
                               {f}
                             </button>
@@ -1237,7 +1237,7 @@ export default function MovimientosPagnolPage() {
                             placeholder="Otro sector..."
                             value={!currentTenant.faenas.includes(site) ? site : ''}
                             onChange={e => setSite(e.target.value)}
-                            className="px-4 py-2 rounded-xl text-[10px] font-black border-2 border-orange-100 bg-white outline-none focus:border-orange-300 min-w-[130px]"
+                            className="px-4 py-2 rounded-xl text-[10px] font-black border-2 border-pagnol-orange/20 bg-card outline-none focus:border-pagnol-orange/40 min-w-[130px]"
                           />
                         </div>
                       ) : (
@@ -1246,11 +1246,11 @@ export default function MovimientosPagnolPage() {
                           placeholder="Ingrese la faena o sector de destino..."
                           value={site}
                           onChange={e => setSite(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl text-[10px] font-black border-2 border-orange-100 bg-white outline-none focus:border-orange-300"
+                          className="w-full px-4 py-3 rounded-xl text-[10px] font-black border-2 border-pagnol-orange/20 bg-card outline-none focus:border-pagnol-orange/40"
                         />
                       )}
                       {!site && (
-                        <p className="text-[8px] text-orange-400 font-bold mt-2 uppercase tracking-widest">Seleccione o ingrese el destino del despacho</p>
+                        <p className="text-[8px] text-pagnol-orange/70 font-bold mt-2 uppercase tracking-widest">Seleccione o ingrese el destino del despacho</p>
                       )}
                     </div>
                   )}
@@ -1266,7 +1266,7 @@ export default function MovimientosPagnolPage() {
                         placeholder="Buscar por nombre..."
                         value={searchAsset}
                         onChange={e => setSearchAsset(e.target.value)}
-                        className="w-full pl-9 pr-4 py-3 rounded-2xl text-xs font-bold border-2 border-slate-200 bg-white outline-none focus:border-primary/40 transition-all h-full"
+                        className="w-full pl-9 pr-4 py-3 rounded-2xl text-xs font-bold border-2 border-border bg-muted outline-none focus:border-primary/40 transition-all h-full"
                       />
                     </div>
                   </div>
@@ -1291,8 +1291,8 @@ export default function MovimientosPagnolPage() {
                             <p className="font-black uppercase text-[10px] truncate">{a.name}</p>
                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                               <Badge variant="outline" className="text-[7px] font-mono uppercase">{a.internalCode || a.id.substring(0, 8)}</Badge>
-                              {(a.stock || 0) > 0 && <span className="text-[7px] font-bold text-green-600">{a.stock} disp.</span>}
-                              {selectedType === 'WITHDRAWAL' && (a.class === 'A' || a.class === 'B') && <Badge className="bg-red-100 text-red-700 text-[7px]">Restringido</Badge>}
+                              {(a.stock || 0) > 0 && <span className="text-[7px] font-bold text-success">{a.stock} disp.</span>}
+                              {selectedType === 'WITHDRAWAL' && (a.class === 'A' || a.class === 'B') && <Badge className="bg-destructive/10 text-destructive text-[7px]">Restringido</Badge>}
                             </div>
                           </div>
                         </div>
@@ -1310,9 +1310,9 @@ export default function MovimientosPagnolPage() {
 
               {flowStep === 'CONDITION CHECK' && (
                 <div className="space-y-6 animate-in slide-in-from-right-4">
-                  <div className="p-6 bg-orange-50 rounded-[2rem] border border-orange-100 mb-6">
-                    <h4 className="font-black uppercase text-lg text-orange-800 flex items-center gap-2"><ClipboardList /> Estado de Devolución</h4>
-                    <p className="text-[10px] font-bold text-orange-600 uppercase mt-1">Verifique el estado físico de cada activo antes de recibirlo.</p>
+                  <div className="p-6 bg-pagnol-orange/10 rounded-[2rem] border border-pagnol-orange/20 mb-6">
+                    <h4 className="font-black uppercase text-lg text-pagnol-orange flex items-center gap-2"><ClipboardList /> Estado de Devolución</h4>
+                    <p className="text-[10px] font-bold text-pagnol-orange uppercase mt-1">Verifique el estado físico de cada activo antes de recibirlo.</p>
                   </div>
 
                   <div className="space-y-4">
@@ -1320,12 +1320,12 @@ export default function MovimientosPagnolPage() {
                       const asset = materialsMap.get(id);
                       const condition = returnConditions[id];
                       return (
-                        <div key={id} className="p-6 bg-slate-100 border rounded-[2rem] flex flex-col gap-6 shadow-sm transition-all">
+                        <div key={id} className="p-6 bg-muted border rounded-[2rem] flex flex-col gap-6 shadow-sm transition-all">
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                               <div className="p-3 bg-muted rounded-2xl"><Package size={20} /></div>
                               <div>
-                                <p className="text-[11px] font-black uppercase text-slate-900">{asset?.name}</p>
+                                <p className="text-[11px] font-black uppercase text-foreground">{asset?.name}</p>
                                 {(asset?.internalCode || asset?.serialNumber) && (
                                   <Badge variant="outline" className="text-[8px] mt-1 font-mono tracking-tighter">
                                     {asset.internalCode || `SN: ${asset.serialNumber}`}
@@ -1340,8 +1340,8 @@ export default function MovimientosPagnolPage() {
                                   key={status}
                                   onClick={() => setReturnConditions(prev => ({ ...prev, [id]: status }))}
                                   className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${condition === status
-                                    ? (status === 'OK' ? 'bg-green-100 text-green-700 border-green-200' : status === 'CON FALLA' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-red-100 text-red-700 border-red-200')
-                                    : 'bg-slate-100 text-muted-foreground border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                                    ? (status === 'OK' ? 'bg-success-subtle text-success-subtle-foreground border-success/30' : status === 'CON FALLA' ? 'bg-warning-subtle text-warning-subtle-foreground border-warning/20' : 'bg-destructive/10 text-destructive border-destructive/30')
+                                    : 'bg-muted text-muted-foreground border-border hover:border-border hover:bg-muted/80'
                                     }`}
                                 >
                                   {status}
@@ -1353,29 +1353,29 @@ export default function MovimientosPagnolPage() {
                           {condition && condition !== 'OK' && (
                             <div className="animate-in fade-in slide-in-from-top-2 border-t pt-6 space-y-4">
                               <div className="space-y-2">
-                                <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
                                   <MessageSquare size={12} /> Detalles de la falla / Daño
                                 </label>
                                 <Textarea
                                   value={returnNotes[id] || ''}
                                   onChange={(e) => setReturnNotes(prev => ({ ...prev, [id]: e.target.value }))}
                                   placeholder="DESCRIBA BREVEMENTE CÓMO LLEGÓ EL ACTIVO..."
-                                  className="rounded-2xl border-2 border-slate-100 focus:border-primary/20 bg-slate-50/50 text-[10px] font-bold h-24 uppercase"
+                                  className="rounded-2xl border-2 border-border focus:border-primary/20 bg-muted text-[10px] font-bold h-24 uppercase"
                                 />
                               </div>
 
                               <div className="flex items-center gap-4">
                                 {returnPhotos[id] && (
-                                  <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-green-200 shadow-sm shrink-0">
+                                  <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-success/30 shadow-sm shrink-0">
                                     <img src={returnPhotos[id]} className="w-full h-full object-cover" alt="Evidencia" />
                                   </div>
                                 )}
                                 <div className="flex-1">
-                                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 mb-2">Evidencia Fotográfica (Opcional)</p>
+                                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1 mb-2">Evidencia Fotográfica (Opcional)</p>
                                   <Button
                                     variant="outline"
                                     onClick={() => { setCapturingPhotoFor(id); evidenceInputRef.current?.click(); }}
-                                    className={`w-full h-14 rounded-2xl border-2 border-dashed transition-all flex items-center justify-center gap-3 ${returnPhotos[id] ? 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100' : 'border-slate-200 hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-primary'}`}
+                                    className={`w-full h-14 rounded-2xl border-2 border-dashed transition-all flex items-center justify-center gap-3 ${returnPhotos[id] ? 'border-success/30 bg-success-subtle text-success hover:bg-success-subtle' : 'border-border hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-primary'}`}
                                   >
                                     <Camera size={20} />
                                     <span className="text-[10px] font-black uppercase tracking-widest">
@@ -1397,7 +1397,7 @@ export default function MovimientosPagnolPage() {
 
               {flowStep === 'CONFIRMATION PAGNOLERO' && (
                 <div className="space-y-6 animate-in zoom-in-95">
-                  <div className="p-8 bg-slate-50 dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 space-y-4">
+                  <div className="p-8 bg-muted rounded-[2rem] border border-border space-y-4">
                     <div className="flex items-center gap-3">
                       <div className="p-3 bg-pagnol-orange/10 rounded-2xl">
                         <CheckCircle size={28} className="text-pagnol-orange" />
@@ -1409,7 +1409,7 @@ export default function MovimientosPagnolPage() {
                     </div>
 
                     {selectedEmployee && (
-                      <div className="flex items-center gap-3 p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center gap-3 p-4 bg-card rounded-2xl border border-border">
                         <Avatar>
                           <AvatarFallback className="bg-pagnol-orange/10 text-pagnol-orange font-black text-xs">
                             {selectedEmployee.name.substring(0, 2).toUpperCase()}
@@ -1423,11 +1423,11 @@ export default function MovimientosPagnolPage() {
                     )}
 
                     {selectedType === 'WITHDRAWAL' && (
-                      <div className="flex items-center gap-3 p-4 bg-orange-50 rounded-2xl border border-orange-100">
+                      <div className="flex items-center gap-3 p-4 bg-pagnol-orange/10 rounded-2xl border border-pagnol-orange/20">
                         <MapPin size={16} className="text-pagnol-orange shrink-0" />
                         <div className="flex items-center gap-2 text-[10px] font-black uppercase flex-wrap">
-                          <span className="text-slate-500">Bodega</span>
-                          <ArrowRight size={12} className="text-slate-400" />
+                          <span className="text-muted-foreground">Bodega</span>
+                          <ArrowRight size={12} className="text-muted-foreground" />
                           <span className="text-pagnol-orange">{site || 'Sin destino especificado'}</span>
                         </div>
                       </div>
@@ -1439,7 +1439,7 @@ export default function MovimientosPagnolPage() {
                         {selectedAssetIds.map(id => {
                           const asset = materialsMap.get(id);
                           return (
-                            <div key={id} className="flex items-center gap-3 p-3 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                            <div key={id} className="flex items-center gap-3 p-3 bg-card rounded-xl border border-border">
                               <Package size={16} className="text-muted-foreground shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <p className="font-black text-[11px] uppercase truncate">{asset?.name || 'Activo'}</p>
@@ -1450,7 +1450,7 @@ export default function MovimientosPagnolPage() {
                                 )}
                               </div>
                               {asset?.class && (
-                                <Badge className="text-[8px] shrink-0 bg-slate-100 text-slate-600">Clase {asset.class}</Badge>
+                                <Badge className="text-[8px] shrink-0 bg-muted text-muted-foreground">Clase {asset.class}</Badge>
                               )}
                             </div>
                           );
@@ -1501,7 +1501,7 @@ export default function MovimientosPagnolPage() {
                   <Button
                     disabled={isBiometricPulse || !cameraStream}
                     onClick={handleFinalAcceptance}
-                    className="w-full py-8 rounded-[1.5rem] bg-pagnol-orange text-white font-black uppercase tracking-widest shadow-xl shadow-pagnol-orange/20 hover:bg-orange-600 transition-all disabled:opacity-50"
+                    className="w-full py-8 rounded-[1.5rem] bg-pagnol-orange text-white font-black uppercase tracking-widest shadow-xl shadow-pagnol-orange/20 hover:bg-pagnol-orange/90 transition-all disabled:opacity-50"
                   >
                     {isBiometricPulse
                       ? <Loader2 className="animate-spin mx-auto" />
@@ -1515,7 +1515,7 @@ export default function MovimientosPagnolPage() {
 
               {flowStep === 'COMPLETED' && (
                 <div className="text-center py-20 animate-in zoom-in duration-500">
-                  <div className="w-24 h-24 bg-green-500 text-white rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl animate-bounce">
+                  <div className="w-24 h-24 bg-success text-success-foreground rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl animate-bounce">
                     <UserCheck size={48} />
                   </div>
                   <h4 className="font-black uppercase text-2xl mt-8">Transacción Cerrada</h4>
@@ -1537,7 +1537,7 @@ export default function MovimientosPagnolPage() {
                       <Button
                         disabled={selectedAssetIds.length === 0 || isBiometricPulse}
                         onClick={handleConfirmItems}
-                        className={`text-white font-black uppercase text-[10px] px-8 rounded-xl h-12 ${hasRestricted ? 'bg-red-600 hover:bg-red-700' : 'bg-pagnol-dark'}`}
+                        className={`text-white font-black uppercase text-[10px] px-8 rounded-xl h-12 ${hasRestricted ? 'bg-destructive hover:bg-destructive/90' : 'bg-pagnol-dark'}`}
                       >
                         {isBiometricPulse
                           ? <><Loader2 className="animate-spin h-4 w-4 mr-2" />Enviando solicitud...</>

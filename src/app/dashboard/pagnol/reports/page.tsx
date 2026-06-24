@@ -261,14 +261,14 @@ export default function ReportsPage() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 no-print">
                 <PageHeader title="CENTRO DE REPORTES ESTRATÉGICOS" description="CONTROL PATRIMONIAL Y AUDITORÍA DE ACTIVOS" />
                 <div className="flex items-center gap-3">
-                    <Button onClick={handlePrint} variant="outline" className="rounded-2xl h-12 px-6 gap-2 border-slate-200">
+                    <Button onClick={handlePrint} variant="outline" className="rounded-2xl h-12 px-6 gap-2 border-border">
                         <Printer size={16} /> Imprimir
                     </Button>
                 </div>
             </div>
 
             {/* TAB SELECTOR */}
-            <div className="flex items-center gap-2 bg-slate-100/50 p-2 rounded-[2rem] border shadow-inner overflow-x-auto no-scrollbar no-print">
+            <div className="flex items-center gap-2 bg-muted p-2 rounded-[2rem] border shadow-inner overflow-x-auto no-scrollbar no-print">
                 {tabs.map((tab) => {
                     const Icon = tab.icon;
                     return (
@@ -278,8 +278,8 @@ export default function ReportsPage() {
                             className={cn(
                                 "flex items-center gap-3 px-6 py-4 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.1em] transition-all whitespace-nowrap",
                                 activeTab === tab.id
-                                    ? "bg-slate-100 text-pagnol-dark shadow-xl"
-                                    : "text-muted-foreground hover:text-slate-600 hover:bg-slate-100/50"
+                                    ? "bg-card text-foreground shadow-xl"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
                             )}
                         >
                             <Icon size={16} className={activeTab === tab.id ? "text-pagnol-orange" : ""} />
@@ -295,10 +295,10 @@ export default function ReportsPage() {
                 {activeTab === 'INVENTORY' && (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100 overflow-hidden p-8 flex flex-col justify-between">
+                            <Card className="rounded-[2.5rem] border-none shadow-xl bg-card overflow-hidden p-8 flex flex-col justify-between">
                                 <div>
-                                    <Badge className="bg-slate-100 text-muted-foreground border-none mb-4 uppercase text-[9px] font-black">Patrimonio Neto</Badge>
-                                    <h2 className="text-4xl font-black font-outfit text-slate-900">${totalValue.toLocaleString()}</h2>
+                                    <Badge className="bg-muted text-muted-foreground border-none mb-4 uppercase text-[9px] font-black">Patrimonio Neto</Badge>
+                                    <h2 className="text-4xl font-black font-outfit text-foreground">${totalValue.toLocaleString()}</h2>
                                     <p className="text-[10px] text-muted-foreground font-bold uppercase mt-2 tracking-widest">Valorización total en Bodega</p>
                                 </div>
                                 <div className="h-24 mt-6">
@@ -316,8 +316,8 @@ export default function ReportsPage() {
                                 </div>
                             </Card>
 
-                            <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100 overflow-hidden p-8">
-                                <Badge className="bg-orange-100 text-orange-600 border-none mb-4 uppercase text-[9px] font-black">Distribución por Estado</Badge>
+                            <Card className="rounded-[2.5rem] border-none shadow-xl bg-card overflow-hidden p-8">
+                                <Badge className="bg-pagnol-orange/10 text-pagnol-orange border-none mb-4 uppercase text-[9px] font-black">Distribución por Estado</Badge>
                                 <div className="h-[200px] w-full">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <PieChart>
@@ -348,9 +348,9 @@ export default function ReportsPage() {
                                 </div>
                             </Card>
 
-                            <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-900 text-white overflow-hidden p-8 flex flex-col justify-between">
+                            <Card className="rounded-[2.5rem] border-none shadow-xl bg-pagnol-dark text-white overflow-hidden p-8 flex flex-col justify-between">
                                 <div>
-                                    <Badge className="bg-slate-100/10 text-white border-none mb-4 uppercase text-[9px] font-black">Operatividad</Badge>
+                                    <Badge className="bg-white/10 text-white border-none mb-4 uppercase text-[9px] font-black">Operatividad</Badge>
                                     <h2 className="text-5xl font-black font-outfit text-white">
                                         {Math.round(((statusDistribution.find(s => s.name === 'Disponible')?.value || 0) / (materials?.length || 1)) * 100)}%
                                     </h2>
@@ -361,13 +361,13 @@ export default function ReportsPage() {
                                         <span>Consumibles</span>
                                         <span>{materials?.filter(m => m.usageType === 'Consumible').length}</span>
                                     </div>
-                                    <Progress value={75} className="bg-slate-100/10 h-1.5" indicatorClassName="bg-pagnol-orange" />
+                                    <Progress value={75} className="bg-white/10 h-1.5" indicatorClassName="bg-pagnol-orange" />
                                 </div>
                             </Card>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <Card className="rounded-[3rem] border-none shadow-xl bg-slate-100 p-10">
+                            <Card className="rounded-[3rem] border-none shadow-xl bg-card p-10">
                                 <div className="flex items-center justify-between mb-8">
                                     <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-3">
                                         <BarChart3 size={20} className="text-pagnol-orange" /> Valorización por Categoría
@@ -389,31 +389,31 @@ export default function ReportsPage() {
                                 </div>
                             </Card>
 
-                            <Card className="rounded-[3rem] border-none shadow-xl bg-slate-100 p-10">
+                            <Card className="rounded-[3rem] border-none shadow-xl bg-card p-10">
                                 <div className="flex items-center justify-between mb-8">
                                     <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-3">
                                         <Package size={20} className="text-pagnol-orange" /> Resumen de Activos Críticos
                                     </h3>
-                                    <Badge variant="outline" className="border-red-100 text-red-600 bg-red-50 font-black">Stock {"<"} 5</Badge>
+                                    <Badge variant="outline" className="border-destructive/30 text-destructive bg-destructive/10 font-black">Stock {"<"} 5</Badge>
                                 </div>
                                 <ScrollArea className="h-[350px] pr-4">
                                     <div className="space-y-4">
                                         {materials?.filter(m => m.stock <= 5 && !m.archived).map(m => (
-                                            <div key={m.id} className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-red-200 transition-all">
+                                            <div key={m.id} className="flex items-center justify-between p-5 bg-muted rounded-2xl border group hover:border-destructive/30 transition-all">
                                                 <div className="flex items-center gap-4">
-                                                    <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center border shadow-sm text-red-500 font-black">
+                                                    <div className="w-12 h-12 rounded-xl bg-card flex items-center justify-center border shadow-sm text-destructive font-black">
                                                         {m.stock}
                                                     </div>
                                                     <div>
-                                                        <p className="text-xs font-black uppercase text-slate-700">{m.name}</p>
+                                                        <p className="text-xs font-black uppercase text-foreground">{m.name}</p>
                                                         <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest mt-1">{m.category}</p>
                                                     </div>
                                                 </div>
-                                                <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase text-red-600">Reponer</Button>
+                                                <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase text-destructive">Reponer</Button>
                                             </div>
                                         ))}
                                         {materials?.filter(m => m.stock <= 5 && !m.archived).length === 0 && (
-                                            <div className="text-center py-20 text-slate-300">
+                                            <div className="text-center py-20 text-muted-foreground/50">
                                                 <ShieldCheck size={48} className="mx-auto mb-4 opacity-20" />
                                                 <p className="text-xs font-black uppercase tracking-widest">Todos los niveles operativos</p>
                                             </div>
@@ -437,10 +437,10 @@ export default function ReportsPage() {
                                 });
 
                                 return (
-                                    <Card key={user.id} className="rounded-[2.5rem] border-none shadow-xl bg-slate-100 group hover:shadow-2xl transition-all duration-500 overflow-hidden">
-                                        <div className="p-8 border-b bg-slate-50/50 flex items-center justify-between">
+                                    <Card key={user.id} className="rounded-[2.5rem] border-none shadow-xl bg-card group hover:shadow-2xl transition-all duration-500 overflow-hidden">
+                                        <div className="p-8 border-b bg-muted flex items-center justify-between">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 rounded-2xl bg-slate-100 border shadow-sm flex items-center justify-center text-muted-foreground">
+                                                <div className="w-12 h-12 rounded-2xl bg-card border shadow-sm flex items-center justify-center text-muted-foreground">
                                                     <Users size={24} />
                                                 </div>
                                                 <div>
@@ -456,9 +456,9 @@ export default function ReportsPage() {
                                         <div className="p-8 space-y-4">
                                             <div className="space-y-2">
                                                 {currentAssets.slice(0, 3).map(aid => (
-                                                    <div key={aid} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl text-[10px] font-bold border border-slate-100">
+                                                    <div key={aid} className="flex items-center justify-between p-3 bg-muted rounded-xl text-[10px] font-bold border">
                                                         <span className="truncate max-w-[140px] uppercase">{materialsMap.get(aid)?.name}</span>
-                                                        <Badge variant="outline" className="text-[8px] bg-slate-100 border-none shadow-sm">SN: {materialsMap.get(aid)?.serialNumber || 'N/A'}</Badge>
+                                                        <Badge variant="outline" className="text-[8px] bg-card border-none shadow-sm">SN: {materialsMap.get(aid)?.serialNumber || 'N/A'}</Badge>
                                                     </div>
                                                 ))}
                                                 {currentAssets.length > 3 && (
@@ -501,12 +501,12 @@ export default function ReportsPage() {
                         <Dialog open={!!selectedEmployee} onOpenChange={(open) => !open && setSelectedEmployee(null)}>
                             <DialogContent className="max-w-3xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
                                 {/* Header */}
-                                <div className="bg-slate-900 text-white p-10 relative overflow-hidden">
+                                <div className="bg-pagnol-dark text-white p-10 relative overflow-hidden">
                                     <div className="absolute top-0 right-0 w-64 h-64 bg-pagnol-orange/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
                                     <DialogHeader className="relative z-10">
                                         <div className="flex items-start justify-between gap-6">
                                             <div className="flex items-center gap-5">
-                                                <div className="w-16 h-16 rounded-[1.5rem] bg-slate-100/10 border border-white/20 flex items-center justify-center text-white">
+                                                <div className="w-16 h-16 rounded-[1.5rem] bg-white/10 border border-white/20 flex items-center justify-center text-white">
                                                     <Users size={32} />
                                                 </div>
                                                 <div>
@@ -526,7 +526,7 @@ export default function ReportsPage() {
                                                 { label: 'Total Retiros', value: totalWithdrawals, color: 'text-blue-400' },
                                                 { label: 'Retornos OK', value: totalReturns, color: 'text-green-400' },
                                             ].map((s, i) => (
-                                                <div key={i} className="bg-slate-100/5 border border-white/10 rounded-2xl p-4 text-center">
+                                                <div key={i} className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
                                                     <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
                                                     <p className="text-[8px] font-black uppercase text-white/40 tracking-widest mt-1">{s.label}</p>
                                                 </div>
@@ -537,7 +537,7 @@ export default function ReportsPage() {
 
                                 {/* Body */}
                                 <ScrollArea className="max-h-[50vh]">
-                                    <div className="p-10 space-y-8 bg-slate-100">
+                                    <div className="p-10 space-y-8 bg-card">
 
                                         {/* Active assets */}
                                         <div>
@@ -545,7 +545,7 @@ export default function ReportsPage() {
                                                 <Package size={14} className="text-pagnol-orange" /> Activos en Posesión Actual
                                             </h5>
                                             {empCurrentAssets.length === 0 ? (
-                                                <div className="py-8 text-center text-slate-300">
+                                                <div className="py-8 text-center text-muted-foreground/50">
                                                     <Package size={32} className="mx-auto mb-2 opacity-30" />
                                                     <p className="text-[10px] font-black uppercase tracking-widest">Sin activos en posesión actualmente</p>
                                                 </div>
@@ -554,9 +554,9 @@ export default function ReportsPage() {
                                                     {empCurrentAssets.map(aid => {
                                                         const mat = materialsMap.get(aid);
                                                         return mat ? (
-                                                            <div key={aid} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                            <div key={aid} className="flex items-center justify-between p-4 bg-muted rounded-2xl border">
                                                                 <div>
-                                                                    <p className="text-xs font-black uppercase text-slate-800">{mat.name}</p>
+                                                                    <p className="text-xs font-black uppercase text-foreground">{mat.name}</p>
                                                                     <p className="text-[9px] font-bold text-muted-foreground uppercase mt-0.5">{mat.category}</p>
                                                                 </div>
                                                                 <div className="text-right">
@@ -576,29 +576,29 @@ export default function ReportsPage() {
                                                 <History size={14} className="text-pagnol-orange" /> Historial de Operaciones
                                             </h5>
                                             {empTxs.length === 0 ? (
-                                                <div className="py-8 text-center text-slate-300">
+                                                <div className="py-8 text-center text-muted-foreground/50">
                                                     <Activity size={32} className="mx-auto mb-2 opacity-30" />
                                                     <p className="text-[10px] font-black uppercase tracking-widest">Sin operaciones registradas</p>
                                                 </div>
                                             ) : (
                                                 <div className="space-y-3">
                                                     {empTxs.map(tx => (
-                                                        <div key={tx.id} className="flex items-center gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/50">
+                                                        <div key={tx.id} className="flex items-center gap-4 p-4 rounded-2xl border bg-muted">
                                                             <div className={cn(
                                                                 "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
-                                                                tx.type === 'WITHDRAWAL' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'
+                                                                tx.type === 'WITHDRAWAL' ? 'bg-pagnol-orange/10 text-pagnol-orange' : 'bg-success-subtle text-success'
                                                             )}>
                                                                 {tx.type === 'WITHDRAWAL' ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
                                                             </div>
                                                             <div className="flex-1 min-w-0">
-                                                                <p className="text-[10px] font-black uppercase text-slate-800">
+                                                                <p className="text-[10px] font-black uppercase text-foreground">
                                                                     {tx.type === 'WITHDRAWAL' ? 'Despacho' : 'Retorno'}
                                                                 </p>
-                                                                <p className="text-[9px] font-bold text-slate-500 flex items-center gap-1 mt-0.5 flex-wrap">
+                                                                <p className="text-[9px] font-bold text-muted-foreground flex items-center gap-1 mt-0.5 flex-wrap">
                                                                     <MapPin size={9} className="shrink-0" />
                                                                     {tx.type === 'WITHDRAWAL'
-                                                                        ? <><span className="text-slate-400">Bodega</span> <ArrowRight size={9} className="text-slate-300 shrink-0" /> <span className={tx.site ? 'text-orange-500 font-black' : 'text-slate-300'}>{tx.site || 'Sin destino'}</span></>
-                                                                        : <><span className="text-slate-400">{tx.site || 'Faena'}</span> <ArrowRight size={9} className="text-slate-300 shrink-0" /> <span className="text-green-600 font-black">Bodega Central</span></>
+                                                                        ? <><span className="text-muted-foreground">Bodega</span> <ArrowRight size={9} className="text-muted-foreground/50 shrink-0" /> <span className={tx.site ? 'text-pagnol-orange font-black' : 'text-muted-foreground/50'}>{tx.site || 'Sin destino'}</span></>
+                                                                        : <><span className="text-muted-foreground">{tx.site || 'Faena'}</span> <ArrowRight size={9} className="text-muted-foreground/50 shrink-0" /> <span className="text-success font-black">Bodega Central</span></>
                                                                     }
                                                                 </p>
                                                                 <p className="text-[9px] text-muted-foreground font-bold mt-0.5">
@@ -607,9 +607,9 @@ export default function ReportsPage() {
                                                             </div>
                                                             <div className="shrink-0">
                                                                 {tx.isBiometricVerified ? (
-                                                                    <span title="Verificado biométricamente"><ShieldCheck size={16} className="text-green-500" /></span>
+                                                                    <span title="Verificado biométricamente"><ShieldCheck size={16} className="text-success" /></span>
                                                                 ) : (
-                                                                    <span title="Sin verificación biométrica"><Shield size={16} className="text-slate-200" /></span>
+                                                                    <span title="Sin verificación biométrica"><Shield size={16} className="text-muted-foreground/40" /></span>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -619,12 +619,12 @@ export default function ReportsPage() {
                                         </div>
 
                                         {/* Reliability score bar */}
-                                        <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
+                                        <div className="p-6 bg-muted rounded-[2rem] border">
                                             <div className="flex justify-between items-center mb-3">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Score de Responsabilidad Patrimonial</p>
-                                                <p className={`text-sm font-black ${reliabilityScore >= 80 ? 'text-green-600' : reliabilityScore >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{reliabilityScore}%</p>
+                                                <p className={`text-sm font-black ${reliabilityScore >= 80 ? 'text-success' : reliabilityScore >= 50 ? 'text-warning' : 'text-destructive'}`}>{reliabilityScore}%</p>
                                             </div>
-                                            <Progress value={reliabilityScore} className="h-2" indicatorClassName={reliabilityScore >= 80 ? 'bg-green-500' : reliabilityScore >= 50 ? 'bg-amber-500' : 'bg-red-500'} />
+                                            <Progress value={reliabilityScore} className="h-2" indicatorClassName={reliabilityScore >= 80 ? 'bg-success' : reliabilityScore >= 50 ? 'bg-warning' : 'bg-destructive'} />
                                             <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest mt-3">
                                                 {reliabilityScore >= 80 ? '✓ Excelente historial de retornos' : reliabilityScore >= 50 ? '⚠ Retornos parciales — revisar' : '✗ Activos sin retornar — acción requerida'}
                                             </p>
@@ -640,7 +640,7 @@ export default function ReportsPage() {
                 {activeTab === 'ASSET_TRAIL' && (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4">
                         <div className="max-w-3xl mx-auto">
-                            <Card className="rounded-[3rem] border shadow-2xl p-10 bg-slate-100">
+                            <Card className="rounded-[3rem] border shadow-2xl p-10 bg-card">
                                 <div className="text-center space-y-4 mb-10">
                                     <div className="w-20 h-20 bg-pagnol-orange/10 text-pagnol-orange rounded-3xl flex items-center justify-center mx-auto mb-6">
                                         <Search size={40} />
@@ -653,7 +653,7 @@ export default function ReportsPage() {
                                     <input
                                         type="text"
                                         placeholder="INGRESE SERIAL, ID O CODIGO INTERNO..."
-                                        className="w-full pl-16 pr-8 py-6 bg-slate-50 border-2 border-slate-100 rounded-[2rem] font-black text-lg uppercase outline-none focus:ring-8 focus:ring-pagnol-orange/5 focus:border-pagnol-orange/20 focus:bg-slate-100 transition-all shadow-inner"
+                                        className="w-full pl-16 pr-8 py-6 bg-muted border-2 border-border rounded-[2rem] font-black text-lg uppercase outline-none focus:ring-8 focus:ring-pagnol-orange/5 focus:border-pagnol-orange/20 focus:bg-muted transition-all shadow-inner"
                                         onChange={(e) => setSelectedAssetId(e.target.value)}
                                     />
                                 </div>
@@ -675,9 +675,9 @@ export default function ReportsPage() {
 
                                     return (
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                            <Card className="md:col-span-1 rounded-[2.5rem] border-none shadow-xl bg-slate-100 p-8">
-                                                <div className="aspect-square rounded-2xl bg-slate-50 border overflow-hidden mb-6 flex items-center justify-center">
-                                                    <Package size={64} className="text-slate-200" />
+                                            <Card className="md:col-span-1 rounded-[2.5rem] border-none shadow-xl bg-card p-8">
+                                                <div className="aspect-square rounded-2xl bg-muted border overflow-hidden mb-6 flex items-center justify-center">
+                                                    <Package size={64} className="text-muted-foreground/40" />
                                                 </div>
                                                 <h5 className="text-lg font-black uppercase leading-tight">{asset.name}</h5>
                                                 <p className="text-[10px] text-pagnol-orange font-black uppercase mt-2 tracking-widest">{asset.category}</p>
@@ -697,20 +697,20 @@ export default function ReportsPage() {
                                                 </div>
                                             </Card>
 
-                                            <Card className="md:col-span-2 rounded-[2.5rem] border-none shadow-xl bg-slate-100 p-10">
+                                            <Card className="md:col-span-2 rounded-[2.5rem] border-none shadow-xl bg-card p-10">
                                                 <h5 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground mb-10 flex items-center gap-2">
                                                     <Clock size={16} /> Línea de Tiempo de Operaciones
                                                 </h5>
-                                                <div className="space-y-12 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100">
+                                                <div className="space-y-12 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-border">
                                                     {assetTxs.map((tx, idx) => (
                                                         <div key={tx.id} className="relative pl-12 group">
                                                             <div className={cn(
                                                                 "absolute left-0 top-1 w-6 h-6 rounded-full border-4 border-white shadow-xl z-10 transition-transform group-hover:scale-125",
-                                                                tx.type === 'WITHDRAWAL' ? 'bg-pagnol-orange' : 'bg-green-500'
+                                                                tx.type === 'WITHDRAWAL' ? 'bg-pagnol-orange' : 'bg-success'
                                                             )} />
                                                             <div className="space-y-2">
                                                                 <div className="flex items-center justify-between">
-                                                                    <p className="text-xs font-black uppercase text-slate-800">
+                                                                    <p className="text-xs font-black uppercase text-foreground">
                                                                         {tx.type === 'WITHDRAWAL' ? 'Despacho a Faena' : 'Retorno a Bodega'}
                                                                     </p>
                                                                     <Badge variant="outline" className="text-[9px] font-black font-mono tracking-wider">
@@ -729,7 +729,7 @@ export default function ReportsPage() {
                                                                     </div>
                                                                 </div>
                                                                 {tx.isBiometricVerified && (
-                                                                    <div className="flex items-center gap-1.5 text-[9px] font-black text-green-600 uppercase pt-1">
+                                                                    <div className="flex items-center gap-1.5 text-[9px] font-black text-success uppercase pt-1">
                                                                         <ShieldCheck size={12} /> Identidad Validada Biométrica
                                                                     </div>
                                                                 )}
@@ -755,26 +755,26 @@ export default function ReportsPage() {
                 {/* AUDIT TAB */}
                 {activeTab === 'AUDIT' && (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4">
-                        <Card className="rounded-[3rem] border-none shadow-2xl bg-slate-100 overflow-hidden">
-                            <div className="p-10 border-b flex items-center justify-between bg-slate-50/50">
+                        <Card className="rounded-[3rem] border-none shadow-2xl bg-card overflow-hidden">
+                            <div className="p-10 border-b flex items-center justify-between bg-muted">
                                 <div>
                                     <h3 className="text-xl font-black uppercase tracking-tight">Registro Maestro de Transacciones</h3>
                                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-1">Auditoría completa de entradas y salidas</p>
                                 </div>
                                 <div className="flex gap-4">
-                                    <div className="text-center px-6 py-2 bg-slate-100 rounded-2xl border">
-                                        <p className="text-sm font-black text-slate-900">{transactions.length}</p>
+                                    <div className="text-center px-6 py-2 bg-muted rounded-2xl border">
+                                        <p className="text-sm font-black text-foreground">{transactions.length}</p>
                                         <p className="text-[8px] font-black uppercase text-muted-foreground">Total Logs</p>
                                     </div>
-                                    <div className="text-center px-6 py-2 bg-slate-100 rounded-2xl border">
-                                        <p className="text-sm font-black text-green-600">{transactions.filter(t => t.isBiometricVerified).length}</p>
+                                    <div className="text-center px-6 py-2 bg-muted rounded-2xl border">
+                                        <p className="text-sm font-black text-success">{transactions.filter(t => t.isBiometricVerified).length}</p>
                                         <p className="text-[8px] font-black uppercase text-muted-foreground">Firmados</p>
                                     </div>
                                 </div>
                             </div>
                             <div className="overflow-x-auto no-scrollbar">
                                 <table className="w-full text-left min-w-[900px]">
-                                    <thead className="bg-slate-50/50 border-b">
+                                    <thead className="bg-muted border-b">
                                         <tr>
                                             <th className="px-10 py-6 text-[9px] font-black uppercase tracking-widest text-muted-foreground">Protocolo Referencia</th>
                                             <th className="px-10 py-6 text-[9px] font-black uppercase tracking-widest text-muted-foreground">Operación</th>
@@ -784,43 +784,43 @@ export default function ReportsPage() {
                                             <th className="px-10 py-6 text-[9px] font-black uppercase tracking-widest text-center text-muted-foreground">Garantía Judicial</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
+                                    <tbody className="divide-y divide-border">
                                         {transactions.map(tx => (
-                                            <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors group">
+                                            <tr key={tx.id} className="hover:bg-muted transition-colors group">
                                                 <td className="px-10 py-6">
-                                                    <span className="font-mono text-xs font-black text-slate-800 group-hover:text-pagnol-orange transition-colors tracking-wider">
+                                                    <span className="font-mono text-xs font-black text-foreground group-hover:text-pagnol-orange transition-colors tracking-wider">
                                                         {tx.internalCode || tx.id.substring(0, 8).toUpperCase()}
                                                     </span>
                                                 </td>
                                                 <td className="px-10 py-6">
                                                     <div className={cn(
                                                         "flex items-center gap-2.5 text-[10px] font-black uppercase px-3 py-1.5 rounded-xl w-fit border",
-                                                        tx.type === 'WITHDRAWAL' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-green-50 text-green-600 border-green-100'
+                                                        tx.type === 'WITHDRAWAL' ? 'bg-pagnol-orange/10 text-pagnol-orange border-pagnol-orange/20' : 'bg-success-subtle text-success border-success/30'
                                                     )}>
                                                         {tx.type === 'WITHDRAWAL' ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                                                         {tx.type === 'WITHDRAWAL' ? 'DESPACHO' : 'RETORNO'}
                                                     </div>
                                                 </td>
-                                                <td className="px-10 py-6 text-[10px] font-bold text-slate-600">
+                                                <td className="px-10 py-6 text-[10px] font-bold text-muted-foreground">
                                                     {tx.timestamp.toLocaleDateString()} <span className="opacity-30 mx-1">|</span> {tx.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </td>
                                                 <td className="px-10 py-6">
-                                                    <p className="font-black text-xs uppercase text-slate-800">{tx.employeeName}</p>
+                                                    <p className="font-black text-xs uppercase text-foreground">{tx.employeeName}</p>
                                                     <p className="text-[9px] text-muted-foreground font-bold uppercase mt-1 tracking-tighter">
                                                         {usersMap.get(tx.employeeId)?.rut || usersMap.get(tx.employeeId)?.role || '—'}
                                                     </p>
                                                 </td>
                                                 <td className="px-10 py-6">
-                                                    <Badge variant="outline" className="text-[9px] font-black uppercase border-slate-200">{tx.site}</Badge>
+                                                    <Badge variant="outline" className="text-[9px] font-black uppercase border-border">{tx.site}</Badge>
                                                 </td>
                                                 <td className="px-10 py-6">
                                                     <div className="flex justify-center">
                                                         {tx.isBiometricVerified ? (
-                                                            <div className="flex items-center gap-2 text-green-600" title="Verificación Biométrica Exitosa">
+                                                            <div className="flex items-center gap-2 text-success" title="Verificación Biométrica Exitosa">
                                                                 <ShieldCheck size={20} />
                                                             </div>
                                                         ) : (
-                                                            <div className="flex items-center gap-2 text-slate-200" title="Pendiente de Firma Digital">
+                                                            <div className="flex items-center gap-2 text-muted-foreground/40" title="Pendiente de Firma Digital">
                                                                 <Shield size={20} />
                                                             </div>
                                                         )}
@@ -839,12 +839,12 @@ export default function ReportsPage() {
                 {activeTab === 'MAINTENANCE_LOG' && (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <Card className="rounded-[3rem] border-none shadow-xl bg-slate-100 p-10 overflow-hidden relative">
+                            <Card className="rounded-[3rem] border-none shadow-xl bg-card p-10 overflow-hidden relative">
                                 <div className="absolute top-0 right-0 p-10 opacity-[0.03]">
                                     <Wrench size={160} />
                                 </div>
                                 <div className="flex items-center gap-5 mb-10">
-                                    <div className="w-14 h-14 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-200 transition-transform hover:scale-110">
+                                    <div className="w-14 h-14 rounded-2xl bg-warning text-warning-foreground flex items-center justify-center shadow-lg shadow-warning/20 transition-transform hover:scale-110">
                                         <Wrench size={28} />
                                     </div>
                                     <div>
@@ -854,17 +854,17 @@ export default function ReportsPage() {
                                 </div>
                                 <div className="space-y-4">
                                     {materials?.filter(m => m.status === 'En Mantenimiento').map(m => (
-                                        <div key={m.id} className="flex items-center justify-between p-6 bg-slate-50 border border-slate-100 rounded-[2rem] group hover:bg-slate-100 hover:shadow-xl transition-all duration-300">
+                                        <div key={m.id} className="flex items-center justify-between p-6 bg-muted border rounded-[2rem] group hover:bg-card hover:shadow-xl transition-all duration-300">
                                             <div className="flex items-center gap-5">
-                                                <div className="w-12 h-12 rounded-xl bg-slate-100 border shadow-sm flex items-center justify-center text-amber-500 uppercase font-black text-xs">
+                                                <div className="w-12 h-12 rounded-xl bg-card border shadow-sm flex items-center justify-center text-warning uppercase font-black text-xs">
                                                     {m.usageType?.[0] || 'M'}
                                                 </div>
                                                 <div>
-                                                    <p className="font-black uppercase text-sm text-slate-800">{m.name}</p>
+                                                    <p className="font-black uppercase text-sm text-foreground">{m.name}</p>
                                                     <p className="text-[10px] text-muted-foreground font-bold uppercase mt-1 tracking-widest">SN: {m.serialNumber || 'N/A'}</p>
                                                 </div>
                                             </div>
-                                            <Badge className="bg-amber-100 text-amber-600 border-none px-4 py-2 rounded-xl text-[9px] font-black uppercase">En Taller</Badge>
+                                            <Badge className="bg-warning-subtle text-warning border-none px-4 py-2 rounded-xl text-[9px] font-black uppercase">En Taller</Badge>
                                         </div>
                                     ))}
                                     {materials?.filter(m => m.status === 'En Mantenimiento').length === 0 && (
@@ -876,12 +876,12 @@ export default function ReportsPage() {
                                 </div>
                             </Card>
 
-                            <Card className="rounded-[3rem] border-none shadow-xl bg-slate-100 p-10 overflow-hidden relative">
+                            <Card className="rounded-[3rem] border-none shadow-xl bg-card p-10 overflow-hidden relative">
                                 <div className="absolute top-0 right-0 p-10 opacity-[0.03]">
                                     <AlertTriangle size={160} />
                                 </div>
                                 <div className="flex items-center gap-5 mb-10">
-                                    <div className="w-14 h-14 rounded-2xl bg-red-600 text-white flex items-center justify-center shadow-lg shadow-red-200 transition-transform hover:scale-110">
+                                    <div className="w-14 h-14 rounded-2xl bg-destructive text-destructive-foreground flex items-center justify-center shadow-lg shadow-destructive/20 transition-transform hover:scale-110">
                                         <AlertTriangle size={28} />
                                     </div>
                                     <div>
@@ -891,20 +891,20 @@ export default function ReportsPage() {
                                 </div>
                                 <div className="space-y-4">
                                     {materials?.filter(m => m.status === 'Para Baja').map(m => (
-                                        <div key={m.id} className="flex items-center justify-between p-6 bg-slate-50 border border-slate-100 rounded-[2rem] group hover:bg-slate-100 hover:shadow-xl transition-all duration-300">
+                                        <div key={m.id} className="flex items-center justify-between p-6 bg-muted border rounded-[2rem] group hover:bg-card hover:shadow-xl transition-all duration-300">
                                             <div className="flex items-center gap-5">
-                                                <div className="w-12 h-12 rounded-xl bg-slate-100 border shadow-sm flex items-center justify-center text-red-600 uppercase font-black text-xs">
+                                                <div className="w-12 h-12 rounded-xl bg-card border shadow-sm flex items-center justify-center text-destructive uppercase font-black text-xs">
                                                     !
                                                 </div>
                                                 <div>
-                                                    <p className="font-black uppercase text-sm text-slate-800">{m.name}</p>
+                                                    <p className="font-black uppercase text-sm text-foreground">{m.name}</p>
                                                     <p className="text-[10px] text-muted-foreground font-bold uppercase mt-1 tracking-widest leading-none">
                                                         {m.internalCode || (m.serialNumber ? `SN: ${m.serialNumber}` : m.id.substring(0, 8).toUpperCase())}
                                                     </p>
                                                 </div>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-[14px] font-black font-outfit text-slate-900 leading-none">${(m.unitCost || 0).toLocaleString()}</p>
+                                                <p className="text-[14px] font-black font-outfit text-foreground leading-none">${(m.unitCost || 0).toLocaleString()}</p>
                                                 <p className="text-[8px] font-black uppercase text-muted-foreground mt-1">Valor Castigado</p>
                                             </div>
                                         </div>
@@ -926,11 +926,11 @@ export default function ReportsPage() {
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 pb-20">
 
                         {/* Hero card */}
-                        <Card className="bg-slate-900 text-white shadow-2xl rounded-[3.5rem] overflow-hidden relative border-none">
+                        <Card className="bg-pagnol-dark text-white shadow-2xl rounded-[3.5rem] overflow-hidden relative border-none">
                             <div className="absolute top-0 right-0 p-20 opacity-10 blur-2xl bg-pagnol-orange rounded-full -mr-20 -mt-20" />
                             <CardHeader className="p-12 md:p-16 relative z-10">
                                 <div className="flex items-center gap-4 mb-4">
-                                    <div className="p-4 bg-slate-100/10 rounded-2xl backdrop-blur-md">
+                                    <div className="p-4 bg-white/10 rounded-2xl backdrop-blur-md">
                                         <Sparkles size={28} className="text-pagnol-orange" />
                                     </div>
                                     <h3 className="text-3xl font-black uppercase tracking-tighter">IA Diagnostic</h3>
@@ -942,7 +942,7 @@ export default function ReportsPage() {
                                     <Button
                                         onClick={handleGenerateAI}
                                         disabled={isGenerating || cooldownSeconds > 0}
-                                        className="bg-pagnol-orange hover:bg-orange-600 text-white rounded-2xl h-14 px-10 text-sm font-black uppercase tracking-widest shadow-2xl shadow-pagnol-orange/40 transition-all hover:scale-105 active:scale-95 disabled:opacity-60 disabled:scale-100 disabled:cursor-not-allowed"
+                                        className="bg-pagnol-orange hover:bg-pagnol-orange/90 text-white rounded-2xl h-14 px-10 text-sm font-black uppercase tracking-widest shadow-2xl shadow-pagnol-orange/40 transition-all hover:scale-105 active:scale-95 disabled:opacity-60 disabled:scale-100 disabled:cursor-not-allowed"
                                     >
                                         {isGenerating
                                             ? <><Loader2 className="animate-spin mr-2" size={16} /> Analizando inventario...</>
@@ -968,28 +968,28 @@ export default function ReportsPage() {
                             <div className={cn(
                                 "rounded-[2rem] border p-8 flex items-start gap-5",
                                 aiError === 'overloaded'
-                                    ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800"
-                                    : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                                    ? "bg-warning-subtle border-warning/20"
+                                    : "bg-destructive/10 border-destructive/30"
                             )}>
                                 <div className={cn(
                                     "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0",
-                                    aiError === 'overloaded' ? "bg-amber-100 dark:bg-amber-900 text-amber-600" : "bg-red-100 dark:bg-red-900 text-red-600"
+                                    aiError === 'overloaded' ? "bg-warning-subtle text-warning" : "bg-destructive/10 text-destructive"
                                 )}>
                                     <AlertTriangle size={20} />
                                 </div>
                                 <div className="space-y-1">
                                     {aiError === 'overloaded' ? (
                                         <>
-                                            <p className="font-black text-sm text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+                                            <p className="font-black text-sm text-warning-subtle-foreground uppercase tracking-wide">
                                                 Modelo con alta demanda
                                             </p>
-                                            <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
+                                            <p className="text-sm text-warning font-medium">
                                                 El servicio de IA está temporalmente saturado. Esto ocurre cuando muchos usuarios lo consultan al mismo tiempo.
                                             </p>
                                             {cooldownSeconds > 0 && (
-                                                <p className="text-xs font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest mt-2">
+                                                <p className="text-xs font-black text-warning uppercase tracking-widest mt-2">
                                                     Puedes volver a intentarlo en{' '}
-                                                    <span className="text-amber-900 dark:text-amber-200 tabular-nums">
+                                                    <span className="text-warning-subtle-foreground tabular-nums">
                                                         {Math.floor(cooldownSeconds / 60) > 0
                                                             ? `${Math.floor(cooldownSeconds / 60)}m ${cooldownSeconds % 60}s`
                                                             : `${cooldownSeconds}s`
@@ -1000,7 +1000,7 @@ export default function ReportsPage() {
                                             {cooldownSeconds === 0 && (
                                                 <button
                                                     onClick={handleGenerateAI}
-                                                    className="text-xs font-black text-amber-700 dark:text-amber-400 underline underline-offset-4 uppercase tracking-widest mt-1"
+                                                    className="text-xs font-black text-warning underline underline-offset-4 uppercase tracking-widest mt-1"
                                                 >
                                                     Intentar ahora
                                                 </button>
@@ -1008,8 +1008,8 @@ export default function ReportsPage() {
                                         </>
                                     ) : (
                                         <>
-                                            <p className="font-black text-sm text-red-800 dark:text-red-300 uppercase tracking-wide">Error de IA</p>
-                                            <p className="text-sm text-red-700 dark:text-red-400 font-medium">{aiError}</p>
+                                            <p className="font-black text-sm text-destructive uppercase tracking-wide">Error de IA</p>
+                                            <p className="text-sm text-destructive font-medium">{aiError}</p>
                                         </>
                                     )}
                                 </div>

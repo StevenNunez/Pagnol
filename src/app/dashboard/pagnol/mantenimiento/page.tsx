@@ -35,14 +35,14 @@ const OT_TYPES: { value: MaintenanceOrder['type']; label: string }[] = [
 ];
 
 const OT_PRIORITIES: { value: MaintenanceOrder['priority']; label: string; color: string }[] = [
-  { value: 'LOW', label: 'Baja', color: 'bg-green-500 hover:bg-green-600' },
-  { value: 'MEDIUM', label: 'Media', color: 'bg-yellow-500 hover:bg-yellow-600 text-yellow-950' },
+  { value: 'LOW', label: 'Baja', color: 'bg-success hover:bg-success/90 text-success-foreground' },
+  { value: 'MEDIUM', label: 'Media', color: 'bg-warning hover:bg-warning/90 text-warning-foreground' },
   { value: 'HIGH', label: 'Alta', color: 'bg-orange-500 hover:bg-orange-600' },
-  { value: 'CRITICAL', label: 'Crítica', color: 'bg-red-500 hover:bg-red-600' },
+  { value: 'CRITICAL', label: 'Crítica', color: 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' },
 ];
 
 const getPriorityColor = (priority: string) => {
-  return OT_PRIORITIES.find(p => p.value === priority)?.color ?? 'bg-slate-500 hover:bg-slate-600';
+  return OT_PRIORITIES.find(p => p.value === priority)?.color ?? 'bg-muted hover:bg-muted text-muted-foreground';
 };
 
 const getPriorityLabel = (priority: string) => {
@@ -180,7 +180,7 @@ export default function MantenimientoPage() {
         <div className="flex justify-end">
           <Button
             onClick={() => setIsNewOTOpen(true)}
-            className="rounded-2xl h-11 px-6 bg-pagnol-orange hover:bg-orange-600 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-orange-500/20"
+            className="rounded-2xl h-11 px-6 bg-pagnol-orange hover:bg-pagnol-orange/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-orange-500/20"
           >
             <Plus size={16} className="mr-2" /> Nueva OT
           </Button>
@@ -188,56 +188,56 @@ export default function MantenimientoPage() {
 
         {/* KPI Dashboard */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="rounded-[2rem] border-none shadow-sm bg-white overflow-hidden group hover:shadow-md transition-shadow">
+          <Card className="rounded-[2rem] border-none shadow-sm bg-card overflow-hidden group hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Disponibilidad Física</p>
-                  <h3 className="text-3xl font-black text-pagnol-dark mt-2 tracking-tighter">{kpis.availability}%</h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.availability}%</h3>
                 </div>
-                <div className="p-3 rounded-2xl bg-green-50 text-green-600">
+                <div className="p-3 rounded-2xl bg-success-subtle text-success">
                   <Activity size={24} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2rem] border-none shadow-sm bg-white overflow-hidden group hover:shadow-md transition-shadow">
+          <Card className="rounded-[2rem] border-none shadow-sm bg-card overflow-hidden group hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">MTBF (Confiabilidad)</p>
-                  <h3 className="text-3xl font-black text-pagnol-dark mt-2 tracking-tighter">{kpis.avgMtbf} <span className="text-sm text-muted-foreground">días</span></h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.avgMtbf} <span className="text-sm text-muted-foreground">días</span></h3>
                 </div>
-                <div className="p-3 rounded-2xl bg-blue-50 text-blue-600">
+                <div className="p-3 rounded-2xl bg-info-subtle text-info">
                   <ShieldCheck size={24} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2rem] border-none shadow-sm bg-white overflow-hidden group hover:shadow-md transition-shadow">
+          <Card className="rounded-[2rem] border-none shadow-sm bg-card overflow-hidden group hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">MTTR (Mantenibilidad)</p>
-                  <h3 className="text-3xl font-black text-pagnol-dark mt-2 tracking-tighter">{kpis.avgMttr} <span className="text-sm text-muted-foreground">hrs</span></h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.avgMttr} <span className="text-sm text-muted-foreground">hrs</span></h3>
                 </div>
-                <div className="p-3 rounded-2xl bg-orange-50 text-orange-600">
+                <div className="p-3 rounded-2xl bg-pagnol-orange/10 text-pagnol-orange">
                   <Clock size={24} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2rem] border-none shadow-sm bg-white overflow-hidden group hover:shadow-md transition-shadow">
+          <Card className="rounded-[2rem] border-none shadow-sm bg-card overflow-hidden group hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Órdenes Abiertas</p>
-                  <h3 className="text-3xl font-black text-pagnol-dark mt-2 tracking-tighter">{kpis.openOrders}</h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.openOrders}</h3>
                 </div>
-                <div className="p-3 rounded-2xl bg-red-50 text-red-600">
+                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive">
                   <AlertTriangle size={24} />
                 </div>
               </div>
@@ -246,14 +246,14 @@ export default function MantenimientoPage() {
         </div>
 
         {/* Work Orders List */}
-        <Card className="rounded-[2rem] border-none shadow-sm bg-white">
+        <Card className="rounded-[2rem] border-none shadow-sm bg-card">
           <CardHeader className="border-b px-8 py-6">
-            <CardTitle className="text-sm font-black uppercase tracking-widest text-pagnol-dark">Órdenes de Trabajo (OT)</CardTitle>
+            <CardTitle className="text-sm font-black uppercase tracking-widest text-foreground">Órdenes de Trabajo (OT)</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-slate-50 border-b">
+                <thead className="bg-muted border-b">
                   <tr>
                     <th className="px-8 py-4 text-left text-[10px] font-black uppercase tracking-widest text-muted-foreground">ID / Tipo</th>
                     <th className="px-8 py-4 text-left text-[10px] font-black uppercase tracking-widest text-muted-foreground">Activo</th>
@@ -263,9 +263,9 @@ export default function MantenimientoPage() {
                     <th className="px-8 py-4 text-right text-[10px] font-black uppercase tracking-widest text-muted-foreground">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {maintenanceOrders.map(order => (
-                    <tr key={order.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={order.id} className="hover:bg-muted transition-colors">
                       <td className="px-8 py-4">
                         <div className="flex flex-col">
                           <span className="font-bold text-sm">{order.internalCode || order.id.slice(0, 8).toUpperCase()}</span>
@@ -274,7 +274,7 @@ export default function MantenimientoPage() {
                       </td>
                       <td className="px-8 py-4">
                         <div className="flex flex-col">
-                          <span className="font-bold text-sm text-pagnol-dark">{order.materialName}</span>
+                          <span className="font-bold text-sm text-foreground">{order.materialName}</span>
                           <span className="text-[10px] font-bold text-muted-foreground truncate max-w-[220px]">{order.description}</span>
                         </div>
                       </td>
@@ -284,7 +284,7 @@ export default function MantenimientoPage() {
                       <td className="px-8 py-4">
                         <span className="flex items-center gap-2 text-xs font-bold uppercase">
                           {order.status === 'COMPLETED'
-                            ? <CheckCircle2 size={14} className="text-green-500" />
+                            ? <CheckCircle2 size={14} className="text-success" />
                             : <CalendarClock size={14} className="text-orange-500" />}
                           {order.status}
                         </span>
@@ -328,7 +328,7 @@ export default function MantenimientoPage() {
       {/* === MODAL: Nueva OT === */}
       <Dialog open={isNewOTOpen} onOpenChange={setIsNewOTOpen}>
         <DialogContent className="max-w-2xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl">
-          <DialogHeader className="p-8 bg-slate-900 text-white">
+          <DialogHeader className="p-8 bg-pagnol-dark text-white">
             <DialogTitle className="text-2xl font-black uppercase tracking-tight">Nueva Orden de Trabajo</DialogTitle>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-2">ISO 55001 — Gestión de Mantenimiento</p>
           </DialogHeader>
@@ -428,17 +428,17 @@ export default function MantenimientoPage() {
             </div>
 
             {formError && (
-              <p className="text-sm text-red-500 font-medium bg-red-50 rounded-2xl px-4 py-3">{formError}</p>
+              <p className="text-sm text-destructive font-medium bg-destructive/10 rounded-2xl px-4 py-3">{formError}</p>
             )}
           </div>
-          <DialogFooter className="p-8 border-t bg-slate-50 flex justify-between">
+          <DialogFooter className="p-8 border-t bg-muted flex justify-between">
             <Button variant="ghost" onClick={() => { setIsNewOTOpen(false); setForm(EMPTY_FORM); setFormError(''); }} className="rounded-2xl text-xs font-bold uppercase">
               <X size={14} className="mr-2" /> Cancelar
             </Button>
             <Button
               onClick={handleNewOTSubmit}
               disabled={isSaving}
-              className="rounded-2xl text-xs font-black uppercase tracking-widest bg-pagnol-orange hover:bg-orange-600 text-white shadow-xl shadow-orange-500/20"
+              className="rounded-2xl text-xs font-black uppercase tracking-widest bg-pagnol-orange hover:bg-pagnol-orange/90 text-white shadow-xl shadow-orange-500/20"
             >
               {isSaving ? 'Creando...' : 'Crear Orden de Trabajo'}
             </Button>
@@ -449,7 +449,7 @@ export default function MantenimientoPage() {
       {/* === MODAL: Cerrar OT (RCA) === */}
       <Dialog open={isCloseModalOpen} onOpenChange={setIsCloseModalOpen}>
         <DialogContent className="max-w-xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl">
-          <DialogHeader className="p-8 bg-slate-900 text-white">
+          <DialogHeader className="p-8 bg-pagnol-dark text-white">
             <DialogTitle className="text-2xl font-black uppercase tracking-tight">Cierre de Orden Técnica</DialogTitle>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-2">
               Documentación RCA — ISO 55001 · {selectedOrder?.internalCode || selectedOrder?.id.slice(0, 8).toUpperCase()}
@@ -476,12 +476,12 @@ export default function MantenimientoPage() {
               />
             </div>
           </div>
-          <DialogFooter className="p-8 border-t bg-slate-50 flex justify-between">
+          <DialogFooter className="p-8 border-t bg-muted flex justify-between">
             <Button variant="ghost" onClick={() => setIsCloseModalOpen(false)} className="rounded-2xl text-xs font-bold uppercase">Cancelar</Button>
             <Button
               onClick={handleCloseOrder}
               disabled={isClosing}
-              className="rounded-2xl text-xs font-black uppercase tracking-widest bg-pagnol-orange hover:bg-orange-600 text-white shadow-xl shadow-orange-500/20"
+              className="rounded-2xl text-xs font-black uppercase tracking-widest bg-pagnol-orange hover:bg-pagnol-orange/90 text-white shadow-xl shadow-orange-500/20"
             >
               {isClosing ? 'Cerrando...' : 'Registrar Cierre'}
             </Button>

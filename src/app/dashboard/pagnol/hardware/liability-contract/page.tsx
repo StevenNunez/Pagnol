@@ -229,48 +229,48 @@ const LiabilityContractPage: React.FC = () => {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-green-50 to-emerald-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-success-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">
                   Período
                 </p>
-                <p className="text-2xl font-black text-green-600">12 Meses</p>
+                <p className="text-2xl font-black text-success">12 Meses</p>
               </div>
-              <Calendar className="h-12 w-12 text-green-600 opacity-20" />
+              <Calendar className="h-12 w-12 text-success opacity-20" />
             </div>
-            <p className="text-xs text-slate-600 mt-4">Renovable anualmente</p>
+            <p className="text-xs text-muted-foreground mt-4">Renovable anualmente</p>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-blue-50 to-indigo-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-info-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">
                   Prima Promedio
                 </p>
-                <p className="text-2xl font-black text-blue-600">2%</p>
+                <p className="text-2xl font-black text-info">2%</p>
               </div>
-              <DollarSign className="h-12 w-12 text-blue-600 opacity-20" />
+              <DollarSign className="h-12 w-12 text-info opacity-20" />
             </div>
-            <p className="text-xs text-slate-600 mt-4">Del valor unitario anual</p>
+            <p className="text-xs text-muted-foreground mt-4">Del valor unitario anual</p>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-orange-50 to-amber-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-warning-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">
                   Tiempo de Proceso
                 </p>
-                <p className="text-2xl font-black text-orange-600">48 Horas</p>
+                <p className="text-2xl font-black text-warning">48 Horas</p>
               </div>
-              <Zap className="h-12 w-12 text-orange-600 opacity-20" />
+              <Zap className="h-12 w-12 text-warning opacity-20" />
             </div>
-            <p className="text-xs text-slate-600 mt-4">Para reclamaciones online</p>
+            <p className="text-xs text-muted-foreground mt-4">Para reclamaciones online</p>
           </CardContent>
         </Card>
       </div>
@@ -278,7 +278,7 @@ const LiabilityContractPage: React.FC = () => {
       {/* Coverage Details */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {contractTerms.map((section, idx) => (
-          <Card key={idx} className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+          <Card key={idx} className="rounded-[2.5rem] border-none shadow-xl bg-card">
             <CardHeader className="p-8">
               <CardTitle className="text-lg font-black uppercase flex items-center gap-3">
                 <section.icon className="h-5 w-5 text-primary" />
@@ -290,16 +290,16 @@ const LiabilityContractPage: React.FC = () => {
                 {section.items.map((item, itemIdx) => (
                   <div
                     key={itemIdx}
-                    className="flex justify-between items-center p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
+                    className="flex justify-between items-center p-3 rounded-lg bg-muted hover:bg-muted/70 transition-colors"
                   >
-                    <span className="text-sm font-bold text-slate-700">{item.label}</span>
+                    <span className="text-sm font-bold text-foreground">{item.label}</span>
                     <span
                       className={`text-xs font-black px-3 py-1 rounded-md ${
                         item.coverage === "Sí"
-                          ? "bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300"
+                          ? "bg-success-subtle text-success-subtle-foreground"
                           : item.coverage === "Excluido"
-                          ? "bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300"
-                          : "bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300"
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-warning-subtle text-warning-subtle-foreground"
                       }`}
                     >
                       {item.coverage}
@@ -313,7 +313,7 @@ const LiabilityContractPage: React.FC = () => {
       </div>
 
       {/* Cost Structure */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
         <CardHeader className="p-8">
           <CardTitle className="text-lg font-black uppercase flex items-center gap-3">
             <DollarSign className="h-5 w-5 text-primary" />
@@ -325,26 +325,26 @@ const LiabilityContractPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b-2 border-slate-200">
-                  <th className="text-left py-3 px-4 font-black text-slate-600 uppercase">Dispositivo</th>
-                  <th className="text-right py-3 px-4 font-black text-slate-600 uppercase">Costo</th>
-                  <th className="text-right py-3 px-4 font-black text-slate-600 uppercase">Prima Anual</th>
-                  <th className="text-right py-3 px-4 font-black text-slate-600 uppercase">%</th>
-                  <th className="text-right py-3 px-4 font-black text-slate-600 uppercase">Deducible</th>
+                <tr className="border-b-2 border-border">
+                  <th className="text-left py-3 px-4 font-black text-muted-foreground uppercase">Dispositivo</th>
+                  <th className="text-right py-3 px-4 font-black text-muted-foreground uppercase">Costo</th>
+                  <th className="text-right py-3 px-4 font-black text-muted-foreground uppercase">Prima Anual</th>
+                  <th className="text-right py-3 px-4 font-black text-muted-foreground uppercase">%</th>
+                  <th className="text-right py-3 px-4 font-black text-muted-foreground uppercase">Deducible</th>
                 </tr>
               </thead>
               <tbody>
                 {costStructure.map((row, idx) => (
-                  <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="py-4 px-4 font-bold text-slate-900">{row.device}</td>
-                    <td className="py-4 px-4 text-right font-mono text-slate-700">
+                  <tr key={idx} className="border-b border-border hover:bg-muted">
+                    <td className="py-4 px-4 font-bold text-foreground">{row.device}</td>
+                    <td className="py-4 px-4 text-right font-mono text-foreground">
                       ${row.unitCost.toLocaleString("es-CL")}
                     </td>
-                    <td className="py-4 px-4 text-right font-bold text-green-600">
+                    <td className="py-4 px-4 text-right font-bold text-success">
                       ${row.premium.toLocaleString("es-CL")}
                     </td>
-                    <td className="py-4 px-4 text-right text-slate-600">{row.premiumPercent}%</td>
-                    <td className="py-4 px-4 text-right font-mono text-slate-700">
+                    <td className="py-4 px-4 text-right text-muted-foreground">{row.premiumPercent}%</td>
+                    <td className="py-4 px-4 text-right font-mono text-foreground">
                       ${row.deductible.toLocaleString("es-CL")}
                     </td>
                   </tr>
@@ -356,7 +356,7 @@ const LiabilityContractPage: React.FC = () => {
       </Card>
 
       {/* Process Flow */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
         <CardHeader className="p-8">
           <CardTitle className="text-lg font-black uppercase">Proceso de Reclamación</CardTitle>
         </CardHeader>
@@ -389,13 +389,13 @@ const LiabilityContractPage: React.FC = () => {
             ].map((item) => (
               <div key={item.step} className="flex gap-4 pb-4 last:pb-0">
                 <div className="flex-shrink-0">
-                  <div className="flex items-center justify-center h-10 w-10 rounded-full bg-primary text-white font-black">
+                  <div className="flex items-center justify-center h-10 w-10 rounded-full bg-primary text-primary-foreground font-black">
                     {item.step}
                   </div>
                 </div>
                 <div className="flex-grow">
-                  <h4 className="font-bold text-sm text-slate-900">{item.title}</h4>
-                  <p className="text-xs text-slate-600 mt-1">{item.description}</p>
+                  <h4 className="font-bold text-sm text-foreground">{item.title}</h4>
+                  <p className="text-xs text-muted-foreground mt-1">{item.description}</p>
                 </div>
               </div>
             ))}
@@ -416,7 +416,7 @@ const LiabilityContractPage: React.FC = () => {
         <Button
           onClick={handleDownloadPDF}
           disabled={isGenerating}
-          className="flex-1 sm:flex-none h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-widest"
+          className="flex-1 sm:flex-none h-12 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-black uppercase tracking-widest"
         >
           {isGenerating ? (
             <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generando...</>
@@ -433,7 +433,7 @@ const LiabilityContractPage: React.FC = () => {
             <DialogTitle className="text-2xl font-black uppercase">Contrato de Responsabilidad</DialogTitle>
             <DialogDescription>Leer términos y condiciones completos</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 text-sm text-slate-700 leading-relaxed">
+          <div className="space-y-4 text-sm text-foreground leading-relaxed">
             <section>
               <h3 className="font-black text-base mb-2 uppercase">1. Objeto del Contrato</h3>
               <p>

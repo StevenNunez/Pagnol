@@ -658,15 +658,15 @@ export default function CargaMasivaPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pb-20">
                     <Card
                         onClick={() => setUploadMethod('standard')}
-                        className="group cursor-pointer rounded-[2.5rem] border-none shadow-2xl shadow-slate-200/50 bg-slate-100 hover:shadow-pagnol-orange/20 transition-all duration-500 overflow-hidden relative"
+                        className="group cursor-pointer rounded-[2.5rem] border-none shadow-2xl shadow-black/5 bg-card hover:shadow-pagnol-orange/20 transition-all duration-500 overflow-hidden relative"
                     >
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full translate-x-12 -translate-y-12 group-hover:bg-pagnol-orange/10 transition-colors"></div>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-muted rounded-full translate-x-12 -translate-y-12 group-hover:bg-pagnol-orange/10 transition-colors"></div>
                         <CardHeader className="p-10 space-y-4">
-                            <div className="w-16 h-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+                            <div className="w-16 h-16 rounded-2xl bg-foreground text-background flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
                                 <ShieldCheck size={32} />
                             </div>
                             <div className="space-y-2">
-                                <CardTitle className="text-2xl font-black uppercase font-outfit tracking-tight leading-none text-slate-800">Alineado ISO 55001</CardTitle>
+                                <CardTitle className="text-2xl font-black uppercase font-outfit tracking-tight leading-none text-foreground">Alineado ISO 55001</CardTitle>
                                 <Badge className="bg-pagnol-orange text-white border-none text-[8px] font-black uppercase tracking-widest px-2 py-0.5">ISO 55001 Ready</Badge>
                             </div>
                             <CardDescription className="text-xs font-medium text-muted-foreground leading-relaxed uppercase tracking-wide">
@@ -683,23 +683,23 @@ export default function CargaMasivaPage() {
 
                     <Card
                         onClick={() => setUploadMethod('api')}
-                        className="group cursor-pointer rounded-[2.5rem] border-none shadow-2xl shadow-slate-200/50 bg-slate-100 hover:shadow-blue-500/20 transition-all duration-500 overflow-hidden relative"
+                        className="group cursor-pointer rounded-[2.5rem] border-none shadow-2xl shadow-black/5 bg-card hover:shadow-info/20 transition-all duration-500 overflow-hidden relative"
                     >
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full translate-x-12 -translate-y-12 group-hover:bg-blue-500/10 transition-colors"></div>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-muted rounded-full translate-x-12 -translate-y-12 group-hover:bg-info/10 transition-colors"></div>
                         <CardHeader className="p-10 space-y-4">
-                            <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+                            <div className="w-16 h-16 rounded-2xl bg-info text-info-foreground flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
                                 <Plug size={32} />
                             </div>
                             <div className="space-y-2">
-                                <CardTitle className="text-2xl font-black uppercase font-outfit tracking-tight leading-none text-slate-800">Conexión ERP API</CardTitle>
-                                <Badge className="bg-blue-100 text-blue-600 border-none text-[8px] font-black uppercase tracking-widest px-2 py-0.5">Sincronización Realtime</Badge>
+                                <CardTitle className="text-2xl font-black uppercase font-outfit tracking-tight leading-none text-foreground">Conexión ERP API</CardTitle>
+                                <Badge className="bg-info-subtle text-info border-none text-[8px] font-black uppercase tracking-widest px-2 py-0.5">Sincronización Realtime</Badge>
                             </div>
                             <CardDescription className="text-xs font-medium text-muted-foreground leading-relaxed uppercase tracking-wide">
                                 Vinculación directa con <b>De Fontana, Softland</b> y otros sistemas ERP. Recopilación automatizada mediante endpoints de cliente.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="p-10 pt-0">
-                            <div className="flex items-center gap-3 text-blue-600 font-black text-[10px] uppercase tracking-widest">
+                            <div className="flex items-center gap-3 text-info font-black text-[10px] uppercase tracking-widest">
                                 <span>Configurar integración</span>
                                 <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform" />
                             </div>
@@ -708,16 +708,16 @@ export default function CargaMasivaPage() {
 
                     <Card
                         onClick={() => setUploadMethod('legacy')}
-                        className="group cursor-pointer rounded-[2.5rem] border-none shadow-2xl shadow-slate-200/50 bg-slate-100 hover:shadow-slate-500/20 transition-all duration-500 overflow-hidden relative"
+                        className="group cursor-pointer rounded-[2.5rem] border-none shadow-2xl shadow-black/5 bg-card hover:shadow-foreground/10 transition-all duration-500 overflow-hidden relative"
                     >
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full translate-x-12 -translate-y-12 group-hover:bg-slate-500/10 transition-colors"></div>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-muted rounded-full translate-x-12 -translate-y-12 group-hover:bg-foreground/10 transition-colors"></div>
                         <CardHeader className="p-10 space-y-4">
-                            <div className="w-16 h-16 rounded-2xl bg-slate-400 text-white flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+                            <div className="w-16 h-16 rounded-2xl bg-muted text-muted-foreground flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
                                 <RefreshCw size={32} />
                             </div>
                             <div className="space-y-2">
-                                <CardTitle className="text-2xl font-black uppercase font-outfit tracking-tight leading-none text-slate-800">Migración Legacy</CardTitle>
-                                <Badge className="bg-slate-100 text-muted-foreground border-none text-[8px] font-black uppercase tracking-widest px-2 py-0.5">Mapeo Personalizado</Badge>
+                                <CardTitle className="text-2xl font-black uppercase font-outfit tracking-tight leading-none text-foreground">Migración Legacy</CardTitle>
+                                <Badge className="bg-muted text-muted-foreground border-none text-[8px] font-black uppercase tracking-widest px-2 py-0.5">Mapeo Personalizado</Badge>
                             </div>
                             <CardDescription className="text-xs font-medium text-muted-foreground leading-relaxed uppercase tracking-wide">
                                 Para sistemas propietarios no estandarizados. Migramos su esquema actual a la estructura de Pagnol, alineada con las mejores prácticas de la ISO 55000.
@@ -737,7 +737,7 @@ export default function CargaMasivaPage() {
                         <Button
                             variant="ghost"
                             onClick={() => setUploadMethod(null)}
-                            className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-slate-900"
+                            className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground"
                         >
                             <ArrowRight size={14} className="rotate-180 mr-2" /> Volver a Selección de Método
                         </Button>
@@ -752,11 +752,11 @@ export default function CargaMasivaPage() {
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -20 }}
                             >
-                                <Card className="rounded-[2rem] border-none shadow-xl shadow-slate-200/50 bg-slate-100 overflow-hidden border-l-8 border-l-pagnol-orange">
+                                <Card className="rounded-[2rem] border-none shadow-xl shadow-black/5 bg-card overflow-hidden border-l-8 border-l-pagnol-orange">
                                     <CardHeader className="p-8 pb-4">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3">
-                                                <div className="p-3 bg-orange-50 text-pagnol-orange rounded-2xl">
+                                                <div className="p-3 bg-pagnol-orange/10 text-pagnol-orange rounded-2xl">
                                                     <ShieldAlert size={20} />
                                                 </div>
                                                 <div>
@@ -765,7 +765,7 @@ export default function CargaMasivaPage() {
                                                 </div>
                                             </div>
                                             <Button variant="ghost" size="icon" onClick={() => setShowCriticalityConfig(false)} className="rounded-xl">
-                                                <X size={18} className="text-slate-300" />
+                                                <X size={18} className="text-muted-foreground/50" />
                                             </Button>
                                         </div>
                                     </CardHeader>
@@ -774,12 +774,12 @@ export default function CargaMasivaPage() {
                                             <div className="space-y-3">
                                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Mínimo para Clase A | CLP$</Label>
                                                 <div className="relative">
-                                                    <Coins className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                                                    <Coins className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={16} />
                                                     <Input
                                                         type="number"
                                                         value={thresholds.thresholdA}
                                                         onChange={(e) => setThresholds({ ...thresholds, thresholdA: Number(e.target.value) })}
-                                                        className="pl-12 h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-black text-slate-700"
+                                                        className="pl-12 h-14 rounded-2xl border-border bg-muted font-black text-foreground"
                                                         placeholder="Ej: 1.000.000"
                                                     />
                                                 </div>
@@ -788,12 +788,12 @@ export default function CargaMasivaPage() {
                                             <div className="space-y-3">
                                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Mínimo para Clase B | CLP$</Label>
                                                 <div className="relative">
-                                                    <Coins className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                                                    <Coins className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={16} />
                                                     <Input
                                                         type="number"
                                                         value={thresholds.thresholdB}
                                                         onChange={(e) => setThresholds({ ...thresholds, thresholdB: Number(e.target.value) })}
-                                                        className="pl-12 h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-black text-slate-700"
+                                                        className="pl-12 h-14 rounded-2xl border-border bg-muted font-black text-foreground"
                                                         placeholder="Ej: 500.000"
                                                     />
                                                 </div>
@@ -803,7 +803,7 @@ export default function CargaMasivaPage() {
                                         <Button
                                             onClick={saveThresholds}
                                             disabled={isSavingThresholds}
-                                            className="bg-slate-900 hover:bg-black text-white rounded-xl px-8 h-12 font-black text-[10px] uppercase tracking-widest gap-2"
+                                            className="bg-foreground hover:bg-foreground/90 text-background rounded-xl px-8 h-12 font-black text-[10px] uppercase tracking-widest gap-2"
                                         >
                                             {isSavingThresholds ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
                                             Establecer y Continuar con la Carga
@@ -820,7 +820,7 @@ export default function CargaMasivaPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setShowCriticalityConfig(true)}
-                                className="rounded-xl gap-2 font-black text-[9px] uppercase tracking-widest text-muted-foreground border-slate-100"
+                                className="rounded-xl gap-2 font-black text-[9px] uppercase tracking-widest text-muted-foreground border-border"
                             >
                                 <Settings2 size={14} />
                                 Ajustar Criticidad
@@ -831,9 +831,9 @@ export default function CargaMasivaPage() {
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         {/* Lateral Panel */}
                         <div className="space-y-6 lg:col-span-1">
-                            <Card className="rounded-[2.5rem] border-none shadow-xl shadow-slate-200/50 bg-slate-100 overflow-hidden">
-                                <CardHeader className="bg-slate-50 border-b">
-                                    <CardTitle className="text-lg font-black uppercase font-outfit text-slate-800">Operaciones</CardTitle>
+                            <Card className="rounded-[2.5rem] border-none shadow-xl shadow-black/5 bg-card overflow-hidden">
+                                <CardHeader className="bg-muted border-b">
+                                    <CardTitle className="text-lg font-black uppercase font-outfit text-foreground">Operaciones</CardTitle>
                                 </CardHeader>
                                 <CardContent className="p-6 space-y-6">
                                     <div className="space-y-2">
@@ -841,9 +841,9 @@ export default function CargaMasivaPage() {
                                         <Button
                                             variant="outline"
                                             onClick={downloadTemplate}
-                                            className="w-full rounded-[1.2rem] py-8 border-2 border-dashed border-slate-200 hover:border-slate-900 hover:bg-slate-50 group transition-all"
+                                            className="w-full rounded-[1.2rem] py-8 border-2 border-dashed border-border hover:border-foreground hover:bg-muted group transition-all"
                                         >
-                                            <Download className="mr-3 text-muted-foreground group-hover:text-slate-900 group-hover:scale-110 transition-all" size={20} />
+                                            <Download className="mr-3 text-muted-foreground group-hover:text-foreground group-hover:scale-110 transition-all" size={20} />
                                             <div className="text-left">
                                                 <p className="font-black text-[10px] uppercase tracking-widest">Descargar Plantilla</p>
                                                 <p className="text-[8px] font-bold text-pagnol-orange uppercase">¡Uso Obligatorio!</p>
@@ -881,41 +881,41 @@ export default function CargaMasivaPage() {
                                                 disabled={isParsing || isUploading}
                                                 variant="outline"
                                                 onClick={() => fileInputRef.current?.click()}
-                                                className="w-full py-10 rounded-[1.5rem] border-2 border-slate-200 hover:border-pagnol-orange hover:bg-orange-50 transition-all group"
+                                                className="w-full py-10 rounded-[1.5rem] border-2 border-border hover:border-pagnol-orange hover:bg-pagnol-orange/10 transition-all group"
                                             >
                                                 <div className="flex flex-col items-center">
                                                     <FileUp size={24} className="mb-2 text-muted-foreground group-hover:text-pagnol-orange transition-all" />
-                                                    <span className="font-black text-[9px] uppercase tracking-widest text-slate-600">Añadir Archivos o Arrastrar Aquí</span>
+                                                    <span className="font-black text-[9px] uppercase tracking-widest text-muted-foreground">Añadir Archivos o Arrastrar Aquí</span>
                                                 </div>
                                             </Button>
                                         </div>
                                     </div>
 
                                     {uploadFiles.length > 0 && (
-                                        <div className="space-y-3 pt-6 border-t border-slate-100">
+                                        <div className="space-y-3 pt-6 border-t border-border">
                                             <Label className="text-[10px] font-black uppercase text-muted-foreground">Cola de Procesamiento</Label>
                                             <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
                                                 {uploadFiles.map((f, idx) => (
                                                     <div
                                                         key={f.id}
                                                         onClick={() => setSelectedFileId(idx)}
-                                                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer group relative overflow-hidden ${selectedFileId === idx ? 'border-pagnol-orange bg-orange-50/30' : 'border-slate-100 hover:border-slate-200 bg-slate-50/50'}`}
+                                                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer group relative overflow-hidden ${selectedFileId === idx ? 'border-pagnol-orange bg-pagnol-orange/10' : 'border-border hover:border-border bg-muted'}`}
                                                     >
                                                         <div className="flex items-center gap-3">
-                                                            <div className={`p-2 rounded-xl ${selectedFileId === idx ? 'bg-pagnol-orange text-white' : 'bg-slate-100 text-muted-foreground'}`}>
+                                                            <div className={`p-2 rounded-xl ${selectedFileId === idx ? 'bg-pagnol-orange text-white' : 'bg-muted text-muted-foreground'}`}>
                                                                 <FileSpreadsheet size={16} />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
-                                                                <p className="text-[10px] font-black uppercase truncate text-slate-700">{f.file.name}</p>
+                                                                <p className="text-[10px] font-black uppercase truncate text-foreground">{f.file.name}</p>
                                                                 <div className="flex flex-col gap-1 mt-1">
                                                                     <div className="flex items-center gap-2">
                                                                         <Badge variant="outline" className="text-[7px] font-bold px-1.5 h-4">{f.assets.length} ITEMS</Badge>
-                                                                        {f.status === 'ready' && <span className="text-[8px] font-black text-green-500 uppercase">Listo</span>}
-                                                                        {f.status === 'error' && <span className="text-[8px] font-black text-red-500 uppercase">Falla</span>}
+                                                                        {f.status === 'ready' && <span className="text-[8px] font-black text-success uppercase">Listo</span>}
+                                                                        {f.status === 'error' && <span className="text-[8px] font-black text-destructive uppercase">Falla</span>}
                                                                         {f.status === 'uploading' && <Loader2 className="animate-spin text-pagnol-orange" size={10} />}
                                                                     </div>
                                                                     {f.status === 'error' && f.error && (
-                                                                        <p className="text-[7px] font-bold text-red-400 bg-red-50 p-1 rounded-md uppercase line-clamp-1 border border-red-100 flex items-center gap-1">
+                                                                        <p className="text-[7px] font-bold text-destructive bg-destructive/10 p-1 rounded-md uppercase line-clamp-1 border border-destructive/30 flex items-center gap-1">
                                                                             <AlertCircle size={8} /> {f.error}
                                                                         </p>
                                                                     )}
@@ -927,7 +927,7 @@ export default function CargaMasivaPage() {
                                                                     setUploadFiles(prev => prev.filter(file => file.id !== f.id));
                                                                     if (selectedFileId === idx) setSelectedFileId(null);
                                                                 }}
-                                                                className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500 transition-colors"
+                                                                className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-destructive/10 text-muted-foreground/50 hover:text-destructive transition-colors"
                                                             >
                                                                 <X size={14} />
                                                             </button>
@@ -941,8 +941,8 @@ export default function CargaMasivaPage() {
                             </Card>
 
                             {activeFile && activeFile.assets.length > 0 && (
-                                <Card className="rounded-[2.5rem] border-none shadow-xl shadow-slate-100 bg-slate-100 overflow-hidden animate-in slide-in-from-bottom-5 duration-500">
-                                    <CardHeader className="bg-slate-50 border-b p-6">
+                                <Card className="rounded-[2.5rem] border-none shadow-xl shadow-black/5 bg-card overflow-hidden animate-in slide-in-from-bottom-5 duration-500">
+                                    <CardHeader className="bg-muted border-b p-6">
                                         <CardTitle className="text-sm font-black uppercase font-outfit flex items-center gap-2">
                                             <Layers size={16} className="text-muted-foreground" /> Categorías & Flags
                                         </CardTitle>
@@ -951,12 +951,12 @@ export default function CargaMasivaPage() {
                                     <CardContent className="p-6 space-y-4">
                                         <div className="space-y-3 overflow-y-auto max-h-[400px] pr-2 no-scrollbar">
                                             {Array.from(new Set(activeFile.assets.map(a => a.category))).map(catName => (
-                                                <div key={catName} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
+                                                <div key={catName} className="p-4 rounded-2xl bg-muted border border-border space-y-3">
                                                     <div className="flex items-start justify-between">
                                                         <div className="flex-1">
-                                                            <p className="text-[10px] font-black uppercase text-slate-700 leading-tight">{catName}</p>
+                                                            <p className="text-[10px] font-black uppercase text-foreground leading-tight">{catName}</p>
                                                             {!materialCategories.some(c => c.name === catName) && (
-                                                                <Badge className="bg-orange-100 text-pagnol-orange border-none text-[7px] font-black uppercase px-2 h-4 mt-1">Nuevo Registro Maestro</Badge>
+                                                                <Badge className="bg-pagnol-orange/10 text-pagnol-orange border-none text-[7px] font-black uppercase px-2 h-4 mt-1">Nuevo Registro Maestro</Badge>
                                                             )}
                                                         </div>
                                                     </div>
@@ -966,7 +966,7 @@ export default function CargaMasivaPage() {
                                                             value={categoryUsageMap[catName] || ""}
                                                             onValueChange={(val: any) => setCategoryUsageMap(prev => ({ ...prev, [catName]: val }))}
                                                         >
-                                                            <SelectTrigger className="h-9 text-[9px] font-black uppercase rounded-xl bg-slate-100 border-slate-200">
+                                                            <SelectTrigger className="h-9 text-[9px] font-black uppercase rounded-xl bg-muted border-border">
                                                                 <SelectValue placeholder="AUTO" />
                                                             </SelectTrigger>
                                                             <SelectContent>
@@ -982,7 +982,7 @@ export default function CargaMasivaPage() {
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100/50 text-center">
+                                        <div className="p-4 bg-pagnol-orange/10 rounded-2xl border border-pagnol-orange/20 text-center">
                                             <p className="text-[8px] font-bold text-pagnol-orange uppercase leading-relaxed">Pagnol registrará estas categorías de forma exclusiva para tu empresa durante la ingesta.</p>
                                         </div>
                                     </CardContent>
@@ -1005,42 +1005,42 @@ export default function CargaMasivaPage() {
                                 const currentPhaseIdx = phaseOrder.indexOf(uploadPhase);
 
                                 return (
-                                    <Card className="rounded-[2.5rem] border-none shadow-2xl shadow-orange-100 overflow-hidden animate-in zoom-in-95 duration-300">
+                                    <Card className="rounded-[2.5rem] border-none shadow-2xl shadow-pagnol-orange/10 overflow-hidden animate-in zoom-in-95 duration-300">
                                         {!isUploading ? (
                                             <>
-                                                <CardHeader className="bg-pagnol-orange/5 border-b border-orange-100 p-6">
+                                                <CardHeader className="bg-pagnol-orange/5 border-b border-pagnol-orange/20 p-6">
                                                     <CardTitle className="text-lg font-black uppercase font-outfit flex items-center gap-3">
                                                         <CheckCircle2 className="text-pagnol-orange" size={20} /> Ejecutar Carga
                                                     </CardTitle>
                                                 </CardHeader>
-                                                <CardContent className="p-6 space-y-5 bg-slate-100">
+                                                <CardContent className="p-6 space-y-5 bg-card">
                                                     <div className="space-y-1.5">
                                                         <div className="flex justify-between items-end">
                                                             <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Validación</p>
-                                                            <span className="text-[10px] font-black text-slate-600">{activeFile.assets.filter(a => a.validationStatus === 'ready').length} / {activeFile.assets.length}</span>
+                                                            <span className="text-[10px] font-black text-foreground">{activeFile.assets.filter(a => a.validationStatus === 'ready').length} / {activeFile.assets.length}</span>
                                                         </div>
                                                         <Progress value={(activeFile.assets.filter(a => a.validationStatus === 'ready').length / activeFile.assets.length) * 100} className="h-1.5" />
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-3">
-                                                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                                        <div className="bg-muted p-4 rounded-2xl border border-border">
                                                             <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest mb-1">Duplicados</p>
-                                                            <p className="text-xl font-black font-outfit text-amber-600">{activeFile.assets.filter(a => a.isDuplicate).length}</p>
+                                                            <p className="text-xl font-black font-outfit text-warning">{activeFile.assets.filter(a => a.isDuplicate).length}</p>
                                                         </div>
-                                                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                                        <div className="bg-muted p-4 rounded-2xl border border-border">
                                                             <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest mb-1">Errores</p>
-                                                            <p className="text-xl font-black font-outfit text-red-600">{activeFile.assets.filter(a => a.validationStatus === 'error').length}</p>
+                                                            <p className="text-xl font-black font-outfit text-destructive">{activeFile.assets.filter(a => a.validationStatus === 'error').length}</p>
                                                         </div>
                                                     </div>
                                                     <Button
                                                         disabled={activeFile.assets.some(a => a.validationStatus === 'error') || toProcess === 0}
                                                         onClick={handleUpload}
-                                                        className="w-full py-8 rounded-[1.5rem] bg-slate-900 hover:bg-black text-white shadow-xl transition-all group overflow-hidden relative"
+                                                        className="w-full py-8 rounded-[1.5rem] bg-foreground hover:bg-foreground/90 text-background shadow-xl transition-all group overflow-hidden relative"
                                                     >
                                                         <div className="flex flex-col items-center gap-1">
                                                             <Database size={18} />
                                                             <span className="font-black text-[11px] uppercase tracking-widest">Ejecutar Carga · {toProcess} Activos</span>
                                                             {toProcess > 0 && (
-                                                                <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest">
+                                                                <span className="text-[8px] font-bold text-background/50 uppercase tracking-widest">
                                                                     {toCreate > 0 && `${toCreate} nuevos`}{toCreate > 0 && toUpdate > 0 && ' · '}{toUpdate > 0 && `${toUpdate} actualizaciones`}
                                                                 </span>
                                                             )}
@@ -1049,7 +1049,7 @@ export default function CargaMasivaPage() {
                                                 </CardContent>
                                             </>
                                         ) : (
-                                            <div className="bg-slate-900 flex flex-col items-center gap-6 p-8">
+                                            <div className="bg-pagnol-dark flex flex-col items-center gap-6 p-8">
                                                 {/* Ring de progreso */}
                                                 <div className="relative flex items-center justify-center mt-2">
                                                     <svg viewBox="0 0 100 100" className="w-36 h-36 -rotate-90">
@@ -1128,7 +1128,7 @@ export default function CargaMasivaPage() {
 
                                                 {/* Barra de progreso base */}
                                                 <div className="w-full mb-2">
-                                                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                                                         <div
                                                             className="h-full rounded-full transition-all duration-300"
                                                             style={{
@@ -1149,8 +1149,8 @@ export default function CargaMasivaPage() {
 
                         {/* Main Content: Table/Edit */}
                         <div className="lg:col-span-3">
-                            <Card className="rounded-[2.5rem] border-none shadow-2xl shadow-slate-200/50 bg-slate-100 overflow-hidden min-h-[700px]">
-                                <CardHeader className="p-8 border-b flex flex-row items-center justify-between bg-slate-100 sticky top-0 z-10">
+                            <Card className="rounded-[2.5rem] border-none shadow-2xl shadow-black/5 bg-card overflow-hidden min-h-[700px]">
+                                <CardHeader className="p-8 border-b flex flex-row items-center justify-between bg-card sticky top-0 z-10">
                                     <div>
                                         <CardTitle className="text-2xl font-black uppercase font-outfit">Control de Pre-Ingesta</CardTitle>
                                         <CardDescription className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-1">Verificación masiva de parámetros técnicos y financieros</CardDescription>
@@ -1158,14 +1158,14 @@ export default function CargaMasivaPage() {
                                 </CardHeader>
                                 <CardContent className="p-0">
                                     {assets.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-60 text-slate-300 opacity-60">
+                                        <div className="flex flex-col items-center justify-center py-60 text-muted-foreground/50 opacity-60">
                                             <Database size={100} className="mb-6 opacity-20" />
                                             <p className="font-black uppercase text-sm tracking-widest text-muted-foreground">Consola de Espera de Datos</p>
                                             <p className="text-[10px] font-black uppercase opacity-60 max-w-[200px] text-center mt-2 leading-relaxed">Sube un archivo para comenzar la validación de activos industriales</p>
                                         </div>
                                     ) : (
                                         <div className="overflow-x-auto no-scrollbar">
-                                            <div className="p-4 bg-slate-50 border-b flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                            <div className="p-4 bg-muted border-b flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                                                 <span>Página {currentPage} de {Math.ceil(assets.length / ITEMS_PER_PAGE)}</span>
                                                 <div className="flex gap-2">
                                                     <Button
@@ -1186,7 +1186,7 @@ export default function CargaMasivaPage() {
                                             </div>
                                             <table className="w-full min-w-[1000px]">
 
-                                                <thead className="bg-slate-50 border-b">
+                                                <thead className="bg-muted border-b">
                                                     <tr>
                                                         <th className="px-6 py-5 text-[9px] font-black uppercase text-muted-foreground text-left">Identidad / QR</th>
                                                         <th className="px-6 py-5 text-[9px] font-black uppercase text-muted-foreground text-left">Activos & SN</th>
@@ -1203,20 +1203,20 @@ export default function CargaMasivaPage() {
                                                         const isEditing = editingIndex === idx;
 
                                                         return (
-                                                            <tr key={asset.tempId} className={`hover:bg-slate-50/50 transition-colors ${isEditing ? 'bg-orange-50/50' : ''}`}>
+                                                            <tr key={asset.tempId} className={`hover:bg-muted transition-colors ${isEditing ? 'bg-pagnol-orange/10' : ''}`}>
                                                                 <td className="px-6 py-6 align-top">
                                                                     <div className="flex flex-col gap-1.5">
-                                                                        <Badge className={`w-fit border-none font-mono text-[9px] rounded-lg px-2 ${asset.validationStatus === 'error' ? 'bg-red-500' : asset.validationStatus === 'warning' ? 'bg-amber-500' : 'bg-slate-900 font-black'}`}>
+                                                                        <Badge className={`w-fit border-none font-mono text-[9px] rounded-lg px-2 ${asset.validationStatus === 'error' ? 'bg-destructive text-destructive-foreground' : asset.validationStatus === 'warning' ? 'bg-warning text-warning-foreground' : 'bg-foreground text-background font-black'}`}>
                                                                             {asset.validationStatus.toUpperCase()}
                                                                         </Badge>
                                                                         {asset.validationErrors.map((err, i) => (
-                                                                            <span key={i} className="text-[8px] font-bold text-red-500 uppercase flex items-center gap-1">
+                                                                            <span key={i} className="text-[8px] font-bold text-destructive uppercase flex items-center gap-1">
                                                                                 <AlertCircle size={8} /> {err}
                                                                             </span>
                                                                         ))}
                                                                         {asset.isDuplicate && (
-                                                                            <div className="mt-2 p-2 bg-amber-50 rounded-xl border border-amber-100 space-y-2">
-                                                                                <p className="text-[8px] font-black text-amber-700 uppercase">Conflicto Detectado</p>
+                                                                            <div className="mt-2 p-2 bg-warning-subtle rounded-xl border border-warning/20 space-y-2">
+                                                                                <p className="text-[8px] font-black text-warning-subtle-foreground uppercase">Conflicto Detectado</p>
                                                                                 <Select
                                                                                     value={asset.action}
                                                                                     onValueChange={(val: any) => {
@@ -1228,13 +1228,13 @@ export default function CargaMasivaPage() {
                                                                                         }));
                                                                                     }}
                                                                                 >
-                                                                                    <SelectTrigger className="h-7 text-[8px] font-black uppercase bg-slate-100">
+                                                                                    <SelectTrigger className="h-7 text-[8px] font-black uppercase bg-muted">
                                                                                         <SelectValue />
                                                                                     </SelectTrigger>
                                                                                     <SelectContent>
                                                                                         <SelectItem value="create" className="text-[9px] font-black">CREAR COMO NUEVO</SelectItem>
                                                                                         <SelectItem value="update" className="text-[9px] font-black">ACTUALIZAR EXISTENTE</SelectItem>
-                                                                                        <SelectItem value="ignore" className="text-[9px] font-black text-red-500">IGNORAR / EXCLUIR</SelectItem>
+                                                                                        <SelectItem value="ignore" className="text-[9px] font-black text-destructive">IGNORAR / EXCLUIR</SelectItem>
                                                                                     </SelectContent>
                                                                                 </Select>
                                                                             </div>
@@ -1248,30 +1248,30 @@ export default function CargaMasivaPage() {
                                                                                 placeholder="Nombre del Activo"
                                                                                 value={editForm?.name}
                                                                                 onChange={e => setEditForm(prev => prev ? { ...prev, name: e.target.value } : null)}
-                                                                                className="h-9 text-xs font-black uppercase rounded-xl border-slate-200"
+                                                                                className="h-9 text-xs font-black uppercase rounded-xl border-border"
                                                                             />
                                                                             <Input
                                                                                 placeholder="SN / Fabricante"
                                                                                 value={editForm?.serialNumber}
                                                                                 onChange={e => setEditForm(prev => prev ? { ...prev, serialNumber: e.target.value } : null)}
-                                                                                className="h-9 text-[10px] font-bold uppercase rounded-xl border-slate-200"
+                                                                                className="h-9 text-[10px] font-bold uppercase rounded-xl border-border"
                                                                             />
                                                                             <Textarea
                                                                                 placeholder="Descripción técnica / Certificación"
                                                                                 value={editForm?.description}
                                                                                 onChange={e => setEditForm(prev => prev ? { ...prev, description: e.target.value } : null)}
-                                                                                className="w-full min-h-[80px] text-[10px] p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-pagnol-orange/20 uppercase font-medium"
+                                                                                className="w-full min-h-[80px] text-[10px] p-3 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-pagnol-orange/20 uppercase font-medium"
                                                                             />
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex flex-col">
                                                                             <div className="flex items-center gap-2 mb-1">
-                                                                                <span className="font-black text-xs uppercase text-slate-800 leading-tight">{asset.name}</span>
-                                                                                <Badge className="bg-slate-100 text-muted-foreground border-none rounded-md text-[7px] font-black px-1 h-3.5 italic">{asset.accountingNature}</Badge>
+                                                                                <span className="font-black text-xs uppercase text-foreground leading-tight">{asset.name}</span>
+                                                                                <Badge className="bg-muted text-muted-foreground border-none rounded-md text-[7px] font-black px-1 h-3.5 italic">{asset.accountingNature}</Badge>
                                                                             </div>
                                                                             <div className="flex items-center gap-3">
                                                                                 <span className="text-[9px] font-bold text-muted-foreground">SN: {asset.serialNumber || '--'}</span>
-                                                                                {asset.usefulLife ? asset.usefulLife > 0 && <span className="text-[9px] font-bold text-blue-500 border-l pl-3">V. ÚTIL: {asset.usefulLife} Años</span> : null}
+                                                                                {asset.usefulLife ? asset.usefulLife > 0 && <span className="text-[9px] font-bold text-info border-l pl-3">V. ÚTIL: {asset.usefulLife} Años</span> : null}
                                                                             </div>
                                                                             <p className="text-[9px] text-muted-foreground uppercase font-medium line-clamp-2 max-w-[250px] italic mt-2">
                                                                                 {asset.description || 'Sin detalles técnicos registrados.'}
@@ -1339,18 +1339,18 @@ export default function CargaMasivaPage() {
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex flex-col gap-2">
-                                                                            <Badge variant="outline" className={`text-[9px] font-black uppercase rounded-lg w-fit ${!asset.category ? 'border-red-200 text-red-500' : 'border-slate-200 text-slate-600'}`}>
+                                                                            <Badge variant="outline" className={`text-[9px] font-black uppercase rounded-lg w-fit ${!asset.category ? 'border-destructive/30 text-destructive' : 'border-border text-muted-foreground'}`}>
                                                                                 {asset.category || 'Categoría Faltante'}
                                                                             </Badge>
-                                                                            <Badge className="bg-slate-100 text-muted-foreground border-none rounded-lg text-[8px] font-black uppercase w-fit">
+                                                                            <Badge className="bg-muted text-muted-foreground border-none rounded-lg text-[8px] font-black uppercase w-fit">
                                                                                 {categoryUsageMap[asset.category] || asset.usageType || 'Consumible'}
                                                                             </Badge>
                                                                         </div>
                                                                     )}
                                                                 </td>
                                                                 <td className="px-6 py-6 align-top">
-                                                                    <div className="flex flex-col items-center gap-2 p-2 bg-slate-100 rounded-xl border border-slate-100 shadow-sm w-fit mx-auto opacity-50">
-                                                                        <QrCode size={40} className="text-slate-300" />
+                                                                    <div className="flex flex-col items-center gap-2 p-2 bg-muted rounded-xl border border-border shadow-sm w-fit mx-auto opacity-50">
+                                                                        <QrCode size={40} className="text-muted-foreground/50" />
                                                                         <span className="text-[7px] font-black font-mono">PRELIMINAR</span>
                                                                     </div>
                                                                 </td>
@@ -1370,9 +1370,9 @@ export default function CargaMasivaPage() {
                                                                             </SelectContent>
                                                                         </Select>
                                                                     ) : (
-                                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-[11px] font-black border-2 ${asset.class === 'A' ? 'bg-red-50 text-red-600 border-red-200' :
-                                                                            asset.class === 'B' ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                                                                                'bg-slate-50 text-slate-600 border-slate-200'
+                                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-[11px] font-black border-2 ${asset.class === 'A' ? 'bg-destructive/10 text-destructive border-destructive/30' :
+                                                                            asset.class === 'B' ? 'bg-warning-subtle text-warning border-warning/20' :
+                                                                                'bg-muted text-muted-foreground border-border'
                                                                             }`}>
                                                                             {asset.class}
                                                                         </div>
@@ -1387,7 +1387,7 @@ export default function CargaMasivaPage() {
                                                                                     type="number"
                                                                                     value={editForm?.stock}
                                                                                     onChange={e => setEditForm(prev => prev ? { ...prev, stock: Number(e.target.value) } : null)}
-                                                                                    className="h-8 text-xs font-black text-right rounded-xl border-slate-200"
+                                                                                    className="h-8 text-xs font-black text-right rounded-xl border-border"
                                                                                 />
                                                                             </div>
                                                                             <div className="space-y-1">
@@ -1396,13 +1396,13 @@ export default function CargaMasivaPage() {
                                                                                     type="number"
                                                                                     value={editForm?.unitCost}
                                                                                     onChange={e => setEditForm(prev => prev ? { ...prev, unitCost: Number(e.target.value) } : null)}
-                                                                                    className="h-8 text-xs font-black text-right rounded-xl border-slate-200 text-green-600"
+                                                                                    className="h-8 text-xs font-black text-right rounded-xl border-border text-success"
                                                                                 />
                                                                             </div>
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex flex-col items-end">
-                                                                            <span className="font-black text-[13px] text-green-600">{formatCLP(asset.unitCost || 0)}</span>
+                                                                            <span className="font-black text-[13px] text-success">{formatCLP(asset.unitCost || 0)}</span>
                                                                             <span className="text-[9px] font-bold text-muted-foreground uppercase mt-1">Stock: {asset.stock} {asset.unit}</span>
                                                                         </div>
                                                                     )}
@@ -1411,10 +1411,10 @@ export default function CargaMasivaPage() {
                                                                     <div className="flex items-center justify-end gap-1.5">
                                                                         {isEditing ? (
                                                                             <div className="flex flex-col gap-2">
-                                                                                <Button size="icon" className="h-9 w-9 bg-green-500 hover:bg-green-600 text-white rounded-xl shadow-lg shadow-green-100" onClick={saveEdit}>
+                                                                                <Button size="icon" className="h-9 w-9 bg-success hover:bg-success/90 text-success-foreground rounded-xl shadow-lg shadow-success/10" onClick={saveEdit}>
                                                                                     <Check size={18} />
                                                                                 </Button>
-                                                                                <Button size="icon" variant="ghost" className="h-9 w-9 text-red-500 hover:bg-red-50 rounded-xl" onClick={cancelEdit}>
+                                                                                <Button size="icon" variant="ghost" className="h-9 w-9 text-destructive hover:bg-destructive/10 rounded-xl" onClick={cancelEdit}>
                                                                                     <X size={18} />
                                                                                 </Button>
                                                                             </div>
@@ -1423,7 +1423,7 @@ export default function CargaMasivaPage() {
                                                                                 <Button
                                                                                     variant="ghost"
                                                                                     size="icon"
-                                                                                    className="h-9 w-9 text-slate-300 hover:text-pagnol-orange hover:bg-orange-50 rounded-xl transition-all"
+                                                                                    className="h-9 w-9 text-muted-foreground/50 hover:text-pagnol-orange hover:bg-pagnol-orange/10 rounded-xl transition-all"
                                                                                     onClick={() => startEditing(idx)}
                                                                                 >
                                                                                     <Edit2 size={16} />
@@ -1431,7 +1431,7 @@ export default function CargaMasivaPage() {
                                                                                 <Button
                                                                                     variant="ghost"
                                                                                     size="icon"
-                                                                                    className="h-9 w-9 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                                                    className="h-9 w-9 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all"
                                                                                     onClick={() => removeAsset(idx)}
                                                                                 >
                                                                                     <Trash2 size={18} />
@@ -1456,7 +1456,7 @@ export default function CargaMasivaPage() {
                     <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
                         <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 border-none overflow-hidden shadow-2xl">
                             <DialogTitle className="sr-only">Ingesta Exitosa</DialogTitle>
-                            <div className="bg-slate-950 p-12 text-center relative overflow-hidden">
+                            <div className="bg-pagnol-dark p-12 text-center relative overflow-hidden">
                                 {/* Background Decor */}
                                 <div className="absolute top-0 right-0 w-40 h-40 bg-pagnol-orange/20 blur-[60px] rounded-full translate-x-1/2 -translate-y-1/2"></div>
 
@@ -1471,32 +1471,32 @@ export default function CargaMasivaPage() {
                                 </div>
                             </div>
 
-                            <div className="p-10 bg-slate-100 flex flex-col items-center gap-8">
+                            <div className="p-10 bg-card flex flex-col items-center gap-8">
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-                                    <div className="bg-slate-50 p-6 rounded-[2rem] text-center border border-slate-100">
-                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">Nuevos</p>
-                                        <p className="text-2xl font-black text-slate-900">{lastInjectedCount}</p>
+                                    <div className="bg-muted p-6 rounded-[2rem] text-center border border-border">
+                                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Nuevos</p>
+                                        <p className="text-2xl font-black text-foreground">{lastInjectedCount}</p>
                                     </div>
-                                    <div className="bg-blue-50 p-6 rounded-[2rem] text-center border border-blue-100">
-                                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Actualizados</p>
-                                        <p className="text-2xl font-black text-blue-600">{lastUpdatedCount}</p>
+                                    <div className="bg-info-subtle p-6 rounded-[2rem] text-center border border-info/20">
+                                        <p className="text-[10px] font-black text-info uppercase tracking-widest mb-1">Actualizados</p>
+                                        <p className="text-2xl font-black text-info">{lastUpdatedCount}</p>
                                     </div>
-                                    <div className="bg-slate-50 p-6 rounded-[2rem] text-center border border-slate-100">
-                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">Omitidos</p>
-                                        <p className={cn("text-2xl font-black", lastDuplicatesCount > 0 ? "text-amber-500" : "text-muted-foreground")}>
+                                    <div className="bg-muted p-6 rounded-[2rem] text-center border border-border">
+                                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Omitidos</p>
+                                        <p className={cn("text-2xl font-black", lastDuplicatesCount > 0 ? "text-warning" : "text-muted-foreground")}>
                                             {lastDuplicatesCount}
                                         </p>
                                     </div>
-                                    <div className="bg-slate-50 p-6 rounded-[2rem] text-center border border-slate-100">
-                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">Estado</p>
-                                        <p className="text-[10px] font-black text-green-600 uppercase mt-2">100% OK</p>
+                                    <div className="bg-muted p-6 rounded-[2rem] text-center border border-border">
+                                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Estado</p>
+                                        <p className="text-[10px] font-black text-success uppercase mt-2">100% OK</p>
                                     </div>
                                 </div>
 
                                 <div className="flex flex-col gap-3 w-full">
                                     <Button
                                         onClick={() => router.push('/dashboard/pagnol/activos')}
-                                        className="w-full py-7 rounded-[1.5rem] bg-pagnol-orange hover:bg-orange-600 text-white font-black text-[11px] uppercase tracking-widest shadow-xl shadow-pagnol-orange/20 gap-2"
+                                        className="w-full py-7 rounded-[1.5rem] bg-pagnol-orange hover:bg-pagnol-orange/90 text-white font-black text-[11px] uppercase tracking-widest shadow-xl shadow-pagnol-orange/20 gap-2"
                                     >
                                         <Layers size={18} />
                                         Ir a Gestión de Activos
@@ -1519,23 +1519,23 @@ export default function CargaMasivaPage() {
                         <Button
                             variant="ghost"
                             onClick={() => setUploadMethod(null)}
-                            className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-slate-900"
+                            className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground"
                         >
                             <ArrowRight size={14} className="rotate-180 mr-2" /> Volver a Selección de Método
                         </Button>
                     </div>
 
-                    <Card className="rounded-[2.5rem] border-none shadow-2xl bg-slate-100 overflow-hidden">
+                    <Card className="rounded-[2.5rem] border-none shadow-2xl bg-card overflow-hidden">
                         <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[600px]">
                             {/* Left Side: ERP Selection */}
-                            <div className="p-12 space-y-10 border-r bg-slate-50/50">
+                            <div className="p-12 space-y-10 border-r bg-muted">
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-5">
-                                        <div className="p-5 bg-indigo-600 text-white rounded-[1.5rem] shadow-lg shadow-indigo-200">
+                                        <div className="p-5 bg-indigo-600 text-white rounded-[1.5rem] shadow-lg shadow-indigo-600/20">
                                             <Building2 size={24} />
                                         </div>
                                         <div>
-                                            <h3 className="text-2xl font-black uppercase tracking-tight text-slate-800 font-outfit">Ecosistemas ERP</h3>
+                                            <h3 className="text-2xl font-black uppercase tracking-tight text-foreground font-outfit">Ecosistemas ERP</h3>
                                             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Bridge de Sincronización Industrial</p>
                                         </div>
                                     </div>
@@ -1550,18 +1550,18 @@ export default function CargaMasivaPage() {
                                             <button
                                                 key={erp.id}
                                                 onClick={() => setSelectedERP(erp.id as any)}
-                                                className={`w-full flex items-center justify-between p-8 rounded-[2rem] border-2 transition-all duration-500 relative group ${selectedERP === erp.id ? 'border-indigo-600 bg-slate-100 shadow-2xl shadow-indigo-100 -translate-y-1' : 'bg-slate-100/50 border-transparent hover:border-slate-200 hover:bg-slate-100'}`}
+                                                className={`w-full flex items-center justify-between p-8 rounded-[2rem] border-2 transition-all duration-500 relative group ${selectedERP === erp.id ? 'border-indigo-500 bg-card shadow-2xl shadow-indigo-500/10 -translate-y-1' : 'bg-muted border-transparent hover:border-border hover:bg-muted'}`}
                                             >
                                                 <div className="flex items-center gap-5 text-left relative z-10">
-                                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${selectedERP === erp.id ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-muted-foreground group-hover:bg-slate-200'}`}>
+                                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${selectedERP === erp.id ? 'bg-indigo-500/15 text-indigo-500' : 'bg-muted text-muted-foreground group-hover:bg-border'}`}>
                                                         {erp.id === 'defontana' ? <Database size={20} /> : <Plug size={20} />}
                                                     </div>
                                                     <div>
-                                                        <p className="font-black text-xs uppercase text-slate-800 tracking-tight">{erp.name}</p>
+                                                        <p className="font-black text-xs uppercase text-foreground tracking-tight">{erp.name}</p>
                                                         <p className="text-[9px] font-bold text-muted-foreground uppercase mt-1 tracking-wider">{erp.desc}</p>
                                                     </div>
                                                 </div>
-                                                <div className={`p-2 rounded-full transition-all ${selectedERP === erp.id ? 'bg-indigo-600 text-white scale-110' : 'bg-slate-100 text-slate-300 group-hover:bg-slate-200'}`}>
+                                                <div className={`p-2 rounded-full transition-all ${selectedERP === erp.id ? 'bg-indigo-600 text-white scale-110' : 'bg-muted text-muted-foreground/50 group-hover:bg-border'}`}>
                                                     <ArrowRight size={14} className={selectedERP === erp.id ? '' : 'opacity-50'} />
                                                 </div>
                                             </button>
@@ -1571,22 +1571,22 @@ export default function CargaMasivaPage() {
                             </div>
 
                             {/* Right Side: Setup Console */}
-                            <div className="p-12 flex flex-col justify-center bg-slate-100 relative">
+                            <div className="p-12 flex flex-col justify-center bg-card relative">
                                 {!selectedERP ? (
                                     <div className="text-center space-y-8 animate-in fade-in zoom-in-95 duration-500">
                                         <div className="relative">
                                             <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full scale-150"></div>
-                                            <div className="w-32 h-32 bg-indigo-600 text-white rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 relative z-10 shadow-2xl shadow-indigo-200">
+                                            <div className="w-32 h-32 bg-indigo-600 text-white rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 relative z-10 shadow-2xl shadow-indigo-600/30">
                                                 <Cable size={56} />
                                             </div>
                                         </div>
                                         <div className="space-y-4 relative z-10">
-                                            <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-900 font-outfit">Consola de Control</h2>
+                                            <h2 className="text-3xl font-black uppercase tracking-tighter text-foreground font-outfit">Consola de Control</h2>
                                             <p className="text-sm text-muted-foreground max-w-sm mx-auto font-medium leading-relaxed uppercase tracking-tight">
                                                 Active la sincronización bidireccional para mantener su inventario, centros de costo y activos críticos alineados con su ERP central.
                                             </p>
                                         </div>
-                                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-100 rounded-full text-[10px] font-black text-indigo-500 uppercase tracking-widest relative z-10">
+                                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-muted border border-border rounded-full text-[10px] font-black text-indigo-500 uppercase tracking-widest relative z-10">
                                             <Info size={14} /> Seleccione un origen de datos
                                         </div>
                                     </div>
@@ -1597,8 +1597,8 @@ export default function CargaMasivaPage() {
                                         className="space-y-8"
                                     >
                                         <div className="space-y-2">
-                                            <Badge className="bg-blue-600 text-white border-none text-[8px] font-black uppercase tracking-widest px-2 py-0.5">Configuración Requerida</Badge>
-                                            <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-800">Puente {selectedERP.toUpperCase()}</h2>
+                                            <Badge className="bg-info text-info-foreground border-none text-[8px] font-black uppercase tracking-widest px-2 py-0.5">Configuración Requerida</Badge>
+                                            <h2 className="text-3xl font-black uppercase tracking-tighter text-foreground">Puente {selectedERP.toUpperCase()}</h2>
                                             <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Ingrese las credenciales del sistema origen</p>
                                         </div>
 
@@ -1611,7 +1611,7 @@ export default function CargaMasivaPage() {
                                                             <Input
                                                                 value={erpCredentials.clientId}
                                                                 onChange={e => setErpCredentials(prev => ({ ...prev, clientId: e.target.value }))}
-                                                                className="h-12 rounded-xl border-slate-200 bg-slate-50/50 font-medium text-slate-700 focus:bg-slate-100"
+                                                                className="h-12 rounded-xl border-border bg-muted font-medium text-foreground focus:bg-muted"
                                                                 placeholder="EJ: api_pagnol_connect"
                                                                 required
                                                             />
@@ -1622,7 +1622,7 @@ export default function CargaMasivaPage() {
                                                                 type="password"
                                                                 value={erpCredentials.clientSecret}
                                                                 onChange={e => setErpCredentials(prev => ({ ...prev, clientSecret: e.target.value }))}
-                                                                className="h-12 rounded-xl border-slate-200 bg-slate-50/50 font-medium text-slate-700 focus:bg-slate-100"
+                                                                className="h-12 rounded-xl border-border bg-muted font-medium text-foreground focus:bg-muted"
                                                                 placeholder="••••••••••••••••"
                                                                 required
                                                             />
@@ -1635,7 +1635,7 @@ export default function CargaMasivaPage() {
                                                             type="password"
                                                             value={erpCredentials.apiKey}
                                                             onChange={e => setErpCredentials(prev => ({ ...prev, apiKey: e.target.value }))}
-                                                            className="h-12 rounded-xl border-slate-200 bg-slate-50/50 font-medium text-slate-700 focus:bg-slate-100"
+                                                            className="h-12 rounded-xl border-border bg-muted font-medium text-foreground focus:bg-muted"
                                                             placeholder="Ingresa la credencial..."
                                                             required
                                                         />
@@ -1643,11 +1643,11 @@ export default function CargaMasivaPage() {
                                                 )}
                                             </div>
 
-                                            <div className="p-4 bg-slate-900 rounded-2xl space-y-3">
-                                                <div className="flex items-center gap-2 text-muted-foreground text-[10px] font-black uppercase">
+                                            <div className="p-4 bg-pagnol-dark rounded-2xl space-y-3">
+                                                <div className="flex items-center gap-2 text-white/40 text-[10px] font-black uppercase">
                                                     <Lock size={12} /> Sync Endpoint v1
                                                 </div>
-                                                <div className="h-10 bg-slate-100/5 rounded-xl border border-white/10 flex items-center px-4 font-mono text-[9px] text-blue-400 overflow-hidden truncate">
+                                                <div className="h-10 bg-white/5 rounded-xl border border-white/10 flex items-center px-4 font-mono text-[9px] text-blue-400 overflow-hidden truncate">
                                                     https://api.pagnol.io/v1/sync/{selectedERP}
                                                 </div>
                                             </div>
@@ -1655,7 +1655,7 @@ export default function CargaMasivaPage() {
                                             <Button
                                                 type="submit"
                                                 disabled={erpConnectionStatus === 'loading'}
-                                                className="w-full py-7 rounded-[1.5rem] bg-blue-600 hover:bg-blue-700 text-white font-black text-[11px] uppercase tracking-widest shadow-xl shadow-blue-100 transition-all group"
+                                                className="w-full py-7 rounded-[1.5rem] bg-info hover:bg-info/90 text-info-foreground font-black text-[11px] uppercase tracking-widest shadow-xl shadow-info/10 transition-all group"
                                             >
                                                 {erpConnectionStatus === 'loading' ? (
                                                     <Loader2 className="animate-spin mr-2" size={18} />
@@ -1666,8 +1666,8 @@ export default function CargaMasivaPage() {
                                             </Button>
 
                                             {erpConnectionStatus === 'success' && (
-                                                <div className="p-4 bg-green-50 text-green-700 border border-green-200 rounded-2xl flex items-center gap-3 animate-in zoom-in-95">
-                                                    <Check className="text-green-600 shrink-0" size={20} />
+                                                <div className="p-4 bg-success-subtle text-success-subtle-foreground border border-success/30 rounded-2xl flex items-center gap-3 animate-in zoom-in-95">
+                                                    <Check className="text-success shrink-0" size={20} />
                                                     <p className="text-[10px] font-black uppercase tracking-tight">Sincronización establecida. Revisando cambios en el ERP...</p>
                                                 </div>
                                             )}
@@ -1683,24 +1683,24 @@ export default function CargaMasivaPage() {
                     <Button variant="ghost" onClick={() => setUploadMethod(null)} className="text-[10px] font-black uppercase tracking-widest text-muted-foreground self-start"><ArrowRight size={14} className="rotate-180 mr-2" /> Volver</Button>
                     <div className="max-w-4xl mx-auto space-y-12">
                         <div className="space-y-4 text-center">
-                            <div className="w-20 h-20 bg-slate-100 text-muted-foreground rounded-3xl flex items-center justify-center mx-auto mb-6"><Workflow size={40} /></div>
-                            <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-800">Programa de Adaptación Legacy</h2>
+                            <div className="w-20 h-20 bg-muted text-muted-foreground rounded-3xl flex items-center justify-center mx-auto mb-6"><Workflow size={40} /></div>
+                            <h2 className="text-4xl font-black uppercase tracking-tighter text-foreground">Programa de Adaptación Legacy</h2>
                             <p className="text-muted-foreground uppercase font-black text-xs tracking-[0.2em]">Adaptamos su ecosistema actual a la estructura de Pagnol, alineada con las mejores prácticas de la ISO 55000</p>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <Card className="p-10 rounded-[3rem] border-none bg-slate-100 shadow-2xl space-y-6 text-left group hover:-translate-y-2 transition-all">
-                                <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center"><Zap size={24} /></div>
-                                <h3 className="text-xl font-black uppercase text-slate-800">Auto-Mapeo Industrial</h3>
+                            <Card className="p-10 rounded-[3rem] border-none bg-card shadow-2xl space-y-6 text-left group hover:-translate-y-2 transition-all">
+                                <div className="w-12 h-12 bg-warning-subtle text-warning rounded-2xl flex items-center justify-center"><Zap size={24} /></div>
+                                <h3 className="text-xl font-black uppercase text-foreground">Auto-Mapeo Industrial</h3>
                                 <p className="text-xs text-muted-foreground leading-relaxed uppercase">Suba sus archivos en cualquier formato y nuestro motor de IA normalizará los campos a la estructura de <b>Pagnol alineada con ISO 55001</b>.</p>
-                                <Button onClick={() => setUploadMethod('standard')} className="w-full bg-slate-900 hover:bg-black font-black uppercase text-[10px] h-14 rounded-2xl">Usar Engine de Mapeo</Button>
+                                <Button onClick={() => setUploadMethod('standard')} className="w-full bg-foreground hover:bg-foreground/90 text-background font-black uppercase text-[10px] h-14 rounded-2xl">Usar Engine de Mapeo</Button>
                             </Card>
 
-                            <Card className="p-10 rounded-[3rem] border-none bg-slate-900 text-white shadow-2xl space-y-6 text-left group hover:-translate-y-2 transition-all">
-                                <div className="w-12 h-12 bg-slate-100/10 text-pagnol-orange rounded-2xl flex items-center justify-center"><Sparkles size={24} /></div>
+                            <Card className="p-10 rounded-[3rem] border-none bg-pagnol-dark text-white shadow-2xl space-y-6 text-left group hover:-translate-y-2 transition-all">
+                                <div className="w-12 h-12 bg-white/10 text-pagnol-orange rounded-2xl flex items-center justify-center"><Sparkles size={24} /></div>
                                 <h3 className="text-xl font-black uppercase text-white">Consultoría de Ingesta</h3>
                                 <p className="text-xs text-white/50 leading-relaxed uppercase">¿Tiene una base de datos compleja o manual? Nuestro equipo técnico realizará la migración y limpieza de datos por usted.</p>
-                                <Button className="w-full bg-pagnol-orange hover:bg-orange-600 font-black uppercase text-[10px] h-14 rounded-2xl">Contactar Especialista</Button>
+                                <Button className="w-full bg-pagnol-orange hover:bg-pagnol-orange/90 font-black uppercase text-[10px] h-14 rounded-2xl">Contactar Especialista</Button>
                             </Card>
                         </div>
                     </div>

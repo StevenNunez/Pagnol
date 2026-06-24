@@ -215,45 +215,45 @@ const LabelPrintingPage: React.FC = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-blue-50 to-indigo-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-info-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">Activos Totales</p>
-                <p className="text-4xl font-black text-slate-900">{filteredAssets.length}</p>
+                <p className="text-4xl font-black text-info-subtle-foreground">{filteredAssets.length}</p>
               </div>
-              <Package className="h-12 w-12 text-blue-600 opacity-20" />
+              <Package className="h-12 w-12 text-info opacity-30" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-green-50 to-emerald-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-success-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">Seleccionados</p>
-                <p className="text-4xl font-black text-green-600">{selectedAssets.size}</p>
+                <p className="text-4xl font-black text-success-subtle-foreground">{selectedAssets.size}</p>
               </div>
-              <CheckCircle2 className="h-12 w-12 text-green-600 opacity-20" />
+              <CheckCircle2 className="h-12 w-12 text-success opacity-30" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-orange-50 to-amber-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-warning-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">Etiquetas a Imprimir</p>
-                <p className="text-4xl font-black text-orange-600">{selectedAssets.size * copiesPerAsset}</p>
+                <p className="text-4xl font-black text-warning-subtle-foreground">{selectedAssets.size * copiesPerAsset}</p>
               </div>
-              <Printer className="h-12 w-12 text-orange-600 opacity-20" />
+              <Printer className="h-12 w-12 text-warning opacity-30" />
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Controls */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
         <CardHeader className="p-8">
           <CardTitle className="text-xl font-black uppercase flex items-center gap-3">
             <Printer className="h-5 w-5 text-primary" />
@@ -334,7 +334,7 @@ const LabelPrintingPage: React.FC = () => {
               </Button>
               <Button
                 onClick={toggleSelectAll}
-                className="h-11 rounded-xl bg-slate-600 hover:bg-slate-700"
+                className="h-11 rounded-xl bg-secondary text-secondary-foreground hover:bg-secondary/80"
               >
                 <Copy className="h-4 w-4 mr-2" />
                 {selectedAssets.size === filteredAssets.length
@@ -374,7 +374,7 @@ const LabelPrintingPage: React.FC = () => {
 
             <Button
               onClick={handlePrint}
-              className="h-12 rounded-xl flex-1 sm:flex-none bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-widest"
+              className="h-12 rounded-xl flex-1 sm:flex-none bg-primary hover:bg-primary/90 text-primary-foreground font-black uppercase tracking-widest"
               disabled={selectedAssets.size === 0}
             >
               <Printer className="h-4 w-4 mr-2" /> Imprimir Etiquetas
@@ -384,7 +384,7 @@ const LabelPrintingPage: React.FC = () => {
       </Card>
 
       {/* Asset selector */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
         <CardHeader className="p-8">
           <CardTitle className="text-xl font-black uppercase">
             Activos Disponibles ({filteredAssets.length})
@@ -393,7 +393,7 @@ const LabelPrintingPage: React.FC = () => {
         <CardContent className="p-8">
           {filteredAssets.length === 0 ? (
             <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground font-bold">No hay activos disponibles</p>
             </div>
           ) : viewMode === "grid" ? (
@@ -405,7 +405,7 @@ const LabelPrintingPage: React.FC = () => {
                   className={`rounded-[2rem] border-2 cursor-pointer transition-all p-6 ${
                     selectedAssets.has(asset.id)
                       ? "border-primary bg-primary/5 shadow-xl"
-                      : "border-slate-200 hover:border-slate-300 bg-slate-100"
+                      : "border-border hover:border-primary/40 bg-muted/30"
                   }`}
                 >
                   <div className="flex items-start justify-between mb-4">
@@ -413,11 +413,11 @@ const LabelPrintingPage: React.FC = () => {
                       className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
                         selectedAssets.has(asset.id)
                           ? "bg-primary border-primary"
-                          : "border-slate-300"
+                          : "border-muted-foreground/40"
                       }`}
                     >
                       {selectedAssets.has(asset.id) && (
-                        <CheckCircle2 className="h-4 w-4 text-white" />
+                        <CheckCircle2 className="h-4 w-4 text-primary-foreground" />
                       )}
                     </div>
                     {asset.photos?.[0] && (
@@ -436,7 +436,7 @@ const LabelPrintingPage: React.FC = () => {
                     <h4 className="font-black text-sm uppercase line-clamp-2">{asset.name}</h4>
                     <p className="text-xs text-muted-foreground font-mono">{asset.id}</p>
                     <p className="text-xs text-muted-foreground">{asset.category}</p>
-                    <span className="inline-block text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-1 rounded-md uppercase">
+                    <span className="inline-block text-[10px] font-black bg-muted text-muted-foreground px-2 py-1 rounded-md uppercase">
                       CLASE {asset.class}
                     </span>
                   </div>
@@ -451,7 +451,7 @@ const LabelPrintingPage: React.FC = () => {
                   className={`rounded-xl border-2 p-4 cursor-pointer transition-all ${
                     selectedAssets.has(asset.id)
                       ? "border-primary bg-primary/5"
-                      : "border-slate-200 hover:border-slate-300 bg-slate-100"
+                      : "border-border hover:border-primary/40 bg-muted/30"
                   }`}
                   onClick={() => toggleAssetSelection(asset.id)}
                 >
@@ -461,11 +461,11 @@ const LabelPrintingPage: React.FC = () => {
                         className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
                           selectedAssets.has(asset.id)
                             ? "bg-primary border-primary"
-                            : "border-slate-300"
+                            : "border-muted-foreground/40"
                         }`}
                       >
                         {selectedAssets.has(asset.id) && (
-                          <CheckCircle2 className="h-4 w-4 text-white" />
+                          <CheckCircle2 className="h-4 w-4 text-primary-foreground" />
                         )}
                       </div>
                       <div className="flex-1">
@@ -499,11 +499,11 @@ const LabelPrintingPage: React.FC = () => {
                     <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-4 text-xs">
                       <div>
                         <p className="font-bold text-muted-foreground uppercase">S/N</p>
-                        <p className="text-slate-900">{asset.serialNumber || "N/A"}</p>
+                        <p className="text-foreground">{asset.serialNumber || "N/A"}</p>
                       </div>
                       <div>
                         <p className="font-bold text-muted-foreground uppercase">Tipo Uso</p>
-                        <p className="text-slate-900">{asset.usageType}</p>
+                        <p className="text-foreground">{asset.usageType}</p>
                       </div>
                     </div>
                   )}
@@ -516,7 +516,7 @@ const LabelPrintingPage: React.FC = () => {
 
       {/* Screen preview */}
       {previewOpen && assetsToPrint.length > 0 && (
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
           <CardHeader className="p-8">
             <CardTitle className="text-xl font-black uppercase">Vista Previa</CardTitle>
             <CardDescription>Tamaño real: 22×32mm · {assetsToPrint.length * copiesPerAsset} etiquetas</CardDescription>

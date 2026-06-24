@@ -117,13 +117,13 @@ const BiometricVerificationPage: React.FC = () => {
   useEffect(() => () => stopCamera(), []);
 
   const statusConfig = {
-    idle: { color: "bg-slate-100 text-muted-foreground", label: "Inactivo", icon: Camera },
-    loading_models: { color: "bg-blue-100 text-blue-600", label: "Cargando IA...", icon: Loader2 },
-    scanning: { color: "bg-orange-100 text-orange-600", label: "Escaneando...", icon: ScanFace },
-    match: { color: "bg-green-100 text-green-600", label: "Coincidencia!", icon: CheckCircle2 },
-    no_match: { color: "bg-red-100 text-red-600", label: "No Reconocido", icon: XCircle },
-    no_face: { color: "bg-slate-100 text-muted-foreground", label: "Sin Rostro", icon: AlertCircle },
-    error: { color: "bg-red-100 text-red-600", label: "Error", icon: AlertCircle },
+    idle: { color: "bg-muted text-muted-foreground", label: "Inactivo", icon: Camera },
+    loading_models: { color: "bg-info-subtle text-info", label: "Cargando IA...", icon: Loader2 },
+    scanning: { color: "bg-warning-subtle text-warning", label: "Escaneando...", icon: ScanFace },
+    match: { color: "bg-success-subtle text-success", label: "Coincidencia!", icon: CheckCircle2 },
+    no_match: { color: "bg-destructive/10 text-destructive", label: "No Reconocido", icon: XCircle },
+    no_face: { color: "bg-muted text-muted-foreground", label: "Sin Rostro", icon: AlertCircle },
+    error: { color: "bg-destructive/10 text-destructive", label: "Error", icon: AlertCircle },
   };
 
   const current = statusConfig[status];
@@ -137,38 +137,38 @@ const BiometricVerificationPage: React.FC = () => {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-blue-50 to-indigo-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-info-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">Personal Enrolado</p>
-                <p className="text-4xl font-black text-blue-600">{enrolledUsers.length}</p>
+                <p className="text-4xl font-black text-info">{enrolledUsers.length}</p>
               </div>
-              <Users className="h-12 w-12 text-blue-600 opacity-20" />
+              <Users className="h-12 w-12 text-info opacity-20" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-orange-50 to-amber-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-warning-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">Escaneos Realizados</p>
-                <p className="text-4xl font-black text-orange-600">{scanCount}</p>
+                <p className="text-4xl font-black text-warning">{scanCount}</p>
               </div>
-              <Zap className="h-12 w-12 text-orange-600 opacity-20" />
+              <Zap className="h-12 w-12 text-warning opacity-20" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-green-50 to-emerald-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-success-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">Identificaciones OK</p>
-                <p className="text-4xl font-black text-green-600">{matchCount}</p>
+                <p className="text-4xl font-black text-success">{matchCount}</p>
               </div>
-              <ShieldCheck className="h-12 w-12 text-green-600 opacity-20" />
+              <ShieldCheck className="h-12 w-12 text-success opacity-20" />
             </div>
           </CardContent>
         </Card>
@@ -176,7 +176,7 @@ const BiometricVerificationPage: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Camera Feed */}
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100 overflow-hidden">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-card overflow-hidden">
           <CardHeader className="p-8 pb-4">
             <CardTitle className="text-xl font-black uppercase flex items-center gap-3">
               <ScanFace className="h-5 w-5 text-primary" />
@@ -184,7 +184,7 @@ const BiometricVerificationPage: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-8 pt-2 space-y-6">
-            <div className="relative aspect-square rounded-[2rem] overflow-hidden bg-slate-900">
+            <div className="relative aspect-square rounded-[2rem] overflow-hidden bg-pagnol-dark">
               <video
                 ref={videoRef}
                 autoPlay
@@ -194,15 +194,15 @@ const BiometricVerificationPage: React.FC = () => {
               />
               {!cameraStream && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                  <ScanFace size={64} className="text-slate-600" />
+                  <ScanFace size={64} className="text-white/30" />
                   <p className="text-muted-foreground text-xs font-black uppercase tracking-widest">Cámara Inactiva</p>
                 </div>
               )}
               {cameraStream && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className={`w-40 h-52 border-4 rounded-[45%] transition-all duration-300 ${
-                    status === "match" ? "border-green-400 shadow-[0_0_30px_rgba(74,222,128,0.5)]" :
-                    status === "no_match" ? "border-red-400" :
+                    status === "match" ? "border-success shadow-[0_0_30px_rgba(74,222,128,0.5)]" :
+                    status === "no_match" ? "border-destructive" :
                     "border-white/50 animate-pulse"
                   }`} />
                 </div>
@@ -236,7 +236,7 @@ const BiometricVerificationPage: React.FC = () => {
                 <Button
                   onClick={stopCamera}
                   variant="outline"
-                  className="flex-1 h-12 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-black uppercase tracking-widest text-xs gap-2"
+                  className="flex-1 h-12 rounded-xl border-destructive/30 text-destructive hover:bg-destructive/10 font-black uppercase tracking-widest text-xs gap-2"
                 >
                   <Square size={16} /> Detener Escáner
                 </Button>
@@ -244,9 +244,9 @@ const BiometricVerificationPage: React.FC = () => {
             </div>
 
             {enrolledUsers.length === 0 && (
-              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3 items-center">
-                <AlertCircle size={16} className="text-amber-600 shrink-0" />
-                <p className="text-[10px] font-bold text-amber-700 uppercase">
+              <div className="p-4 bg-warning-subtle rounded-2xl border border-warning/20 flex gap-3 items-center">
+                <AlertCircle size={16} className="text-warning shrink-0" />
+                <p className="text-[10px] font-bold text-warning uppercase">
                   No hay personal enrolado. Registra empleados en la sección Personal.
                 </p>
               </div>
@@ -255,7 +255,7 @@ const BiometricVerificationPage: React.FC = () => {
         </Card>
 
         {/* Result Panel */}
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
           <CardHeader className="p-8 pb-4">
             <CardTitle className="text-xl font-black uppercase flex items-center gap-3">
               <ShieldCheck className="h-5 w-5 text-primary" />
@@ -265,8 +265,8 @@ const BiometricVerificationPage: React.FC = () => {
           <CardContent className="p-8 pt-2 space-y-6">
             {!matchResult && (
               <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
-                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center">
-                  <ScanFace size={36} className="text-slate-300" />
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center">
+                  <ScanFace size={36} className="text-muted-foreground/50" />
                 </div>
                 <p className="text-muted-foreground font-black uppercase tracking-widest text-xs">
                   {cameraStream ? "Buscando rostro en tiempo real..." : "Inicia el escáner para identificar personal"}
@@ -276,13 +276,13 @@ const BiometricVerificationPage: React.FC = () => {
 
             {matchResult && (
               <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-                <div className="p-6 bg-green-50 rounded-[2rem] border border-green-100 flex items-center gap-5">
-                  <div className="w-16 h-16 bg-green-500 rounded-2xl flex items-center justify-center text-white text-xl font-black shrink-0">
+                <div className="p-6 bg-success-subtle rounded-[2rem] border border-success/30 flex items-center gap-5">
+                  <div className="w-16 h-16 bg-success rounded-2xl flex items-center justify-center text-success-foreground text-xl font-black shrink-0">
                     {matchResult.name.split(' ').map(n => n[0]).join('').toUpperCase()}
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">Identidad Confirmada</p>
-                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight leading-tight">{matchResult.name}</h3>
+                    <p className="text-[10px] font-black text-success uppercase tracking-widest mb-1">Identidad Confirmada</p>
+                    <h3 className="text-lg font-black text-foreground uppercase tracking-tight leading-tight">{matchResult.name}</h3>
                     {matchResult.internalId && (
                       <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{matchResult.internalId}</p>
                     )}
@@ -292,11 +292,11 @@ const BiometricVerificationPage: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-xs font-black text-muted-foreground uppercase">
                     <span>Confianza del Sistema</span>
-                    <span className="text-green-600">{matchResult.confidence}%</span>
+                    <span className="text-success">{matchResult.confidence}%</span>
                   </div>
-                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-3 bg-muted rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-green-500 rounded-full transition-all duration-500"
+                      className="h-full bg-success rounded-full transition-all duration-500"
                       style={{ width: `${matchResult.confidence}%` }}
                     />
                   </div>
@@ -306,9 +306,9 @@ const BiometricVerificationPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex gap-3">
-                  <CheckCircle2 size={16} className="text-green-500 shrink-0 mt-0.5" />
-                  <p className="text-[10px] font-bold text-slate-600 uppercase leading-relaxed">
+                <div className="p-4 bg-muted rounded-2xl border border-border flex gap-3">
+                  <CheckCircle2 size={16} className="text-success shrink-0 mt-0.5" />
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">
                     Trabajador habilitado para operar en el sistema Pagnol. Biometría válida.
                   </p>
                 </div>
@@ -317,15 +317,15 @@ const BiometricVerificationPage: React.FC = () => {
 
             {/* Enrolled users list */}
             <div className="space-y-2">
-              <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Personal con Biometría Activa</p>
+              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Personal con Biometría Activa</p>
               <div className="max-h-48 overflow-y-auto space-y-1 no-scrollbar">
                 {enrolledUsers.map(u => (
-                  <div key={u.id} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${matchResult?.userId === u.id ? 'bg-green-50 border border-green-200' : 'bg-slate-50'}`}>
-                    <div className="w-7 h-7 bg-slate-200 rounded-lg flex items-center justify-center text-[9px] font-black text-slate-600 shrink-0">
+                  <div key={u.id} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${matchResult?.userId === u.id ? 'bg-success-subtle border border-success/30' : 'bg-muted'}`}>
+                    <div className="w-7 h-7 bg-muted rounded-lg flex items-center justify-center text-[9px] font-black text-muted-foreground shrink-0">
                       {u.name.substring(0, 2).toUpperCase()}
                     </div>
-                    <span className="text-[10px] font-bold text-slate-700 uppercase flex-1 truncate">{u.name}</span>
-                    {matchResult?.userId === u.id && <CheckCircle2 size={14} className="text-green-500 shrink-0" />}
+                    <span className="text-[10px] font-bold text-foreground uppercase flex-1 truncate">{u.name}</span>
+                    {matchResult?.userId === u.id && <CheckCircle2 size={14} className="text-success shrink-0" />}
                   </div>
                 ))}
                 {enrolledUsers.length === 0 && (
@@ -338,10 +338,10 @@ const BiometricVerificationPage: React.FC = () => {
       </div>
 
       {/* Info */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-pagnol-dark text-white">
         <CardContent className="p-8 sm:p-12">
           <h3 className="text-lg font-black uppercase mb-6">Cómo usar esta estación</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-sm text-slate-300">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-sm text-white/70">
             <div className="space-y-2">
               <p className="font-black text-white text-[10px] uppercase tracking-widest">Antes del Turno</p>
               <p>Verifica que tu enrolamiento biométrico esté activo antes de comenzar operaciones con activos.</p>

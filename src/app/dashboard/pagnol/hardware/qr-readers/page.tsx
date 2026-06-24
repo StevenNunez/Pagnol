@@ -68,45 +68,45 @@ const QRReadersPage: React.FC = () => {
 
       {/* Device Status */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-green-50 to-emerald-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-success-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">
                   Estado
                 </p>
-                <p className="text-2xl font-black text-green-600">
+                <p className="text-2xl font-black text-success">
                   {isListening ? "Escuchando" : "Detenido"}
                 </p>
               </div>
-              <Zap className="h-12 w-12 text-green-600 opacity-20" />
+              <Zap className="h-12 w-12 text-success opacity-20" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-blue-50 to-indigo-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-info-subtle">
           <CardContent className="p-8">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">
                   Códigos Escaneados Hoy
                 </p>
-                <p className="text-2xl font-black text-blue-600">{scanHistory.length}</p>
+                <p className="text-2xl font-black text-info">{scanHistory.length}</p>
               </div>
-              <QrCode className="h-12 w-12 text-blue-600 opacity-20" />
+              <QrCode className="h-12 w-12 text-info opacity-20" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-orange-50 to-amber-50">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-warning-subtle">
           <CardContent className="p-8">
             <div>
               <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">
                 Conexión
               </p>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-                <p className="text-sm font-black text-orange-600">Conectado</p>
+                <div className="w-3 h-3 rounded-full bg-success animate-pulse"></div>
+                <p className="text-sm font-black text-warning">Conectado</p>
               </div>
             </div>
           </CardContent>
@@ -114,7 +114,7 @@ const QRReadersPage: React.FC = () => {
       </div>
 
       {/* Scanner Controls */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
         <CardHeader className="p-8">
           <CardTitle className="text-xl font-black uppercase flex items-center gap-3">
             <Gamepad2 className="h-5 w-5 text-primary" />
@@ -136,8 +136,8 @@ const QRReadersPage: React.FC = () => {
               }}
               className={`flex-1 h-12 rounded-xl font-black uppercase tracking-widest text-sm transition-all ${
                 isListening
-                  ? "bg-red-600 hover:bg-red-700 text-white"
-                  : "bg-green-600 hover:bg-green-700 text-white"
+                  ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                  : "bg-success hover:bg-success/90 text-success-foreground"
               }`}
             >
               {isListening ? (
@@ -162,7 +162,7 @@ const QRReadersPage: React.FC = () => {
           </div>
 
           {/* Live Input Field */}
-          <div className="p-6 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300">
+          <div className="p-6 bg-muted rounded-xl border-2 border-dashed border-border">
             <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-3">
               Entrada en Vivo
             </p>
@@ -172,7 +172,7 @@ const QRReadersPage: React.FC = () => {
               value={scannedCode}
               onChange={(e) => setScannedCode(e.target.value)}
               placeholder={isListening ? "Escaneando... (Presiona Enter para confirmar)" : "Inicia escaneo para recibir códigos"}
-              className="h-12 text-lg font-mono bg-slate-100"
+              className="h-12 text-lg font-mono bg-muted"
               disabled={!isListening}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && scannedCode.trim()) {
@@ -193,7 +193,7 @@ const QRReadersPage: React.FC = () => {
               <p className="text-xs font-black uppercase text-muted-foreground tracking-widest">
                 Protocolos Soportados
               </p>
-              <ul className="text-sm space-y-1 text-slate-700">
+              <ul className="text-sm space-y-1 text-foreground">
                 <li>✓ HID USB (Emulador de Teclado)</li>
                 <li>✓ Bluetooth Classic</li>
                 <li>✓ Bluetooth Low Energy</li>
@@ -203,7 +203,7 @@ const QRReadersPage: React.FC = () => {
               <p className="text-xs font-black uppercase text-muted-foreground tracking-widest">
                 Códigos Soportados
               </p>
-              <ul className="text-sm space-y-1 text-slate-700">
+              <ul className="text-sm space-y-1 text-foreground">
                 <li>✓ QR Code</li>
                 <li>✓ Code128, Code39</li>
                 <li>✓ EAN13, UPC</li>
@@ -214,7 +214,7 @@ const QRReadersPage: React.FC = () => {
       </Card>
 
       {/* Scan History */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-slate-100">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-card">
         <CardHeader className="p-8">
           <CardTitle className="text-xl font-black uppercase">
             Historial de Escaneos ({scanHistory.length})
@@ -224,7 +224,7 @@ const QRReadersPage: React.FC = () => {
         <CardContent className="p-8">
           {scanHistory.length === 0 ? (
             <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+              <AlertCircle className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
               <p className="text-muted-foreground font-bold">Sin escaneos registrados</p>
               <p className="text-sm text-muted-foreground">
                 Inicia el escaneo para comienza a capturar códigos
@@ -233,9 +233,9 @@ const QRReadersPage: React.FC = () => {
           ) : (
             <div className="space-y-2">
               {scanHistory.map((scan, idx) => (
-                <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                <div key={idx} className="flex items-center justify-between p-4 bg-muted rounded-xl hover:bg-muted/70 transition-colors">
                   <div>
-                    <p className="font-mono font-black text-sm text-slate-900">{scan.code}</p>
+                    <p className="font-mono font-black text-sm text-foreground">{scan.code}</p>
                     <p className="text-xs text-muted-foreground">
                       {scan.time.toLocaleTimeString("es-CL")}
                     </p>
@@ -247,7 +247,7 @@ const QRReadersPage: React.FC = () => {
                     className="h-8 w-8 p-0"
                   >
                     {copied ? (
-                      <Check className="h-4 w-4 text-green-600" />
+                      <Check className="h-4 w-4 text-success" />
                     ) : (
                       <Copy className="h-4 w-4" />
                     )}
@@ -260,7 +260,7 @@ const QRReadersPage: React.FC = () => {
       </Card>
 
       {/* Connection Guide */}
-      <Card className="rounded-[2.5rem] border-none shadow-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+      <Card className="rounded-[2.5rem] border-none shadow-xl bg-pagnol-dark text-white">
         <CardHeader className="p-8">
           <CardTitle className="text-xl font-black uppercase flex items-center gap-3">
             <Shield className="h-5 w-5 text-pagnol-orange" />
@@ -274,7 +274,7 @@ const QRReadersPage: React.FC = () => {
                 <Smartphone className="h-4 w-4 text-pagnol-orange" />
                 Pistola USB (HID)
               </p>
-              <ul className="text-sm space-y-1 ml-6 text-slate-300">
+              <ul className="text-sm space-y-1 ml-6 text-white/70">
                 <li>1. Conecta la pistola al puerto USB del equipo</li>
                 <li>2. El driver se instalará automáticamente</li>
                 <li>3. Haz clic en "Iniciar Escaneo"</li>
@@ -286,7 +286,7 @@ const QRReadersPage: React.FC = () => {
               <p className="font-bold mb-2 flex items-center gap-2">
                 <Bluetooth /> Pistola Bluetooth
               </p>
-              <ul className="text-sm space-y-1 ml-6 text-slate-300">
+              <ul className="text-sm space-y-1 ml-6 text-white/70">
                 <li>1. Empareja la pistola en Configuración de Bluetooth</li>
                 <li>2. Asegúrate que esté visible y en modo de escaneo</li>
                 <li>3. Esta interfaz recibirá datos automáticamente</li>

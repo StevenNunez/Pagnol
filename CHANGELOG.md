@@ -18,6 +18,52 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado
+- **Modo oscuro — Migración a tokens semánticos (módulo `pagnol`)**: se reemplazaron las
+  paletas crudas de Tailwind (`slate`/`gray`/`amber`/`green`/`blue`/`red`/`orange`) por los
+  **tokens semánticos** del sistema de diseño, que sí se adaptan a dark mode. Cubre todo el
+  módulo `pagnol` (referencia canónica): `personal`, `activos`, `movimientos`, `reports`,
+  `carga-masiva`, `page.tsx`, `mantenimiento`, `invitaciones`, y `hardware/*`
+  (`biometric-verification`, `liability-contract`, `qr-readers`, `label-printing`,
+  `hardware/page`). ~2.000+ ocurrencias migradas. Mapeo aplicado: superficies → `bg-card`/`bg-muted`; texto →
+  `text-foreground`/`text-muted-foreground`; bordes → `border`/`border-border`; estados →
+  `success`/`info`/`warning`/`destructive` (+ variantes `-subtle`); cabeceras oscuras →
+  `bg-pagnol-dark`; botones invertidos → `bg-foreground text-background`. `npx tsc --noEmit`
+  sin errores tras la migración.
+  - **Casos preservados (intencionales):** acentos claros sobre superficies siempre-oscuras
+    (`bg-pagnol-dark`/`industrial-gradient`), overlays translúcidos (`bg-white/10`, `/5`),
+    fondos fijos de impresión/QR (`bg-white` del código QR para que escanee), y los hex
+    dentro de strings de jspdf/Recharts (no son clases Tailwind).
+  - **Páginas que faltaban en la primera pasada (corregidas):** `invitaciones` y
+    `hardware/label-printing` habían quedado sin migrar por completo (eran islas claras en
+    dark). Migradas a tokens, incluyendo sus KPI cards `from-*-50 to-*-50` a `bg-*-subtle`.
+  - **Follow-up cerrado:** los gradientes decorativos de KPI (`from-*-50 to-*-50`) de
+    `hardware/*` se convirtieron a los tokens `success-subtle`/`info-subtle`/`warning-subtle`
+    (sí tienen variante dark en `globals.css`). El acento *indigo* del wizard de integración
+    ERP (`carga-masiva`) se conservó como identidad del bloque, pero eliminando sus
+    fondos/sombras claros fijos (`-50`/`-100`/`-200`) y dejándolo solo en formas sólidas o
+    translúcidas dark-safe.
+  - **Texto invisible en dark (corregido tras verificación en navegador):** verificación
+    visual del módulo en dark mode (login real + 13 páginas) detectó que `text-pagnol-dark`
+    seguía usándose como **color de texto** sobre superficies que sí adaptan a oscuro
+    (`bg-card`/`bg-background`/`bg-warning-subtle`), quedando texto negro sobre fondo oscuro
+    (≈invisible). Reemplazado por `text-foreground` en 11 puntos: KPIs y títulos/filas de
+    `mantenimiento` (disponibilidad, MTBF, MTTR, órdenes, "Órdenes de Trabajo (OT)",
+    nombres de material), `activos` (COSTO UNIT. de cards + 3 textos de modales) y el tab
+    activo de `reports` (`bg-card text-foreground`). Se conservó intacto el único caso
+    intencional: `pagnol/page.tsx` `hover:bg-white hover:text-pagnol-dark` (texto negro
+    correcto sobre hover blanco). Re-captura en navegador confirma KPIs y tabs legibles.
+- **`FeedbackButton` normalizado a tokens (`src/components/feedback-button.tsx`)**: el botón
+  flotante "Reportar Error" (presente en todas las páginas) y su panel "Feedback System"
+  estaban escritos con paleta cruda (`slate-*`/`bg-white`/`red-*`). Ya funcionaba en dark
+  vía pares `dark:` explícitos, pero no usaba el lenguaje del sistema de diseño. Migrado a
+  tokens: botones invertidos → `bg-foreground text-background`; superficies →
+  `bg-background`/`bg-card`/`bg-muted`; textos → `text-foreground`/`text-muted-foreground`;
+  bordes → `border-border`; botón rojo de quitar imagen → `bg-destructive
+  text-destructive-foreground`. Conservados `pagnol-orange` (focus ring), radios y
+  animaciones. Sin cambio funcional. `npx tsc --noEmit` OK y verificación en navegador
+  (botón flotante + panel abierto en dark y light) confirma legibilidad y coherencia.
+
 ### Agregado
 - **Offline First — Pulido del módulo**:
   - **Tests del motor de sincronización** (vitest + fake-indexeddb): 12 tests sobre outbox

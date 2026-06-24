@@ -287,19 +287,19 @@ export default function InvitacionesPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Panel de Creación */}
-                <Card className="rounded-[2.5rem] border-none shadow-xl shadow-slate-200/50 bg-slate-100 overflow-hidden lg:col-span-1 border-t-4 border-t-pagnol-orange">
-                    <CardHeader className="bg-slate-50/50 p-8">
-                        <CardTitle className="text-xl font-black uppercase font-outfit text-slate-800">Nueva Invitación</CardTitle>
+                <Card className="rounded-[2.5rem] border-none shadow-xl bg-card overflow-hidden lg:col-span-1 border-t-4 border-t-pagnol-orange">
+                    <CardHeader className="bg-muted/50 p-8">
+                        <CardTitle className="text-xl font-black uppercase font-outfit text-foreground">Nueva Invitación</CardTitle>
                         <CardDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Paso 3 del Onboarding</CardDescription>
                     </CardHeader>
                     <CardContent className="p-8 space-y-6">
                         <div className="space-y-2">
                             <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Correo Electrónico</Label>
                             <div className="relative">
-                                <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                                <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
                                 <Input
                                     placeholder="invitado@empresa.cl"
-                                    className="pl-12 h-12 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-slate-100 transition-all"
+                                    className="pl-12 h-12 rounded-2xl border-border bg-muted/50 focus:bg-muted transition-all"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                 />
@@ -309,7 +309,7 @@ export default function InvitacionesPage() {
                         <div className="space-y-2">
                             <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Rol de Acceso</Label>
                             <Select value={role} onValueChange={(val: any) => setRole(val)}>
-                                <SelectTrigger className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-slate-100 transition-all text-xs font-black uppercase tracking-widest">
+                                <SelectTrigger className="h-12 rounded-2xl border-border bg-muted/50 focus:bg-muted transition-all text-xs font-black uppercase tracking-widest">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-2xl max-h-72">
@@ -317,7 +317,7 @@ export default function InvitacionesPage() {
                                         <SelectItem
                                             key={roleKey}
                                             value={roleKey}
-                                            className="text-xs font-black uppercase text-slate-700"
+                                            className="text-xs font-black uppercase text-foreground"
                                         >
                                             {ROLES[roleKey]?.label || roleKey}
                                         </SelectItem>
@@ -326,12 +326,12 @@ export default function InvitacionesPage() {
                             </Select>
                         </div>
 
-                        <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 space-y-2">
+                        <div className="p-4 bg-pagnol-orange/10 rounded-2xl border border-pagnol-orange/20 space-y-2">
                             <div className="flex items-center gap-2 text-pagnol-orange">
                                 <Clock size={14} />
                                 <span className="text-[10px] font-black uppercase">Seguridad Temporal</span>
                             </div>
-                            <p className="text-[9px] font-bold text-orange-700/60 uppercase leading-relaxed">
+                            <p className="text-[9px] font-bold text-pagnol-orange/70 uppercase leading-relaxed">
                                 El enlace expirará automáticamente en 48 horas. Solo puede ser usado una vez para completar el registro.
                             </p>
                         </div>
@@ -339,7 +339,7 @@ export default function InvitacionesPage() {
                         <Button
                             disabled={isInviting}
                             onClick={handleInvite}
-                            className="w-full py-7 rounded-[1.2rem] bg-slate-900 hover:bg-black text-white shadow-xl shadow-slate-200 transition-all group overflow-hidden relative"
+                            className="w-full py-7 rounded-[1.2rem] bg-foreground hover:bg-foreground/90 text-background shadow-xl transition-all group overflow-hidden relative"
                         >
                             {isInviting ? (
                                 <Loader2 className="animate-spin" size={18} />
@@ -355,13 +355,13 @@ export default function InvitacionesPage() {
 
                 {/* Historial / Lista */}
                 <div className="lg:col-span-2 space-y-6">
-                    <Card className="rounded-[2.5rem] border-none shadow-xl shadow-slate-200/50 bg-slate-100 overflow-hidden min-h-[500px]">
-                        <CardHeader className="p-8 border-b bg-slate-100 flex flex-row items-center justify-between">
+                    <Card className="rounded-[2.5rem] border-none shadow-xl bg-card overflow-hidden min-h-[500px]">
+                        <CardHeader className="p-8 border-b bg-card flex flex-row items-center justify-between">
                             <div>
                                 <CardTitle className="text-xl font-black uppercase font-outfit">Invitaciones Enviadas</CardTitle>
                                 <CardDescription className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Control de tokens y accesos pendientes</CardDescription>
                             </div>
-                            <History size={20} className="text-slate-200" />
+                            <History size={20} className="text-muted-foreground/40" />
                         </CardHeader>
                         <CardContent className="p-0">
                             {isLoading ? (
@@ -370,8 +370,8 @@ export default function InvitacionesPage() {
                                     <span className="text-[10px] font-black uppercase tracking-[0.2em]">Sincronizando...</span>
                                 </div>
                             ) : invitations.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-40 text-slate-300 opacity-60">
-                                    <div className="bg-slate-50 p-6 rounded-full mb-6">
+                                <div className="flex flex-col items-center justify-center py-40 text-muted-foreground opacity-60">
+                                    <div className="bg-muted p-6 rounded-full mb-6">
                                         <UserPlus size={40} className="opacity-20" />
                                     </div>
                                     <p className="font-black uppercase text-sm tracking-widest text-muted-foreground">Sin Invitaciones</p>
@@ -380,7 +380,7 @@ export default function InvitacionesPage() {
                             ) : (
                                 <div className="overflow-x-auto">
                                     <table className="w-full">
-                                        <thead className="bg-slate-50 border-b">
+                                        <thead className="bg-muted border-b">
                                             <tr>
                                                 <th className="px-8 py-5 text-[9px] font-black uppercase text-muted-foreground text-left">Invitado / Rol</th>
                                                 <th className="px-8 py-5 text-[9px] font-black uppercase text-muted-foreground text-left">Estado / Expira</th>
@@ -389,11 +389,11 @@ export default function InvitacionesPage() {
                                         </thead>
                                         <tbody className="divide-y">
                                             {invitations.map((inv) => (
-                                                <tr key={inv.id} className="hover:bg-slate-50/30 transition-colors group">
+                                                <tr key={inv.id} className="hover:bg-muted/50 transition-colors group">
                                                     <td className="px-8 py-6">
                                                         <div className="flex flex-col gap-1">
-                                                            <span className="font-black text-xs text-slate-700 uppercase">{inv.email}</span>
-                                                            <Badge variant="outline" className="w-fit text-[8px] font-black px-2 border-slate-200 text-muted-foreground uppercase tracking-widest">
+                                                            <span className="font-black text-xs text-foreground uppercase">{inv.email}</span>
+                                                            <Badge variant="outline" className="w-fit text-[8px] font-black px-2 border-border text-muted-foreground uppercase tracking-widest">
                                                                 {ROLES[inv.role]?.label || inv.role}
                                                             </Badge>
                                                         </div>
@@ -402,15 +402,15 @@ export default function InvitacionesPage() {
                                                         <div className="flex flex-col gap-1.5">
                                                             <div className="flex items-center gap-2">
                                                                 {inv.status === 'pending' ? (
-                                                                    <div className="flex items-center gap-1.5 font-black text-[9px] text-amber-500 uppercase">
+                                                                    <div className="flex items-center gap-1.5 font-black text-[9px] text-warning uppercase">
                                                                         <Clock size={10} /> Pendiente
                                                                     </div>
                                                                 ) : inv.status === 'used' ? (
-                                                                    <div className="flex items-center gap-1.5 font-black text-[9px] text-green-500 uppercase">
+                                                                    <div className="flex items-center gap-1.5 font-black text-[9px] text-success uppercase">
                                                                         <CheckCircle2 size={10} /> Utilizado
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="flex items-center gap-1.5 font-black text-[9px] text-red-500 uppercase">
+                                                                    <div className="flex items-center gap-1.5 font-black text-[9px] text-destructive uppercase">
                                                                         <X size={10} /> Expirado
                                                                     </div>
                                                                 )}
@@ -435,7 +435,7 @@ export default function InvitacionesPage() {
                                                             <Button
                                                                 size="icon"
                                                                 variant="ghost"
-                                                                className="h-10 w-10 rounded-xl hover:bg-red-50 text-slate-300 hover:text-red-500"
+                                                                className="h-10 w-10 rounded-xl hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                                                 onClick={() => deleteInvitation(inv.id)}
                                                             >
                                                                 <Trash2 size={16} />

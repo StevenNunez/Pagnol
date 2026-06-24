@@ -212,10 +212,10 @@ export default function PagnolMainPage() {
 
   const getStatusConfig = (status: string) => {
     switch (status) {
-      case 'pending':    return { label: 'Pendiente',  cls: 'bg-yellow-500/10 text-yellow-600' };
-      case 'approved':   return { label: 'Aprobado',   cls: 'bg-green-500/10 text-green-600' };
-      case 'completed':  return { label: 'Completado', cls: 'bg-blue-500/10 text-blue-600' };
-      case 'rejected':   return { label: 'Rechazado',  cls: 'bg-red-500/10 text-red-600' };
+      case 'pending':    return { label: 'Pendiente',  cls: 'bg-warning-subtle text-warning' };
+      case 'approved':   return { label: 'Aprobado',   cls: 'bg-success-subtle text-success' };
+      case 'completed':  return { label: 'Completado', cls: 'bg-info-subtle text-info' };
+      case 'rejected':   return { label: 'Rechazado',  cls: 'bg-destructive/10 text-destructive' };
       default:           return { label: status,       cls: 'bg-muted text-muted-foreground' };
     }
   };
@@ -271,9 +271,9 @@ export default function PagnolMainPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="w-2 h-2 rounded-full bg-pagnol-orange animate-pulse"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Pagnol ASSET MANAGEMENT</span>
-            <span className="text-[8px] font-black uppercase tracking-widest bg-blue-600 text-white px-2 py-0.5 rounded-lg">ISO 55001 Aligned</span>
+            <span className="text-[8px] font-black uppercase tracking-widest bg-info text-info-foreground px-2 py-0.5 rounded-lg">ISO 55001 Aligned</span>
             {stats.criticalRisk > 0 && (
-              <span className="text-[8px] font-black uppercase tracking-widest bg-red-500 text-white px-2 py-0.5 rounded-lg animate-pulse">
+              <span className="text-[8px] font-black uppercase tracking-widest bg-destructive text-destructive-foreground px-2 py-0.5 rounded-lg animate-pulse">
                 {stats.criticalRisk} Activo{stats.criticalRisk > 1 ? 's' : ''} Clase A en Riesgo
               </span>
             )}
@@ -283,7 +283,7 @@ export default function PagnolMainPage() {
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex flex-col items-end mr-2">
             <span className="text-[10px] font-black text-muted-foreground uppercase">Estado Operativo</span>
-            <span className="text-xs font-black text-green-600 uppercase">Sistema Online</span>
+            <span className="text-xs font-black text-success uppercase">Sistema Online</span>
           </div>
           {can('material_requests:create') && (
             <button
@@ -297,7 +297,7 @@ export default function PagnolMainPage() {
       </div>
 
       {/* MONITOR ESTRATÉGICO */}
-      <div className={`rounded-[2.5rem] p-8 sm:p-12 text-white relative overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] flex flex-col lg:flex-row items-center justify-between transition-all duration-700 ${stats.alertCount > 0 ? 'bg-slate-950 border border-red-900/30' : 'bg-slate-900'}`}>
+      <div className={`rounded-[2.5rem] p-8 sm:p-12 text-white relative overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] flex flex-col lg:flex-row items-center justify-between transition-all duration-700 ${stats.alertCount > 0 ? 'bg-pagnol-dark border border-red-900/30' : 'bg-pagnol-dark'}`}>
         <div className="absolute inset-0 opacity-20 pointer-events-none">
           <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-bl from-pagnol-orange to-transparent blur-[120px] rounded-full translate-x-1/4 -translate-y-1/4"></div>
           <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-blue-600 to-transparent blur-[100px] rounded-full -translate-x-1/4 translate-y-1/4"></div>
@@ -338,7 +338,7 @@ export default function PagnolMainPage() {
             ) : (
               <button
                 onClick={() => onNavigate('movimientos')}
-                className="bg-pagnol-orange hover:bg-orange-600 px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-2xl shadow-pagnol-orange/20 flex items-center justify-center gap-2 group whitespace-nowrap"
+                className="bg-pagnol-orange hover:bg-pagnol-orange/90 px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-2xl shadow-pagnol-orange/20 flex items-center justify-center gap-2 group whitespace-nowrap"
               >
                 Registrar Movimiento <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
               </button>
@@ -374,16 +374,16 @@ export default function PagnolMainPage() {
       {/* KPI DASHBOARD */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
         {[
-          { label: 'Unidades Disponibles', value: stats.available, trend: 'Efectivo', icon: Box, iconCls: 'bg-blue-500/10 text-blue-500' },
+          { label: 'Unidades Disponibles', value: stats.available, trend: 'Efectivo', icon: Box, iconCls: 'bg-info-subtle text-info' },
           { label: 'Tránsito Externo', value: stats.inUse, trend: 'En Faena', icon: TrendingUp, iconCls: 'bg-orange-500/10 text-orange-500' },
           {
             label: 'Cumplimiento Mantenimiento',
             value: `${stats.maintenanceCompliance}%`,
             trend: stats.overdueCount > 0 ? `${stats.overdueCount} vencido${stats.overdueCount > 1 ? 's' : ''}` : 'Al día',
             icon: Wrench,
-            iconCls: stats.maintenanceCompliance < 80 ? 'bg-red-500/10 text-red-500' : stats.maintenanceCompliance < 95 ? 'bg-yellow-500/10 text-yellow-500' : 'bg-green-500/10 text-green-500',
+            iconCls: stats.maintenanceCompliance < 80 ? 'bg-destructive/10 text-destructive' : stats.maintenanceCompliance < 95 ? 'bg-warning-subtle text-warning' : 'bg-success-subtle text-success',
           },
-          { label: 'Valorización Inventario', value: formatCLPM(stats.totalValue), trend: 'AMIS Ready', icon: Target, iconCls: 'bg-green-500/10 text-green-500' },
+          { label: 'Valorización Inventario', value: formatCLPM(stats.totalValue), trend: 'AMIS Ready', icon: Target, iconCls: 'bg-success-subtle text-success' },
         ].map((m, i) => (
           <Card key={i} className="p-8 rounded-[2rem] border-none shadow-sm hover:shadow-2xl transition-all duration-500 group relative overflow-hidden bg-card">
             <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:scale-110 transition-transform duration-700">
@@ -411,26 +411,26 @@ export default function PagnolMainPage() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-12">
             <div className="space-y-1">
               <h3 className="text-2xl font-black tracking-tighter flex items-center gap-3 text-foreground leading-none">
-                <div className="p-2 bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20">
+                <div className="p-2 bg-destructive text-destructive-foreground rounded-xl shadow-lg shadow-red-500/20">
                   <ShieldAlert size={24} />
                 </div>
                 Autorizaciones Pendientes
               </h3>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-12">Firma Digital Requerida para Despacho Clase A/B</p>
             </div>
-            <Badge className="bg-red-600 text-white text-[10px] font-black px-6 py-3 rounded-2xl animate-pulse uppercase tracking-widest shadow-xl shadow-red-500/30">Acción Requerida</Badge>
+            <Badge className="bg-destructive text-destructive-foreground text-[10px] font-black px-6 py-3 rounded-2xl animate-pulse uppercase tracking-widest shadow-xl shadow-red-500/30">Acción Requerida</Badge>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             {actionableTransactions.map((tx, i) => (
-              <div key={i} className="bg-muted/30 border border-border rounded-[3rem] shadow-sm flex flex-col group hover:bg-card hover:shadow-2xl transition-all duration-500 overflow-hidden border-b-8 border-b-red-600">
+              <div key={i} className="bg-muted/30 border border-border rounded-[3rem] shadow-sm flex flex-col group hover:bg-card hover:shadow-2xl transition-all duration-500 overflow-hidden border-b-8 border-b-destructive">
                 <div className="p-8 border-b border-dashed border-border flex items-center justify-between bg-card">
                   <div className="flex items-center gap-5">
-                    <div className={`p-4 rounded-2xl shadow-xl transition-all group-hover:rotate-6 ${tx.maxClass === 'A' ? 'bg-slate-950 text-red-500' : 'bg-slate-950 text-blue-500'}`}>
+                    <div className={`p-4 rounded-2xl shadow-xl transition-all group-hover:rotate-6 ${tx.maxClass === 'A' ? 'bg-pagnol-dark text-red-500' : 'bg-pagnol-dark text-blue-500'}`}>
                       <Lock size={20} />
                     </div>
                     <div className="space-y-1">
-                      <p className={`text-[10px] font-black uppercase tracking-widest ${tx.maxClass === 'A' ? 'text-red-600' : 'text-blue-600'}`}>
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${tx.maxClass === 'A' ? 'text-destructive' : 'text-info'}`}>
                         DESPACHO {tx.maxClass === 'A' ? 'CLASE A' : 'CLASE B'}
                       </p>
                       <p className="text-sm font-black text-foreground uppercase">{tx.employeeName}</p>
@@ -472,7 +472,7 @@ export default function PagnolMainPage() {
                   <button
                     onClick={() => handleApprove(tx.id)}
                     disabled={approvingIds.has(tx.id)}
-                    className={`w-full py-6 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-3 border-b-4 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100 ${tx.maxClass === 'A' ? 'bg-red-600 text-white hover:bg-red-700 border-red-800 shadow-red-500/20' : 'bg-blue-600 text-white hover:bg-blue-700 border-blue-800 shadow-blue-500/20'}`}
+                    className={`w-full py-6 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-3 border-b-4 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100 ${tx.maxClass === 'A' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 border-red-800 shadow-red-500/20' : 'bg-info text-info-foreground hover:bg-info/90 border-blue-800 shadow-blue-500/20'}`}
                   >
                     {approvingIds.has(tx.id)
                       ? <><Loader2 size={18} className="animate-spin" /> Autorizando...</>
@@ -490,7 +490,7 @@ export default function PagnolMainPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         {[
           { title: 'Salidas', type: 'WITHDRAWAL', iconCls: 'bg-orange-500/10 text-orange-500', numCls: 'text-orange-500', icon: ArrowUpRight, data: recentWithdrawals },
-          { title: 'Retornos', type: 'RETURN', iconCls: 'bg-green-500/10 text-green-500', numCls: 'text-green-500', icon: ArrowDownRight, data: recentReturns },
+          { title: 'Retornos', type: 'RETURN', iconCls: 'bg-success-subtle text-success', numCls: 'text-success', icon: ArrowDownRight, data: recentReturns },
         ].map((col, idx) => (
           <div key={idx} className="bg-card p-10 rounded-[3rem] shadow-sm border border-border flex flex-col group">
             <div className="flex items-center justify-between mb-10">
@@ -589,7 +589,7 @@ export default function PagnolMainPage() {
         </div>
 
         {/* AI ENGINE */}
-        <div className="bg-slate-900 rounded-[3.5rem] p-10 text-white relative overflow-hidden flex flex-col shadow-2xl group border-t-8 border-t-pagnol-orange">
+        <div className="bg-pagnol-dark rounded-[3.5rem] p-10 text-white relative overflow-hidden flex flex-col shadow-2xl group border-t-8 border-t-pagnol-orange">
           <div className="relative z-10 flex flex-col h-full">
             <div className="flex items-center gap-4 mb-12">
               <div className="p-4 bg-pagnol-orange text-white rounded-[1.5rem] shadow-2xl shadow-pagnol-orange/40 rotate-12 transition-transform duration-500">
@@ -612,7 +612,7 @@ export default function PagnolMainPage() {
             <div className="pt-10 border-t border-white/10 mt-8">
               <button
                 onClick={() => onNavigate('reports')}
-                className="w-full py-6 bg-pagnol-orange text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] hover:bg-white hover:text-slate-900 transition-all shadow-2xl shadow-pagnol-orange/20"
+                className="w-full py-6 bg-pagnol-orange text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] hover:bg-white hover:text-pagnol-dark transition-all shadow-2xl shadow-pagnol-orange/20"
               >
                 Auditoría Completa
               </button>

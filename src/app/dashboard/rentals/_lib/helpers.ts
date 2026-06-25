@@ -68,6 +68,16 @@ export const DIRECTION_BADGE: Record<RentalDirection, string> = {
   outgoing: 'badge-info',
 };
 
+export const ASSET_STATUS_LABEL: Record<'active' | 'returned', string> = {
+  active: 'En arriendo',
+  returned: 'Devuelto',
+};
+
+export const ASSET_STATUS_BADGE: Record<'active' | 'returned', string> = {
+  active: 'badge-success',
+  returned: 'bg-muted text-muted-foreground',
+};
+
 // ── Formato de moneda ─────────────────────────────────────────────────────────
 
 export function formatMoney(amount: number, currency = 'CLP'): string {

@@ -9,20 +9,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  FileText, 
-  Inbox, 
-  PackagePlus, 
-  ShoppingCart, 
-  Truck, 
-  Download, 
-  Trash2, 
-  CalendarIcon, 
+import {
+  FileText,
+  Inbox,
+  PackagePlus,
+  ShoppingCart,
+  Truck,
+  Download,
+  Trash2,
+  CalendarIcon,
   CheckCircle,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Mail,
+  Send
 } from 'lucide-react';
 import { useToast } from '@/modules/core/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { supabase } from '@/modules/core/lib/supabase';
 import type { PurchaseOrder as PurchaseOrderType, Supplier, PurchaseRequest } from '@/modules/core/lib/data';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { generatePurchaseOrderPDF } from '@/lib/pdf-generator';
@@ -180,6 +187,19 @@ export default function OrdersPage() {
     const [cancelingId, setCancelingId] = useState<string | null>(null);
 
     const supplierMap = useMemo(() => new Map(suppliers.map((s) => [s.id, s])), [suppliers]);
+
+    // Envío de la cotización por correo al proveedor.
+    const [emailingOrder, setEmailingOrder] = useState<{ order: PurchaseOrderType; index: number } | null>(null);
+    const [emailTo, setEmailTo] = useState('');
+    const [emailMessage, setEmailMessage] = useState('');
+    const [sendingEmail, setSendingEmail] = useState(false);
+
+    const blobToBase64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
     
     const getDate = useCallback((date: Date | string) => {
         return new Date(date as any);
@@ -218,6 +238,50 @@ export default function OrdersPage() {
         } catch (error) {
             console.error(error);
             toast({ variant: "destructive", title: "Error al generar PDF", description: "Ocurrió un problema al crear el documento." });
+        }
+    };
+
+    const openEmail = (order: PurchaseOrderType, index: number) => {
+        const supplier = supplierMap.get(order.supplierId);
+        setEmailTo(supplier?.email || '');
+        setEmailMessage('');
+        setEmailingOrder({ order, index });
+    };
+
+    const handleSendEmail = async () => {
+        if (!emailingOrder) return;
+        const { order, index } = emailingOrder;
+        const supplier = supplierMap.get(order.supplierId);
+        if (!supplier) { toast({ variant: 'destructive', title: 'Error', description: 'No se encontró el proveedor.' }); return; }
+        if (!emailTo.trim()) { toast({ variant: 'destructive', title: 'Falta el correo', description: 'Indica al menos un destinatario.' }); return; }
+        setSendingEmail(true);
+        try {
+            const code = `COT-${String(index + 1).padStart(3, '0')}`;
+            const { blob, filename } = await generatePurchaseOrderPDF(order, supplier, index + 1, currentTenant?.logoUrl);
+            const pdfBase64 = await blobToBase64(blob);
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            if (!token) throw new Error('Sesión no disponible.');
+            const res = await fetch('/api/purchasing/send-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                    to: emailTo.split(/[,;]/).map((s) => s.trim()).filter(Boolean),
+                    subject: `Solicitud de cotización ${code} · ${supplier.name}`,
+                    message: emailMessage.trim() || undefined,
+                    pdfBase64,
+                    filename,
+                    orderCode: code,
+                }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+            toast({ title: 'Cotización enviada', description: `Se envió a ${emailTo}.` });
+            setEmailingOrder(null);
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'No se pudo enviar', description: e?.message || 'Error desconocido.' });
+        } finally {
+            setSendingEmail(false);
         }
     };
 
@@ -348,6 +412,9 @@ export default function OrdersPage() {
                                                 </AlertDialogFooter>
                                             </AlertDialogContent>
                                         </AlertDialog>
+                                        <Button variant="outline" onClick={(e) => { e.stopPropagation(); openEmail(order, index); }}>
+                                            <Mail className="mr-2 h-4 w-4"/> Enviar
+                                        </Button>
                                         <Button onClick={(e) => { e.stopPropagation(); handleDownloadPDF(order, index); }}>
                                             <Download className="mr-2 h-4 w-4"/> PDF
                                         </Button>
@@ -384,6 +451,39 @@ export default function OrdersPage() {
                     </Accordion>
                 </CardContent>
             </Card>
+
+            {/* Enviar cotización por correo al proveedor */}
+            <Dialog open={!!emailingOrder} onOpenChange={(o) => { if (!o) setEmailingOrder(null); }}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Enviar cotización por correo</DialogTitle>
+                        <DialogDescription>
+                            Se adjunta el PDF y se envía directamente al proveedor
+                            {emailingOrder ? <> <span className="font-medium">{supplierMap.get(emailingOrder.order.supplierId)?.name}</span></> : ''}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-1.5">
+                            <Label>Para (correo del proveedor)</Label>
+                            <Input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="proveedor@correo.cl (separa varios con coma)" />
+                            {emailingOrder && !supplierMap.get(emailingOrder.order.supplierId)?.email && (
+                                <p className="text-xs text-warning-subtle-foreground">Este proveedor no tiene correo guardado; escríbelo aquí (o agrégalo en Proveedores).</p>
+                            )}
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Mensaje (opcional)</Label>
+                            <Textarea value={emailMessage} onChange={(e) => setEmailMessage(e.target.value)} rows={3}
+                                placeholder="Estimado proveedor, adjuntamos nuestra solicitud de cotización…" />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setEmailingOrder(null)}>Cancelar</Button>
+                        <Button onClick={handleSendEmail} disabled={sendingEmail || !emailTo.trim()}>
+                            {sendingEmail ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />} Enviar al proveedor
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

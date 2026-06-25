@@ -480,6 +480,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const functions = React.useMemo(() => ({
         // Purchase Requests
         addPurchaseRequest: bindContext(purchaseRequestMutations.addPurchaseRequest),
+        authorizePurchaseRequest: bindContext(purchaseRequestMutations.authorizePurchaseRequest),
         updatePurchaseRequestStatus: bindContext(purchaseRequestMutations.updatePurchaseRequestStatus),
         receivePurchaseRequest: bindContext(purchaseRequestMutations.receivePurchaseRequest),
         deletePurchaseRequest: bindContext(purchaseRequestMutations.deletePurchaseRequest),
@@ -492,6 +493,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         // Material Requests
         addMaterialRequest: bindContext(materialRequestMutations.addMaterialRequest),
         addAndApproveMaterialRequest: bindContext(materialRequestMutations.addAndApproveMaterialRequest),
+        authorizeMaterialRequest: bindContext(materialRequestMutations.authorizeMaterialRequest),
         updateMaterialRequestStatus: bindContext(materialRequestMutations.updateMaterialRequestStatus),
         deliverApprovedMaterialRequest: bindContext(materialRequestMutations.deliverApprovedMaterialRequest),
         addReturnRequest: bindContext(materialRequestMutations.addReturnRequest),
@@ -624,9 +626,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         addRentalContract: bindContext(rentalMutations.addRentalContract),
         updateRentalContract: bindContext(rentalMutations.updateRentalContract),
         deleteRentalContract: bindContext(rentalMutations.deleteRentalContract),
+        closeRentalContract: bindContext(rentalMutations.closeRentalContract),
         addRentalAsset: bindContext(rentalMutations.addRentalAsset),
         updateRentalAsset: bindContext(rentalMutations.updateRentalAsset),
         deleteRentalAsset: bindContext(rentalMutations.deleteRentalAsset),
+        returnRentalAsset: bindContext(rentalMutations.returnRentalAsset),
         addRentalPayment: bindContext(rentalMutations.addRentalPayment),
         generateRentalSchedule: bindContext(rentalMutations.generateRentalSchedule),
         markRentalPaymentPaid: bindContext(rentalMutations.markRentalPaymentPaid),
@@ -639,6 +643,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         // Solicitudes de Arriendo + RFQ de arriendo
         addRentalRequest: bindContext(rentalRequestMutations.addRentalRequest),
         updateRentalRequestStatus: bindContext(rentalRequestMutations.updateRentalRequestStatus),
+        authorizeRentalRequest: bindContext(rentalRequestMutations.authorizeRentalRequest),
         deleteRentalRequest: bindContext(rentalRequestMutations.deleteRentalRequest),
         addRentalQuoteRequest: bindContext(rentalRequestMutations.addRentalQuoteRequest),
         updateRentalQuoteRequest: bindContext(rentalRequestMutations.updateRentalQuoteRequest),

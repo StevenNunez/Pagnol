@@ -98,8 +98,15 @@ export default function PurchaseRequestsManagementPage() {
   };
 
   // Filtrado y Ordenamiento
+  // Gate ADC: las pendientes SIN autorizar viven en la bandeja del ADC
+  // (/dashboard/authorizations), no en la cola de Abastecimiento.
+  const authorizedRequests = useMemo(
+      () => (purchaseRequests || []).filter(r => !(r.status === 'pending' && !r.adcAuthorizedAt)),
+      [purchaseRequests],
+  );
+
   const filteredRequests = useMemo(() => {
-      let filtered = [...(purchaseRequests || [])];
+      let filtered = [...authorizedRequests];
 
       // Filtro de Estado (Tabs)
       if (statusFilter !== 'all') {
@@ -127,7 +134,7 @@ export default function PurchaseRequestsManagementPage() {
           const timeB = getDate(b.createdAt)?.getTime() || 0;
           return timeB - timeA;
       });
-  }, [purchaseRequests, statusFilter, searchTerm, supervisorMap]);
+  }, [authorizedRequests, statusFilter, searchTerm, supervisorMap]);
 
   const paginatedRequests = useMemo(() => {
       return filteredRequests.slice((page - 1) * itemsPerPage, page * itemsPerPage);
@@ -135,15 +142,15 @@ export default function PurchaseRequestsManagementPage() {
 
   const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
 
-  // Estadísticas Rápidas
+  // Estadísticas Rápidas (sobre lo ya autorizado por el ADC)
   const stats = useMemo(() => {
-      const all = purchaseRequests || [];
+      const all = authorizedRequests;
       return {
           pending: all.filter(r => r.status === 'pending').length,
           active: all.filter(r => ['approved', 'batched', 'ordered'].includes(r.status)).length,
           total: all.length
       };
-  }, [purchaseRequests]);
+  }, [authorizedRequests]);
 
   // Render Helpers
   const renderStatusBadge = (status: PurchaseRequestStatus) => {

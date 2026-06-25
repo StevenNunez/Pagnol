@@ -138,6 +138,7 @@ export interface AppStateContextType extends AppDataState {
 
   // Purchase Requests
   addPurchaseRequest: (data: Partial<Omit<PurchaseRequest, 'id' | 'status' | 'createdAt' | 'tenantId'>>) => Promise<void>;
+  authorizePurchaseRequest: (requestId: string) => Promise<void>;
   updatePurchaseRequestStatus: (requestId: string, status: PurchaseRequest['status'], data: Partial<PurchaseRequest>) => Promise<void>;
   receivePurchaseRequest: (requestId: string, receivedQuantity: number, existingMaterialId?: string) => Promise<void>;
   deletePurchaseRequest: (requestId: string) => Promise<void>;
@@ -150,6 +151,7 @@ export interface AppStateContextType extends AppDataState {
   // Material Requests
   addMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; supervisorName?: string; highestClass?: 'A' | 'B' | 'C'; tenantPrefix?: string; }) => Promise<void>;
   addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; }) => Promise<void>;
+  authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
   deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null) => Promise<void>;
   addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string }[], notes: string) => Promise<void>;
@@ -259,9 +261,11 @@ export interface AppStateContextType extends AppDataState {
   addRentalContract: (data: Omit<RentalContract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>) => Promise<RentalContract>;
   updateRentalContract: (id: string, data: Partial<RentalContract>) => Promise<void>;
   deleteRentalContract: (id: string) => Promise<void>;
+  closeRentalContract: (contractId: string, opts: { returnDate: Date | string; notes?: string; cancelFuturePayments?: boolean }) => Promise<void>;
   addRentalAsset: (data: Omit<RentalAsset, 'id' | 'tenantId' | 'createdAt'>) => Promise<RentalAsset>;
   updateRentalAsset: (id: string, data: Partial<RentalAsset>) => Promise<void>;
   deleteRentalAsset: (id: string) => Promise<void>;
+  returnRentalAsset: (id: string, returnDate: Date | string) => Promise<void>;
   addRentalPayment: (data: Omit<RentalPayment, 'id' | 'tenantId' | 'createdAt' | 'status'> & { status?: RentalPayment['status'] }) => Promise<RentalPayment>;
   generateRentalSchedule: (contractId: string, installments: number) => Promise<void>;
   markRentalPaymentPaid: (id: string, details: { paidDate: Date | string; paymentMethod?: string; reference?: string }) => Promise<void>;
@@ -273,6 +277,7 @@ export interface AppStateContextType extends AppDataState {
   deleteRentalCategory: (id: string) => Promise<void>;
   addRentalRequest: (data: { items: { name: string; category: RentalAssetCategory; quantity: number }[]; startDate?: string | null; endDate?: string | null; billingCycleEstimate: RentalBillingCycle; contractId?: string | null; contractName?: string | null; area?: string; justification?: string; supervisorId?: string; }) => Promise<void>;
   updateRentalRequestStatus: (requestId: string, status: 'approved' | 'rejected' | 'quoting', reason?: string) => Promise<void>;
+  authorizeRentalRequest: (requestId: string) => Promise<void>;
   deleteRentalRequest: (requestId: string) => Promise<void>;
   addRentalQuoteRequest: (data: { title: string; requestIds: string[]; items: RentalQuoteItem[]; partyIds: string[]; deadline?: string; notes?: string }) => Promise<RentalQuoteRequest>;
   updateRentalQuoteRequest: (id: string, data: Partial<RentalQuoteRequest>) => Promise<void>;

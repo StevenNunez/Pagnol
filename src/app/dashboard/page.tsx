@@ -69,26 +69,27 @@ export default function DashboardHub() {
             permission: 'module_construction_control:view'
         },
         {
-            title: "Módulo Compras",
-            description: "Gestiona adquisiciones, lotes y órdenes de compra.",
-            icon: ShoppingCart,
-            href: "/dashboard/purchasing",
-            color: "text-emerald-600 dark:text-emerald-400",
-            bg: "bg-emerald-100 dark:bg-emerald-500/10",
-            border: "hover:border-emerald-300 dark:hover:border-emerald-500/50",
-            shadow: "hover:shadow-emerald-500/20 dark:hover:shadow-emerald-500/10",
-            permission: 'module_purchasing:view'
+            title: "Autorizaciones",
+            description: "Bandeja del Administrador de Contratos: autoriza solicitudes de material, compra y arriendo antes de Abastecimiento.",
+            icon: ShieldCheck,
+            href: "/dashboard/authorizations",
+            color: "text-primary",
+            bg: "bg-orange-100 dark:bg-orange-500/10",
+            border: "hover:border-orange-300 dark:hover:border-orange-500/50",
+            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
+            permission: 'module_authorizations:view'
         },
         {
-            title: "Abastecimiento",
-            description: "Ciclo completo de compras: solicitud → RFQ → OC → recepción → pago, con control de costos.",
+            title: "Compras y Abastecimiento",
+            description: "Ciclo completo de compras: solicitud → RFQ → OC → recepción → pago, con lotes, finanzas y control de costos.",
             icon: PackageSearch,
             href: "/dashboard/abastecimiento",
             color: "text-emerald-600 dark:text-emerald-400",
             bg: "bg-emerald-100 dark:bg-emerald-500/10",
             border: "hover:border-emerald-300 dark:hover:border-emerald-500/50",
             shadow: "hover:shadow-emerald-500/20 dark:hover:shadow-emerald-500/10",
-            permission: 'module_abastecimiento:view'
+            // Visible para quien podía ver el viejo Compras O Abastecimiento (consolidado).
+            permissions: ['module_abastecimiento:view', 'module_purchasing:view']
         },
         {
             title: "Gestión de Usuarios y Permisos",
@@ -255,7 +256,11 @@ export default function DashboardHub() {
         },
     ];
 
-    const visibleModules = modules.filter(mod => !mod.permission || can(mod.permission as Permission));
+    const visibleModules = modules.filter((mod: any) => {
+        // Soporta `permissions` (cualquiera de varios) además del `permission` único.
+        if (mod.permissions) return mod.permissions.some((p: Permission) => can(p));
+        return !mod.permission || can(mod.permission as Permission);
+    });
 
     return (
         // 1. APLICAMOS UN CONTENEDOR CON FONDO SUTIL

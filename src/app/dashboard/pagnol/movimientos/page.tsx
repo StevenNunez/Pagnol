@@ -136,6 +136,10 @@ export default function MovimientosPagnolPage() {
     const combinedList: DisplayTransaction[] = [];
 
     ((requests || []) as CompatibleMaterialRequest[]).forEach(r => {
+      // Gate ADC: las pendientes sin autorizar viven en la bandeja del ADC
+      // (/dashboard/authorizations), no en la cola del pañol.
+      if (r.status === 'pending' && !(r as any).adcAuthorizedAt) return;
+
       const items = r.items && Array.isArray(r.items)
         ? r.items
         : (r.materialId ? [{ materialId: r.materialId, quantity: r.quantity || 1 }] : []);

@@ -249,6 +249,8 @@ export const mappers = {
         rentalContractId: item.rental_contract_id || null,
         notes: item.notes || undefined,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+        adcAuthorizedAt: item.adc_authorized_at || null,
+        adcAuthorizedById: item.adc_authorized_by || null,
       };
     },
     rental_quote_requests: (item: any): RentalQuoteRequest => ({
@@ -440,7 +442,9 @@ export const mappers = {
         highestClass: item.highest_class,
         contractUrl: item.contract_url,
         deliveredByUserId: item.delivered_by_user_id,
-        deliveredByUserName: item.delivered_by_user_name
+        deliveredByUserName: item.delivered_by_user_name,
+        adcAuthorizedAt: item.adc_authorized_at || null,
+        adcAuthorizedById: item.adc_authorized_by || null
     }),
     purchase_requests: (item: any): PurchaseRequest => ({
         id: item.id,
@@ -466,7 +470,9 @@ export const mappers = {
         tenantId: item.tenant_id,
         purchaseOrderId: item.purchase_order_id,
         rejectionReason: item.rejection_reason,
-        rejectionDate: item.rejection_date ? new Date(item.rejection_date) : undefined
+        rejectionDate: item.rejection_date ? new Date(item.rejection_date) : undefined,
+        adcAuthorizedAt: item.adc_authorized_at || null,
+        adcAuthorizedById: item.adc_authorized_by || null
     }),
     return_requests: (item: any): ReturnRequest => ({
         id: item.id,

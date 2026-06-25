@@ -36,7 +36,7 @@ const money = (n: number) => "$" + (Number(n) || 0).toLocaleString("es-CL");
 export default function AbastecimientoArriendosPage() {
   const {
     rentalRequests, rentalQuoteRequests, rentalParties,
-    updateRentalRequestStatus, deleteRentalRequest,
+    deleteRentalRequest, addRentalParty,
     addRentalQuoteRequest, recordRentalQuoteResponse, awardRentalQuote, deleteRentalQuoteRequest, sendRentalQuoteRequest,
     can,
   } = useAppState();
@@ -54,7 +54,9 @@ export default function AbastecimientoArriendosPage() {
   );
   const partyMap = useMemo(() => new Map(lessors.map((p) => [p.id, p])), [lessors]);
 
-  const pendingRequests = useMemo(() => requests.filter((r) => r.status === "pending"), [requests]);
+  // Gate ADC: Abastecimiento solo ve solicitudes ya AUTORIZADAS por el ADC.
+  // Las pendientes sin autorizar viven en /dashboard/authorizations.
+  const pendingRequests = useMemo(() => requests.filter((r) => r.status === "pending" && r.adcAuthorizedAt), [requests]);
   const quotingRequests = useMemo(() => requests.filter((r) => r.status === "quoting"), [requests]);
   const closedRequests = useMemo(() => requests.filter((r) => ["approved", "fulfilled", "rejected"].includes(r.status)), [requests]);
 
@@ -64,6 +66,25 @@ export default function AbastecimientoArriendosPage() {
   const [rfqTitle, setRfqTitle] = useState("");
   const [rfqDeadline, setRfqDeadline] = useState("");
   const [rfqParties, setRfqParties] = useState<Set<string>>(new Set());
+  const [newLessorName, setNewLessorName] = useState("");
+  const [addingLessor, setAddingLessor] = useState(false);
+
+  // Alta rápida de arrendador SIN salir del flujo de cotización (queda invitado).
+  const handleAddLessor = async () => {
+    const name = newLessorName.trim();
+    if (!name) return;
+    setAddingLessor(true);
+    try {
+      const created = await addRentalParty({ name, partyType: "lessor" });
+      setRfqParties((prev) => { const n = new Set(prev); n.add(created.id); return n; });
+      setNewLessorName("");
+      toast({ title: "Arrendador agregado", description: `${name} quedó invitado a cotizar.` });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e?.message || "No se pudo agregar el arrendador." });
+    } finally {
+      setAddingLessor(false);
+    }
+  };
 
   const toggleReq = (id: string) => {
     setSelectedReqs((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -111,16 +132,6 @@ export default function AbastecimientoArriendosPage() {
       setRfqDialogOpen(false);
     } catch {
       toast({ variant: "destructive", title: "Error", description: "No se pudo crear el RFQ." });
-    } finally { setBusy(null); }
-  };
-
-  const handleRequestStatus = async (id: string, status: "approved" | "rejected") => {
-    setBusy(id);
-    try {
-      await updateRentalRequestStatus(id, status, status === "rejected" ? "Rechazada por Abastecimiento" : undefined);
-      toast({ title: status === "approved" ? "Solicitud aprobada" : "Solicitud rechazada" });
-    } catch {
-      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar." });
     } finally { setBusy(null); }
   };
 
@@ -197,15 +208,8 @@ export default function AbastecimientoArriendosPage() {
                     </div>
                     {req.justification && <div className="text-xs text-muted-foreground italic">"{req.justification}"</div>}
                     {req.status === "pending" && (
-                      <div className="flex gap-2 pt-1">
-                        <Button size="sm" variant="outline" className="badge-success" disabled={!canManage || busy === req.id}
-                          onClick={() => handleRequestStatus(req.id, "approved")}>
-                          <Check className="h-3.5 w-3.5 mr-1" /> Aprobar
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-destructive" disabled={!canManage || busy === req.id}
-                          onClick={() => handleRequestStatus(req.id, "rejected")}>
-                          <X className="h-3.5 w-3.5 mr-1" /> Rechazar
-                        </Button>
+                      <div className="flex items-center gap-1.5 pt-1 text-[11px] text-success-subtle-foreground">
+                        <Check className="h-3.5 w-3.5" /> Autorizada por el ADC · marca la casilla para cotizar
                       </div>
                     )}
                   </div>
@@ -280,10 +284,22 @@ export default function AbastecimientoArriendosPage() {
             </div>
             <div className="space-y-2">
               <Label>Arrendadores invitados</Label>
+              {/* Alta rápida inline: crea e invita al arrendador sin salir del flujo. */}
+              <div className="flex gap-2">
+                <Input
+                  value={newLessorName}
+                  onChange={(e) => setNewLessorName(e.target.value)}
+                  placeholder="Nombre del arrendador…"
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddLessor(); } }}
+                />
+                <Button type="button" variant="outline" className="shrink-0" disabled={addingLessor || !newLessorName.trim()} onClick={handleAddLessor}>
+                  {addingLessor ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4 mr-1" /> Agregar</>}
+                </Button>
+              </div>
               {lessors.length === 0 ? (
-                <div className="flex items-center gap-2 p-3 rounded-xl border border-warning/30 bg-warning-subtle text-warning-subtle-foreground text-xs">
-                  <AlertCircle className="h-4 w-4" /> No hay arrendadores. Créalos en Arriendos → Arrendadores y Clientes.
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  Aún no hay arrendadores. Agrega el primero arriba — quedará invitado automáticamente. (También puedes gestionarlos en Arriendos → Arrendadores y Clientes.)
+                </p>
               ) : (
                 <div className="max-h-48 overflow-y-auto space-y-1 border rounded-xl p-2">
                   {lessors.map((p) => (

@@ -3,6 +3,8 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { PurchaseRequest, Material, PurchaseLot, PurchaseOrder } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
+import { userCan } from '@/modules/core/lib/permissions';
+import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 
 import type { MutationContext as Context } from './context';
 
@@ -14,6 +16,10 @@ export async function addPurchaseRequest(
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
   const requestId = await nextInternalCode(tenantId, 'PRQ');
+
+  // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
+  const preAuthorized = userCan(user, 'purchase_requests:authorize');
+  const now = new Date().toISOString();
 
   const { error } = await supabase.from('purchase_requests').insert({
     id: requestId,
@@ -31,9 +37,32 @@ export async function addPurchaseRequest(
     status: 'pending',
     tenant_id: tenantId,
     requester_name: user.name,
-    created_at: new Date().toISOString()
+    adc_authorized_at: preAuthorized ? now : null,
+    adc_authorized_by: preAuthorized ? user.id : null,
+    created_at: now
   });
 
+  if (error) throw error;
+
+  // Push al ADC solo si quedó pendiente de autorización.
+  if (!preAuthorized) notifyAuthorizers('purchase', { tenantId, code: requestId, requesterName: user.name });
+}
+
+/**
+ * Autorización ADC de una solicitud de compra. No cambia el `status` (sigue
+ * 'pending') — solo levanta el gate para que Abastecimiento la vea/apruebe.
+ */
+export async function authorizePurchaseRequest(requestId: string, context: Context) {
+  const { user, tenantId } = context;
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  if (!userCan(user, 'purchase_requests:authorize'))
+    throw new Error('No tienes permiso para autorizar solicitudes de compra.');
+
+  const { error } = await supabase
+    .from('purchase_requests')
+    .update({ adc_authorized_at: new Date().toISOString(), adc_authorized_by: user.id })
+    .eq('id', requestId)
+    .eq('tenant_id', tenantId);
   if (error) throw error;
 }
 

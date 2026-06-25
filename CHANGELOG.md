@@ -18,6 +18,96 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Corregido
+- **RFQ de arriendo bloqueado sin arrendadores precargados**: al crear una cotización (RFQ) de
+  arriendo, si el tenant no tenía arrendadores el flujo se trababa ("Créalos en Arriendos →
+  Arrendadores y Clientes", obligando a salir a otra pantalla). Ahora el diálogo de RFQ permite
+  **dar de alta el arrendador inline** (input + "Agregar"), que queda **invitado automáticamente**
+  a la cotización — sin abandonar el flujo SOLCOT → cotizar → comparar → adjudicar. (Mismo
+  requisito que el RFQ de compras, que sí tenía proveedores precargados; pendiente replicar el
+  alta inline allá si se desea.)
+- **Notificaciones push: "doy clic y no pasa nada"**. Causa raíz: la tabla `push_subscriptions`
+  **nunca se creaba** en una migración (el RLS consolidado solo la tocaba con `IF EXISTS`), así
+  que en proyectos nuevos no existía → `/api/push/subscribe` devolvía 500 y el hook lo ignoraba
+  (se marcaba "suscrito" sin guardar nada, y jamás llegaba un push). Además la función
+  `usePushNotifications.subscribe` fallaba **en silencio** en cada rama (`return false` sin avisar
+  al usuario). Correcciones: (1) nueva migración `20260625040000_push_subscriptions.sql` (tabla +
+  índice único por endpoint + RLS own + GRANT) — **aplicada en Supabase (2026-06-25)**; (2) el hook ahora da
+  **feedback con toast** en cada caso (sin soporte, sin VAPID, permiso denegado, error del
+  servidor, éxito) y **verifica la respuesta** del POST antes de marcar como suscrito; (3) nuevo
+  ítem **"Enviar notificación de prueba"** en la campana (cuando ya estás suscrito) que dispara un
+  push a tu propio usuario vía `/api/push/send` para verificar el circuito completo end-to-end.
+
+### Agregado
+- **Compras consolidado en un solo módulo (Abastecimiento)**: el viejo `/dashboard/purchasing` y
+  `/dashboard/abastecimiento` quedaban como dos módulos paralelos. Ahora **Abastecimiento es el
+  flujo único y completo** (solicitud → RFQ/SOLCOT → comparar → OC → recepción → pago, con lotes,
+  finanzas y costos). Se trajeron a su menú **Lotes de Compra** y **Finanzas** (wrappers
+  `abastecimiento/lotes` y `abastecimiento/finanzas` que reutilizan las páginas de purchasing);
+  se quitó la tarjeta "Módulo Compras" del hub y la tarjeta "Compras y Abastecimiento" ahora es
+  visible para quien tenga `module_purchasing:view` **o** `module_abastecimiento:view` (nadie
+  pierde acceso). Las rutas `/dashboard/purchasing/*` siguen existiendo (las reusan los wrappers).
+- **Enviar la cotización/OC por correo al proveedor directamente**: en el generador de
+  cotizaciones (Órdenes), cada cotización generada tiene ahora un botón **"Enviar"** que adjunta
+  el PDF y lo manda **directo al correo del proveedor** (prellena `supplier.email`, permite editar
+  destinatarios y un mensaje), sin descargar el PDF ni redactar un correo aparte. Nuevo endpoint
+  `POST /api/purchasing/send-order` (reusa `sendEmail`/SMTP, mismo patrón que el envío de informes
+  de terreno; con auth Bearer + rate-limit). El botón de Descargar PDF se mantiene.
+- **Push automático al ADC cuando terreno crea una solicitud**: al crear una solicitud de
+  material/compra/arriendo que queda **pendiente de autorización**, se dispara (fire-and-forget)
+  un **push web a los autorizadores del tenant** (ADC y demás roles con permiso `*:authorize`,
+  incl. admin/soporte por bypass), aunque tengan la app cerrada; el push lleva a
+  `/dashboard/authorizations`. Si la solicitud entra **pre-autorizada** (la creó un ADC+), no se
+  notifica. Piezas: helper de servidor `src/lib/push-notify.ts` (`sendPushToUsers` +
+  `getUserIdsWithPermission`, que resuelve destinatarios por rol/permiso en el tenant), endpoint
+  `POST /api/push/notify-authorizers`, y helper cliente `notify-authorizers.ts` llamado desde las
+  mutaciones `add*`. `/api/push/send` se refactorizó para reusar `sendPushToUsers`. (No requiere
+  migración nueva; sí depende de `push_subscriptions`, ya creada arriba.)
+- **Autorización del Administrador de Contratos (ADC) como etapa previa a Abastecimiento**:
+  quien solicita material / compra / arriendo es el supervisor (terreno) y ahora **necesita ser
+  autorizado por el ADC** antes de que Abastecimiento/Pañol empiece a gestionar. Si quien crea
+  ya puede autorizar (ADC o superior), la solicitud entra **pre-autorizada** y salta directo a
+  Abastecimiento. Implementación **aditiva** (sin tocar los enums de estado): 2 columnas por
+  tabla `adc_authorized_at` / `adc_authorized_by` en `material_requests`, `purchase_requests` y
+  `rental_requests` (migración `20260625030000_adc_authorization.sql`, additiva + backfill de
+  existentes como autorizadas — **pendiente de aplicar**). Nuevos permisos
+  `material_requests:authorize` / `purchase_requests:authorize` / `rentals:authorize` asignados
+  al rol **adc** (y a director-faena); el rol ADC pasó de solo-informes a autorizador de
+  solicitudes. Helper `userCan(user, permission)` para gating en mutaciones. Nuevas mutaciones
+  `authorizeMaterial/Purchase/RentalRequest` (levantan el gate sin cambiar el `status`). Las
+  `add*` pre-autorizan si el creador tiene el permiso.
+- **Componente compartido `AuthorizationInbox`** (`src/components/operations/authorization-inbox.tsx`):
+  bandeja de tarjetas Autorizar/Rechazar genérica sobre `ApprovableRequest`, único componente
+  para la etapa ADC de los 3 tipos (en vez de duplicar el flujo). Diálogo de rechazo con motivo
+  opcional, estado por ítem, modo solo-lectura si no hay permiso.
+- **Página única "Autorizaciones"** (`/dashboard/authorizations`): bandeja del ADC con 3
+  pestañas (Material / Compra / Arriendo) que reúsan `AuthorizationInbox`. Entrada en el hub
+  central + nav lateral, gateada por `module_authorizations:view`.
+- **Campana de Notificaciones con autorizaciones del ADC (tiempo real)**: la campana del header
+  (panel derivado de colecciones realtime, ya tocaba sonido + app badge al subir el contador)
+  ahora incluye un ítem **"N Solicitud(es) por Autorizar"** que enlaza a `/dashboard/authorizations`,
+  combinando material/compra/arriendo según los permisos `*:authorize` del usuario. Como las
+  solicitudes llegan por Supabase Realtime, al ADC **le salta la notificación (con sonido) en
+  vivo** cuando terreno crea una solicitud, y entra a autorizar desde ahí. Los contadores de
+  material/compra del pañol pasaron a contar solo lo ya autorizado (coherente con las colas). Las colas de Abastecimiento
+  (`purchasing/purchase-requests`, `abastecimiento/arriendos`), del pañol (`pagnol/movimientos`,
+  `bodega/requests`) ahora **filtran las pendientes sin autorizar** (solo ven lo aprobado por el
+  ADC). En arriendos se quitó el Aprobar/Rechazar de Abastecimiento (ahora lo hace el ADC; este
+  solo cotiza las autorizadas).
+- **Cierre / devolución de arriendo**: la página de detalle de un contrato de arriendo
+  (`rentals/contracts/[id]`) ahora permite **cerrar el arriendo** registrando la devolución
+  del/los equipo/s. Botón **"Cerrar arriendo"** en el encabezado (visible para `active`/`pending`
+  con permiso `rentals:manage_contracts`) → diálogo con fecha de devolución, toggle "eliminar
+  cuotas futuras" y un **resumen de impacto** (cuántos equipos se devuelven, cuántas cuotas
+  pendientes futuras se eliminan) + notas de cierre. En una sola operación
+  (`closeRentalContract`): marca el contrato como **Finalizado** con `end_date`, marca todos los
+  activos aún activos como **Devueltos**, y borra las cuotas **pendientes con vencimiento
+  posterior** a la devolución (las vencidas y las pagadas no se tocan). También hay **devolución
+  parcial por equipo** (botón "Devolver" por fila → `returnRentalAsset`) para multi-ítem, una
+  columna **Estado** (En arriendo / Devuelto + fecha) en la tabla de activos, y un banner cuando
+  el contrato está finalizado. Sin migración (reusa `rental_assets.status`/`end_date` y
+  `rental_contracts.status`/`end_date` existentes).
+
 ### Cambiado
 - **Códigos de Solicitud de Arriendo con prefijo semántico SOLPED**: antes el código usaba
   las iniciales del tenant (`SYPV-ARR-0001`); ahora usa un prefijo fijo **`SOLPED`** (SOLicitud
@@ -27,7 +117,7 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   (tenant, tipo), así la numeración no se reinicia. Cambios: migración
   `20260625020000_internal_code_prefix_override.sql` (reemplaza la función + backfill de los
   códigos de arriendo existentes a SOLPED), `nextInternalCode()` acepta `prefix?`, y
-  `addRentalRequest` pasa `'SOLPED'`. **Pendiente de aplicar en Supabase.**
+  `addRentalRequest` pasa `'SOLPED'`. **Aplicada en Supabase (2026-06-25).**
 
 ### Agregado
 - **Categorías de Arriendo gestionables por tenant**: la categoría de un equipo de arriendo
@@ -39,8 +129,8 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   nueva tabla `rental_categories` en la UI. Helper `rentalCategoryLabel()` centraliza la
   etiqueta (default → label; custom → su nombre). Nueva colección `rentalCategories` +
   mutaciones add/update/delete. Migración `20260625010000_rental_categories.sql` (tabla + RLS
-  canónico + GRANT + realtime, índice único por tenant case-insensitive) — **pendiente de
-  aplicar en Supabase**.
+  canónico + GRANT + realtime, índice único por tenant case-insensitive) — **aplicada en
+  Supabase (2026-06-25)**.
 - **Solicitud de Arriendo multi-ítem (carrito)**: la solicitud de arriendo ahora permite
   pedir **varios equipos en un solo pedido** (p.ej. 2 contenedores oficina + 1 baño + 1
   generador), igual que la solicitud de compra/material, en vez de una solicitud por equipo.
@@ -50,7 +140,7 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   equipo"; el módulo de Abastecimiento (`abastecimiento/arriendos`) muestra los ítems por
   solicitud y, al armar el RFQ, **expande** los ítems de cada solicitud seleccionada a líneas
   de cotización (`flatMap`). Migración `20260625000000_rental_requests_items.sql` (additiva +
-  backfill de filas mono-ítem existentes) — **pendiente de aplicar en Supabase**.
+  backfill de filas mono-ítem existentes) — **aplicada en Supabase (2026-06-25)**.
 - **Solicitud de Arriendo + RFQ de arriendo (conecta Abastecimiento ↔ Arriendos)**: nuevo
   tercer tipo de solicitud, junto a Material y Compra, para pedir equipos de terceros
   (camión pluma, andamios, maquinaria…) que no son stock de bodega ni herramientas del pañol.

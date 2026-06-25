@@ -207,12 +207,14 @@ const getWorkReportsNavItems = () => [
 const getAbastecimientoNavItems = () => [
   { href: '/dashboard/abastecimiento', icon: LayoutDashboard, label: 'Panel de Control' },
   { href: '/dashboard/abastecimiento/solicitudes', icon: ShoppingCart, label: 'Solicitudes de Compra' },
+  { href: '/dashboard/abastecimiento/lotes', icon: PackagePlus, label: 'Lotes de Compra' },
   { href: '/dashboard/abastecimiento/rfq', icon: Search, label: 'Cotizaciones (RFQ)' },
   { href: '/dashboard/abastecimiento/comparador', icon: ListChecks, label: 'Comparador' },
   { href: '/dashboard/abastecimiento/ordenes', icon: FileText, label: 'Órdenes de Compra' },
   { href: '/dashboard/abastecimiento/recepcion', icon: Truck, label: 'Recepción' },
   { href: '/dashboard/abastecimiento/proveedores', icon: Building2, label: 'Proveedores' },
   { href: '/dashboard/abastecimiento/costos', icon: Target, label: 'Control de Costos' },
+  { href: '/dashboard/abastecimiento/finanzas', icon: Receipt, label: 'Finanzas' },
   { href: '/dashboard/abastecimiento/arriendos', icon: KeyRound, label: 'Arriendos' },
   { href: '/dashboard/abastecimiento/pagos', icon: DollarSign, label: 'Pagos' },
   { href: '/dashboard/abastecimiento/reportes', icon: FileBarChart, label: 'Reportes' },
@@ -291,6 +293,15 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
   const { navItems, moduleTitle, moduleIcon: ModuleIcon } = React.useMemo(() => {
     if (!user) return { navItems: [], moduleTitle: '', moduleIcon: LayoutDashboard };
 
+    if (pathname.startsWith('/dashboard/authorizations')) {
+      return {
+        navItems: [
+          { href: '/dashboard/authorizations', icon: ShieldCheck, label: 'Bandeja de Autorización' },
+        ],
+        moduleTitle: 'Autorizaciones',
+        moduleIcon: ShieldCheck,
+      };
+    }
     if (pathname.startsWith('/dashboard/abastecimiento')) {
       return { navItems: getAbastecimientoNavItems(), moduleTitle: 'Abastecimiento', moduleIcon: PackageSearch };
     }

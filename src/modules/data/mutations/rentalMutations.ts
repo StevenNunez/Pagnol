@@ -162,6 +162,73 @@ export async function deleteRentalContract(id: string, { tenantId }: Context): P
   if (error) throw error;
 }
 
+/**
+ * Cierra un arriendo (devolución del/los equipo/s). En una sola operación:
+ *   1. Marca el contrato como `finished` con `end_date` = fecha de devolución.
+ *   2. Marca todos los activos aún `active` del contrato como `returned`
+ *      (con su `end_date` = fecha de devolución).
+ *   3. (Opcional, por defecto sí) elimina las cuotas pendientes con vencimiento
+ *      POSTERIOR a la devolución — corta el calendario. Las cuotas ya vencidas
+ *      o pagadas no se tocan (siguen debiéndose / cobrándose).
+ */
+export async function closeRentalContract(
+  contractId: string,
+  opts: { returnDate: Date | string; notes?: string; cancelFuturePayments?: boolean },
+  { user, tenantId }: Context,
+): Promise<void> {
+  if (!user || !tenantId) throw new Error('No autenticado.');
+
+  const returnDateStr = format(new Date(opts.returnDate as any), 'yyyy-MM-dd');
+
+  // 1. Contrato → finalizado.
+  const contractPayload: any = { status: 'finished', end_date: returnDateStr };
+  if (opts.notes?.trim()) contractPayload.notes = opts.notes.trim();
+  const { error: cErr } = await supabase
+    .from('rental_contracts')
+    .update(contractPayload)
+    .eq('id', contractId)
+    .eq('tenant_id', tenantId);
+  if (cErr) throw cErr;
+
+  // 2. Activos activos → devueltos.
+  const { error: aErr } = await supabase
+    .from('rental_assets')
+    .update({ status: 'returned', end_date: returnDateStr })
+    .eq('contract_id', contractId)
+    .eq('tenant_id', tenantId)
+    .eq('status', 'active');
+  if (aErr) throw aErr;
+
+  // 3. Cuotas pendientes futuras → eliminadas (corta el calendario).
+  if (opts.cancelFuturePayments !== false) {
+    const { error: pErr } = await supabase
+      .from('rental_payments')
+      .delete()
+      .eq('contract_id', contractId)
+      .eq('tenant_id', tenantId)
+      .eq('status', 'pending')
+      .gt('due_date', returnDateStr);
+    if (pErr) throw pErr;
+  }
+}
+
+/** Marca un activo individual como devuelto (devolución parcial en multi-ítem). */
+export async function returnRentalAsset(
+  id: string,
+  returnDate: Date | string,
+  { tenantId }: Context,
+): Promise<void> {
+  if (!tenantId) throw new Error('No autenticado.');
+
+  const { error } = await supabase
+    .from('rental_assets')
+    .update({ status: 'returned', end_date: format(new Date(returnDate as any), 'yyyy-MM-dd') })
+    .eq('id', id)
+    .eq('tenant_id', tenantId);
+
+  if (error) throw error;
+}
+
 // ── Activos arrendados (líneas del contrato) ─────────────────────────────────
 
 export async function addRentalAsset(

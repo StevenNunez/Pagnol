@@ -24,6 +24,7 @@ export const ALL_PERMISSIONS = {
     'module_dte:view': { label: 'Acceder a Facturación DTE', group: 'Acceso a Módulos' },
     'module_work_reports:view': { label: 'Acceder a Reportes de Trabajo', group: 'Acceso a Módulos' },
     'module_abastecimiento:view': { label: 'Acceder a Abastecimiento', group: 'Acceso a Módulos' },
+    'module_authorizations:view': { label: 'Acceder a Autorizaciones (ADC)', group: 'Acceso a Módulos' },
     'pagnol:enroll_personal': { label: 'Enrolar Personal y Biometría', group: 'Módulo Pagnol' },
 
 
@@ -58,6 +59,11 @@ export const ALL_PERMISSIONS = {
     'material_requests:view_all': { label: 'Ver Todas las Solicitudes', group: 'Solicitudes Internas' },
     'material_requests:approve': { label: 'Aprobar/Rechazar Solicitudes', group: 'Solicitudes Internas' },
     'material_requests:select_any_contract': { label: 'Elegir cualquier contrato al solicitar (Oficina)', group: 'Solicitudes Internas' },
+
+    // Etapa previa: el Administrador de Contratos (ADC) autoriza antes de Abastecimiento.
+    'material_requests:authorize': { label: 'Autorizar Solicitudes de Material (ADC)', group: 'Autorizaciones (ADC)' },
+    'purchase_requests:authorize': { label: 'Autorizar Solicitudes de Compra (ADC)', group: 'Autorizaciones (ADC)' },
+    'rentals:authorize': { label: 'Autorizar Solicitudes de Arriendo (ADC)', group: 'Autorizaciones (ADC)' },
 
     'return_requests:create': { label: 'Crear Devoluciones', group: 'Devoluciones' },
     'return_requests:approve': { label: 'Aprobar Devoluciones', group: 'Devoluciones' },
@@ -249,6 +255,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'material_requests:approve_class_a', 'material_requests:approve_class_b', 'material_requests:approve_class_c',
             'return_requests:view_all', 'return_requests:create',
             'purchase_requests:view_all', 'purchase_requests:create',
+            // Autorización ADC (director también puede autorizar como mando superior).
+            'module_authorizations:view', 'material_requests:authorize', 'purchase_requests:authorize', 'rentals:authorize',
             'users:view',
             'safety_templates:create', 'safety_templates:assign',
             'safety_checklists:complete', 'safety_checklists:review',
@@ -508,10 +516,16 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
     },
     'adc': {
         label: 'Administrador de Contratos (ADC)',
-        description: 'Valida, firma y descarga la aprobación final de los informes de terreno.',
+        description: 'Autoriza solicitudes de terreno (material/compra/arriendo) y valida los informes de trabajo.',
         permissions: [
             'module_work_reports:view', 'work_reports:view_all',
             'work_reports:final_approve', 'work_reports:download_pdf',
+            // Etapa de autorización ADC (antes de Abastecimiento).
+            'module_authorizations:view',
+            'material_requests:authorize', 'material_requests:view_all', 'material_requests:select_any_contract',
+            'purchase_requests:authorize', 'purchase_requests:view_all', 'purchase_requests:create',
+            'rentals:authorize', 'module_rentals:view', 'rentals:request',
+            'material_requests:create',
         ],
     },
     'gerente-general': {
@@ -550,6 +564,24 @@ export const ROLES_ORDER: UserRole[] = [
     'guardia',
     'operador',
 ];
+
+/**
+ * Versión "pura" de `can()` (el de AuthProvider) para usar fuera de React,
+ * p.ej. en mutaciones que solo tienen el `user` del contexto. Replica el orden:
+ * super-admin → admin/soporte (control total del tenant) → permisos otorgados →
+ * permisos por rol (defaults estáticos). No considera overrides por-tenant de la
+ * tabla `roles` (eso vive en el cliente); para gating de servidor basta con esto.
+ */
+export function userCan(
+    user: { role: UserRole; grantedPermissions?: string[] | null } | null | undefined,
+    permission: Permission,
+): boolean {
+    if (!user) return false;
+    if (user.role === 'super-admin') return true;
+    if (user.role === 'administrador' || user.role === 'soporte-pagnol') return true;
+    if (user.grantedPermissions?.includes(permission)) return true;
+    return !!ROLES[user.role]?.permissions?.includes(permission);
+}
 
 export const PLANS = {
     basic: {

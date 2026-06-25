@@ -2,8 +2,9 @@
 
 import { supabase } from '@/modules/core/lib/supabase';
 import { MaterialRequest, Material, ReturnRequest, UserRole } from '@/modules/core/lib/data';
-import { ROLES, Permission } from '@/modules/core/lib/permissions';
+import { ROLES, Permission, userCan } from '@/modules/core/lib/permissions';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
+import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 
 import type { MutationContext as Context } from './context';
 
@@ -28,6 +29,11 @@ export async function addMaterialRequest(
 
   const requestId = await nextInternalCode(tenantId, 'TX');
 
+  // Si quien crea ya puede autorizar (ADC o superior), la solicitud entra
+  // pre-autorizada y salta el gate del ADC, directo a la cola del pañol.
+  const preAuthorized = userCan(user, 'material_requests:authorize');
+  const now = new Date().toISOString();
+
   const { error } = await supabase
     .from('material_requests')
     .insert({
@@ -42,10 +48,15 @@ export async function addMaterialRequest(
       status: 'pending',
       notes: '',
       tenant_id: tenantId,
-      created_at: new Date().toISOString(),
+      adc_authorized_at: preAuthorized ? now : null,
+      adc_authorized_by: preAuthorized ? user.id : null,
+      created_at: now,
     });
 
   if (error) throw new Error(`Error al crear solicitud: ${error.message} (code: ${error.code})`);
+
+  // Push al ADC solo si quedó pendiente de autorización.
+  if (!preAuthorized) notifyAuthorizers('material', { tenantId, code: requestId, requesterName: supervisorName });
 }
 
 
@@ -110,6 +121,9 @@ export async function addAndApproveMaterialRequest(
     delivery_date: now,
     approver_id: user.id,
     approver_name: user.name,
+    // Aprobación directa de oficina ⇒ ya pasó la autorización ADC.
+    adc_authorized_at: now,
+    adc_authorized_by: user.id,
     contract_url: requestData.contractUrl || null,
     created_at: now
   });
@@ -131,6 +145,25 @@ export async function addAndApproveMaterialRequest(
       tenant_id: tenantId,
     });
   }
+}
+
+/**
+ * Autorización del Administrador de Contratos (ADC): habilita la solicitud para
+ * que el pañol/Abastecimiento la procese. No cambia el `status` (sigue 'pending')
+ * — solo levanta el gate `adc_authorized_at`.
+ */
+export async function authorizeMaterialRequest(requestId: string, context: Context) {
+  const { user, tenantId } = context;
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  if (!userCan(user, 'material_requests:authorize'))
+    throw new Error('No tienes permiso para autorizar solicitudes de material.');
+
+  const { error } = await supabase
+    .from('material_requests')
+    .update({ adc_authorized_at: new Date().toISOString(), adc_authorized_by: user.id })
+    .eq('id', requestId)
+    .eq('tenant_id', tenantId);
+  if (error) throw error;
 }
 
 export async function updateMaterialRequestStatus(

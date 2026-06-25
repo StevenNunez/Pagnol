@@ -280,6 +280,9 @@ export interface MaterialRequest {
   contractUrl?: string | null;
   deliveredByUserId?: string;
   deliveredByUserName?: string;
+  // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
+  adcAuthorizedAt?: Date | string | null;
+  adcAuthorizedById?: string | null;
 }
 
 export interface ReturnRequest {
@@ -329,6 +332,9 @@ export interface PurchaseRequest {
   purchaseOrderId?: string;
   rejectionReason?: string;
   rejectionDate?: Date;
+  // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
+  adcAuthorizedAt?: Date | string | null;
+  adcAuthorizedById?: string | null;
 }
 
 export interface ToolLog {
@@ -593,6 +599,9 @@ export interface RentalRequest {
   rentalContractId?: string | null; // contrato de arriendo generado al fulfillar
   notes?: string;
   createdAt: Date;
+  // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
+  adcAuthorizedAt?: Date | string | null;
+  adcAuthorizedById?: string | null;
 }
 
 export interface RentalQuoteItem {

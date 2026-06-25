@@ -17,8 +17,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   ArrowLeft, Plus, Trash2, Pencil, Package, CalendarClock, CheckCircle2, ListPlus,
+  PackageCheck, Undo2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -28,6 +30,7 @@ import {
   DIRECTION_LABEL, DIRECTION_BADGE, DIRECTION_SHORT, BILLING_CYCLE_LABEL,
   CONTRACT_STATUS_LABEL, CONTRACT_STATUS_BADGE,
   PAYMENT_STATUS_LABEL, PAYMENT_STATUS_BADGE, formatMoney, derivePaymentStatus,
+  ASSET_STATUS_LABEL, ASSET_STATUS_BADGE,
 } from '../../_lib/helpers';
 
 const EMPTY_ASSET = {
@@ -41,8 +44,9 @@ export default function RentalContractDetailPage() {
   const contractId = String(params.id);
   const {
     rentalContracts, rentalParties, rentalAssets, rentalPayments,
-    addRentalAsset, updateRentalAsset, deleteRentalAsset,
+    addRentalAsset, updateRentalAsset, deleteRentalAsset, returnRentalAsset,
     generateRentalSchedule, markRentalPaymentPaid, deleteRentalPayment,
+    closeRentalContract,
     can, notify,
   } = useAppState();
 
@@ -73,6 +77,17 @@ export default function RentalContractDetailPage() {
   const [payingId, setPayingId] = useState<string | null>(null);
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10));
   const [paidMethod, setPaidMethod] = useState('');
+
+  // Close contract (return) dialog
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [closeNotes, setCloseNotes] = useState('');
+  const [cancelFuture, setCancelFuture] = useState(true);
+  const [closing, setClosing] = useState(false);
+
+  // Return single asset dialog
+  const [returningAsset, setReturningAsset] = useState<RentalAsset | null>(null);
+  const [assetReturnDate, setAssetReturnDate] = useState(new Date().toISOString().slice(0, 10));
 
   if (!contract) {
     return (
@@ -154,6 +169,32 @@ export default function RentalContractDetailPage() {
     catch (e: any) { notify(e?.message || 'No se pudo eliminar.', 'destructive'); }
   };
 
+  const confirmClose = async () => {
+    setClosing(true);
+    try {
+      await closeRentalContract(contractId, { returnDate, notes: closeNotes || undefined, cancelFuturePayments: cancelFuture });
+      notify('Arriendo cerrado. Equipos marcados como devueltos.', 'success');
+      setCloseOpen(false);
+      setCloseNotes('');
+    } catch (e: any) {
+      notify(e?.message || 'No se pudo cerrar el arriendo.', 'destructive');
+    } finally {
+      setClosing(false);
+    }
+  };
+
+  const confirmReturnAsset = async () => {
+    if (!returningAsset) return;
+    try {
+      await returnRentalAsset(returningAsset.id, assetReturnDate);
+      notify('Equipo marcado como devuelto.', 'success');
+    } catch (e: any) {
+      notify(e?.message || 'No se pudo registrar la devolución.', 'destructive');
+    } finally {
+      setReturningAsset(null);
+    }
+  };
+
   const totalPaid = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
   const totalPending = payments.filter((p) => p.status !== 'paid').reduce((s, p) => s + p.amount, 0);
 
@@ -164,9 +205,26 @@ export default function RentalContractDetailPage() {
     { key: 'qty', header: 'Cant.', cell: (a) => <span className="tabular-nums">{a.quantity}</span> },
     { key: 'price', header: 'Precio unit.', cell: (a) => <span className="tabular-nums">{a.unitPrice != null ? formatMoney(a.unitPrice, contract.currency) : '—'}</span> },
     {
+      key: 'status', header: 'Estado',
+      cell: (a) => {
+        const s = a.status === 'returned' ? 'returned' : 'active';
+        return (
+          <div className="flex flex-col gap-0.5">
+            <Badge variant="outline" className={ASSET_STATUS_BADGE[s]}>{ASSET_STATUS_LABEL[s]}</Badge>
+            {s === 'returned' && a.endDate && <span className="text-[11px] text-muted-foreground">{fmtDate(a.endDate)}</span>}
+          </div>
+        );
+      },
+    },
+    {
       key: 'actions', header: '', headerClassName: 'text-right', className: 'text-right',
       cell: (a) => canManageContracts ? (
         <div className="flex justify-end gap-1">
+          {a.status !== 'returned' && (
+            <Button variant="ghost" size="sm" className="h-8 gap-1 text-info-subtle-foreground" onClick={() => { setReturningAsset(a); setAssetReturnDate(new Date().toISOString().slice(0, 10)); }}>
+              <Undo2 className="h-4 w-4" /> Devolver
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditAsset(a)}><Pencil className="h-4 w-4" /></Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => removeAsset(a)}><Trash2 className="h-4 w-4" /></Button>
         </div>
@@ -201,9 +259,26 @@ export default function RentalContractDetailPage() {
 
   return (
     <PageShell title={contract.title} description={`${DIRECTION_LABEL[contract.direction]} · ${party?.name ?? '—'}`}>
-      <Button variant="ghost" size="sm" className="gap-2 -mt-2 w-fit" onClick={() => router.push('/dashboard/rentals/contracts')}>
-        <ArrowLeft className="h-4 w-4" /> Volver a contratos
-      </Button>
+      <div className="flex items-center justify-between gap-3 -mt-2">
+        <Button variant="ghost" size="sm" className="gap-2 w-fit" onClick={() => router.push('/dashboard/rentals/contracts')}>
+          <ArrowLeft className="h-4 w-4" /> Volver a contratos
+        </Button>
+        {canManageContracts && (contract.status === 'active' || contract.status === 'pending') && (
+          <Button variant="outline" size="sm" className="rounded-xl gap-2" onClick={() => { setReturnDate(new Date().toISOString().slice(0, 10)); setCancelFuture(true); setCloseNotes(''); setCloseOpen(true); }}>
+            <PackageCheck className="h-4 w-4" /> Cerrar arriendo
+          </Button>
+        )}
+      </div>
+
+      {contract.status === 'finished' && (
+        <div className="flex items-center gap-3 rounded-[1.5rem] border bg-muted/50 px-5 py-4">
+          <PackageCheck className="h-5 w-5 text-muted-foreground shrink-0" />
+          <p className="text-sm text-muted-foreground">
+            Arriendo <span className="font-semibold text-foreground">finalizado</span>
+            {contract.endDate ? <> el <span className="font-semibold text-foreground">{fmtDate(contract.endDate)}</span></> : ''}. Los equipos fueron devueltos y el calendario de pagos se cerró.
+          </p>
+        </div>
+      )}
 
       {/* Resumen del contrato */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -228,7 +303,7 @@ export default function RentalContractDetailPage() {
           data={assets}
           rowKey={(a) => a.id}
           empty={{ icon: <Package size={22} />, title: 'Sin activos', description: 'Agrega la maquinaria, vehículos o equipos de este contrato.' }}
-          minWidth="700px"
+          minWidth="820px"
         />
       </section>
 
@@ -313,6 +388,65 @@ export default function RentalContractDetailPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayingId(null)} className="rounded-xl">Cancelar</Button>
             <Button onClick={confirmPaid} className="rounded-xl">Confirmar pago</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog cerrar arriendo (devolución) */}
+      <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Cerrar arriendo</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Registra la devolución del/los equipo/s. El contrato pasará a <span className="font-semibold text-foreground">Finalizado</span>.
+            </p>
+            <Field label="Fecha de devolución">
+              <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className="rounded-xl" />
+            </Field>
+            <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-foreground">Eliminar cuotas futuras</div>
+                <div className="text-xs text-muted-foreground">Borra las cuotas pendientes con vencimiento posterior a la devolución.</div>
+              </div>
+              <Switch checked={cancelFuture} onCheckedChange={setCancelFuture} />
+            </div>
+            {(() => {
+              const activeAssets = assets.filter((a) => a.status !== 'returned').length;
+              const ref = new Date(returnDate); ref.setHours(0, 0, 0, 0);
+              const futurePending = payments.filter((p) => p.status === 'pending' && new Date(p.dueDate as any) > ref).length;
+              return (
+                <div className="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+                  <div>• <span className="font-semibold text-foreground">{activeAssets}</span> equipo{activeAssets === 1 ? '' : 's'} se marcará{activeAssets === 1 ? '' : 'n'} como devuelto{activeAssets === 1 ? '' : 's'}.</div>
+                  {cancelFuture && <div>• <span className="font-semibold text-foreground">{futurePending}</span> cuota{futurePending === 1 ? '' : 's'} pendiente{futurePending === 1 ? '' : 's'} futura{futurePending === 1 ? '' : 's'} se eliminará{futurePending === 1 ? '' : 'n'}.</div>}
+                </div>
+              );
+            })()}
+            <Field label="Notas de cierre (opcional)">
+              <Textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} placeholder="Estado del equipo, observaciones de la devolución…" className="rounded-xl" />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseOpen(false)} className="rounded-xl">Cancelar</Button>
+            <Button onClick={confirmClose} disabled={closing} className="rounded-xl gap-2"><PackageCheck className="h-4 w-4" /> {closing ? 'Cerrando…' : 'Cerrar arriendo'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog devolver activo individual */}
+      <Dialog open={!!returningAsset} onOpenChange={(o) => !o && setReturningAsset(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Registrar devolución</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Marcar <span className="font-semibold text-foreground">{returningAsset?.name}</span> como devuelto.
+            </p>
+            <Field label="Fecha de devolución">
+              <Input type="date" value={assetReturnDate} onChange={(e) => setAssetReturnDate(e.target.value)} className="rounded-xl" />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturningAsset(null)} className="rounded-xl">Cancelar</Button>
+            <Button onClick={confirmReturnAsset} className="rounded-xl gap-2"><Undo2 className="h-4 w-4" /> Confirmar devolución</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

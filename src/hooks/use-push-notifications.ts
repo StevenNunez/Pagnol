@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from '@/modules/core/hooks/use-toast';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -61,12 +62,20 @@ export function usePushNotifications(userId?: string, tenantId?: string) {
   }, []);
 
   const subscribe = useCallback(async (): Promise<boolean> => {
-    if (!userId || !tenantId) return false;
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    // Antes esta función fallaba en SILENCIO en cada rama (return false sin avisar),
+    // así que el usuario "daba clic y no pasaba nada". Ahora cada caso da feedback.
+    if (!userId || !tenantId) {
+      toast({ variant: 'destructive', title: 'Sesión no lista', description: 'Vuelve a intentarlo en unos segundos.' });
+      return false;
+    }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      toast({ variant: 'destructive', title: 'Navegador sin soporte', description: 'Este navegador no soporta notificaciones push (usa Chrome/Edge/Firefox en HTTPS).' });
+      return false;
+    }
 
     const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     if (!VAPID_PUBLIC_KEY) {
-      console.error('[Push] NEXT_PUBLIC_VAPID_PUBLIC_KEY no está definida. Reinicia el servidor tras agregarla a .env.local.');
+      toast({ variant: 'destructive', title: 'Push sin configurar', description: 'Falta NEXT_PUBLIC_VAPID_PUBLIC_KEY. Reinicia el servidor tras agregarla a .env.local.' });
       return false;
     }
 
@@ -75,7 +84,14 @@ export function usePushNotifications(userId?: string, tenantId?: string) {
     try {
       const perm = await Notification.requestPermission();
       setPermission(perm as PushPermission);
-      if (perm !== 'granted') return false;
+      if (perm === 'denied') {
+        toast({ variant: 'destructive', title: 'Notificaciones bloqueadas', description: 'Habilítalas para este sitio en la barra de direcciones del navegador (icono 🔒 → Notificaciones).' });
+        return false;
+      }
+      if (perm !== 'granted') {
+        toast({ title: 'Permiso pendiente', description: 'No se concedió el permiso de notificaciones.' });
+        return false;
+      }
 
       const reg = await navigator.serviceWorker.ready;
 
@@ -89,7 +105,7 @@ export function usePushNotifications(userId?: string, tenantId?: string) {
       const subscription = await subscribeToPush(reg, VAPID_PUBLIC_KEY);
 
       const subJson = subscription.toJSON();
-      await fetch('/api/push/subscribe', {
+      const res = await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -99,14 +115,24 @@ export function usePushNotifications(userId?: string, tenantId?: string) {
         }),
       });
 
+      // Verificar que el servidor guardó la suscripción. Si la tabla
+      // push_subscriptions no existe, esto devuelve 500 y NO debemos
+      // marcar como suscrito (si no, "queda suscrito" pero nunca llega nada).
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try { detail = (await res.json())?.error || detail; } catch { /* ignore */ }
+        toast({ variant: 'destructive', title: 'No se pudo registrar la suscripción', description: detail });
+        return false;
+      }
+
       setIsSubscribed(true);
+      toast({ variant: 'success', title: 'Notificaciones push activadas', description: 'Las recibirás aunque la app esté cerrada.' });
       return true;
     } catch (err: any) {
-      // AbortError del servicio push es transitorio — no bloquea la app
       if (err?.name === 'AbortError') {
-        console.warn('[Push] El servicio de notificaciones push no está disponible temporalmente. Intenta de nuevo más tarde.');
+        toast({ variant: 'destructive', title: 'Servicio push no disponible', description: 'El navegador no pudo contactar su servicio de push. Suele pasar con Brave o con VPN/firewall corporativo que bloquean FCM. Prueba en Chrome/Edge sin VPN, o en el sitio publicado (HTTPS).' });
       } else {
-        console.error('[Push] Error al suscribirse:', err?.name, err?.message);
+        toast({ variant: 'destructive', title: 'Error al activar push', description: err?.message || 'Error desconocido.' });
       }
       return false;
     } finally {

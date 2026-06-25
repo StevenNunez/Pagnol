@@ -7,7 +7,7 @@ import { DataProvider } from '@/modules/data/DataProvider';
 import { useAuth } from '@/modules/auth/useAuth';
 import { useAppState } from '@/modules/data/useData';
 import { Sidebar } from '@/components/sidebar';
-import { Menu, Loader2, Bell, Volume2, VolumeX, AlertCircle, ShoppingCart, ClipboardList, Users, LogOut, FileText, Truck, Target } from 'lucide-react';
+import { Menu, Loader2, Bell, Volume2, VolumeX, AlertCircle, ShoppingCart, ClipboardList, Users, LogOut, FileText, Truck, Target, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -37,13 +37,16 @@ import { FeedbackButton } from '@/components/feedback-button';
 import { OnboardingWizard } from '@/components/onboarding-wizard';
 import { OnboardingBanner } from '@/components/onboarding-banner';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
-import { BellRing } from 'lucide-react';
+import { BellRing, Send } from 'lucide-react';
+import { toast } from '@/modules/core/hooks/use-toast';
+import { supabase } from '@/modules/core/lib/supabase';
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, authLoading, logout, tenants, currentTenantId, setCurrentTenantId, pageHeader, getTenantId } = useAuth();
   const {
     requests,
     purchaseRequests,
+    rentalRequests,
     supplierPayments,
     suppliers,
     purchaseOrders,
@@ -62,6 +65,42 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     user?.id,
     getTenantId() ?? undefined
   );
+  // Push activable: soportado, sin suscripción y sin bloqueo previo del navegador.
+  const canActivatePush = pushPermission !== 'unsupported' && !isSubscribed && pushPermission !== 'denied';
+
+  // Envía una notificación push de prueba al propio usuario, para verificar
+  // que el circuito completo (suscripción + servidor + SW) funciona.
+  const sendTestPush = React.useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token || !user) {
+        toast({ variant: 'destructive', title: 'Sesión no disponible', description: 'Vuelve a iniciar sesión e intenta de nuevo.' });
+        return;
+      }
+      const res = await fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          tenantId: getTenantId(),
+          targetUserIds: [user.id],
+          payload: { title: 'Prueba de Pagnol 🔔', body: 'Si ves esto, las notificaciones push funcionan.', url: '/dashboard' },
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({ variant: 'destructive', title: 'No se pudo enviar', description: json?.error || `HTTP ${res.status}` });
+        return;
+      }
+      if ((json.sent ?? 0) === 0) {
+        toast({ title: 'Sin entregas', description: json.message || 'No hay suscripciones registradas para tu usuario en este dispositivo.' });
+      } else {
+        toast({ variant: 'success', title: 'Prueba enviada', description: `Enviada a ${json.sent} dispositivo(s). Revisa la notificación del sistema.` });
+      }
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e?.message || 'No se pudo enviar la prueba.' });
+    }
+  }, [getTenantId, user]);
 
   // Drena la cola de sincronización offline al recuperar conexión / al encolar.
   useOfflineSync();
@@ -132,8 +171,23 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     return daysLeft >= 0 && daysLeft <= 7;
   }), [supplierPayments, today]);
 
-  const pendingMaterialRequests = React.useMemo(() => (requests || []).filter((r: MaterialRequest) => r.status === 'pending').length, [requests]);
-  const pendingPurchaseRequests = React.useMemo(() => (purchaseRequests || []).filter((pr: PurchaseRequest) => pr.status === 'pending').length, [purchaseRequests]);
+  // Colas del pañol/Abastecimiento: solo cuentan lo ya AUTORIZADO por el ADC
+  // (las pendientes sin autorizar van a la bandeja del ADC, abajo).
+  const pendingMaterialRequests = React.useMemo(() => (requests || []).filter((r: MaterialRequest) => r.status === 'pending' && r.adcAuthorizedAt).length, [requests]);
+  const pendingPurchaseRequests = React.useMemo(() => (purchaseRequests || []).filter((pr: PurchaseRequest) => pr.status === 'pending' && pr.adcAuthorizedAt).length, [purchaseRequests]);
+
+  // Bandeja del ADC: solicitudes pendientes SIN autorizar (por tipo y combinadas
+  // según los permisos de autorización del usuario).
+  const pendingAuthMaterial = React.useMemo(() => (requests || []).filter((r: MaterialRequest) => r.status === 'pending' && !r.adcAuthorizedAt).length, [requests]);
+  const pendingAuthPurchase = React.useMemo(() => (purchaseRequests || []).filter((pr: PurchaseRequest) => pr.status === 'pending' && !pr.adcAuthorizedAt).length, [purchaseRequests]);
+  const pendingAuthRental = React.useMemo(() => (rentalRequests || []).filter((rr: any) => rr.status === 'pending' && !rr.adcAuthorizedAt).length, [rentalRequests]);
+  const pendingAuthTotal = React.useMemo(() => {
+    let c = 0;
+    if (can('material_requests:authorize')) c += pendingAuthMaterial;
+    if (can('purchase_requests:authorize')) c += pendingAuthPurchase;
+    if (can('rentals:authorize')) c += pendingAuthRental;
+    return c;
+  }, [can, pendingAuthMaterial, pendingAuthPurchase, pendingAuthRental]);
   const pendingCotizaciones = React.useMemo(() => (purchaseOrders || []).filter(po => po.status === 'generated').length, [purchaseOrders]);
 
   // Abastecimiento (F5): OC activas que aún no se reciben por completo.
@@ -167,6 +221,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
   const totalNotifications = React.useMemo(() => {
     let count = 0;
+    count += pendingAuthTotal; // ya viene gateado por los permisos *:authorize
     if (can('material_requests:approve_class_c')) count += pendingMaterialRequests;
     if (can('purchase_requests:approve')) count += pendingPurchaseRequests;
     if (can('payments:view')) {
@@ -179,7 +234,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     if (can('stock:receive_order')) count += pendingReceptions;
     if (can('cost_centers:manage')) count += overBudgetCostCenters;
     return count;
-  }, [can, pendingMaterialRequests, pendingPurchaseRequests, overduePayments, dueSoonPayments, pendingCotizaciones, pendingReceptions, overBudgetCostCenters]);
+  }, [can, pendingAuthTotal, pendingMaterialRequests, pendingPurchaseRequests, overduePayments, dueSoonPayments, pendingCotizaciones, pendingReceptions, overBudgetCostCenters]);
 
   const supplierMap = React.useMemo(() => new Map<string, string>((suppliers || []).map((s: Supplier) => [s.id, s.name])), [suppliers]);
 
@@ -289,17 +344,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2.5">
             <OfflineIndicator />
             <ThemeSwitcher />
-            {pushPermission !== 'unsupported' && !isSubscribed && pushPermission !== 'denied' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Activar notificaciones push"
-                onClick={subscribePush}
-                className="rounded-xl hover:bg-orange-50 dark:hover:bg-orange-950/30 text-pagnol-orange animate-pulse"
-              >
-                <BellRing className="h-5 w-5" />
-              </Button>
-            )}
             <Button variant="ghost" size="icon" className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setIsMuted(!isMuted)}>
               {isMuted ? <VolumeX className="h-5 w-5 text-muted-foreground" /> : <Volume2 className="h-5 w-5 text-muted-foreground" />}
               <span className="sr-only">{isMuted ? 'Activar sonido' : 'Silenciar'}</span>
@@ -312,11 +356,44 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   {totalNotifications > 0 && (
                     <span className="absolute top-2 right-2 h-2.5 w-2.5 bg-red-500 border-2 border-white rounded-full"></span>
                   )}
+                  {totalNotifications === 0 && canActivatePush && (
+                    <span className="absolute top-2 right-2 h-2.5 w-2.5 bg-pagnol-orange border-2 border-white rounded-full animate-pulse"></span>
+                  )}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80 rounded-2xl shadow-3xl border-slate-100 dark:border-slate-800 dark:bg-slate-900 p-2">
                 <DropdownMenuLabel className="px-4 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground">Notificaciones</DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-slate-50" />
+                {canActivatePush && (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); subscribePush(); }}
+                      className="rounded-xl px-4 py-3 cursor-pointer hover:bg-orange-50/50 dark:hover:bg-orange-950/40"
+                    >
+                      <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg mr-3"><BellRing className="h-4 w-4 text-pagnol-orange" /></div>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-bold uppercase tracking-tight">Activar notificaciones push</span>
+                        <span className="text-[10px] text-muted-foreground normal-case tracking-normal">Recíbelas aunque la app esté cerrada</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-slate-50" />
+                  </>
+                )}
+                {isSubscribed && (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); sendTestPush(); }}
+                      className="rounded-xl px-4 py-3 cursor-pointer hover:bg-emerald-50/50 dark:hover:bg-emerald-950/40"
+                    >
+                      <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg mr-3"><Send className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /></div>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-bold uppercase tracking-tight">Enviar notificación de prueba</span>
+                        <span className="text-[10px] text-muted-foreground normal-case tracking-normal">Verifica que las push lleguen a este dispositivo</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-slate-50" />
+                  </>
+                )}
                 <div className="max-h-[400px] overflow-y-auto no-scrollbar">
                   {totalNotifications === 0 ? (
                     <div className="px-4 py-8 text-center">
@@ -325,6 +402,14 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                     </div>
                   ) : (
                     <div className="py-2 space-y-1">
+                      {pendingAuthTotal > 0 && (
+                        <Link href="/dashboard/authorizations">
+                          <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-orange-50/50 dark:hover:bg-orange-950/40">
+                            <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg mr-3"><ShieldCheck className="h-4 w-4 text-pagnol-orange" /></div>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{pendingAuthTotal} Solicitud(es) por Autorizar</span>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
                       {can('finance:manage_purchase_orders') && pendingCotizaciones > 0 && (
                         <Link href="/dashboard/payments/pago-facturas">
                           <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40">

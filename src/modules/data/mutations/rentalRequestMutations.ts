@@ -1,6 +1,8 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { mappers } from '../mappers';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
+import { userCan } from '@/modules/core/lib/permissions';
+import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 import { addRentalContract, addRentalAsset, generateRentalSchedule } from './rentalMutations';
 import type {
   RentalRequest,
@@ -79,6 +81,10 @@ export async function addRentalRequest(
 
   const internalCode = await nextInternalCode(tenantId, 'ARR', 'SOLPED');
 
+  // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
+  const preAuthorized = userCan(user, 'rentals:authorize');
+  const now = new Date().toISOString();
+
   const { error } = await supabase.from('rental_requests').insert({
     tenant_id: tenantId,
     internal_code: internalCode,
@@ -96,10 +102,32 @@ export async function addRentalRequest(
     supervisor_id: data.supervisorId || user.id,
     supervisor_name: user.name || 'Usuario',
     status: 'pending',
-    created_at: new Date().toISOString(),
+    adc_authorized_at: preAuthorized ? now : null,
+    adc_authorized_by: preAuthorized ? user.id : null,
+    created_at: now,
   });
 
   if (error) throw new Error(`Error al crear solicitud de arriendo: ${error.message}`);
+
+  // Push al ADC solo si quedó pendiente de autorización.
+  if (!preAuthorized) notifyAuthorizers('rental', { tenantId, code: internalCode, requesterName: user.name || 'Usuario' });
+}
+
+/**
+ * Autorización ADC de una solicitud de arriendo. No cambia el `status` (sigue
+ * 'pending') — solo levanta el gate para que Abastecimiento la cotice.
+ */
+export async function authorizeRentalRequest(requestId: string, { user, tenantId }: Context): Promise<void> {
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  if (!userCan(user, 'rentals:authorize'))
+    throw new Error('No tienes permiso para autorizar solicitudes de arriendo.');
+
+  const { error } = await supabase
+    .from('rental_requests')
+    .update({ adc_authorized_at: new Date().toISOString(), adc_authorized_by: user.id })
+    .eq('id', requestId)
+    .eq('tenant_id', tenantId);
+  if (error) throw error;
 }
 
 export async function updateRentalRequestStatus(

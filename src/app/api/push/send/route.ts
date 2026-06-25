@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendPushNotification, type PushPayload } from '@/lib/web-push';
+import { type PushPayload } from '@/lib/web-push';
+import { sendPushToUsers } from '@/lib/push-notify';
 import { requireAuth, resolveTenant } from '@/modules/core/lib/api-auth';
-import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
-
-const supabase = getSupabaseAdmin();
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,48 +22,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Faltan datos requeridos' }, { status: 400 });
     }
 
-    let query = supabase
-      .from('push_subscriptions')
-      .select('*')
-      .eq('tenant_id', tenantId);
-
-    if (targetUserIds?.length) {
-      query = query.in('user_id', targetUserIds);
-    }
-
-    const { data: subscriptions, error } = await query;
-    if (error) throw error;
-
-    if (!subscriptions || subscriptions.length === 0) {
+    const result = await sendPushToUsers(tenantId, targetUserIds ?? null, payload);
+    if (result.sent === 0 && result.expired === 0) {
       return NextResponse.json({ sent: 0, message: 'Sin suscripciones registradas' });
     }
-
-    const expiredEndpoints: string[] = [];
-    let sent = 0;
-
-    await Promise.allSettled(
-      subscriptions.map(async (sub) => {
-        const ok = await sendPushNotification(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          payload
-        );
-        if (ok) {
-          sent++;
-        } else {
-          expiredEndpoints.push(sub.endpoint);
-        }
-      })
-    );
-
-    // Clean up expired subscriptions
-    if (expiredEndpoints.length > 0) {
-      await supabase
-        .from('push_subscriptions')
-        .delete()
-        .in('endpoint', expiredEndpoints);
-    }
-
-    return NextResponse.json({ sent, expired: expiredEndpoints.length });
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error('Push send route error:', err);
     return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });

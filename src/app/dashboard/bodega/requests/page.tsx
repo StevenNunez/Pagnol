@@ -127,7 +127,8 @@ export default function ManageMaterialRequestsPage() {
     });
   }, [requests]);
 
-  const pendingRequests = useMemo(() => sortedRequests.filter((req) => req.status === "pending"), [sortedRequests]);
+  // Gate ADC: solo las pendientes ya autorizadas por el ADC llegan al pañol.
+  const pendingRequests = useMemo(() => sortedRequests.filter((req) => req.status === "pending" && (req as any).adcAuthorizedAt), [sortedRequests]);
   const approvedRequests = useMemo(() => sortedRequests.filter((req) => req.status === "approved"), [sortedRequests]);
   const rejectedRequests = useMemo(() => sortedRequests.filter((req) => req.status === "rejected"), [sortedRequests]);
 

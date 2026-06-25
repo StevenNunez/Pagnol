@@ -19,6 +19,118 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Cambiado
+- **Códigos de Solicitud de Arriendo con prefijo semántico SOLPED**: antes el código usaba
+  las iniciales del tenant (`SYPV-ARR-0001`); ahora usa un prefijo fijo **`SOLPED`** (SOLicitud
+  de PEDido) → **`SOLPED-ARR-0001`**, más legible y consistente entre tenants. La RPC
+  `next_internal_code` gana un 3er parámetro opcional `p_prefix` (NULL = comportamiento
+  histórico de iniciales; no rompe ningún otro código); el contador sigue siendo por
+  (tenant, tipo), así la numeración no se reinicia. Cambios: migración
+  `20260625020000_internal_code_prefix_override.sql` (reemplaza la función + backfill de los
+  códigos de arriendo existentes a SOLPED), `nextInternalCode()` acepta `prefix?`, y
+  `addRentalRequest` pasa `'SOLPED'`. **Pendiente de aplicar en Supabase.**
+
+### Agregado
+- **Categorías de Arriendo gestionables por tenant**: la categoría de un equipo de arriendo
+  dejó de ser un enum fijo (`machinery|truck|vehicle|measurement|other`). Ahora cada tenant
+  puede **crear sus propias categorías** (p.ej. "Contenedores", "Andamios", "Generadores")
+  desde el propio formulario de solicitud (botón **+** junto al selector → diálogo), para que
+  solicitudes/activos/reportes sean más exactos. `RentalAssetCategory` pasó a `string`; los
+  defaults viven en código (`RENTAL_CATEGORY_DEFAULTS`) y se **fusionan** con las custom de la
+  nueva tabla `rental_categories` en la UI. Helper `rentalCategoryLabel()` centraliza la
+  etiqueta (default → label; custom → su nombre). Nueva colección `rentalCategories` +
+  mutaciones add/update/delete. Migración `20260625010000_rental_categories.sql` (tabla + RLS
+  canónico + GRANT + realtime, índice único por tenant case-insensitive) — **pendiente de
+  aplicar en Supabase**.
+- **Solicitud de Arriendo multi-ítem (carrito)**: la solicitud de arriendo ahora permite
+  pedir **varios equipos en un solo pedido** (p.ej. 2 contenedores oficina + 1 baño + 1
+  generador), igual que la solicitud de compra/material, en vez de una solicitud por equipo.
+  `rental_requests` gana una columna `items` (jsonb: `{name, category, quantity}[]`); las
+  columnas legacy `equipment_name`/`category`/`quantity` se conservan como **espejo del primer
+  ítem** (compat + NOT NULL). El form (`supervisor/rental-request`) usa carrito con "Agregar
+  equipo"; el módulo de Abastecimiento (`abastecimiento/arriendos`) muestra los ítems por
+  solicitud y, al armar el RFQ, **expande** los ítems de cada solicitud seleccionada a líneas
+  de cotización (`flatMap`). Migración `20260625000000_rental_requests_items.sql` (additiva +
+  backfill de filas mono-ítem existentes) — **pendiente de aplicar en Supabase**.
+- **Solicitud de Arriendo + RFQ de arriendo (conecta Abastecimiento ↔ Arriendos)**: nuevo
+  tercer tipo de solicitud, junto a Material y Compra, para pedir equipos de terceros
+  (camión pluma, andamios, maquinaria…) que no son stock de bodega ni herramientas del pañol.
+  Flujo: terreno crea la solicitud (equipo + categoría + período desde/hasta + modalidad +
+  obra) en `supervisor/rental-request` → Abastecimiento la ve en `abastecimiento/arriendos`,
+  aprueba/rechaza, crea un **RFQ paralelo** invitando a **arrendadores** (`rental_parties`
+  tipo `lessor`), registra cotizaciones (precio por período + nº de períodos), compara y
+  **adjudica**. Al adjudicar se **auto-genera** el `RentalContract` (incoming) + `RentalAsset`
+  por equipo + calendario de pagos en el módulo Arriendos. Implementación:
+  migración `20260624000000_rental_requests.sql` (tablas `rental_requests` +
+  `rental_quote_requests`, RLS por tenant + GRANTs + Realtime); tipos `RentalRequest` /
+  `RentalQuoteRequest` / `RentalQuoteResponse`; mappers; `rentalRequestMutations.ts` (el
+  puente de adjudicación reusa `rentalMutations`); wiring en `DataProvider`/`types.ts`;
+  permisos `rentals:request` y `rentals:manage_quotes` (admin + abastecimiento + jefe-terreno
+  / jefe-oficina-técnica); entradas de menú en Abastecimiento y Supervisor.
+- **Solicitudes de material asociadas a un contrato/obra**: el supervisor ahora debe
+  seleccionar un **Contrato** (obligatorio, desde los contratos activos existentes) al crear
+  una solicitud de material, dejando el antiguo campo de texto libre como **Detalle / Ubicación**
+  opcional. Permite diferenciar a qué contrato pertenece cada pedido de los que gestiona
+  Abastecimiento. Cambios: nueva migración `20260623000000_material_requests_contract.sql`
+  (columnas `contract_id` FK→`contracts` ON DELETE SET NULL + `contract_name` denormalizado +
+  índice); `MaterialRequest` (interfaz), mapper, mutaciones `addMaterialRequest` /
+  `addAndApproveMaterialRequest` y firmas en `types.ts`. La vista de gestión
+  (`bodega/requests`) y el historial del supervisor muestran ahora el contrato.
+- **Selección de contrato según perfil (oficina vs. terreno)**: nuevo permiso
+  `material_requests:select_any_contract`. Los perfiles de **oficina/altos mandos**
+  (administrador, soporte-pagnol, director-faena, jefe-oficina-técnica, abastecimiento,
+  finanzas, RRHH, gerente-general) pueden **elegir cualquier contrato activo** en el
+  selector. El **personal de terreno** (supervisor, etc.) tiene su contrato **autocargado**
+  desde su asignación en `contract_workers` (read-only, sin selector); si tiene varios
+  asignados, elige entre los suyos; si no tiene ninguno, se le pide contactar al
+  administrador. Implementado en `permissions.ts` y `supervisor/request/page.tsx`.
+- **Solicitudes de COMPRA asociadas a un contrato/obra**: el formulario de Solicitud de
+  Compra (`purchasing/purchase-request-form`, compartido con `supervisor`) ahora exige
+  seleccionar un **Contrato**, con la misma lógica por perfil que las solicitudes de material
+  (oficina elige cualquiera vía `material_requests:select_any_contract`; terreno autocarga el
+  suyo desde `contract_workers`). El antiguo "Área / Proyecto" pasa a **Detalle / ubicación**
+  opcional. El historial del solicitante y la gestión de compras (`purchasing/purchase-requests`)
+  muestran el contrato. Cambios: migración `20260623020000_purchase_requests_contract.sql`
+  (columnas `contract_id` FK→`contracts` ON DELETE SET NULL + `contract_name` + índice),
+  `PurchaseRequest` (interfaz + mapper) y `addPurchaseRequest`. **Pendiente: aplicar la
+  migración en Supabase.**
+  > Nota: la creación de materiales inexistentes ya estaba resuelta en este flujo (nombre por
+  > texto libre; el material se crea al recibir la OC en `receivePurchaseRequest`).
+
+### Corregido
+- **`administrador`/`soporte-pagnol` perdían permisos nuevos por drift de la tabla `roles`**:
+  `can()` resolvía con `dynamicRoles[role] ?? ROLES_DEFAULT[role]` (reemplazo, **no** merge pese
+  al comentario), así que una fila guardada en `roles` **congelaba** los permisos del rol a lo que
+  existía al guardarla, ignorando permisos agregados después en el código (`material_requests:select_any_contract`,
+  `rentals:*`, `module_rrhh:view`, etc.). Síntoma concreto: en `supervisor/rental-request` (y
+  material/compra) `soporte-pagnol` veía *"No tienes un contrato asignado. Contacta a tu administrador"*
+  (rama de trabajador de terreno) porque `select_any_contract` no le llegaba. Se agregó en `can()`
+  (`AuthProvider.tsx`) un **bypass de control total dentro del tenant** para `administrador` y
+  `soporte-pagnol` (igual que el super-admin pero acotado por RLS), de modo que ambos siempre pueden
+  operar todo sin depender de filas `roles` desactualizadas. Nota: el formulario aún exige un
+  **contrato activo**; el seed DEMO no crea contratos, así que hay que crear uno en
+  `attendance/contracts` antes de poder enviar una solicitud.
+- **`addPurchaseRequest` no persistía el campo `area`**: el formulario lo enviaba pero el
+  `insert` lo omitía, perdiéndose siempre. Ahora se guarda (junto con el contrato).
+- **Módulo Supervisor invisible para el Administrador**: la tarjeta del hub
+  (`dashboard/page.tsx`) estaba gateada por `material_requests:create`, permiso que el rol
+  `administrador` no incluía pese a tener `return_requests:create` y `purchase_requests:create`
+  (incoherencia con su "control total del tenant"). Se agregó `material_requests:create` a
+  `ADMINISTRADOR_PERMISSIONS` en `permissions.ts` (cubre también `soporte-pagnol`). El admin
+  ahora ve 19 tarjetas en el Panel Central (antes 18) y puede crear solicitudes de material.
+
+### Cambiado
+- **Dashboard de Supervisor (`/dashboard/supervisor`) — rework + Arriendos**: se integró el
+  nuevo flujo de arriendo (métrica "Arriendos en gestión", acción rápida "Solicitar Arriendo"
+  y pestaña "Arriendos" en el historial de actividad). Además se migró toda la página a
+  **tokens semánticos** del design system (antes usaba paletas crudas `amber/blue/purple/red`
+  que no respetaban dark mode): métricas, acciones rápidas, badges de estado y feed de
+  actividad ahora usan `warning/info/primary/success/destructive` con mapas estáticos
+  (dark-mode safe, sin clases dinámicas purgables).
+- **Banner de onboarding — texto engañoso reformulado** (`onboarding-banner.tsx`): decía
+  *"Falta crear roles críticos: Administrador"*, que sonaba a que el usuario no tenía el rol,
+  cuando en realidad detecta la ausencia de una **cuenta de respaldo** (cuenta el rol
+  excluyendo al usuario actual). Nuevo texto: *"Delegación Recomendada — Aún no tienes cuentas
+  de respaldo para: {rol}. Crea una para no depender de un solo usuario."*
 - **Modo oscuro — Migración a tokens semánticos (módulo `pagnol`)**: se reemplazaron las
   paletas crudas de Tailwind (`slate`/`gray`/`amber`/`green`/`blue`/`red`/`orange`) por los
   **tokens semánticos** del sistema de diseño, que sí se adaptan a dark mode. Cubre todo el

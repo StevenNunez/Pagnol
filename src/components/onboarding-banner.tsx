@@ -81,9 +81,9 @@ export function OnboardingBanner() {
                             <AlertCircle size={20} />
                         </div>
                         <div className="space-y-0.5">
-                            <p className="text-[11px] font-black uppercase tracking-[0.1em] text-white">Configuración Recomendada Pendiente</p>
+                            <p className="text-[11px] font-black uppercase tracking-[0.1em] text-white">Delegación Recomendada</p>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-                                Falta crear roles críticos: <span className="text-pagnol-orange">{missingRoles.join(" y ")}</span>. Se recomienda delegar para un control eficiente.
+                                Aún no tienes cuentas de respaldo para: <span className="text-pagnol-orange">{missingRoles.join(" y ")}</span>. Crea una para no depender de un solo usuario.
                             </p>
                         </div>
                     </div>

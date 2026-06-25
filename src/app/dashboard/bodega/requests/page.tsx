@@ -197,8 +197,10 @@ export default function ManageMaterialRequestsPage() {
              <RequestItemsList req={req} materialMap={materialMap} />
              <span className="text-[10px] font-mono text-muted-foreground bg-muted/50 px-2 py-1 rounded">{formatDate(req.createdAt)}</span>
           </div>
-          <p className="text-xs text-muted-foreground flex items-center gap-1">
-             <span className="font-medium text-foreground">{supervisor || "Desconocido"}</span> • {req.area}
+          <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+             <span className="font-medium text-foreground">{supervisor || "Desconocido"}</span>
+             {(req.contractName) && <><span>•</span><Badge variant="outline" className="text-[10px] h-4 px-1.5 border-primary/30 text-primary">{req.contractName}</Badge></>}
+             {req.area && <><span>•</span>{req.area}</>}
           </p>
         </div>
 
@@ -318,7 +320,8 @@ export default function ManageMaterialRequestsPage() {
                             </div>
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
                               <p className="text-sm text-muted-foreground">Solicitante: <span className="font-medium text-foreground">{userMap.get(req.supervisorId) ?? "—"}</span></p>
-                              <p className="text-sm text-muted-foreground">Área: <span className="font-medium text-foreground">{req.area}</span></p>
+                              <p className="text-sm text-muted-foreground">Contrato: <span className="font-medium text-foreground">{req.contractName ?? "—"}</span></p>
+                              {req.area && <p className="text-sm text-muted-foreground">Detalle: <span className="font-medium text-foreground">{req.area}</span></p>}
                             </div>
                             <div className="bg-muted/40 p-3 rounded-lg">
                               <p className="text-xs font-semibold text-muted-foreground mb-1">Materiales:</p>

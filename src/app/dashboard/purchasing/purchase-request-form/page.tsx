@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { PageHeader } from "@/components/page-header";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,12 +23,14 @@ import {
   ShoppingCart,
   ChevronsUpDown,
   Search,
-  Info
+  Info,
+  AlertCircle,
+  Package
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { PurchaseRequest, Material, MaterialCategory } from "@/modules/core/lib/data";
+import { PurchaseRequest, Material, MaterialCategory, Contract, ContractWorker } from "@/modules/core/lib/data";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -48,15 +50,46 @@ interface CartItem {
 }
 
 export default function PurchaseRequestFormPage() {
-  const { purchaseRequests, materials, addPurchaseRequest, materialCategories } = useAppState();
+  const { purchaseRequests, materials, addPurchaseRequest, materialCategories, contracts, contractWorkers, can } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
   // --- Estados del Formulario (Carrito) ---
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [contractId, setContractId] = useState("");
   const [commonArea, setCommonArea] = useState("");
   const [commonJustification, setCommonJustification] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // --- Contratos: oficina elige cualquiera; terreno autocarga el suyo ---
+  const activeContracts = useMemo(
+    () => ((contracts || []) as Contract[])
+      .filter((c) => c.status === "active")
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [contracts]
+  );
+  const contractMap = useMemo(
+    () => new Map(((contracts || []) as Contract[]).map((c) => [c.id, c])),
+    [contracts]
+  );
+  const canSelectAnyContract = can("material_requests:select_any_contract");
+  const myAssignedContracts = useMemo(() => {
+    if (!authUser) return [] as Contract[];
+    const myContractIds = new Set(
+      ((contractWorkers || []) as ContractWorker[])
+        .filter((cw) => cw.userId === authUser.id)
+        .map((cw) => cw.contractId)
+    );
+    return activeContracts.filter((c) => myContractIds.has(c.id));
+  }, [contractWorkers, authUser, activeContracts]);
+  const selectableContracts = canSelectAnyContract ? activeContracts : myAssignedContracts;
+  const isFieldWorkerSingleContract = !canSelectAnyContract && myAssignedContracts.length === 1;
+
+  useEffect(() => {
+    if (isFieldWorkerSingleContract && !contractId) {
+      setContractId(myAssignedContracts[0].id);
+    }
+  }, [isFieldWorkerSingleContract, myAssignedContracts, contractId]);
 
   // --- Estados de Item Individual (Input) ---
   const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
@@ -152,20 +185,23 @@ export default function PurchaseRequestFormPage() {
           toast({ variant: "destructive", title: "Carrito vacío", description: "Agrega al menos un ítem a la lista." });
           return;
       }
-      if (!commonArea.trim() || !commonJustification.trim()) {
-          toast({ variant: "destructive", title: "Faltan datos generales", description: "Debes especificar el área y la justificación." });
+      if (!contractId || !commonJustification.trim()) {
+          toast({ variant: "destructive", title: "Faltan datos generales", description: "Debes seleccionar el contrato y la justificación." });
           return;
       }
 
       setIsSubmitting(true);
       try {
+          const contract = contractMap.get(contractId);
           const promises = cart.map(item => {
               return addPurchaseRequest({
                   materialName: item.materialName,
                   quantity: item.quantity,
                   unit: item.unit,
                   category: item.category,
-                  area: commonArea,
+                  area: commonArea.trim(),
+                  contractId,
+                  contractName: contract?.name || null,
                   justification: commonJustification,
                   supervisorId: authUser.id,
               });
@@ -173,13 +209,14 @@ export default function PurchaseRequestFormPage() {
 
           await Promise.all(promises);
 
-          toast({ 
-              title: "Solicitud Enviada", 
-              description: `Se enviaron ${cart.length} ítems correctamente a aprobación.` 
+          toast({
+              title: "Solicitud Enviada",
+              description: `Se enviaron ${cart.length} ítems correctamente a aprobación.`
           });
 
           // Limpiar todo
           setCart([]);
+          setContractId("");
           setCommonArea("");
           setCommonJustification("");
           setCurrentName("");
@@ -402,15 +439,53 @@ export default function PurchaseRequestFormPage() {
                     <div className="space-y-4 pt-4 border-t">
                         <div className="space-y-3">
                             <Label className="text-xs font-bold uppercase text-muted-foreground mb-1.5 block">3. Información General</Label>
+
+                            {/* Contrato / Obra */}
+                            <div className="space-y-1.5">
+                                <Label htmlFor="contract" className="text-[10px] text-muted-foreground">Contrato / Obra <span className="text-destructive">*</span></Label>
+                                {isFieldWorkerSingleContract ? (
+                                    <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/40 text-sm">
+                                        <Package className="h-4 w-4 text-primary shrink-0" />
+                                        <span className="font-medium truncate">
+                                            {myAssignedContracts[0].name}
+                                            {myAssignedContracts[0].code ? ` (${myAssignedContracts[0].code})` : ""}
+                                        </span>
+                                        <Badge variant="secondary" className="ml-auto text-[10px] shrink-0">Tu contrato</Badge>
+                                    </div>
+                                ) : selectableContracts.length === 0 ? (
+                                    <div className="flex items-start gap-2 p-3 rounded-md border border-warning/30 bg-warning-subtle text-warning-subtle-foreground text-xs">
+                                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                                        <span>
+                                            {canSelectAnyContract
+                                                ? "No hay contratos activos. Crea uno en el módulo de contratos antes de solicitar."
+                                                : "No tienes un contrato asignado. Contacta a tu administrador para que te vincule a una obra."}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <Select value={contractId} onValueChange={setContractId} disabled={isSubmitting}>
+                                        <SelectTrigger id="contract" className="bg-background">
+                                            <SelectValue placeholder="Selecciona el contrato..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {selectableContracts.map((c) => (
+                                                <SelectItem key={c.id} value={c.id}>
+                                                    {c.name}{c.code ? ` (${c.code})` : ""}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            </div>
+
                             <div>
-                                <Input 
-                                    placeholder="Área / Proyecto de destino (Ej: Torre A, Obra Gruesa)" 
+                                <Input
+                                    placeholder="Detalle / ubicación (opcional, ej: Torre A, Obra Gruesa)"
                                     value={commonArea}
                                     onChange={e => setCommonArea(e.target.value)}
                                     className="mb-2 bg-background"
                                 />
-                                <Textarea 
-                                    placeholder="Justificación de la compra (Ej: Stock agotado para fase 2)" 
+                                <Textarea
+                                    placeholder="Justificación de la compra (Ej: Stock agotado para fase 2)"
                                     className="resize-none h-20 bg-background"
                                     value={commonJustification}
                                     onChange={e => setCommonJustification(e.target.value)}
@@ -418,10 +493,10 @@ export default function PurchaseRequestFormPage() {
                             </div>
                         </div>
 
-                        <Button 
-                            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11 shadow-md text-base" 
+                        <Button
+                            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11 shadow-md text-base"
                             onClick={handleSubmitAll}
-                            disabled={isSubmitting || cart.length === 0 || !commonArea || !commonJustification}
+                            disabled={isSubmitting || cart.length === 0 || !contractId || !commonJustification}
                         >
                             {isSubmitting ? (
                                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando Pedido...</>
@@ -488,7 +563,7 @@ export default function PurchaseRequestFormPage() {
                                             <TableCell className="text-xs text-muted-foreground">
                                                 <div className="flex flex-col">
                                                     <span>{formatDate(req.createdAt)}</span>
-                                                    <span className="text-[10px] opacity-70 truncate max-w-[120px]" title={req.area}>{req.area}</span>
+                                                    <span className="text-[10px] opacity-70 truncate max-w-[140px]" title={req.contractName || req.area}>{req.contractName || req.area}</span>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right">

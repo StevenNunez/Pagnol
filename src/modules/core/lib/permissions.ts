@@ -57,6 +57,7 @@ export const ALL_PERMISSIONS = {
     'material_requests:view_own': { label: 'Ver Mis Solicitudes', group: 'Solicitudes Internas' },
     'material_requests:view_all': { label: 'Ver Todas las Solicitudes', group: 'Solicitudes Internas' },
     'material_requests:approve': { label: 'Aprobar/Rechazar Solicitudes', group: 'Solicitudes Internas' },
+    'material_requests:select_any_contract': { label: 'Elegir cualquier contrato al solicitar (Oficina)', group: 'Solicitudes Internas' },
 
     'return_requests:create': { label: 'Crear Devoluciones', group: 'Devoluciones' },
     'return_requests:approve': { label: 'Aprobar Devoluciones', group: 'Devoluciones' },
@@ -140,6 +141,8 @@ export const ALL_PERMISSIONS = {
     'rentals:manage_parties': { label: 'Gestionar Arrendadores y Clientes', group: 'Arriendos' },
     'rentals:manage_contracts': { label: 'Gestionar Contratos de Arriendo', group: 'Arriendos' },
     'rentals:manage_payments': { label: 'Gestionar Pagos de Arriendo', group: 'Arriendos' },
+    'rentals:request': { label: 'Solicitar Arriendos', group: 'Arriendos' },
+    'rentals:manage_quotes': { label: 'Cotizar y Adjudicar Arriendos', group: 'Arriendos' },
 
     // ── Recursos Humanos ─────────────────────────────────────────────
     'module_rrhh:view': { label: 'Acceder a Recursos Humanos', group: 'Acceso a Módulos' },
@@ -171,7 +174,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             'tools:create', 'tools:view_all', 'tools:edit', 'tools:delete', 'tools:checkout', 'tools:return',
             'stock:add_manual', 'stock:receive_order',
             // Solicitudes
-            'material_requests:view_all', 'material_requests:approve',
+            'material_requests:create', 'material_requests:view_all', 'material_requests:approve', 'material_requests:select_any_contract',
             'material_requests:approve_class_a', 'material_requests:approve_class_b', 'material_requests:approve_class_c',
             'return_requests:view_all', 'return_requests:approve', 'return_requests:create',
             'purchase_requests:create', 'purchase_requests:view_all', 'purchase_requests:approve', 'purchase_requests:delete',
@@ -210,6 +213,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             // Arriendos
             'module_rentals:view', 'rentals:view', 'rentals:manage_parties',
             'rentals:manage_contracts', 'rentals:manage_payments',
+            'rentals:request', 'rentals:manage_quotes',
             // Recursos Humanos
             'module_rrhh:view',
             'hr_employees:view', 'hr_employees:edit',
@@ -241,7 +245,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'module_safety:view', 'module_attendance:view', 'module_reports:view',
             'module_purchasing:view', 'module_users:view',
             'materials:view_all', 'tools:view_all',
-            'material_requests:view_all', 'material_requests:approve',
+            'material_requests:view_all', 'material_requests:approve', 'material_requests:select_any_contract',
             'material_requests:approve_class_a', 'material_requests:approve_class_b', 'material_requests:approve_class_c',
             'return_requests:view_all', 'return_requests:create',
             'purchase_requests:view_all', 'purchase_requests:create',
@@ -267,9 +271,10 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'construction_control:edit_structure', 'construction_control:register_progress',
             'construction_control:view_reports', 'construction_control:review_protocols',
             'module_purchasing:view', 'purchase_requests:create', 'purchase_requests:view_all',
-            'module_warehouse:view', 'materials:view_all', 'material_requests:create',
+            'module_warehouse:view', 'materials:view_all', 'material_requests:create', 'material_requests:select_any_contract',
             'module_reports:view', 'reports:view', 'module_work_reports:view',
             'work_reports:view_all', 'work_reports:download_pdf',
+            'module_rentals:view', 'rentals:request',
         ],
     },
     'jefe-terreno': {
@@ -287,6 +292,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'tools:view_own',
             'module_work_reports:view', 'work_reports:create', 'work_reports:edit',
             'work_reports:sign', 'work_reports:submit', 'work_reports:download_pdf',
+            'module_rentals:view', 'rentals:request',
         ],
     },
     'panolero': {
@@ -309,6 +315,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         permissions: [
             'module_dte:view',
             'module_payments:view',
+            'material_requests:select_any_contract',
             'payments:create', 'payments:view', 'payments:mark_as_paid', 'payments:edit', 'payments:delete',
             'suppliers:view', 'suppliers:edit', 'suppliers:create',
             'module_purchasing:view', 'orders:view_all',
@@ -453,6 +460,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             // Usuarios
             'module_users:view', 'users:view', 'users:edit', 'users:create',
             'users:change_password', 'users:print_qr',
+            // Solicitudes (oficina: elige contrato)
+            'material_requests:select_any_contract',
             // Reportes de Trabajo (observador)
             'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
         ],
@@ -468,6 +477,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             // Solicitudes de Compra (ciclo completo)
             'purchase_requests:create', 'purchase_requests:view_all',
             'purchase_requests:approve', 'purchase_requests:delete',
+            // Solicitudes de material (oficina: elige cualquier contrato)
+            'material_requests:create', 'material_requests:view_all', 'material_requests:select_any_contract',
             // Lotes y Órdenes
             'lots:create', 'lots:assign', 'lots:delete',
             'orders:create', 'orders:view_all', 'orders:cancel',
@@ -480,6 +491,9 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             // Recepción / Stock
             'stock:add_manual', 'stock:receive_order',
             'materials:view_all',
+            // Arriendos (cotiza, adjudica y genera el contrato)
+            'module_rentals:view', 'rentals:view', 'rentals:request', 'rentals:manage_quotes',
+            'rentals:manage_parties', 'rentals:manage_contracts', 'rentals:manage_payments',
             // Catálogos de apoyo
             'categories:view', 'units:view',
         ],
@@ -504,6 +518,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         label: 'Gerente General',
         description: 'Observador: visualiza y descarga los informes de terreno, sin editar ni aprobar.',
         permissions: [
+            'material_requests:select_any_contract',
             'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
         ],
     },

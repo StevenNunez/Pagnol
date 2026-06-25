@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useMemo, useState } from "react";
@@ -31,6 +30,7 @@ import {
   ArrowDownLeft,
   FileText,
   SearchX,
+  KeyRound,
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
@@ -40,6 +40,7 @@ import type {
   MaterialRequest,
   PurchaseRequest,
   ReturnRequest,
+  RentalRequest,
   Material,
 } from "@/modules/core/lib/data";
 import { cn } from "@/lib/utils";
@@ -48,7 +49,7 @@ import { cn } from "@/lib/utils";
 type ActivityItem = {
   id: string;
   originalId: string;
-  type: "request" | "purchase" | "return";
+  type: "request" | "purchase" | "return" | "rental";
   title: string;
   subtitle: string;
   time: Date;
@@ -56,15 +57,21 @@ type ActivityItem = {
   delivered?: boolean;
 };
 
+// Mapas estáticos de acento (tokens semánticos → dark-mode safe; nunca clases dinámicas).
+const ACCENT: Record<string, { border: string; iconBg: string; icon: string }> = {
+  warning: { border: "border-l-warning", iconBg: "bg-warning-subtle", icon: "text-warning-subtle-foreground" },
+  info: { border: "border-l-info", iconBg: "bg-info-subtle", icon: "text-info-subtle-foreground" },
+  primary: { border: "border-l-primary", iconBg: "bg-primary/10", icon: "text-primary" },
+  success: { border: "border-l-success", iconBg: "bg-success-subtle", icon: "text-success-subtle-foreground" },
+  destructive: { border: "border-l-destructive", iconBg: "bg-destructive/10", icon: "text-destructive" },
+};
+
 export default function SupervisorHubPage() {
-  const { requests, purchaseRequests, returnRequests, materials } = useAppState();
+  const { requests, purchaseRequests, returnRequests, rentalRequests, materials } = useAppState();
   const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState("all");
 
-  // ==================================================
-  // HELPERS
-  // ==================================================
   const toDate = (d: any): Date => new Date(d);
 
   const getGreeting = () => {
@@ -78,16 +85,14 @@ export default function SupervisorHubPage() {
     return mat?.name || null;
   };
 
-  // ==================================================
-  // MÉTRICAS
-  // ==================================================
+  // ================= MÉTRICAS =================
   const metrics = useMemo(() => {
-    if (!user)
-      return { pending: 0, delivery: 0, returns: 0, lowStock: 0 };
+    if (!user) return { pending: 0, delivery: 0, returns: 0, rentals: 0, lowStock: 0 };
 
     const reqs = (requests || []) as MaterialRequest[];
     const pr = (purchaseRequests || []) as PurchaseRequest[];
     const ret = (returnRequests || []) as ReturnRequest[];
+    const rr = (rentalRequests || []) as RentalRequest[];
     const mats = (materials || []) as Material[];
 
     const pending =
@@ -98,265 +103,168 @@ export default function SupervisorHubPage() {
       (r) => r.supervisorId === user.id && r.status === "approved" && !r.deliveryDate
     ).length;
 
-    const returns = ret.filter(
-      (r) => r.supervisorId === user.id && r.status === "pending"
+    const returns = ret.filter((r) => r.supervisorId === user.id && r.status === "pending").length;
+
+    const rentals = rr.filter(
+      (r) => r.supervisorId === user.id && (r.status === "pending" || r.status === "quoting")
     ).length;
 
     const lowStock = mats.filter((m) => !m.archived && m.stock <= 10).length;
 
-    return { pending, delivery, returns, lowStock };
-  }, [requests, purchaseRequests, returnRequests, materials, user]);
+    return { pending, delivery, returns, rentals, lowStock };
+  }, [requests, purchaseRequests, returnRequests, rentalRequests, materials, user]);
 
-  // ==================================================
-  // ACTIVIDAD UNIFICADA
-  // ==================================================
+  // ================= ACTIVIDAD UNIFICADA =================
   const allActivity = useMemo(() => {
     if (!user) return [];
     const list: ActivityItem[] = [];
-
     const mats = materials || [];
 
-    // ---- Solicitudes Internas ----
     (requests || []).forEach((r: MaterialRequest) => {
       if (r.supervisorId !== user.id) return;
-
       const smartName = smartItemName(r.items || [], mats);
-
-      const title =
-        smartName
-          ? `Solicitud: ${smartName}`
-          : r.items?.length
-          ? `${r.items.length} ítems solicitados`
-          : "Solicitud de material";
-
+      const title = smartName
+        ? `Solicitud: ${smartName}`
+        : r.items?.length
+        ? `${r.items.length} ítems solicitados`
+        : "Solicitud de material";
       list.push({
-        id: `req-${r.id}`,
-        originalId: r.id,
-        type: "request",
-        title,
-        subtitle: `Destino: ${r.area || "Obra"}`,
-        time: toDate(r.createdAt),
-        status: r.status,
-        delivered: !!r.deliveryDate,
+        id: `req-${r.id}`, originalId: r.id, type: "request", title,
+        subtitle: `Destino: ${r.area || "Obra"}`, time: toDate(r.createdAt),
+        status: r.status, delivered: !!r.deliveryDate,
       });
     });
 
-    // ---- Compras ----
     (purchaseRequests || []).forEach((r: PurchaseRequest) => {
       if (r.supervisorId !== user.id) return;
-
       list.push({
-        id: `pur-${r.id}`,
-        originalId: r.id,
-        type: "purchase",
+        id: `pur-${r.id}`, originalId: r.id, type: "purchase",
         title: r.materialName || "Solicitud de compra",
-        subtitle: `Cantidad: ${r.quantity} ${r.unit}`,
-        time: toDate(r.createdAt),
-        status: r.status,
+        subtitle: `Cantidad: ${r.quantity} ${r.unit}`, time: toDate(r.createdAt), status: r.status,
       });
     });
 
-    // ---- Devoluciones ----
     (returnRequests || []).forEach((r: ReturnRequest) => {
-        if (r.supervisorId !== user.id) return;
+      if (r.supervisorId !== user.id) return;
+      const count = (r as any).items?.length ?? 1;
+      list.push({
+        id: `ret-${r.id}`, originalId: r.id, type: "return",
+        title: count === 1 ? "Devolución de material" : `Devolución (${count} ítems)`,
+        subtitle: `${count} ítem(s) devueltos`, time: toDate(r.createdAt), status: r.status,
+      });
+    });
 
-        const count = (r as any).items?.length ?? 1;
-
-        list.push({
-            id: `ret-${r.id}`,
-            originalId: r.id,
-            type: "return",
-            title: count === 1 ? "Devolución de material" : `Devolución (${count} ítems)`,
-            subtitle: `${count} ítem(s) devueltos`,
-            time: toDate(r.createdAt),
-            status: r.status,
-        });
+    (rentalRequests || []).forEach((r: RentalRequest) => {
+      if (r.supervisorId !== user.id) return;
+      list.push({
+        id: `rent-${r.id}`, originalId: r.id, type: "rental",
+        title: `Arriendo: ${r.equipmentName}`,
+        subtitle: `${r.contractName || "Obra"} · ×${r.quantity}`,
+        time: toDate(r.createdAt), status: r.status,
+      });
     });
 
     return list.sort((a, b) => b.time.getTime() - a.time.getTime());
-  }, [requests, purchaseRequests, returnRequests, materials, user]);
+  }, [requests, purchaseRequests, returnRequests, rentalRequests, materials, user]);
 
   const filteredActivity = useMemo(() => {
-    if (activeTab === "all") return allActivity.slice(0, 20);
-    return allActivity.filter((a) => a.type === activeTab).slice(0, 20);
+    if (activeTab === "all") return allActivity.slice(0, 25);
+    return allActivity.filter((a) => a.type === activeTab).slice(0, 25);
   }, [activeTab, allActivity]);
 
-  // ==================================================
-  // CONFIGURADORES
-  // ==================================================
+  // ================= CONFIGURADORES (tokenizados) =================
   const getStatusConfig = (status: string, delivered = false) => {
-    if (delivered)
-      return {
-        label: "Entregado",
-        className: "bg-emerald-100 text-emerald-700 border-emerald-300",
-      };
-
-    const statusMap: any = {
-      pending: "Pendiente",
-      approved: "Aprobado",
-      rejected: "Rechazado",
-      completed: "Completado",
-      ordered: "Ordenado",
-      received: "Recibido",
-      batched: "En Lote",
+    if (delivered) return { label: "Entregado", className: "badge-success" };
+    const statusMap: Record<string, string> = {
+      pending: "Pendiente", approved: "Aprobado", rejected: "Rechazado", completed: "Completado",
+      ordered: "Ordenado", received: "Recibido", batched: "En Lote",
+      quoting: "En cotización", fulfilled: "Arriendo creado",
     };
-
-    const colorMap: any = {
-      pending: "bg-amber-100 text-amber-700 border-amber-300",
-      approved: "bg-blue-100 text-blue-700 border-blue-300",
-      rejected: "bg-red-100 text-red-700 border-red-300",
-      completed: "bg-purple-100 text-purple-700 border-purple-300",
-      ordered: "bg-indigo-100 text-indigo-700 border-indigo-300",
-      received: "bg-green-100 text-green-700 border-green-300",
-      batched: "bg-gray-200 text-gray-800 border-gray-400",
+    const classMap: Record<string, string> = {
+      pending: "badge-warning", approved: "badge-info", rejected: "bg-destructive/10 text-destructive border-destructive/30",
+      completed: "badge-success", ordered: "badge-info", received: "badge-success",
+      batched: "bg-muted text-muted-foreground", quoting: "badge-info", fulfilled: "badge-success",
     };
-    
-    return {
-      label: statusMap[status] || status,
-      className: colorMap[status] || "bg-gray-100 text-gray-700 border-gray-300",
-    };
+    return { label: statusMap[status] || status, className: classMap[status] || "bg-muted text-muted-foreground" };
   };
 
   const getTypeConfig = (t: string) => {
     switch (t) {
-      case "request":
-        return { icon: Package, color: "text-primary", label: "Bodega", bg: "bg-primary/10" };
-      case "purchase":
-        return { icon: ShoppingCart, color: "text-blue-600", label: "Compra", bg: "bg-blue-100" };
-      case "return":
-        return { icon: RotateCcw, color: "text-purple-600", label: "Devolución", bg: "bg-purple-100" };
-      default:
-        return { icon: FileText, color: "text-gray-600", label: "Otro", bg: "bg-gray-100" };
+      case "request": return { icon: Package, accent: "primary", label: "Bodega" };
+      case "purchase": return { icon: ShoppingCart, accent: "info", label: "Compra" };
+      case "return": return { icon: RotateCcw, accent: "success", label: "Devolución" };
+      case "rental": return { icon: KeyRound, accent: "warning", label: "Arriendo" };
+      default: return { icon: FileText, accent: "primary", label: "Otro" };
     }
   };
 
-  // ==================================================
-  // RENDER
-  // ==================================================
+  const metricCards = [
+    { label: "Pendientes", value: metrics.pending, icon: Clock, accent: "warning" },
+    { label: "Por Recibir", value: metrics.delivery, icon: PackageCheck, accent: "info" },
+    { label: "Arriendos", value: metrics.rentals, icon: KeyRound, accent: "primary" },
+    { label: "Devoluciones", value: metrics.returns, icon: RotateCcw, accent: "success" },
+    { label: "Stock Crítico", value: metrics.lowStock, icon: AlertTriangle, accent: "destructive" },
+  ];
+
   return (
-    <div className="flex flex-col gap-8 pb-12 fade-in">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-12">
       <PageHeader
         title={`${getGreeting()}, ${user?.name.split(" ")[0] ?? "Supervisor"}`}
-        description="Panel de control operativo."
+        description="Panel de control operativo del supervisor."
       />
 
       {/* MÉTRICAS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          {
-            label: "Pendientes Aprobación",
-            value: metrics.pending,
-            icon: Clock,
-            border: "border-l-amber-500",
-            text: "text-amber-600",
-            bg: "bg-amber-100",
-          },
-          {
-            label: "Por Recibir",
-            value: metrics.delivery,
-            icon: PackageCheck,
-            border: "border-l-blue-500",
-            text: "text-blue-600",
-            bg: "bg-blue-100",
-          },
-          {
-            label: "Devoluciones Pend.",
-            value: metrics.returns,
-            icon: RotateCcw,
-            border: "border-l-purple-500",
-            text: "text-purple-600",
-            bg: "bg-purple-100",
-          },
-          {
-            label: "Stock Crítico",
-            value: metrics.lowStock,
-            icon: AlertTriangle,
-            border: "border-l-red-500",
-            text: "text-red-600",
-            bg: "bg-red-100",
-          },
-        ].map((m) => (
-          <Card
-            key={m.label}
-            className={cn("border-l-4 shadow-sm hover:shadow-md transition", m.border)}
-          >
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">{m.label}</p>
-                <h3 className={cn("text-3xl font-bold", m.text)}>
-                  {m.value}
-                </h3>
-              </div>
-              <div className={cn("h-12 w-12 rounded-full flex items-center justify-center", m.bg)}>
-                <m.icon className={cn("h-6 w-6", m.text)} />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {metricCards.map((m) => {
+          const a = ACCENT[m.accent];
+          return (
+            <Card key={m.label} className={cn("border-l-4 rounded-[1.5rem] shadow-sm hover:shadow-md transition", a.border)}>
+              <CardContent className="p-4 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground truncate">{m.label}</p>
+                  <h3 className="text-3xl font-black text-foreground">{m.value}</h3>
+                </div>
+                <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0", a.iconBg)}>
+                  <m.icon className={cn("h-6 w-6", a.icon)} />
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* ACCIONES RÁPIDAS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <QuickAction
-          href="/dashboard/supervisor/request"
-          icon={Package}
-          title="Solicitar a Bodega"
-          desc="Material disponible"
-          color="primary"
-          arrow={ArrowUpRight}
-        />
-
-        <QuickAction
-          href="/dashboard/purchasing/purchase-request-form"
-          icon={ShoppingCart}
-          title="Solicitar Compra"
-          desc="Material sin stock"
-          color="blue"
-          arrow={ArrowUpRight}
-        />
-
-        <QuickAction
-          href="/dashboard/supervisor/return-request"
-          icon={RotateCcw}
-          title="Devolver Material"
-          desc="Retornar sobrantes"
-          color="purple"
-          arrow={ArrowDownLeft}
-        />
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Acciones rápidas</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <QuickAction href="/dashboard/supervisor/request" icon={Package} title="Solicitar a Bodega" desc="Material disponible" accent="primary" arrow={ArrowUpRight} />
+          <QuickAction href="/dashboard/purchasing/purchase-request-form" icon={ShoppingCart} title="Solicitar Compra" desc="Material sin stock" accent="info" arrow={ArrowUpRight} />
+          <QuickAction href="/dashboard/supervisor/rental-request" icon={KeyRound} title="Solicitar Arriendo" desc="Equipos de terceros" accent="warning" arrow={ArrowUpRight} />
+          <QuickAction href="/dashboard/supervisor/return-request" icon={RotateCcw} title="Devolver Material" desc="Retornar sobrantes" accent="success" arrow={ArrowDownLeft} />
+        </div>
       </div>
 
       {/* HISTORIAL */}
-      <Card className="shadow-sm">
+      <Card className="rounded-[1.5rem] shadow-sm">
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
               <CardTitle className="text-xl">Historial de Actividad</CardTitle>
-              <CardDescription>
-                Últimos movimientos de solicitudes, compras y devoluciones.
-              </CardDescription>
+              <CardDescription>Tus solicitudes, compras, arriendos y devoluciones recientes.</CardDescription>
             </div>
-
             <Link href="/dashboard/supervisor/request">
-              <Button size="sm" variant="outline">
-                Ver historial completo <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              <Button size="sm" variant="outline">Ver historial completo <ArrowRight className="ml-2 h-4 w-4" /></Button>
             </Link>
           </div>
         </CardHeader>
-
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4 grid grid-cols-4 sm:flex">
+            <TabsList className="mb-4 grid grid-cols-3 sm:grid-cols-5 sm:flex">
               <TabsTrigger value="all">Todo</TabsTrigger>
-              <TabsTrigger value="request" className="gap-2">
-                <Package className="h-4 w-4" /> Bodega
-              </TabsTrigger>
-              <TabsTrigger value="purchase" className="gap-2">
-                <ShoppingCart className="h-4 w-4" /> Compras
-              </TabsTrigger>
-              <TabsTrigger value="return" className="gap-2">
-                <RotateCcw className="h-4 w-4" /> Devol.
-              </TabsTrigger>
+              <TabsTrigger value="request" className="gap-2"><Package className="h-4 w-4" /> Bodega</TabsTrigger>
+              <TabsTrigger value="purchase" className="gap-2"><ShoppingCart className="h-4 w-4" /> Compras</TabsTrigger>
+              <TabsTrigger value="rental" className="gap-2"><KeyRound className="h-4 w-4" /> Arriendos</TabsTrigger>
+              <TabsTrigger value="return" className="gap-2"><RotateCcw className="h-4 w-4" /> Devol.</TabsTrigger>
             </TabsList>
 
             <TabsContent value={activeTab}>
@@ -366,54 +274,32 @@ export default function SupervisorHubPage() {
                     {filteredActivity.map((act) => {
                       const t = getTypeConfig(act.type);
                       const s = getStatusConfig(act.status, act.delivered);
+                      const a = ACCENT[t.accent];
                       const Icon = t.icon;
-
                       return (
-                        <div
-                          key={act.id}
-                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/40 transition cursor-pointer"
-                        >
+                        <div key={act.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-xl bg-card hover:bg-muted/40 transition">
                           <div className="flex gap-4">
-                            <div className={cn("p-2 rounded-full", t.bg)}>
-                              <Icon className={cn("h-5 w-5", t.color)} />
+                            <div className={cn("p-2 rounded-2xl shrink-0", a.iconBg)}>
+                              <Icon className={cn("h-5 w-5", a.icon)} />
                             </div>
-
                             <div>
-                              <div className="flex gap-2 items-center">
+                              <div className="flex gap-2 items-center flex-wrap">
                                 <span className="font-semibold text-sm">{act.title}</span>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] h-5 px-1.5 text-muted-foreground"
-                                >
-                                  {t.label}
-                                </Badge>
+                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground">{t.label}</Badge>
                               </div>
-
                               <p className="text-xs text-muted-foreground">
-                                {act.subtitle} •{" "}
-                                <span className="capitalize">
-                                  {formatDistanceToNow(act.time, {
-                                    addSuffix: true,
-                                    locale: es,
-                                  })}
-                                </span>
+                                {act.subtitle} • <span className="capitalize">{formatDistanceToNow(act.time, { addSuffix: true, locale: es })}</span>
                               </p>
                             </div>
                           </div>
-
-                          <Badge
-                            variant="outline"
-                            className={cn("whitespace-nowrap mt-2 sm:mt-0", s.className)}
-                          >
-                            {s.label}
-                          </Badge>
+                          <Badge variant="outline" className={cn("whitespace-nowrap mt-2 sm:mt-0", s.className)}>{s.label}</Badge>
                         </div>
                       );
                     })}
                   </div>
                 </ScrollArea>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
                   <SearchX className="h-12 w-12 mb-3 opacity-20" />
                   <p>No hay movimientos en esta categoría.</p>
                 </div>
@@ -433,37 +319,21 @@ export default function SupervisorHubPage() {
   );
 }
 
-// ==================================================
-// COMPONENTE PARA ACCIONES RÁPIDAS (REUTILIZABLE)
-// ==================================================
-const QUICK_ACTION_COLORS: Record<string, { hover: string; bg: string; text: string; arrow: string }> = {
-  primary: {
-    hover: "hover:border-primary/50 hover:bg-primary/5",
-    bg: "bg-primary/10",
-    text: "text-primary",
-    arrow: "text-primary/40",
-  },
-  blue: {
-    hover: "hover:border-blue-500/50 hover:bg-blue-50",
-    bg: "bg-blue-100",
-    text: "text-blue-600",
-    arrow: "text-blue-400",
-  },
-  purple: {
-    hover: "hover:border-purple-500/50 hover:bg-purple-50",
-    bg: "bg-purple-100",
-    text: "text-purple-600",
-    arrow: "text-purple-400",
-  },
+// ============ ACCIÓN RÁPIDA (tokenizada) ============
+const QUICK_ACTION_ACCENT: Record<string, { hover: string; bg: string; text: string; arrow: string }> = {
+  primary: { hover: "hover:border-primary/50 hover:bg-primary/5", bg: "bg-primary/10", text: "text-primary", arrow: "text-primary/40" },
+  info: { hover: "hover:border-info/50 hover:bg-info-subtle", bg: "bg-info-subtle", text: "text-info-subtle-foreground", arrow: "text-info/40" },
+  warning: { hover: "hover:border-warning/50 hover:bg-warning-subtle", bg: "bg-warning-subtle", text: "text-warning-subtle-foreground", arrow: "text-warning/40" },
+  success: { hover: "hover:border-success/50 hover:bg-success-subtle", bg: "bg-success-subtle", text: "text-success-subtle-foreground", arrow: "text-success/40" },
 };
 
-function QuickAction({ href, icon: Icon, title, desc, color, arrow: Arrow }: {href: string, icon: React.ElementType, title: string, desc: string, color: string, arrow: React.ElementType}) {
-  const c = QUICK_ACTION_COLORS[color] ?? QUICK_ACTION_COLORS.primary;
+function QuickAction({ href, icon: Icon, title, desc, accent, arrow: Arrow }: { href: string; icon: React.ElementType; title: string; desc: string; accent: string; arrow: React.ElementType }) {
+  const c = QUICK_ACTION_ACCENT[accent] ?? QUICK_ACTION_ACCENT.primary;
   return (
     <Link href={href} className="block h-full">
-      <Card className={cn("h-full group cursor-pointer border-2 transition-all duration-300", c.hover)}>
+      <Card className={cn("h-full group cursor-pointer border-2 rounded-[1.5rem] transition-all duration-300", c.hover)}>
         <CardHeader className="flex flex-row items-center gap-4 pb-2">
-          <div className={cn("p-3 rounded-lg transition-transform group-hover:scale-110", c.bg)}>
+          <div className={cn("p-3 rounded-2xl transition-transform group-hover:scale-110", c.bg)}>
             <Icon className={cn("h-6 w-6", c.text)} />
           </div>
           <div>
@@ -472,12 +342,7 @@ function QuickAction({ href, icon: Icon, title, desc, color, arrow: Arrow }: {hr
           </div>
         </CardHeader>
         <CardContent className="pt-0 relative">
-          <Arrow
-            className={cn(
-              "absolute right-4 bottom-4 h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100",
-              c.arrow
-            )}
-          />
+          <Arrow className={cn("absolute right-4 bottom-4 h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100", c.arrow)} />
         </CardContent>
       </Card>
     </Link>

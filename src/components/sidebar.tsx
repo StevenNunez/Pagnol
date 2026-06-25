@@ -213,6 +213,7 @@ const getAbastecimientoNavItems = () => [
   { href: '/dashboard/abastecimiento/recepcion', icon: Truck, label: 'Recepción' },
   { href: '/dashboard/abastecimiento/proveedores', icon: Building2, label: 'Proveedores' },
   { href: '/dashboard/abastecimiento/costos', icon: Target, label: 'Control de Costos' },
+  { href: '/dashboard/abastecimiento/arriendos', icon: KeyRound, label: 'Arriendos' },
   { href: '/dashboard/abastecimiento/pagos', icon: DollarSign, label: 'Pagos' },
   { href: '/dashboard/abastecimiento/reportes', icon: FileBarChart, label: 'Reportes' },
 ];
@@ -257,6 +258,7 @@ const getSupervisorNavItems = () => [
   { href: '/dashboard/supervisor/request', icon: PlusCircle, label: 'Solicitud Material' },
   { href: '/dashboard/supervisor/return-request', icon: RotateCcw, label: 'Devolución Material' },
   { href: '/dashboard/supervisor/purchase-request-form', icon: ShoppingCart, label: 'Solicitud Compra' },
+  { href: '/dashboard/supervisor/rental-request', icon: KeyRound, label: 'Solicitud Arriendo' },
   { href: '/dashboard/supervisor/suppliers', icon: Building2, label: 'Lista Proveedores' },
 ];
 

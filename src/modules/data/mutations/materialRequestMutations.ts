@@ -11,6 +11,8 @@ export async function addMaterialRequest(
   requestData: {
     items: { materialId: string; quantity: number }[];
     area: string;
+    contractId?: string | null;
+    contractName?: string | null;
     supervisorId: string;
     supervisorName?: string;
     highestClass?: 'A' | 'B' | 'C';
@@ -32,6 +34,8 @@ export async function addMaterialRequest(
       internal_code: requestId,
       items: requestData.items,
       area: requestData.area,
+      contract_id: requestData.contractId || null,
+      contract_name: requestData.contractName || null,
       supervisor_id: requestData.supervisorId,
       supervisor_name: supervisorName,
       highest_class: highestClass,
@@ -49,6 +53,8 @@ export async function addAndApproveMaterialRequest(
   requestData: {
     items: { materialId: string; quantity: number }[];
     area: string;
+    contractId?: string | null;
+    contractName?: string | null;
     supervisorId: string;
     contractUrl?: string | null;
     internalCode?: string;
@@ -93,6 +99,8 @@ export async function addAndApproveMaterialRequest(
     internal_code: requestId,
     items: requestData.items,
     area: requestData.area,
+    contract_id: requestData.contractId || null,
+    contract_name: requestData.contractName || null,
     supervisor_id: requestData.supervisorId,
     supervisor_name: supervisorName,
     highest_class: highestClass,

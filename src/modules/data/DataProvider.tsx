@@ -46,6 +46,7 @@ import * as eaMutations from './mutations/eaMutations';
 import * as protocolMutations from './mutations/protocolMutations';
 import * as contractMutations from './mutations/contractMutations';
 import * as rentalMutations from './mutations/rentalMutations';
+import * as rentalRequestMutations from './mutations/rentalRequestMutations';
 import * as workReportMutations from './mutations/workReportMutations';
 import * as workReportCatalogMutations from './mutations/workReportCatalogMutations';
 import * as workOrderMutations from './mutations/workOrderMutations';
@@ -96,6 +97,9 @@ const initialState: AppDataState = {
     rentalContracts: [],
     rentalAssets: [],
     rentalPayments: [],
+    rentalRequests: [],
+    rentalQuoteRequests: [],
+    rentalCategories: [],
     workReports: [],
     leaveRequests: [],
     hrDocuments: [],
@@ -223,6 +227,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const rentalContractsData = useSupabaseCollection('rental_contracts', { tenantId, mapper: mappers.rental_contracts, orderBy: { column: 'created_at', ascending: false } });
     const rentalAssetsData = useSupabaseCollection('rental_assets', { tenantId, mapper: mappers.rental_assets, orderBy: { column: 'created_at', ascending: false } });
     const rentalPaymentsData = useSupabaseCollection('rental_payments', { tenantId, mapper: mappers.rental_payments, orderBy: { column: 'due_date', ascending: true } });
+    const rentalRequestsData = useSupabaseCollection('rental_requests', { tenantId, mapper: mappers.rental_requests, orderBy: { column: 'created_at', ascending: false } });
+    const rentalQuoteRequestsData = useSupabaseCollection('rental_quote_requests', { tenantId, mapper: mappers.rental_quote_requests, orderBy: { column: 'created_at', ascending: false } });
+    const rentalCategoriesData = useSupabaseCollection('rental_categories', { tenantId, orderBy: { column: 'name', ascending: true } });
     const workReportsData = useSupabaseCollection('work_reports', { tenantId, mapper: mappers.work_reports, orderBy: { column: 'created_at', ascending: false } });
     const leaveRequestsData = useSupabaseCollection('hr_leave_requests', { tenantId, mapper: mappers.hr_leave_requests, orderBy: { column: 'created_at', ascending: false } });
     const hrDocumentsData = useSupabaseCollection('hr_documents', { tenantId, mapper: mappers.hr_documents, orderBy: { column: 'expiry_date', ascending: true } });
@@ -329,6 +336,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             protocolTemplatesData, protocolsData,
             shiftSchedulesData, contractsData, contractWorkersData,
             rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData,
+            rentalRequestsData, rentalQuoteRequestsData, rentalCategoriesData,
             workReportsData, leaveRequestsData, hrDocumentsData,
             workReportAreasData, workReportSpecialtiesData, workReportMilestonesData, workReportCatalogsData,
             workOrdersData, workWeeklyReportsData,
@@ -403,6 +411,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 rentalContracts: processData(rentalContractsData),
                 rentalAssets: processData(rentalAssetsData),
                 rentalPayments: processData(rentalPaymentsData),
+                rentalRequests: processData(rentalRequestsData),
+                rentalQuoteRequests: processData(rentalQuoteRequestsData),
+                rentalCategories: processData(rentalCategoriesData),
                 workReports: processData(workReportsData),
                 leaveRequests: processData(leaveRequestsData),
                 hrDocuments: processData(hrDocumentsData),
@@ -429,6 +440,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         protocolTemplatesData, protocolsData,
         shiftSchedulesData, contractsData, contractWorkersData,
         rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData, workReportsData,
+        rentalRequestsData, rentalQuoteRequestsData, rentalCategoriesData,
         leaveRequestsData, hrDocumentsData,
         workReportAreasData, workReportSpecialtiesData, workReportMilestonesData,
         workOrdersData, workWeeklyReportsData, refreshVersion
@@ -620,6 +632,20 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         markRentalPaymentPaid: bindContext(rentalMutations.markRentalPaymentPaid),
         updateRentalPayment: bindContext(rentalMutations.updateRentalPayment),
         deleteRentalPayment: bindContext(rentalMutations.deleteRentalPayment),
+        // Categorías de Arriendo
+        addRentalCategory: bindContext(rentalRequestMutations.addRentalCategory),
+        updateRentalCategory: bindContext(rentalRequestMutations.updateRentalCategory),
+        deleteRentalCategory: bindContext(rentalRequestMutations.deleteRentalCategory),
+        // Solicitudes de Arriendo + RFQ de arriendo
+        addRentalRequest: bindContext(rentalRequestMutations.addRentalRequest),
+        updateRentalRequestStatus: bindContext(rentalRequestMutations.updateRentalRequestStatus),
+        deleteRentalRequest: bindContext(rentalRequestMutations.deleteRentalRequest),
+        addRentalQuoteRequest: bindContext(rentalRequestMutations.addRentalQuoteRequest),
+        updateRentalQuoteRequest: bindContext(rentalRequestMutations.updateRentalQuoteRequest),
+        sendRentalQuoteRequest: bindContext(rentalRequestMutations.sendRentalQuoteRequest),
+        recordRentalQuoteResponse: bindContext(rentalRequestMutations.recordRentalQuoteResponse),
+        awardRentalQuote: bindContext(rentalRequestMutations.awardRentalQuote),
+        deleteRentalQuoteRequest: bindContext(rentalRequestMutations.deleteRentalQuoteRequest),
 
         // Reportes de Trabajo
         createWorkReport: bindContext(workReportMutations.createWorkReport),

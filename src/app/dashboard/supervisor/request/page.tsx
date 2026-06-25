@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { PageHeader } from "@/components/page-header";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,7 +51,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Material, MaterialRequest } from "@/modules/core/lib/data";
+import type { Material, MaterialRequest, Contract, ContractWorker } from "@/modules/core/lib/data";
 
 interface CartItem {
   materialId: string;
@@ -70,12 +70,13 @@ type CompatibleMaterialRequest = MaterialRequest & {
 };
 
 export default function SupervisorRequestPage() {
-  const { materials, addMaterialRequest, requests } = useAppState();
+  const { materials, addMaterialRequest, requests, contracts, contractWorkers, can } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
   // State for the new multi-item request form
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [contractId, setContractId] = useState("");
   const [area, setArea] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -92,6 +93,45 @@ export default function SupervisorRequestPage() {
   // --- Memos & Helpers ---
 
   const materialMap = useMemo(() => new Map((materials || []).map((m: Material) => [m.id, m])), [materials]);
+
+  // Solo contratos activos para asociar la solicitud a una obra/contrato específico.
+  const activeContracts = useMemo(
+    () => ((contracts || []) as Contract[])
+      .filter((c) => c.status === "active")
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [contracts]
+  );
+  const contractMap = useMemo(
+    () => new Map(((contracts || []) as Contract[]).map((c) => [c.id, c])),
+    [contracts]
+  );
+
+  // Oficina/altos mandos eligen cualquier contrato; personal de terreno solo el suyo asignado.
+  const canSelectAnyContract = can("material_requests:select_any_contract");
+
+  // Contratos (activos) a los que el usuario está asignado vía contract_workers.
+  const myAssignedContracts = useMemo(() => {
+    if (!authUser) return [] as Contract[];
+    const myContractIds = new Set(
+      ((contractWorkers || []) as ContractWorker[])
+        .filter((cw) => cw.userId === authUser.id)
+        .map((cw) => cw.contractId)
+    );
+    return activeContracts.filter((c) => myContractIds.has(c.id));
+  }, [contractWorkers, authUser, activeContracts]);
+
+  // Lista efectiva que puede elegir el usuario actual.
+  const selectableContracts = canSelectAnyContract ? activeContracts : myAssignedContracts;
+
+  // Personal de terreno con un único contrato → autocarga, sin selector.
+  const isFieldWorkerSingleContract = !canSelectAnyContract && myAssignedContracts.length === 1;
+
+  // Autoselecciona el contrato cuando el trabajador de terreno tiene solo uno.
+  useEffect(() => {
+    if (isFieldWorkerSingleContract && !contractId) {
+      setContractId(myAssignedContracts[0].id);
+    }
+  }, [isFieldWorkerSingleContract, myAssignedContracts, contractId]);
 
   // Group materials by category for better UX in the Command component
   const groupedMaterials = useMemo(() => {
@@ -173,7 +213,7 @@ export default function SupervisorRequestPage() {
       toast({ variant: "destructive", title: "Stock insuficiente", description: `Solo hay ${material.stock} unidades disponibles.` });
       return;
     }
-    
+
     // Check if exists to update or add
     setCart(prev => {
         const exists = prev.find(item => item.materialId === currentMaterialId);
@@ -220,8 +260,8 @@ export default function SupervisorRequestPage() {
 
   const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cart.length === 0 || !area.trim() || !authUser) {
-      toast({ variant: "destructive", title: "Error", description: "Añade materiales y define el área de destino." });
+    if (cart.length === 0 || !contractId || !authUser) {
+      toast({ variant: "destructive", title: "Error", description: "Añade materiales y selecciona el contrato/obra." });
       return;
     }
     if (cart.some(item => item.quantity <= 0)) {
@@ -231,13 +271,17 @@ export default function SupervisorRequestPage() {
 
     setIsSubmitting(true);
     try {
+      const contract = contractMap.get(contractId);
       await addMaterialRequest({
         items: cart.map(({ materialId, quantity }) => ({ materialId, quantity })),
-        area,
+        area: area.trim(),
+        contractId,
+        contractName: contract?.name || null,
         supervisorId: authUser.id,
       });
       toast({ title: "Solicitud Enviada", description: "El administrador revisará tu pedido." });
       setCart([]);
+      setContractId("");
       setArea("");
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo procesar la solicitud." });
@@ -423,7 +467,49 @@ export default function SupervisorRequestPage() {
 
                 <div className="space-y-3 pt-2">
                   <div className="space-y-2">
-                    <Label htmlFor="area">Destino / Obra</Label>
+                    <Label htmlFor="contract">Contrato / Obra <span className="text-destructive">*</span></Label>
+                    {isFieldWorkerSingleContract ? (
+                      // Personal de terreno: su contrato viene fijado, no se elige.
+                      <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/40 text-sm">
+                        <Package className="h-4 w-4 text-primary shrink-0" />
+                        <span className="font-medium truncate">
+                          {myAssignedContracts[0].name}
+                          {myAssignedContracts[0].code ? ` (${myAssignedContracts[0].code})` : ""}
+                        </span>
+                        <Badge variant="secondary" className="ml-auto text-[10px] shrink-0">Tu contrato</Badge>
+                      </div>
+                    ) : selectableContracts.length === 0 ? (
+                      // Sin contratos disponibles: no puede continuar.
+                      <div className="flex items-start gap-2 p-3 rounded-md border border-warning/30 bg-warning-subtle text-warning-subtle-foreground text-xs">
+                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                        <span>
+                          {canSelectAnyContract
+                            ? "No hay contratos activos. Crea uno en el módulo de contratos antes de solicitar materiales."
+                            : "No tienes un contrato asignado. Contacta a tu administrador para que te vincule a una obra antes de solicitar materiales."}
+                        </span>
+                      </div>
+                    ) : (
+                      <Select value={contractId} onValueChange={setContractId} disabled={isSubmitting}>
+                        <SelectTrigger id="contract">
+                          <SelectValue placeholder="Selecciona el contrato..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selectableContracts.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}{c.code ? ` (${c.code})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {canSelectAnyContract && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Como perfil administrativo puedes solicitar para cualquier contrato activo.
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="area">Detalle / Ubicación <span className="text-muted-foreground font-normal">(opcional)</span></Label>
                     <Input
                       id="area"
                       placeholder="Ej: Torre A, Piso 3"
@@ -432,7 +518,7 @@ export default function SupervisorRequestPage() {
                       disabled={isSubmitting}
                     />
                   </div>
-                  <Button type="submit" className="w-full h-11 text-base shadow-md" disabled={isSubmitting || cart.length === 0 || !area.trim()}>
+                  <Button type="submit" className="w-full h-11 text-base shadow-md" disabled={isSubmitting || cart.length === 0 || !contractId}>
                     {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : <><Send className="mr-2 h-4 w-4" /> Enviar Solicitud</>}
                   </Button>
                 </div>
@@ -481,8 +567,15 @@ export default function SupervisorRequestPage() {
                                                 <Clock className="h-3 w-3 mr-1" /> {formatDate(req.createdAt)}
                                             </span>
                                         </div>
-                                        <div className="text-sm">
-                                            <span className="font-semibold text-muted-foreground">Destino:</span> {req.area}
+                                        <div className="text-sm space-y-0.5">
+                                            <div>
+                                                <span className="font-semibold text-muted-foreground">Contrato:</span> {req.contractName || contractMap.get(req.contractId || "")?.name || "—"}
+                                            </div>
+                                            {req.area && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    <span className="font-semibold">Detalle:</span> {req.area}
+                                                </div>
+                                            )}
                                         </div>
                                         
                                         {/* Lista de Ítems */}

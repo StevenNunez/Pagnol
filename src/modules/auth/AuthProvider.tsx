@@ -66,7 +66,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const can = useCallback(
     (permission: Permission): boolean => {
       if (!user) return false;
+      // Super-admin: control total de la plataforma.
       if (user.role === 'super-admin') return true;
+      // Administrador (dueño del tenant) y Soporte Pagnol (cuenta de soporte interno):
+      // control total DENTRO del tenant. Bypass intencional para que SIEMPRE puedan
+      // operar todo, sin quedar atrapados por el drift de la tabla `roles` (una fila
+      // guardada congela los permisos a lo que existía cuando se guardó, ignorando
+      // permisos nuevos del código). Siguen acotados al tenant por RLS.
+      if (user.role === 'administrador' || user.role === 'soporte-pagnol') return true;
       if (user.grantedPermissions?.includes(permission)) return true;
       const userPermissions = dynamicRoles[user.role]?.permissions ?? ROLES_DEFAULT[user.role]?.permissions;
       return !!userPermissions?.includes(permission);

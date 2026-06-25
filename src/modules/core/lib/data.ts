@@ -263,6 +263,8 @@ export interface MaterialRequest {
     quantity: number;
   }[];
   area: string;
+  contractId?: string | null;
+  contractName?: string | null;
   supervisorId: string;
   status: "pending" | "approved" | "rejected";
   createdAt: Date;
@@ -315,6 +317,8 @@ export interface PurchaseRequest {
   receivedAt?: Date | null;
   category: string;
   area: string;
+  contractId?: string | null;
+  contractName?: string | null;
   lotId?: string | null;
   notes?: string | null;
   approverId?: string | null;
@@ -450,7 +454,33 @@ export type RentalDirection = 'incoming' | 'outgoing';
 /** lessor = arrendador/proveedor; client = cliente al que arrendamos. */
 export type RentalPartyType = 'lessor' | 'client';
 export type RentalBillingCycle = 'monthly' | 'biweekly' | 'weekly' | 'daily' | 'one_time';
-export type RentalAssetCategory = 'machinery' | 'measurement' | 'vehicle' | 'truck' | 'other';
+// Antes era un enum cerrado; ahora es texto libre: un slug por defecto
+// (RENTAL_CATEGORY_DEFAULTS) o el nombre de una categoría custom (tabla rental_categories).
+export type RentalAssetCategory = string;
+
+/** Categoría de arriendo personalizable por tenant (tabla rental_categories). */
+export interface RentalCategory {
+  id: string;
+  name: string;
+}
+
+/** Categorías por defecto (en código); se fusionan con las custom del tenant en la UI. */
+export const RENTAL_CATEGORY_DEFAULTS: { value: string; label: string }[] = [
+  { value: 'machinery', label: 'Maquinaria' },
+  { value: 'truck', label: 'Camión / Camión pluma' },
+  { value: 'vehicle', label: 'Vehículo' },
+  { value: 'measurement', label: 'Medición / Topografía' },
+  { value: 'other', label: 'Otro (andamios, generadores, etc.)' },
+];
+
+const RENTAL_CATEGORY_DEFAULT_LABELS: Record<string, string> =
+  Object.fromEntries(RENTAL_CATEGORY_DEFAULTS.map((c) => [c.value, c.label]));
+
+/** Etiqueta legible de una categoría: usa el label del default, o el valor crudo (categoría custom). */
+export function rentalCategoryLabel(value: string | undefined | null): string {
+  if (!value) return '—';
+  return RENTAL_CATEGORY_DEFAULT_LABELS[value] || value;
+}
 export type RentalContractStatus = 'active' | 'pending' | 'finished' | 'cancelled';
 export type RentalPaymentStatus = 'pending' | 'paid' | 'overdue';
 
@@ -518,6 +548,104 @@ export interface RentalPayment {
   reference?: string;
   notes?: string;
   createdAt: Date;
+}
+
+// ── Solicitud de Arriendo + RFQ de Arriendo ──────────────────────────────────
+// Conecta el flujo de Abastecimiento con el módulo de Arriendos. Terreno solicita
+// un arriendo (equipo + período), Abastecimiento cotiza a arrendadores y, al
+// adjudicar, se genera el RentalContract + RentalAsset + 1er RentalPayment.
+
+export type RentalRequestStatus = 'pending' | 'quoting' | 'approved' | 'rejected' | 'fulfilled';
+
+/** Línea de equipo dentro de una solicitud de arriendo (carrito multi-ítem). */
+export interface RentalRequestItem {
+  name: string;
+  category: RentalAssetCategory;
+  quantity: number;
+}
+
+export interface RentalRequest {
+  id: string;
+  tenantId: string;
+  internalCode?: string;
+  // Carrito de equipos del pedido. El mapper SIEMPRE lo entrega poblado
+  // (cae al ítem único legacy si la fila no tiene items[]).
+  items: RentalRequestItem[];
+  // Espejo del primer ítem (compat con filas/consumidores antiguos mono-ítem).
+  equipmentName: string;
+  category: RentalAssetCategory;
+  quantity: number;
+  startDate?: string | null;     // ISO date
+  endDate?: string | null;       // ISO date
+  billingCycleEstimate: RentalBillingCycle;
+  contractId?: string | null;    // obra/contrato (tabla contracts)
+  contractName?: string | null;
+  area?: string;                 // detalle / ubicación
+  justification?: string;
+  supervisorId: string;
+  supervisorName?: string;
+  status: RentalRequestStatus;
+  approverId?: string;
+  approverName?: string;
+  approvalDate?: Date;
+  rejectionDate?: Date;
+  rejectionReason?: string;
+  rentalContractId?: string | null; // contrato de arriendo generado al fulfillar
+  notes?: string;
+  createdAt: Date;
+}
+
+export interface RentalQuoteItem {
+  id: string;                 // id de la rental_request de origen (o generado)
+  name: string;
+  category: RentalAssetCategory;
+  quantity: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  billingCycle: RentalBillingCycle;
+}
+
+export interface RentalQuoteResponse {
+  id: string;
+  partyId: string;            // arrendador (rental_parties tipo 'lessor')
+  partyName: string;
+  pricePerPeriod: number;     // precio por período según billingCycle — obligatorio
+  billingCycle: RentalBillingCycle;
+  periods?: number;           // nº de períodos estimados
+  totalEstimate?: number;     // pricePerPeriod * periods
+  availabilityDate?: string;  // desde cuándo hay disponibilidad (ISO)
+  conditions?: string;        // incluye traslado / operador / combustible, etc.
+  validityDate?: string;      // validez de la oferta (ISO)
+  attachmentUrl?: string;     // adjunto del arrendador (bucket privado)
+  attachmentPath?: string;
+  attachmentName?: string;
+  notes?: string;
+  createdAt: string;          // ISO
+  createdBy?: string;
+}
+
+export type RentalQuoteRequestStatus = 'draft' | 'sent' | 'closed' | 'awarded' | 'cancelled';
+
+export interface RentalQuoteRequest {
+  id: string;
+  tenantId: string;
+  internalCode?: string;
+  title: string;
+  status: RentalQuoteRequestStatus;
+  requestIds: string[];          // rental_requests incluidas
+  items: RentalQuoteItem[];
+  partyIds: string[];            // arrendadores invitados
+  responses: RentalQuoteResponse[];
+  deadline?: string;             // ISO date — fecha límite de respuesta
+  notes?: string;
+  awardedPartyId?: string;
+  awardedQuoteId?: string;
+  awardedAt?: string;
+  rentalContractId?: string;     // contrato de arriendo generado al adjudicar
+  createdBy?: string;
+  createdByName: string;
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
 // Work Reports / Informes de Terreno

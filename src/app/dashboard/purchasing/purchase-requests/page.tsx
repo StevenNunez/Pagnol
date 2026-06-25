@@ -269,9 +269,12 @@ export default function PurchaseRequestsManagementPage() {
                                                 )}
                                             </TableCell>
                                             <TableCell>
-                                                <div className="flex flex-col">
+                                                <div className="flex flex-col gap-0.5">
                                                     <span className="text-sm font-medium">{supervisorMap.get(req.supervisorId) || 'Desconocido'}</span>
-                                                    <span className="text-xs text-muted-foreground">{req.area}</span>
+                                                    {req.contractName && (
+                                                        <Badge variant="outline" className="w-fit text-[10px] h-4 px-1.5 border-primary/30 text-primary">{req.contractName}</Badge>
+                                                    )}
+                                                    {req.area && <span className="text-xs text-muted-foreground">{req.area}</span>}
                                                 </div>
                                             </TableCell>
                                             <TableCell>

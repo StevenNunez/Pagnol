@@ -23,9 +23,10 @@ import {
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { RentalAsset, RentalAssetCategory, RentalPayment } from '@/modules/core/lib/data';
+import { rentalCategoryLabel } from '@/modules/core/lib/data';
 import {
   DIRECTION_LABEL, DIRECTION_BADGE, DIRECTION_SHORT, BILLING_CYCLE_LABEL,
-  CONTRACT_STATUS_LABEL, CONTRACT_STATUS_BADGE, CATEGORY_LABEL,
+  CONTRACT_STATUS_LABEL, CONTRACT_STATUS_BADGE,
   PAYMENT_STATUS_LABEL, PAYMENT_STATUS_BADGE, formatMoney, derivePaymentStatus,
 } from '../../_lib/helpers';
 
@@ -158,7 +159,7 @@ export default function RentalContractDetailPage() {
 
   const assetColumns: DataTableColumn<RentalAsset>[] = [
     { key: 'name', header: 'Activo', cell: (a) => <span className="font-semibold text-foreground">{a.name}</span> },
-    { key: 'cat', header: 'Categoría', cell: (a) => <span className="text-muted-foreground">{CATEGORY_LABEL[a.category]}</span> },
+    { key: 'cat', header: 'Categoría', cell: (a) => <span className="text-muted-foreground">{rentalCategoryLabel(a.category)}</span> },
     { key: 'id', header: 'Patente / Serie', cell: (a) => <span className="text-muted-foreground">{a.identifier || '—'}</span> },
     { key: 'qty', header: 'Cant.', cell: (a) => <span className="tabular-nums">{a.quantity}</span> },
     { key: 'price', header: 'Precio unit.', cell: (a) => <span className="tabular-nums">{a.unitPrice != null ? formatMoney(a.unitPrice, contract.currency) : '—'}</span> },

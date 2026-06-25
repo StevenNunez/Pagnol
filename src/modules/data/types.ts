@@ -48,6 +48,13 @@ import {
   RentalContract,
   RentalAsset,
   RentalPayment,
+  RentalRequest,
+  RentalCategory,
+  RentalQuoteRequest,
+  RentalQuoteItem,
+  RentalQuoteResponse,
+  RentalAssetCategory,
+  RentalBillingCycle,
   WorkReport,
   WorkReportPhoto,
   WorkReportSignature,
@@ -108,6 +115,9 @@ export interface AppDataState {
   rentalContracts: RentalContract[];
   rentalAssets: RentalAsset[];
   rentalPayments: RentalPayment[];
+  rentalRequests: RentalRequest[];
+  rentalQuoteRequests: RentalQuoteRequest[];
+  rentalCategories: RentalCategory[];
   workReports: WorkReport[];
   leaveRequests: LeaveRequest[];
   hrDocuments: HRDocument[];
@@ -138,8 +148,8 @@ export interface AppStateContextType extends AppDataState {
   returnToPool: (requestIds: string[]) => Promise<void>;
 
   // Material Requests
-  addMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; supervisorId: string; supervisorName?: string; highestClass?: 'A' | 'B' | 'C'; tenantPrefix?: string; }) => Promise<void>;
-  addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; supervisorId: string; contractUrl?: string | null; internalCode?: string; }) => Promise<void>;
+  addMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; supervisorName?: string; highestClass?: 'A' | 'B' | 'C'; tenantPrefix?: string; }) => Promise<void>;
+  addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; }) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
   deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null) => Promise<void>;
   addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string }[], notes: string) => Promise<void>;
@@ -257,6 +267,19 @@ export interface AppStateContextType extends AppDataState {
   markRentalPaymentPaid: (id: string, details: { paidDate: Date | string; paymentMethod?: string; reference?: string }) => Promise<void>;
   updateRentalPayment: (id: string, data: Partial<RentalPayment>) => Promise<void>;
   deleteRentalPayment: (id: string) => Promise<void>;
+  // Solicitudes de Arriendo + RFQ de arriendo
+  addRentalCategory: (name: string) => Promise<void>;
+  updateRentalCategory: (id: string, name: string) => Promise<void>;
+  deleteRentalCategory: (id: string) => Promise<void>;
+  addRentalRequest: (data: { items: { name: string; category: RentalAssetCategory; quantity: number }[]; startDate?: string | null; endDate?: string | null; billingCycleEstimate: RentalBillingCycle; contractId?: string | null; contractName?: string | null; area?: string; justification?: string; supervisorId?: string; }) => Promise<void>;
+  updateRentalRequestStatus: (requestId: string, status: 'approved' | 'rejected' | 'quoting', reason?: string) => Promise<void>;
+  deleteRentalRequest: (requestId: string) => Promise<void>;
+  addRentalQuoteRequest: (data: { title: string; requestIds: string[]; items: RentalQuoteItem[]; partyIds: string[]; deadline?: string; notes?: string }) => Promise<RentalQuoteRequest>;
+  updateRentalQuoteRequest: (id: string, data: Partial<RentalQuoteRequest>) => Promise<void>;
+  sendRentalQuoteRequest: (id: string) => Promise<void>;
+  recordRentalQuoteResponse: (quoteRequestId: string, response: Omit<RentalQuoteResponse, 'id' | 'createdAt'> & { id?: string }) => Promise<void>;
+  awardRentalQuote: (quoteRequestId: string, responseId: string, options?: { currency?: string; paymentDay?: number | null; periods?: number }) => Promise<{ rentalContractId: string }>;
+  deleteRentalQuoteRequest: (id: string) => Promise<void>;
 
   // Reportes de Trabajo / Informes de Terreno
   createWorkReport: (data: Partial<Omit<WorkReport, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>) => Promise<WorkReport>;

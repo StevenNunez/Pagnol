@@ -5,6 +5,7 @@ import {
     WorkItem, ProgressLog, PaymentState, DailyTalk, MaintenanceOrder, MaintenanceLog, EADocument,
     ProtocolTemplate, Protocol, ShiftSchedule, Contract, ContractWorker,
     RentalParty, RentalContract, RentalAsset, RentalPayment, WorkReport,
+    RentalRequest, RentalQuoteRequest,
     LeaveRequest, HRDocument, WorkOrder, WorkWeeklyReport
 } from '@/modules/core/lib/data';
 import { createDefaultHousekeeping } from '@/modules/core/lib/work-report-housekeeping';
@@ -212,6 +213,65 @@ export const mappers = {
         notes: item.notes || undefined,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
     }),
+    rental_requests: (item: any): RentalRequest => {
+      const rawItems = Array.isArray(item.items) ? item.items : [];
+      const items = rawItems.length
+        ? rawItems.map((it: any) => ({
+            name: it.name,
+            category: it.category || 'other',
+            quantity: Number(it.quantity) || 1,
+          }))
+        // Fallback: filas legacy mono-ítem sin columna items[].
+        : [{ name: item.equipment_name, category: item.category || 'other', quantity: Number(item.quantity) || 1 }];
+      return {
+        id: item.id,
+        tenantId: item.tenant_id,
+        internalCode: item.internal_code || undefined,
+        items,
+        equipmentName: item.equipment_name || items[0]?.name,
+        category: item.category || items[0]?.category,
+        quantity: Number(item.quantity) || items[0]?.quantity || 1,
+        startDate: item.start_date || null,
+        endDate: item.end_date || null,
+        billingCycleEstimate: item.billing_cycle_estimate || 'monthly',
+        contractId: item.contract_id || null,
+        contractName: item.contract_name || null,
+        area: item.area || undefined,
+        justification: item.justification || undefined,
+        supervisorId: item.supervisor_id,
+        supervisorName: item.supervisor_name || undefined,
+        status: item.status,
+        approverId: item.approver_id || undefined,
+        approverName: item.approver_name || undefined,
+        approvalDate: item.approval_date ? new Date(item.approval_date) : undefined,
+        rejectionDate: item.rejection_date ? new Date(item.rejection_date) : undefined,
+        rejectionReason: item.rejection_reason || undefined,
+        rentalContractId: item.rental_contract_id || null,
+        notes: item.notes || undefined,
+        createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+      };
+    },
+    rental_quote_requests: (item: any): RentalQuoteRequest => ({
+        id: item.id,
+        tenantId: item.tenant_id,
+        internalCode: item.internal_code || undefined,
+        title: item.title || '',
+        status: item.status,
+        requestIds: item.request_ids || [],
+        items: item.items || [],
+        partyIds: item.party_ids || [],
+        responses: item.responses || [],
+        deadline: item.deadline || undefined,
+        notes: item.notes || undefined,
+        awardedPartyId: item.awarded_party_id || undefined,
+        awardedQuoteId: item.awarded_quote_id || undefined,
+        awardedAt: item.awarded_at || undefined,
+        rentalContractId: item.rental_contract_id || undefined,
+        createdBy: item.created_by || undefined,
+        createdByName: item.created_by_name || '',
+        createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+        updatedAt: item.updated_at ? new Date(item.updated_at) : undefined,
+    }),
     work_reports: (item: any): WorkReport => ({
         id: item.id,
         tenantId: item.tenant_id,
@@ -364,6 +424,8 @@ export const mappers = {
         internalCode: item.internal_code,
         items: item.items,
         area: item.area,
+        contractId: item.contract_id,
+        contractName: item.contract_name,
         supervisorId: item.supervisor_id,
         status: item.status,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
@@ -393,6 +455,8 @@ export const mappers = {
         receivedAt: item.received_at ? new Date(item.received_at) : null,
         category: item.category,
         area: item.area,
+        contractId: item.contract_id,
+        contractName: item.contract_name,
         lotId: item.lot_id,
         notes: item.notes,
         approverId: item.approver_id,

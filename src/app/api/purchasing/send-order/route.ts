@@ -30,7 +30,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'El correo (SMTP) no está configurado.' }, { status: 500 });
     }
 
-    const { to, subject, message, pdfBase64, filename, orderCode } = await request.json();
+    const {
+      to, subject, message, pdfBase64, filename, orderCode,
+      // Datos opcionales para dar protagonismo al tenant y permitir que el
+      // proveedor sepa a quién responder (reply-to + bloque de contacto).
+      companyName, companyLogoUrl, senderName, senderEmail, senderPhone, senderRole,
+      docLabel,
+    } = await request.json();
     const recipients = Array.isArray(to) ? to.filter(Boolean) : (to ? [to] : []);
     if (recipients.length === 0 || !pdfBase64) {
       return NextResponse.json({ error: 'Destinatario y PDF son obligatorios.' }, { status: 400 });
@@ -38,15 +44,43 @@ export async function POST(request: NextRequest) {
 
     const content = Buffer.from(String(pdfBase64).replace(/^data:application\/pdf;base64,/, ''), 'base64');
 
+    const esc = (s: any) => String(s ?? '').replace(/[<>&"]/g, (c) => (
+      { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string
+    ));
+    const company = esc(companyName) || 'Pagnol';
+    const label = esc(docLabel) || 'Solicitud de cotización';
+
+    // Encabezado: logo del tenant si existe, si no su nombre.
+    const headerHtml = companyLogoUrl
+      ? `<img src="${esc(companyLogoUrl)}" alt="${company}" style="max-height:56px;max-width:220px;margin-bottom:8px" />`
+      : `<div style="font-size:20px;font-weight:700;color:#111827;margin-bottom:4px">${company}</div>`;
+
+    // Bloque de contacto: a quién responder (el reply-to apunta al mismo correo).
+    const contactRows = [
+      senderName ? `<div style="font-weight:600;color:#111827">${esc(senderName)}${senderRole ? ` · <span style="font-weight:400;color:#6b7280">${esc(senderRole)}</span>` : ''}</div>` : '',
+      senderEmail ? `<div>✉️ <a href="mailto:${esc(senderEmail)}" style="color:#ea580c;text-decoration:none">${esc(senderEmail)}</a></div>` : '',
+      senderPhone ? `<div>📞 ${esc(senderPhone)}</div>` : '',
+    ].filter(Boolean).join('');
+    const contactHtml = contactRows
+      ? `<div style="margin-top:20px;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px">
+           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:6px">Para responder, contacta a</div>
+           ${contactRows}
+         </div>`
+      : '';
+
     await sendEmail({
       fromName: 'PAGNOL - Abastecimiento',
+      replyTo: senderEmail || undefined,
       to: recipients.join(','),
-      subject: subject || `Solicitud de cotización ${orderCode || ''}`.trim(),
+      subject: subject || `${label} ${orderCode || ''}`.trim(),
       html: `
-        <div style="font-family:Arial,sans-serif;color:#1f2937">
-          <h2 style="margin:0 0 12px">Solicitud de cotización ${orderCode || ''}</h2>
-          <p>${message || 'Estimado proveedor, adjuntamos nuestra solicitud de cotización. Quedamos atentos a su respuesta.'}</p>
-          <p style="color:#6b7280;font-size:12px;margin-top:16px">Enviado desde Pagnol.</p>
+        <div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;max-width:560px">
+          ${headerHtml}
+          <h2 style="margin:8px 0 12px;font-size:18px;color:#111827">${label} ${esc(orderCode)}</h2>
+          <p style="line-height:1.5">${esc(message) || 'Estimado proveedor, adjuntamos nuestra solicitud. Quedamos atentos a su respuesta.'}</p>
+          <p style="color:#6b7280;font-size:13px">Encontrará el detalle en el PDF adjunto.</p>
+          ${contactHtml}
+          <p style="color:#9ca3af;font-size:11px;margin-top:20px">Enviado por ${company} a través de Pagnol.</p>
         </div>
       `,
       attachments: [{

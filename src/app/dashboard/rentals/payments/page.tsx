@@ -27,7 +27,7 @@ type StatusFilter = 'all' | RentalPaymentStatus;
 
 export default function RentalPaymentsPage() {
   const router = useRouter();
-  const { rentalPayments, rentalContracts, rentalParties, markRentalPaymentPaid, can, notify } = useAppState();
+  const { rentalPayments, rentalContracts, rentalParties, suppliers, markRentalPaymentPaid, can, notify } = useAppState();
   const canManagePayments = can('rentals:manage_payments');
 
   const [status, setStatus] = useState<StatusFilter>('all');
@@ -36,7 +36,9 @@ export default function RentalPaymentsPage() {
   const [paidMethod, setPaidMethod] = useState('');
 
   const contractOf = (id: string) => rentalContracts?.find((c) => c.id === id);
-  const partyName = (partyId?: string) => rentalParties?.find((p) => p.id === partyId)?.name ?? '—';
+  // Arrendador (incoming) en `suppliers`; cliente (outgoing) en `rentalParties`.
+  const partyName = (partyId?: string) =>
+    suppliers?.find((s) => s.id === partyId)?.name ?? rentalParties?.find((p) => p.id === partyId)?.name ?? '—';
 
   const rows = useMemo(() => {
     return (rentalPayments || [])

@@ -106,6 +106,12 @@ export async function addRentalContract(
       amount: data.amount,
       currency: data.currency || 'CLP',
       payment_day: data.paymentDay ?? null,
+      tax_rate: data.taxRate ?? 19,
+      oc_number: data.ocNumber ?? null,
+      oc_status: data.ocStatus ?? 'pending',
+      oc_sent_at: data.ocSentAt ?? null,
+      oc_confirmed_at: data.ocConfirmedAt ?? null,
+      payment_terms_days: data.paymentTermsDays ?? 30,
       notes: data.notes || null,
       created_by: user.id,
     })
@@ -135,6 +141,12 @@ export async function updateRentalContract(
   if (data.amount !== undefined) payload.amount = data.amount;
   if (data.currency !== undefined) payload.currency = data.currency;
   if (data.paymentDay !== undefined) payload.payment_day = data.paymentDay;
+  if (data.taxRate !== undefined) payload.tax_rate = data.taxRate;
+  if (data.ocNumber !== undefined) payload.oc_number = data.ocNumber;
+  if (data.ocStatus !== undefined) payload.oc_status = data.ocStatus;
+  if (data.ocSentAt !== undefined) payload.oc_sent_at = data.ocSentAt;
+  if (data.ocConfirmedAt !== undefined) payload.oc_confirmed_at = data.ocConfirmedAt;
+  if (data.paymentTermsDays !== undefined) payload.payment_terms_days = data.paymentTermsDays;
   if (data.notes !== undefined) payload.notes = data.notes;
 
   const { error } = await supabase
@@ -335,12 +347,17 @@ const CYCLE_STEP: Record<RentalBillingCycle, (d: Date, n: number) => Date> = {
 };
 
 /**
- * Genera N cuotas para un contrato a partir de su fecha de inicio, según el
- * ciclo de facturación. Para `one_time` crea una sola cuota. Inserta en lote.
+ * Genera N cuotas para un contrato según el ciclo de facturación. Para `one_time`
+ * crea una sola cuota. Inserta en lote.
+ *
+ * `opts.startFrom` ancla el 1er vencimiento (por defecto la fecha de inicio del
+ * contrato); `opts.firstDueOffsetDays` le suma un plazo de pago (ej. 30 días).
+ * Así el calendario puede arrancar desde la confirmación de la OC + plazo.
  */
 export async function generateRentalSchedule(
   contractId: string,
   installments: number,
+  opts: { startFrom?: Date | string; firstDueOffsetDays?: number } | undefined,
   { user, tenantId }: Context
 ): Promise<void> {
   if (!user || !tenantId) throw new Error('No autenticado.');
@@ -354,7 +371,8 @@ export async function generateRentalSchedule(
   if (cErr) throw cErr;
 
   const contract = mappers.rental_contracts(contractRow);
-  const start = new Date(contract.startDate as any);
+  let start = new Date((opts?.startFrom ?? contract.startDate) as any);
+  if (opts?.firstDueOffsetDays) start = addDays(start, opts.firstDueOffsetDays);
   const count = contract.billingCycle === 'one_time' ? 1 : Math.max(1, installments);
   const step = CYCLE_STEP[contract.billingCycle];
 
@@ -433,4 +451,61 @@ export async function deleteRentalPayment(id: string, { tenantId }: Context): Pr
     .eq('tenant_id', tenantId);
 
   if (error) throw error;
+}
+
+// ── Orden de Compra (OC) del arriendo ─────────────────────────────────────────
+
+/** Marca la OC del contrato como ENVIADA al arrendador. */
+export async function markRentalOcSent(contractId: string, { tenantId }: Context): Promise<void> {
+  if (!tenantId) throw new Error('No autenticado.');
+  const { error } = await supabase
+    .from('rental_contracts')
+    .update({ oc_status: 'sent', oc_sent_at: new Date().toISOString() })
+    .eq('id', contractId)
+    .eq('tenant_id', tenantId);
+  if (error) throw error;
+}
+
+/**
+ * CONFIRMA la OC: el contrato pasa a 'active' y RECIÉN AHÍ se genera el
+ * calendario de pagos. El 1er vencimiento = confirmación + `firstDueOffsetDays`
+ * (plazo de pago). Si ya existen cuotas, no las duplica (sale temprano).
+ */
+export async function confirmRentalOc(
+  contractId: string,
+  opts: { installments: number; firstDueOffsetDays?: number },
+  context: Context,
+): Promise<void> {
+  const { user, tenantId } = context;
+  if (!user || !tenantId) throw new Error('No autenticado.');
+
+  const now = new Date();
+  const termsDays = opts.firstDueOffsetDays ?? 0;
+
+  const { error } = await supabase
+    .from('rental_contracts')
+    .update({
+      oc_status: 'confirmed',
+      oc_confirmed_at: now.toISOString(),
+      status: 'active',
+      payment_terms_days: termsDays,
+    })
+    .eq('id', contractId)
+    .eq('tenant_id', tenantId);
+  if (error) throw error;
+
+  // Evita duplicar el calendario si ya se generó antes.
+  const { count } = await supabase
+    .from('rental_payments')
+    .select('id', { count: 'exact', head: true })
+    .eq('contract_id', contractId)
+    .eq('tenant_id', tenantId);
+  if ((count ?? 0) > 0) return;
+
+  await generateRentalSchedule(
+    contractId,
+    opts.installments,
+    { startFrom: now, firstDueOffsetDays: termsDays },
+    context,
+  );
 }

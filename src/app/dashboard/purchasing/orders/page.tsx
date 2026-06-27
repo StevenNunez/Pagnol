@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { useAppState } from '@/modules/core/contexts/app-provider';
+import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -181,6 +181,7 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
 
 export default function OrdersPage() {
     const { purchaseOrders, suppliers, users, cancelPurchaseOrder, archiveLot, currentTenant } = useAppState();
+    const { user } = useAuth();
     const { batchedLots } = useLots();
     const { toast } = useToast();
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
@@ -272,6 +273,13 @@ export default function OrdersPage() {
                     pdfBase64,
                     filename,
                     orderCode: code,
+                    docLabel: 'Solicitud de cotización',
+                    companyName: currentTenant?.name,
+                    companyLogoUrl: currentTenant?.logoUrl,
+                    senderName: user?.name,
+                    senderEmail: user?.email,
+                    senderPhone: user?.phone,
+                    senderRole: user?.cargo,
                 }),
             });
             const json = await res.json().catch(() => ({}));

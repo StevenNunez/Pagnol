@@ -4,8 +4,9 @@ import { supabase } from '@/modules/core/lib/supabase';
 import { authHeaders } from '@/modules/core/lib/auth-header';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 import { nanoid } from 'nanoid';
-import type { UserRole, Tenant, WorkItem, ProgressLog, PaymentState, SupplierDocument } from '@/modules/core/lib/data';
+import type { UserRole, Tenant, WorkItem, ProgressLog, PaymentState, SupplierDocument, Supplier } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
+import { mappers } from '../mappers';
 import type { MutationContext as Context } from './context';
 
 // --- Tenant ---
@@ -36,8 +37,21 @@ export async function updateTenant(tenantId: string, data: Partial<Tenant>, { }:
     if (data.legalRepresentativeRut !== undefined) payload.legal_representative_rut = data.legalRepresentativeRut;
     if (data.address !== undefined) payload.address = data.address;
     if (data.faenas !== undefined) payload.faenas = data.faenas;
-    const { error } = await supabase.from('tenants').update(payload).eq('id', tenantId);
+    if (data.logoUrl !== undefined) payload.logo_url = data.logoUrl || null;
+    if (data.codePrefix !== undefined) payload.code_prefix = data.codePrefix?.trim() || null;
+    if (data.codePrefixes !== undefined) payload.code_prefixes = data.codePrefixes ?? {};
+    if (data.codeTypes !== undefined) payload.code_types = data.codeTypes ?? {};
+    // `.select()` para detectar UPDATE silencioso de 0 filas (típico de RLS que no
+    // matchea): sin esto Supabase no devuelve error y el cambio no persiste.
+    const { data: rows, error } = await supabase
+        .from('tenants')
+        .update(payload)
+        .eq('id', tenantId)
+        .select('id');
     if (error) throw error;
+    if (!rows || rows.length === 0) {
+        throw new Error('No se pudo guardar: no tienes permiso para editar esta empresa (RLS).');
+    }
 }
 
 // --- User ---
@@ -393,12 +407,15 @@ function toSupplierRow(data: any) {
     return row;
 }
 
-export async function addSupplier(data: any, { tenantId }: Context) {
+export async function addSupplier(data: any, { tenantId }: Context): Promise<Supplier> {
     if (!tenantId) throw new Error("Inquilino no válido.");
-    const { error } = await supabase
+    const { data: inserted, error } = await supabase
         .from('suppliers')
-        .insert({ ...toSupplierRow(data), tenant_id: tenantId });
+        .insert({ ...toSupplierRow(data), tenant_id: tenantId })
+        .select()
+        .single();
     if (error) throw error;
+    return mappers.suppliers(inserted);
 }
 
 export async function updateSupplier(id: string, data: any, { }: Context) {

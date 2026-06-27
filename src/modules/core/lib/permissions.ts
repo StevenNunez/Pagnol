@@ -25,6 +25,7 @@ export const ALL_PERMISSIONS = {
     'module_work_reports:view': { label: 'Acceder a Reportes de Trabajo', group: 'Acceso a Módulos' },
     'module_abastecimiento:view': { label: 'Acceder a Abastecimiento', group: 'Acceso a Módulos' },
     'module_authorizations:view': { label: 'Acceder a Autorizaciones (ADC)', group: 'Acceso a Módulos' },
+    'module_settings:view': { label: 'Acceder a Configuración de App', group: 'Acceso a Módulos' },
     'pagnol:enroll_personal': { label: 'Enrolar Personal y Biometría', group: 'Módulo Pagnol' },
 
 
@@ -174,7 +175,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             'module_purchasing:view', 'module_users:view', 'module_safety:view',
             'module_attendance:view', 'module_payments:view', 'module_reports:view',
             'module_permissions:view', 'module_construction_control:view', 'module_dte:view', 'module_work_reports:view',
-            'module_abastecimiento:view',
+            'module_abastecimiento:view', 'module_settings:view',
             // Activos y Stock
             'materials:create', 'materials:view_all', 'materials:edit', 'materials:delete', 'materials:archive',
             'tools:create', 'tools:view_all', 'tools:edit', 'tools:delete', 'tools:checkout', 'tools:return',

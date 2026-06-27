@@ -236,8 +236,8 @@ export default function RentalRequestPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="qty">Cantidad</Label>
-                      <Input id="qty" type="number" min={1} value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)} disabled={isSubmitting} />
+                      <Input id="qty" type="number" min={1} step={1} value={quantity}
+                        onChange={(e) => setQuantity(e.target.value.replace(/-/g, ""))} disabled={isSubmitting} />
                     </div>
                   </div>
                   <Button type="button" variant="secondary" className="w-full" onClick={addLineToCart}

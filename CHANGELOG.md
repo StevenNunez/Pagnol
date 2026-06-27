@@ -18,6 +18,167 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado
+- **Módulo de Configuración de App (`/dashboard/configuracion`)**. Panel por tenant, gateado por el
+  nuevo permiso `module_settings:view` (admin/soporte-pagnol lo tienen). Tres bloques:
+  1. **Datos de la empresa**: nombre, RUT, representante legal + su RUT, dirección y faenas
+     (editor de chips). Guarda vía `updateTenant`.
+  2. **Logo**: subir/quitar (bucket `tenant-logos`, ≤2 MB) con vista previa; alimenta los PDFs.
+  3. **Formato de correlativos (Opción A)**: prefijo base por tenant. Vacío = iniciales del nombre
+     (histórico). Vista previa en vivo (`{PREFIJO}-OCA-0001`). Cambiarlo solo afecta documentos
+     **nuevos** (el contador es continuo por tenant+tipo).
+  - Acceso desde el menú de usuario (junto a "Mi Perfil") y sidebar contextual propio.
+  - Soporte de datos: nueva columna `tenants.code_prefix` + `tenants.logo_url`/`code_prefix` ahora
+    editables en `updateTenant` y mapeados en el `Tenant` (DataProvider + AuthProvider). El RPC
+    `next_internal_code` consulta `code_prefix` como paso intermedio (override semántico →
+    code_prefix → iniciales). Migración `20260626020000_tenant_code_prefix.sql`. **Pendiente de
+    aplicar en Supabase.**
+- **Botón "Emitir OC →" en el RFQ adjudicado (Abastecimiento → Arriendos)**. Tras adjudicar, el
+  contrato y su OC se gestionan en otro módulo (Arriendos → Contratos) y no había forma directa de
+  llegar: el usuario quedaba sin saber el siguiente paso. Ahora la tarjeta del RFQ **adjudicado**
+  muestra un botón **"Emitir OC →"** que navega directo al detalle del contrato
+  (`/dashboard/rentals/contracts/{id}`), donde están los pasos Generar OC → Enviar → Confirmar.
+- **Cotizaciones de arriendo por IA (subir PDF → extracción por ítem)**. El arrendador manda su
+  cotización en PDF; en vez de teclear 30 ítems × 3 proveedores a mano, ahora en "Registrar
+  cotización" se **sube el PDF** y **Gemini extrae los precios por equipo**, los mapea a los ítems
+  de la solicitud y precarga una **tabla editable** (precio / cantidad / períodos / total por
+  ítem). El usuario **revisa y corrige** antes de guardar (decisión: revisión previa, no auto).
+  - Nuevo comparador **matriz equipo × proveedor**: una fila por equipo, una columna por arrendador,
+    con el **mejor precio de cada ítem resaltado** + fila de total por período. Así se ve "cuál
+    conviene" línea por línea sin sumar a mano.
+  - Modelo extendido: `RentalQuoteResponse.lines[]` (`RentalQuoteLine`: itemId, precio, cantidad,
+    períodos, total) + `extractedByAi`. `pricePerPeriod`/`totalEstimate` globales se derivan de las
+    líneas (compat con comparador de totales y adjudicación). Sin migración (`responses` es jsonb).
+  - Nuevo flow `src/ai/flows/extract-rental-quote-flow.ts` (Gemini 2.0 Flash multimodal, lee el PDF
+    inline, structured output con Zod, `temperature 0`, reintentos) + API route
+    `/api/rentals/extract-quote` (auth por sesión + rate-limit). Requiere `GEMINI_API_KEY`.
+  - **Nota:** la adjudicación sigue siendo por proveedor completo (mejor total); el comparador por
+    ítem es para decidir. El PDF se procesa pero **aún no se guarda como respaldo** (siguiente paso).
+- **Flujo de Orden de Compra (OC) en Arriendos**. Se cerraron tres huecos del flujo arriendo:
+  1. **PDF de Solicitud de Cotización (RFQ)**: en cada RFQ de arriendo ahora hay **"Solicitud PDF"**
+     (descarga el documento para pedir precio al arrendador, sin montos) y **"Enviar por correo"**
+     (adjunta el PDF y lo manda a los arrendadores invitados vía `/api/purchasing/send-order`; al
+     enviar marca el RFQ como enviado). Antes solo existía "Marcar enviado" sin documento alguno.
+  2. **Desglose neto / IVA (19%) / total**: visible en el comparador de cotizaciones del RFQ y en
+     el detalle del contrato de arriendo (tarjetas Neto/ciclo, IVA, Total/ciclo). El monto del
+     contrato se trata como **neto** y se le aplica `tax_rate` (19% por defecto, configurable).
+  3. **Paso de OC con activación diferida del calendario**: "Adjudicar" ya **no** genera el
+     calendario de pagos de inmediato. El contrato queda **'pending'** con `oc_status='pending'` y
+     número de OC (correlativo `OCA`). En el detalle del contrato hay una sección **Orden de
+     Compra**: *Generar OC (PDF)* → *Enviar OC* (correo, marca `sent`) → *Confirmar OC*. Al
+     **confirmar**, el contrato pasa a **'active'** y **recién ahí** se genera el calendario; el 1er
+     vencimiento se cuenta desde la **confirmación + plazo de pago** (días configurables).
+  - Nuevo generador `src/lib/pdf-rental.ts` (solicitud de cotización + OC) parametrizado con los
+    datos de empresa del **tenant** (nombre, RUT, dirección, logo), no hardcodeados.
+  - Migración `20260626000000_rental_oc_flow.sql` (columnas `oc_number`, `oc_status`, `oc_sent_at`,
+    `oc_confirmed_at`, `payment_terms_days`, `tax_rate` en `rental_contracts`; backfill: contratos
+    previos quedan con OC 'confirmed' para no atascarse). **Pendiente de aplicar en Supabase.**
+  - Nuevas mutations `markRentalOcSent` y `confirmRentalOc`; `generateRentalSchedule` ahora acepta
+    un ancla de fecha + offset para arrancar el calendario desde la confirmación de la OC.
+
+### Agregado
+- **Editor de correlativos por documento — prefijo Y tipo (Configuración → Formato de correlativos)**.
+  Antes solo se podía definir un prefijo base único por empresa; ahora se listan **todos los
+  documentos** que generan correlativo (Solicitud de material/compra/arriendo, Orden de Compra,
+  Cotización, Recepción, Activo, Movimiento, Centro de costo…) y se editan **inline ambos segmentos**
+  del código: `[prefijo] - [tipo] - 0001`. Vacío = hereda (el prefijo base de la empresa o la clave
+  interna del tipo). Ej.: `PUR` → `OC` deja la OC como `ACME-OC-0001`. El texto gris de cada campo
+  es el valor heredado. Nuevas columnas `tenants.code_prefixes` y `tenants.code_types` (jsonb) y
+  nueva resolución en `next_internal_code`: prefijo = override por tipo → default semántico del
+  sistema → prefijo base → iniciales; etiqueta de tipo = override → clave interna. **El contador
+  sigue indexado por la clave interna estable** (p.ej. `PUR`), así que renombrar el segmento visible
+  NO reinicia ni choca la numeración. Migraciones `20260626050000_tenant_code_prefixes.sql` (prefijo)
+  y `20260626060000_tenant_code_types.sql` (tipo; superset idempotente, deja el esquema final aunque
+  no se haya aplicado la 050000). **Pendientes de aplicar en Supabase** (basta con aplicar la 060000).
+
+### Corregido
+- **No se podía enviar la OC de arriendo por correo después de confirmarla**. Al confirmar la OC
+  (que activa el contrato y genera el calendario), la sección cambiaba a la vista compacta que solo
+  tenía "Descargar OC (PDF)" — el botón "Enviar OC" desaparecía, así que quien confirmaba antes de
+  enviar se quedaba sin forma de mandarla. Ahora la vista de OC confirmada también ofrece **"Enviar
+  OC"**, y el reenvío posterior **no revierte** el estado a 'enviada' (solo marca `sent` si aún
+  estaba pendiente).
+- **Arriendo multi-ítem: precio por equipo y total correcto en OC**. Al adjudicar una cotización con
+  varios equipos, `awardRentalQuote` ponía el **total general** (`pricePerPeriod`, que es la suma de
+  líneas) como precio unitario de **cada** activo → cada equipo aparecía con el total y la OC no
+  reflejaba el desglose. Ahora cada activo toma el precio de **su línea** (`winner.lines` por
+  `itemId`; cantidad incluida), así la suma de activos cuadra con el neto del contrato. La OC (PDF)
+  ahora **se desglosa por equipo** (fila por activo con su precio unitario y subtotal) y el
+  SUBTOTAL/IVA/TOTAL suma correctamente; guard que ancla al neto del contrato si los precios de
+  activos antiguos (con el bug previo) no cuadran, para no inflar el total. En el detalle del
+  contrato se añadió columna **Subtotal** por activo + línea **"Suma de activos / ciclo"** y un aviso
+  si esa suma no coincide con el neto del contrato. *(Contratos ya adjudicados con el bug: corregir
+  el precio unitario de cada activo en la tabla, o volver a adjudicar.)*
+- **Bloque "Para responder, contacta a" ahora en TODOS los correos a proveedores**. Solo el correo
+  de la OC (arriendos) incluía el bloque de contacto del remitente (nombre, cargo, correo, teléfono)
+  + `reply-to`; el envío de **Solicitud de cotización** desde `purchasing/orders` no lo mandaba.
+  Ahora esa llamada a `/api/purchasing/send-order` también pasa `companyName`, `companyLogoUrl`,
+  `senderName/Email/Phone/Role` (vía `useAuth().user` + `currentTenant`), así el proveedor siempre
+  sabe a quién responder. (Las 3 vías a proveedores —cotización de compra, cotización de arriendo y
+  OC— quedan consistentes; los correos de sistema/auth no se tocan.)
+- **`<Badge>` dentro de `<p>` causaba error de hidratación** en el detalle de contrato de arriendo
+  (sección OC confirmada). Se cambió el `<p>` por un `<div>` flex (mismo aspecto), ya que `<Badge>`
+  renderiza un `<div>` y HTML no permite `<div>` dentro de `<p>`.
+- **El prefijo base de correlativos "se guardaba" pero al recargar volvía vacío**. Mismo patrón que
+  el logo: la columna `tenants.code_prefix` podía no existir (migración `20260626020000` no aplicada
+  del todo) → UPDATE silencioso. La nueva migración `20260626050000` incluye
+  `ADD COLUMN IF NOT EXISTS code_prefix` como red de seguridad y `NOTIFY pgrst` para refrescar el
+  cache de esquema. Además ahora el campo base se puede **vaciar** para volver a las iniciales
+  (antes un valor vacío se ignoraba en el guardado).
+- **Logo no persistía al recargar — "Could not find the 'logo_url' column of 'tenants'"**. La
+  columna `tenants.logo_url` nunca se había creado en este proyecto: la migración antigua
+  `20260611000000_tenant_logo.sql` (que la agregaba junto al bucket) no se aplicó, y la consolidada
+  `20260626030000` re-creó el bucket pero **omitió el ALTER de la columna**. Al guardar el logo,
+  PostgREST rechazaba el UPDATE por columna inexistente. Nueva migración idempotente
+  `20260626040000_tenant_logo_url_column.sql` (`ADD COLUMN IF NOT EXISTS logo_url text` +
+  `NOTIFY pgrst, 'reload schema'`). **Pendiente de aplicar en Supabase.**
+- **"Bucket not found" al subir el logo**. El bucket `tenant-logos` (y sus policies de aislamiento
+  por tenant) estaba definido en migraciones antiguas (`20260611000000`, `20260612000002`) que no
+  se habían aplicado en el proyecto. Nueva migración consolidada e idempotente
+  `20260626030000_tenant_logos_bucket.sql` que crea el bucket público y deja las policies finales
+  (escritura acotada a `<tenant_id>/...`, lectura pública) en una sola pasada. **Pendiente de
+  aplicar en Supabase.**
+- **Número de OC legible y correlativo (no el UUID)**. Al adjudicar, el toast mostraba el UUID del
+  contrato (`b032d0a4…`), que confunde. Ahora `awardRentalQuote` devuelve también el `ocNumber`
+  correlativo (`{INICIALES}-OCA-0001`, vía `next_internal_code`) y el toast lo muestra: "Orden de
+  Compra {ocNumber} lista para emitir". El correlativo ya existía; solo no se exponía.
+- **Inputs de cantidad/precio no permiten negativos**. En la tabla de registro de cotización
+  (precio/cantidad/períodos) y en la cantidad de la solicitud de arriendo, el spinner bajaba a -1.
+  Se añadió `min` (precio ≥ 0; cantidad/períodos ≥ 1, `step` entero) y se descartan los signos
+  negativos escritos a mano (sanea el `onChange`). Los ingresos quedan de 0 en adelante.
+
+### Cambiado
+- **Arrendadores unificados con Proveedores (un arrendador ES un proveedor)**. Antes los
+  arrendadores vivían en `rental_parties` (`party_type='lessor'`), una tabla separada de
+  `suppliers`. Al darlos de alta inline desde "Cotizar" no aparecían en Abastecimiento →
+  Proveedores, así que no se podían completar/gestionar como el resto de proveedores. Ahora
+  **los arrendadores se crean y gestionan directamente como `suppliers`**:
+  - El alta inline de "Cotizar" crea un **proveedor** (`categories: ['Arriendo']`), no un
+    `rental_party`; el selector de invitados a cotizar lee de `suppliers`.
+  - `rental_contracts.party_id` se vuelve **polimórfico**: en contratos **entrantes**
+    (arrendador) apunta a `suppliers.id`; en **salientes** (cliente) sigue apuntando a
+    `rental_parties.id`. Se eliminó la FK `party_id → rental_parties` para permitirlo.
+  - La resolución de nombre del arrendador (contratos, detalle, pagos, panel) busca primero en
+    `suppliers` y cae a `rental_parties` (clientes / datos antiguos).
+  - La página **Arrendadores y Clientes** muestra un aviso: los arrendadores ahora se gestionan
+    en Abastecimiento → Proveedores; ahí quedan los clientes y los registros antiguos.
+  - `addSupplier` ahora **devuelve** el proveedor creado (antes `void`) para poder invitarlo en
+    el acto. Migración `20260626010000_unify_lessors_suppliers.sql`: inserta como `suppliers`
+    los arrendadores existentes (dedup por tenant+nombre) y re-apunta contratos y cotizaciones
+    (`party_ids`, `responses[].partyId`, `awarded_party_id`). Idempotente; no borra los
+    `rental_parties` migrados. **Pendiente de aplicar en Supabase.**
+- **Correo de cotización/OC: protagonismo del tenant + reply-to al remitente**. La ruta
+  `/api/purchasing/send-order` (compartida por compras y arriendos) ahora acepta datos opcionales
+  (`companyName`, `companyLogoUrl`, `senderName/Email/Phone/Role`, `docLabel`) y con ellos:
+  (1) muestra el **logo / nombre del tenant** en el encabezado del correo; (2) fija **`reply-to` al
+  correo del remitente** y añade un bloque **"Para responder, contacta a"** con nombre, cargo,
+  email y teléfono — así el proveedor ya no responde al buzón de TeoLabs. El **From** se mantiene
+  como "PAGNOL - Abastecimiento" (decisión de la usuaria; se afina luego). Los envíos de arriendo
+  (solicitud de cotización y OC) pasan estos datos. (Compras puede adoptarlos: son opcionales.)
+- **"RFQ" → "Cotización" en la UI de arriendos**. La sigla en inglés (Request For Quotation)
+  confundía; en Abastecimiento → Arriendos ahora se lee "Cotizaciones", "Crear solicitud de
+  cotización", etc. (el código interno sigue siendo `RFA-####`).
+
 ### Corregido
 - **RFQ de arriendo bloqueado sin arrendadores precargados**: al crear una cotización (RFQ) de
   arriendo, si el tenant no tenía arrendadores el flujo se trababa ("Créalos en Arriendos →

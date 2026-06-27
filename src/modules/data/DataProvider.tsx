@@ -159,6 +159,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             legalRepresentativeRut: t.legal_representative_rut,
             address: t.address,
             logoUrl: t.logo_url ?? undefined,
+            codePrefix: t.code_prefix ?? undefined,
+            codePrefixes: t.code_prefixes ?? {},
+            codeTypes: t.code_types ?? {},
         });
 
         supabase.from('tenants').select('*').eq('id', tenantId).single().then(({ data: t }) => {
@@ -633,6 +636,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         returnRentalAsset: bindContext(rentalMutations.returnRentalAsset),
         addRentalPayment: bindContext(rentalMutations.addRentalPayment),
         generateRentalSchedule: bindContext(rentalMutations.generateRentalSchedule),
+        markRentalOcSent: bindContext(rentalMutations.markRentalOcSent),
+        confirmRentalOc: bindContext(rentalMutations.confirmRentalOc),
         markRentalPaymentPaid: bindContext(rentalMutations.markRentalPaymentPaid),
         updateRentalPayment: bindContext(rentalMutations.updateRentalPayment),
         deleteRentalPayment: bindContext(rentalMutations.deleteRentalPayment),

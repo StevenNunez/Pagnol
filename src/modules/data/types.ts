@@ -175,7 +175,7 @@ export interface AppStateContextType extends AppDataState {
   deleteMaterialCategory: (id: string) => Promise<void>;
   addUnit: (name: string) => Promise<void>;
   deleteUnit: (id: string) => Promise<void>;
-  addSupplier: (data: any) => Promise<void>;
+  addSupplier: (data: any) => Promise<Supplier>;
   updateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
   uploadSupplierDocument: (supplierId: string, file: File, meta: { name: string; type?: string; expiresAt?: string }) => Promise<SupplierDocument>;
@@ -267,7 +267,9 @@ export interface AppStateContextType extends AppDataState {
   deleteRentalAsset: (id: string) => Promise<void>;
   returnRentalAsset: (id: string, returnDate: Date | string) => Promise<void>;
   addRentalPayment: (data: Omit<RentalPayment, 'id' | 'tenantId' | 'createdAt' | 'status'> & { status?: RentalPayment['status'] }) => Promise<RentalPayment>;
-  generateRentalSchedule: (contractId: string, installments: number) => Promise<void>;
+  generateRentalSchedule: (contractId: string, installments: number, opts: { startFrom?: Date | string; firstDueOffsetDays?: number } | undefined) => Promise<void>;
+  markRentalOcSent: (contractId: string) => Promise<void>;
+  confirmRentalOc: (contractId: string, opts: { installments: number; firstDueOffsetDays?: number }) => Promise<void>;
   markRentalPaymentPaid: (id: string, details: { paidDate: Date | string; paymentMethod?: string; reference?: string }) => Promise<void>;
   updateRentalPayment: (id: string, data: Partial<RentalPayment>) => Promise<void>;
   deleteRentalPayment: (id: string) => Promise<void>;
@@ -283,7 +285,7 @@ export interface AppStateContextType extends AppDataState {
   updateRentalQuoteRequest: (id: string, data: Partial<RentalQuoteRequest>) => Promise<void>;
   sendRentalQuoteRequest: (id: string) => Promise<void>;
   recordRentalQuoteResponse: (quoteRequestId: string, response: Omit<RentalQuoteResponse, 'id' | 'createdAt'> & { id?: string }) => Promise<void>;
-  awardRentalQuote: (quoteRequestId: string, responseId: string, options?: { currency?: string; paymentDay?: number | null; periods?: number }) => Promise<{ rentalContractId: string }>;
+  awardRentalQuote: (quoteRequestId: string, responseId: string, options?: { currency?: string; paymentDay?: number | null; periods?: number }) => Promise<{ rentalContractId: string; ocNumber: string }>;
   deleteRentalQuoteRequest: (id: string) => Promise<void>;
 
   // Reportes de Trabajo / Informes de Terreno

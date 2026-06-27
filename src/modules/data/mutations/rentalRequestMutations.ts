@@ -3,7 +3,7 @@ import { mappers } from '../mappers';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { userCan } from '@/modules/core/lib/permissions';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
-import { addRentalContract, addRentalAsset, generateRentalSchedule } from './rentalMutations';
+import { addRentalContract, addRentalAsset } from './rentalMutations';
 import type {
   RentalRequest,
   RentalQuoteRequest,
@@ -304,7 +304,7 @@ export async function awardRentalQuote(
   responseId: string,
   options: { currency?: string; paymentDay?: number | null; periods?: number } = {},
   context: Context
-): Promise<{ rentalContractId: string }> {
+): Promise<{ rentalContractId: string; ocNumber: string }> {
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
@@ -324,35 +324,49 @@ export async function awardRentalQuote(
   const billingCycle: RentalBillingCycle = winner.billingCycle || items[0]?.billingCycle || 'monthly';
   const startDate = items[0]?.startDate || new Date().toISOString().slice(0, 10);
   const endDate = items[0]?.endDate || null;
-  const periods = options.periods ?? winner.periods ?? 1;
 
-  // 1) Contrato de arriendo (entrante).
+  // Número de OC del arriendo (correlativo por tenant).
+  const ocNumber = await nextInternalCode(tenantId, 'OCA');
+
+  // 1) Contrato de arriendo (entrante). Queda 'pending' con la OC por emitir:
+  //    el calendario de pagos NO se genera todavía — corre al CONFIRMAR la OC.
   const contract = await addRentalContract(
     {
       direction: 'incoming',
       partyId: winner.partyId,
       title: quote.title || `Arriendo ${quote.internalCode || ''}`.trim(),
-      status: 'active',
+      status: 'pending',
       startDate,
       endDate,
       billingCycle,
       amount: winner.pricePerPeriod || 0,
       currency: options.currency || 'CLP',
       paymentDay: options.paymentDay ?? null,
+      taxRate: 19,
+      ocNumber,
+      ocStatus: 'pending',
+      paymentTermsDays: 30,
       notes: `Generado al adjudicar RFQ ${quote.internalCode || quote.id} a ${winner.partyName}.`,
     },
     context
   );
 
-  // 2) Un activo arrendado por cada equipo del RFQ.
+  // 2) Un activo arrendado por cada equipo del RFQ, con SU precio de línea.
+  //    `winner.pricePerPeriod` es el total (suma de líneas), no el de un equipo;
+  //    el precio unitario sale de la línea que matchea por itemId. Sin línea
+  //    (cotización de total único): si hay 1 ítem se usa el total, si hay varios
+  //    se deja en blanco para que el usuario lo complete (no inflar cada activo).
   for (const it of items) {
+    const line = winner.lines?.find((l) => l.itemId === it.id);
+    const unitPrice = line?.pricePerPeriod
+      ?? (items.length === 1 ? (winner.pricePerPeriod || undefined) : undefined);
     await addRentalAsset(
       {
         contractId: contract.id,
         name: it.name,
         category: it.category,
-        quantity: it.quantity ?? 1,
-        unitPrice: winner.pricePerPeriod || undefined,
+        quantity: line?.quantity ?? it.quantity ?? 1,
+        unitPrice,
         startDate: it.startDate || startDate,
         endDate: it.endDate || endDate,
         status: 'active',
@@ -361,8 +375,7 @@ export async function awardRentalQuote(
     );
   }
 
-  // 3) Calendario de pagos.
-  await generateRentalSchedule(contract.id, periods, context);
+  // 3) (Sin calendario de pagos aún: se genera al confirmar la OC.)
 
   // 4) Cierra el RFQ.
   await supabase
@@ -387,7 +400,7 @@ export async function awardRentalQuote(
       .eq('tenant_id', tenantId);
   }
 
-  return { rentalContractId: contract.id };
+  return { rentalContractId: contract.id, ocNumber: contract.ocNumber || ocNumber };
 }
 
 export async function deleteRentalQuoteRequest(id: string, { tenantId }: Context): Promise<void> {

@@ -36,7 +36,7 @@ const EMPTY: FormState = {
 
 export default function RentalContractsPage() {
   const router = useRouter();
-  const { rentalContracts, rentalParties, addRentalContract, updateRentalContract, can, notify } = useAppState();
+  const { rentalContracts, rentalParties, suppliers, addRentalContract, updateRentalContract, can, notify } = useAppState();
   const canManage = can('rentals:manage_contracts');
 
   const [dirFilter, setDirFilter] = useState<'all' | RentalDirection>('all');
@@ -46,7 +46,9 @@ export default function RentalContractsPage() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
 
-  const partyName = (id: string) => rentalParties?.find((p) => p.id === id)?.name ?? '—';
+  // El arrendador (incoming) vive en `suppliers`; el cliente (outgoing) en `rentalParties`.
+  const partyName = (id: string) =>
+    suppliers?.find((s) => s.id === id)?.name ?? rentalParties?.find((p) => p.id === id)?.name ?? '—';
 
   const filtered = useMemo(() => {
     return (rentalContracts || []).filter((c) => {
@@ -56,10 +58,13 @@ export default function RentalContractsPage() {
     });
   }, [rentalContracts, dirFilter, statusFilter]);
 
-  // Las contrapartes válidas según la dirección: incoming → arrendadores, outgoing → clientes.
+  // Las contrapartes válidas según la dirección: incoming → arrendadores (suppliers),
+  // outgoing → clientes (rentalParties).
   const partyOptions = useMemo(
-    () => (rentalParties || []).filter((p) => (form.direction === 'incoming' ? p.partyType === 'lessor' : p.partyType === 'client')),
-    [rentalParties, form.direction],
+    () => (form.direction === 'incoming'
+      ? (suppliers || []).map((s) => ({ id: s.id, name: s.name }))
+      : (rentalParties || []).filter((p) => p.partyType === 'client').map((p) => ({ id: p.id, name: p.name }))),
+    [suppliers, rentalParties, form.direction],
   );
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
@@ -124,7 +129,17 @@ export default function RentalContractsPage() {
     { key: 'dir', header: 'Dirección', cell: (c) => <Badge variant="outline" className={DIRECTION_BADGE[c.direction]}>{DIRECTION_SHORT[c.direction]}</Badge> },
     { key: 'cycle', header: 'Ciclo', cell: (c) => <span className="text-muted-foreground">{BILLING_CYCLE_LABEL[c.billingCycle]}</span> },
     { key: 'amount', header: 'Monto', cell: (c) => <span className="font-medium tabular-nums">{formatMoney(c.amount, c.currency)}</span> },
-    { key: 'status', header: 'Estado', cell: (c) => <Badge variant="outline" className={CONTRACT_STATUS_BADGE[c.status]}>{CONTRACT_STATUS_LABEL[c.status]}</Badge> },
+    {
+      key: 'status', header: 'Estado',
+      cell: (c) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant="outline" className={CONTRACT_STATUS_BADGE[c.status]}>{CONTRACT_STATUS_LABEL[c.status]}</Badge>
+          {(c.ocStatus ?? 'confirmed') !== 'confirmed' && (
+            <Badge variant="outline" className="badge-warning text-[9px]">{c.ocStatus === 'sent' ? 'OC enviada' : 'OC por emitir'}</Badge>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'actions', header: '', headerClassName: 'text-right', className: 'text-right',
       cell: (c) => (

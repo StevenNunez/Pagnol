@@ -7,7 +7,7 @@ import { DataProvider } from '@/modules/data/DataProvider';
 import { useAuth } from '@/modules/auth/useAuth';
 import { useAppState } from '@/modules/data/useData';
 import { Sidebar } from '@/components/sidebar';
-import { Menu, Loader2, Bell, Volume2, VolumeX, AlertCircle, ShoppingCart, ClipboardList, Users, LogOut, FileText, Truck, Target, ShieldCheck } from 'lucide-react';
+import { Menu, Loader2, Bell, Volume2, VolumeX, AlertCircle, ShoppingCart, ClipboardList, Users, LogOut, FileText, Truck, Target, ShieldCheck, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -496,6 +496,14 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                     <span className="text-[11px] font-bold uppercase tracking-widest text-slate-600">Mi Perfil</span>
                   </Link>
                 </DropdownMenuItem>
+                {can('module_settings:view') && (
+                  <DropdownMenuItem asChild className="rounded-xl px-4 py-2.5 mt-1 cursor-pointer">
+                    <Link href="/dashboard/configuracion" className="flex items-center gap-3">
+                      <Settings className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-slate-600">Configuración</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator className="bg-slate-50" />
                 <DropdownMenuItem onClick={logout} className="rounded-xl px-4 py-2.5 mt-1 cursor-pointer text-red-500 hover:bg-red-50 focus:bg-red-50">
                   <LogOut className="h-4 w-4 mr-3" />

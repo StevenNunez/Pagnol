@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Pencil, Trash2, Contact, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, Contact, Search, Info } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -142,11 +142,19 @@ export default function RentalPartiesPage() {
         </>
       }
     >
+      <div className="rounded-xl border bg-info-subtle text-info-subtle-foreground px-4 py-3 text-sm flex items-start gap-2">
+        <Info className="h-4 w-4 mt-0.5 shrink-0" />
+        <span>
+          Los <strong>arrendadores</strong> ahora se gestionan como proveedores en{' '}
+          <strong>Abastecimiento → Proveedores</strong>. Aquí quedan los <strong>clientes</strong> y los registros antiguos.
+        </span>
+      </div>
+
       <DataTable
         columns={columns}
         data={filtered}
         rowKey={(p) => p.id}
-        empty={{ icon: <Contact size={22} />, title: 'Sin contrapartes', description: 'Crea arrendadores (proveedores) o clientes para asociarlos a contratos.' }}
+        empty={{ icon: <Contact size={22} />, title: 'Sin contrapartes', description: 'Crea clientes para asociarlos a contratos. Los arrendadores se gestionan en Abastecimiento → Proveedores.' }}
         minWidth="800px"
       />
 

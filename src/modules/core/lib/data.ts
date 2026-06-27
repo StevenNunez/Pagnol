@@ -24,6 +24,15 @@ export interface Tenant {
   // Faenas y sectores configurados (Bodega → Destino en despachos)
   faenas?: string[];
   logoUrl?: string;
+  // Prefijo base para los correlativos internos (Configuración de App).
+  // Vacío = se derivan las iniciales del nombre (comportamiento histórico).
+  codePrefix?: string;
+  // Override de prefijo POR TIPO de documento ({ "PUR": "OC", "REC": "REC", ... }).
+  // Tiene prioridad sobre codePrefix; tipo sin override hereda el prefijo base.
+  codePrefixes?: Record<string, string>;
+  // Override de la ETIQUETA de tipo (segmento visible) por documento
+  // ({ "PUR": "OC", ... }). No afecta el contador (clave interna estable).
+  codeTypes?: Record<string, string>;
 }
 
 export interface EADocument {
@@ -489,6 +498,8 @@ export function rentalCategoryLabel(value: string | undefined | null): string {
 }
 export type RentalContractStatus = 'active' | 'pending' | 'finished' | 'cancelled';
 export type RentalPaymentStatus = 'pending' | 'paid' | 'overdue';
+/** Sub-estado de la Orden de Compra del arriendo (independiente del status del contrato). */
+export type RentalOcStatus = 'pending' | 'sent' | 'confirmed';
 
 export interface RentalParty {
   id: string;
@@ -518,10 +529,17 @@ export interface RentalContract {
   startDate: Date | string;
   endDate?: Date | string | null;
   billingCycle: RentalBillingCycle;
-  amount: number;
+  amount: number;           // monto NETO por ciclo (se le aplica taxRate)
   currency: string; // 'CLP' | 'UF' | 'USD'
   paymentDay?: number | null; // día del mes (1-31) para mensual
+  taxRate?: number;         // % IVA aplicado (19 por defecto; 0 = exento)
   notes?: string;
+  // ── Orden de Compra (OC) del arriendo ──
+  ocNumber?: string;
+  ocStatus?: RentalOcStatus;          // pending → sent → confirmed
+  ocSentAt?: Date | string | null;
+  ocConfirmedAt?: Date | string | null;
+  paymentTermsDays?: number;          // plazo de pago: 1er venc. = confirmación OC + N días
   createdBy?: string;
   createdAt: Date;
 }
@@ -614,14 +632,27 @@ export interface RentalQuoteItem {
   billingCycle: RentalBillingCycle;
 }
 
+/** Línea de cotización por ítem del RFQ (precio de un equipo específico). */
+export interface RentalQuoteLine {
+  itemId: string;             // id del RentalQuoteItem del RFQ al que corresponde
+  matchedName?: string;       // nombre tal como aparece en el PDF del arrendador (verificación)
+  pricePerPeriod: number;     // precio por período de este equipo
+  quantity?: number;          // cantidad cotizada
+  periods?: number;           // nº de períodos
+  total?: number;             // total de la línea (pricePerPeriod * quantity * periods)
+  notes?: string;
+}
+
 export interface RentalQuoteResponse {
   id: string;
   partyId: string;            // arrendador (rental_parties tipo 'lessor')
   partyName: string;
-  pricePerPeriod: number;     // precio por período según billingCycle — obligatorio
+  pricePerPeriod: number;     // precio por período TOTAL (suma de líneas) — compat comparador/adjudicación
   billingCycle: RentalBillingCycle;
   periods?: number;           // nº de períodos estimados
-  totalEstimate?: number;     // pricePerPeriod * periods
+  totalEstimate?: number;     // total estimado (suma de líneas o pricePerPeriod * periods)
+  lines?: RentalQuoteLine[];  // desglose por ítem (extraído del PDF con IA o ingresado a mano)
+  extractedByAi?: boolean;    // true si los datos vinieron de extracción automática del PDF
   availabilityDate?: string;  // desde cuándo hay disponibilidad (ISO)
   conditions?: string;        // incluye traslado / operador / combustible, etc.
   validityDate?: string;      // validez de la oferta (ISO)

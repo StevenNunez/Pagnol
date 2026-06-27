@@ -18,11 +18,17 @@ import { formatMoney, derivePaymentStatus, DIRECTION_SHORT, DIRECTION_BADGE } fr
 
 export default function RentalsDashboard() {
   const router = useRouter();
-  const { rentalContracts, rentalParties, rentalPayments } = useAppState();
+  const { rentalContracts, rentalPayments } = useAppState();
 
   const contracts = rentalContracts || [];
-  const parties = rentalParties || [];
   const payments = rentalPayments || [];
+
+  // Contrapartes distintas involucradas en contratos (arrendadores en `suppliers`,
+  // clientes en `rentalParties`); se cuentan por su presencia en los contratos.
+  const partyCount = useMemo(
+    () => new Set(contracts.map((c) => c.partyId).filter(Boolean)).size,
+    [contracts],
+  );
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
@@ -67,14 +73,14 @@ export default function RentalsDashboard() {
     [activeContracts, today],
   );
 
-  const hasData = contracts.length > 0 || parties.length > 0;
+  const hasData = contracts.length > 0 || partyCount > 0;
 
   return (
     <PageShell title="Panel de Arriendos" description="Resumen de contratos, contrapartes y vencimientos.">
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard icon={<FileText className="h-5 w-5" />} label="Contratos activos" value={String(activeContracts.length)} href="/dashboard/rentals/contracts" />
-        <KpiCard icon={<Contact className="h-5 w-5" />} label="Contrapartes" value={String(parties.length)} href="/dashboard/rentals/parties" />
+        <KpiCard icon={<Contact className="h-5 w-5" />} label="Contrapartes" value={String(partyCount)} href="/dashboard/rentals/parties" />
         <KpiCard icon={<ArrowDownLeft className="h-5 w-5" />} label="Costo mensual (CLP)" value={formatMoney(monthlyCost)} tone="warning" />
         <KpiCard icon={<ArrowUpRight className="h-5 w-5" />} label="Ingreso mensual (CLP)" value={formatMoney(monthlyIncome)} tone="success" />
       </div>

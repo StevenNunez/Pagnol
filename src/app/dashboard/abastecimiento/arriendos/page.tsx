@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -19,13 +20,27 @@ import {
 import { useToast } from "@/modules/core/hooks/use-toast";
 import {
   KeyRound, Check, X, Search, Send, Trophy, Loader2, Plus, FileText, Trash2,
-  Clock, Building2, Truck, AlertCircle,
+  Clock, Building2, Truck, AlertCircle, Download, Mail, Sparkles, UploadCloud,
 } from "lucide-react";
 import type {
-  RentalRequest, RentalQuoteRequest, RentalParty,
-  RentalBillingCycle, RentalQuoteItem, RentalQuoteResponse,
+  RentalRequest, RentalQuoteRequest, Supplier,
+  RentalBillingCycle, RentalQuoteItem, RentalQuoteResponse, RentalQuoteLine,
 } from "@/modules/core/lib/data";
+
+/** Fila editable de cotización por ítem (estado del formulario). */
+type LineRow = { price: string; qty: string; periods: string };
 import { rentalCategoryLabel } from "@/modules/core/lib/data";
+import { generateRentalQuoteRequestPDF, type RentalCompanyInfo } from "@/lib/pdf-rental";
+import { supabase } from "@/modules/core/lib/supabase";
+
+const IVA_RATE = 0.19;
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 
 const CYCLE_LABELS: Record<RentalBillingCycle, string> = {
   daily: "Diario", weekly: "Semanal", biweekly: "Quincenal", monthly: "Mensual", one_time: "Pago único",
@@ -35,11 +50,18 @@ const money = (n: number) => "$" + (Number(n) || 0).toLocaleString("es-CL");
 
 export default function AbastecimientoArriendosPage() {
   const {
-    rentalRequests, rentalQuoteRequests, rentalParties,
-    deleteRentalRequest, addRentalParty,
+    rentalRequests, rentalQuoteRequests, suppliers, currentTenant,
+    deleteRentalRequest, addSupplier,
     addRentalQuoteRequest, recordRentalQuoteResponse, awardRentalQuote, deleteRentalQuoteRequest, sendRentalQuoteRequest,
     can,
   } = useAppState();
+
+  const company: RentalCompanyInfo = {
+    name: currentTenant?.name || "PAGNOL",
+    rut: currentTenant?.rut,
+    address: currentTenant?.address,
+    logoUrl: currentTenant?.logoUrl,
+  };
   const { user } = useAuth();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
@@ -48,10 +70,8 @@ export default function AbastecimientoArriendosPage() {
 
   const requests = (rentalRequests || []) as RentalRequest[];
   const rfqs = (rentalQuoteRequests || []) as RentalQuoteRequest[];
-  const lessors = useMemo(
-    () => ((rentalParties || []) as RentalParty[]).filter((p) => p.partyType === "lessor"),
-    [rentalParties]
-  );
+  // Un arrendador ES un proveedor: la fuente única son los `suppliers`.
+  const lessors = useMemo(() => (suppliers || []) as Supplier[], [suppliers]);
   const partyMap = useMemo(() => new Map(lessors.map((p) => [p.id, p])), [lessors]);
 
   // Gate ADC: Abastecimiento solo ve solicitudes ya AUTORIZADAS por el ADC.
@@ -75,10 +95,10 @@ export default function AbastecimientoArriendosPage() {
     if (!name) return;
     setAddingLessor(true);
     try {
-      const created = await addRentalParty({ name, partyType: "lessor" });
+      const created = await addSupplier({ name, categories: ["Arriendo"] });
       setRfqParties((prev) => { const n = new Set(prev); n.add(created.id); return n; });
       setNewLessorName("");
-      toast({ title: "Arrendador agregado", description: `${name} quedó invitado a cotizar.` });
+      toast({ title: "Arrendador agregado", description: `${name} quedó como proveedor e invitado a cotizar.` });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Error", description: e?.message || "No se pudo agregar el arrendador." });
     } finally {
@@ -127,11 +147,11 @@ export default function AbastecimientoArriendosPage() {
         partyIds: Array.from(rfqParties),
         deadline: rfqDeadline || undefined,
       });
-      toast({ title: "RFQ creado", description: "Se invitó a los arrendadores a cotizar." });
+      toast({ title: "Cotización creada", description: "Se invitó a los arrendadores a cotizar." });
       setSelectedReqs(new Set());
       setRfqDialogOpen(false);
     } catch {
-      toast({ variant: "destructive", title: "Error", description: "No se pudo crear el RFQ." });
+      toast({ variant: "destructive", title: "Error", description: "No se pudo crear la cotización." });
     } finally { setBusy(null); }
   };
 
@@ -158,7 +178,7 @@ export default function AbastecimientoArriendosPage() {
       <Tabs defaultValue="solicitudes" className="space-y-6">
         <TabsList>
           <TabsTrigger value="solicitudes">Solicitudes ({pendingRequests.length + quotingRequests.length})</TabsTrigger>
-          <TabsTrigger value="rfq">Cotizaciones / RFQ ({rfqs.filter((r) => r.status !== "awarded").length})</TabsTrigger>
+          <TabsTrigger value="rfq">Cotizaciones ({rfqs.filter((r) => r.status !== "awarded").length})</TabsTrigger>
           <TabsTrigger value="historial">Historial ({closedRequests.length})</TabsTrigger>
         </TabsList>
 
@@ -166,7 +186,7 @@ export default function AbastecimientoArriendosPage() {
         <TabsContent value="solicitudes" className="space-y-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <p className="text-sm text-muted-foreground">
-              Marca las solicitudes pendientes y crea un RFQ para cotizarlas a arrendadores.
+              Marca las solicitudes pendientes y crea una solicitud de cotización para enviarla a los arrendadores.
             </p>
             <Button onClick={openRfqDialog} disabled={!canManage || selectedReqs.size === 0}>
               <Search className="mr-2 h-4 w-4" /> Cotizar seleccionadas ({selectedReqs.size})
@@ -231,6 +251,9 @@ export default function AbastecimientoArriendosPage() {
                 lessors={lessors}
                 partyMap={partyMap}
                 canManage={canManage}
+                company={company}
+                requestedByName={user?.name || ""}
+                sender={{ name: user?.name || "", email: user?.email || "", phone: user?.phone, role: user?.cargo }}
                 onRecordResponse={recordRentalQuoteResponse}
                 onAward={awardRentalQuote}
                 onSend={sendRentalQuoteRequest}
@@ -270,7 +293,7 @@ export default function AbastecimientoArriendosPage() {
       <Dialog open={rfqDialogOpen} onOpenChange={setRfqDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Crear cotización (RFQ)</DialogTitle>
+            <DialogTitle>Crear solicitud de cotización</DialogTitle>
             <DialogDescription>Invita arrendadores a cotizar las {selectedReqs.size} solicitud(es) seleccionadas.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -298,7 +321,7 @@ export default function AbastecimientoArriendosPage() {
               </div>
               {lessors.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  Aún no hay arrendadores. Agrega el primero arriba — quedará invitado automáticamente. (También puedes gestionarlos en Arriendos → Arrendadores y Clientes.)
+                  Aún no hay proveedores. Agrega el primero arriba — quedará invitado automáticamente. (También puedes gestionarlos en Abastecimiento → Proveedores.)
                 </p>
               ) : (
                 <div className="max-h-48 overflow-y-auto space-y-1 border rounded-xl p-2">
@@ -316,7 +339,7 @@ export default function AbastecimientoArriendosPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setRfqDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleCreateRfq} disabled={busy === "rfq" || rfqParties.size === 0}>
-              {busy === "rfq" ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="mr-2 h-4 w-4" /> Crear RFQ</>}
+              {busy === "rfq" ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="mr-2 h-4 w-4" /> Crear cotización</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -334,55 +357,284 @@ function EmptyBox({ icon: Icon, text }: { icon: any; text: string }) {
   );
 }
 
+// ── Matriz comparativa por ítem (equipo × arrendador) ─────────────────────────
+function ItemMatrix({ rfq, responses }: { rfq: RentalQuoteRequest; responses: RentalQuoteResponse[] }) {
+  const linePrice = (resp: RentalQuoteResponse, itemId: string) =>
+    resp.lines?.find((l) => l.itemId === itemId)?.pricePerPeriod;
+
+  // Mejor (menor) precio por ítem, para resaltar la celda ganadora.
+  const bestByItem = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const it of rfq.items) {
+      const prices = responses.map((r) => linePrice(r, it.id)).filter((p): p is number => p != null && p > 0);
+      if (prices.length) m[it.id] = Math.min(...prices);
+    }
+    return m;
+  }, [rfq.items, responses]);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Comparador por ítem · mejor precio resaltado</p>
+      <div className="overflow-x-auto rounded-xl border">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-muted/50 min-w-[160px]">Equipo</th>
+              {responses.map((r) => (
+                <th key={r.id} className="text-right font-semibold px-3 py-2 whitespace-nowrap min-w-[120px]">{r.partyName}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rfq.items.map((it) => (
+              <tr key={it.id} className="border-t">
+                <td className="px-3 py-2 sticky left-0 bg-card whitespace-nowrap">{it.name} <span className="text-muted-foreground">×{it.quantity}</span></td>
+                {responses.map((r) => {
+                  const p = linePrice(r, it.id);
+                  const isBest = p != null && p > 0 && p === bestByItem[it.id];
+                  return (
+                    <td key={r.id} className={`px-3 py-2 text-right tabular-nums ${isBest ? "bg-success-subtle font-bold text-success-subtle-foreground" : "text-muted-foreground"}`}>
+                      {p != null && p > 0 ? money(p) : "—"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            <tr className="border-t bg-muted/30">
+              <td className="px-3 py-2 sticky left-0 bg-muted/30 font-semibold">Total / período</td>
+              {responses.map((r) => {
+                const totals = responses.map((x) => x.pricePerPeriod || 0).filter((n) => n > 0);
+                const minTotal = totals.length ? Math.min(...totals) : 0;
+                const isBest = (r.pricePerPeriod || 0) > 0 && r.pricePerPeriod === minTotal;
+                return (
+                  <td key={r.id} className={`px-3 py-2 text-right tabular-nums font-semibold ${isBest ? "text-success-subtle-foreground" : ""}`}>{money(r.pricePerPeriod || 0)}</td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Tarjeta de un RFQ con respuestas + comparador + adjudicar ─────────────────
 function RfqCard({
-  rfq, lessors, partyMap, canManage, onRecordResponse, onAward, onSend, onDelete,
+  rfq, lessors, partyMap, canManage, company, requestedByName, sender, onRecordResponse, onAward, onSend, onDelete,
 }: {
   rfq: RentalQuoteRequest;
-  lessors: RentalParty[];
-  partyMap: Map<string, RentalParty>;
+  lessors: Supplier[];
+  partyMap: Map<string, Supplier>;
   canManage: boolean;
+  company: RentalCompanyInfo;
+  requestedByName: string;
+  sender: { name: string; email: string; phone?: string; role?: string };
   onRecordResponse: (id: string, r: Omit<RentalQuoteResponse, "id" | "createdAt"> & { id?: string }) => Promise<void>;
-  onAward: (id: string, responseId: string, opts?: { currency?: string; paymentDay?: number | null; periods?: number }) => Promise<{ rentalContractId: string }>;
+  onAward: (id: string, responseId: string, opts?: { currency?: string; paymentDay?: number | null; periods?: number }) => Promise<{ rentalContractId: string; ocNumber: string }>;
   onSend: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
   const { toast } = useToast();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [respOpen, setRespOpen] = useState(false);
 
-  const invited = useMemo(() => rfq.partyIds.map((id) => partyMap.get(id)).filter(Boolean) as RentalParty[], [rfq.partyIds, partyMap]);
+  const invited = useMemo(() => rfq.partyIds.map((id) => partyMap.get(id)).filter(Boolean) as Supplier[], [rfq.partyIds, partyMap]);
+
+  // Construye los ítems del PDF a partir del RFQ.
+  const pdfItems = useMemo(() => rfq.items.map((it) => ({
+    name: it.name, category: it.category, quantity: it.quantity,
+    startDate: it.startDate, endDate: it.endDate, billingCycle: it.billingCycle,
+  })), [rfq.items]);
+
+  // Descarga el PDF de solicitud de cotización (genérico o dirigido a un arrendador).
+  const handleDownloadPdf = async (lessor?: Supplier) => {
+    try {
+      const { blob, filename } = await generateRentalQuoteRequestPDF({
+        company,
+        code: rfq.internalCode || rfq.id.slice(0, 8),
+        deadline: rfq.deadline,
+        requestedBy: requestedByName,
+        items: pdfItems,
+        notes: rfq.notes,
+        lessor: lessor ? {
+          name: lessor.name, rut: lessor.rut, address: lessor.address,
+          contactName: lessor.contacts?.[0]?.name, email: lessor.email, phone: lessor.phone,
+        } : undefined,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+      document.body.removeChild(a); window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error al generar PDF", description: e?.message || "No se pudo crear el documento." });
+    }
+  };
+
+  // Envío por correo del PDF de solicitud de cotización.
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailMsg, setEmailMsg] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const openEmail = () => {
+    setEmailTo(invited.map((p) => p.email).filter(Boolean).join(", "));
+    setEmailMsg("");
+    setEmailOpen(true);
+  };
+
+  const handleSendEmail = async () => {
+    const recipients = emailTo.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    if (recipients.length === 0) {
+      toast({ variant: "destructive", title: "Falta el correo", description: "Indica al menos un destinatario." });
+      return;
+    }
+    setSending(true);
+    try {
+      // Si todos los destinatarios son de un mismo arrendador invitado, personaliza el PDF.
+      const target = invited.find((p) => p.email && recipients.includes(p.email.trim()));
+      const { blob, filename } = await generateRentalQuoteRequestPDF({
+        company, code: rfq.internalCode || rfq.id.slice(0, 8), deadline: rfq.deadline,
+        requestedBy: requestedByName, items: pdfItems, notes: rfq.notes,
+        lessor: target ? {
+          name: target.name, rut: target.rut, address: target.address,
+          contactName: target.contacts?.[0]?.name, email: target.email, phone: target.phone,
+        } : undefined,
+      });
+      const pdfBase64 = await blobToBase64(blob);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Sesión no disponible.");
+      const res = await fetch("/api/purchasing/send-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          to: recipients,
+          subject: `Solicitud de cotización de arriendo ${rfq.internalCode || ""}`.trim(),
+          message: emailMsg.trim() || undefined,
+          pdfBase64, filename, orderCode: rfq.internalCode || "",
+          docLabel: "Solicitud de cotización de arriendo",
+          companyName: company.name, companyLogoUrl: company.logoUrl,
+          senderName: sender.name, senderEmail: sender.email, senderPhone: sender.phone, senderRole: sender.role,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+      toast({ title: "Solicitud enviada", description: `Se envió a ${recipients.join(", ")}.` });
+      setEmailOpen(false);
+      if (rfq.status === "draft") await onSend(rfq.id);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "No se pudo enviar", description: e?.message || "Error desconocido." });
+    } finally {
+      setSending(false);
+    }
+  };
   const bestId = useMemo(() => {
     if (!rfq.responses.length) return null;
     return [...rfq.responses].sort((a, b) =>
       (a.totalEstimate ?? a.pricePerPeriod) - (b.totalEstimate ?? b.pricePerPeriod))[0].id;
   }, [rfq.responses]);
 
-  // Form respuesta
+  // Form respuesta — una línea por cada ítem del RFQ (comparación por ítem)
+  const defaultCycle = rfq.items[0]?.billingCycle || "monthly";
+  const blankRows = (): Record<string, LineRow> =>
+    Object.fromEntries(rfq.items.map((it) => [it.id, { price: "", qty: String(it.quantity || 1), periods: "1" }]));
+
   const [partyId, setPartyId] = useState("");
-  const [pricePerPeriod, setPricePerPeriod] = useState<number | string>("");
-  const [periods, setPeriods] = useState<number | string>(1);
+  const [lineRows, setLineRows] = useState<Record<string, LineRow>>(blankRows);
   const [availability, setAvailability] = useState("");
   const [conditions, setConditions] = useState("");
-  const defaultCycle = rfq.items[0]?.billingCycle || "monthly";
+  const [extracting, setExtracting] = useState(false);
+  const [aiUsed, setAiUsed] = useState(false);
+
+  const setCell = (itemId: string, field: keyof LineRow, val: string) => {
+    // Solo valores ≥ 0: descarta signos negativos escritos a mano.
+    const clean = val.replace(/-/g, "");
+    setLineRows((prev) => ({ ...prev, [itemId]: { ...(prev[itemId] || { price: "", qty: "1", periods: "1" }), [field]: clean } }));
+  };
+
+  const lineTotalOf = (r?: LineRow) => (Number(r?.price) || 0) * (Number(r?.qty) || 1) * (Number(r?.periods) || 1);
+  const grandTotal = rfq.items.reduce((s, it) => s + lineTotalOf(lineRows[it.id]), 0);
+
+  const resetForm = () => { setPartyId(""); setLineRows(blankRows()); setAvailability(""); setConditions(""); setAiUsed(false); };
+
+  // Sube el PDF del arrendador → IA extrae precios por ítem → precarga (revisar antes de guardar).
+  const handleExtractPdf = async (file: File) => {
+    setExtracting(true);
+    try {
+      const dataUrl = await blobToBase64(file);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Sesión no disponible.");
+      const res = await fetch("/api/rentals/extract-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          pdfBase64: dataUrl,
+          cycleLabel: CYCLE_LABELS[defaultCycle],
+          items: rfq.items.map((it) => ({ id: it.id, name: it.name, quantity: it.quantity })),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+      const data = json.data as { partyName?: string; availabilityDate?: string; conditions?: string; lines?: any[] };
+
+      const next = blankRows();
+      for (const ln of data.lines || []) {
+        if (ln.itemId && next[ln.itemId]) {
+          next[ln.itemId] = {
+            price: ln.pricePerPeriod != null ? String(ln.pricePerPeriod) : "",
+            qty: ln.quantity != null ? String(ln.quantity) : next[ln.itemId].qty,
+            periods: ln.periods != null ? String(ln.periods) : "1",
+          };
+        }
+      }
+      setLineRows(next);
+      if (data.availabilityDate) setAvailability(data.availabilityDate);
+      if (data.conditions) setConditions(data.conditions);
+      // Sugiere el arrendador invitado cuyo nombre se parezca al detectado.
+      if (data.partyName && !partyId) {
+        const dn = data.partyName.toLowerCase();
+        const match = invited.find((p) => dn.includes(p.name.toLowerCase().slice(0, 6)) || p.name.toLowerCase().includes(dn.slice(0, 6)));
+        if (match) setPartyId(match.id);
+      }
+      setAiUsed(true);
+      const matched = (data.lines || []).filter((l: any) => l.itemId).length;
+      toast({ title: "Cotización extraída con IA", description: `${matched} de ${rfq.items.length} ítem(s) mapeado(s). Revisa y corrige antes de guardar.` });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "No se pudo extraer", description: e?.message || "Error procesando el PDF con IA." });
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   const handleSaveResponse = async () => {
-    if (!partyId || !pricePerPeriod) {
-      toast({ variant: "destructive", title: "Datos incompletos", description: "Elige el arrendador y el precio por período." });
+    if (!partyId) {
+      toast({ variant: "destructive", title: "Falta el arrendador", description: "Elige a qué arrendador corresponde esta cotización." });
+      return;
+    }
+    const lines: RentalQuoteLine[] = rfq.items.map((it) => {
+      const r = lineRows[it.id] || { price: "", qty: String(it.quantity || 1), periods: "1" };
+      const price = Number(r.price) || 0, qty = Number(r.qty) || 1, per = Number(r.periods) || 1;
+      return { itemId: it.id, matchedName: it.name, pricePerPeriod: price, quantity: qty, periods: per, total: price * qty * per };
+    });
+    if (lines.every((l) => l.pricePerPeriod === 0)) {
+      toast({ variant: "destructive", title: "Sin precios", description: "Ingresa al menos un precio (sube el PDF o complétalo a mano)." });
       return;
     }
     setBusy(true);
     try {
-      const price = Number(pricePerPeriod);
-      const n = Number(periods) || 1;
+      const ppSum = lines.reduce((s, l) => s + l.pricePerPeriod * (l.quantity || 1), 0);
+      const totalEst = lines.reduce((s, l) => s + (l.total || 0), 0);
+      const maxPeriods = Math.max(1, ...lines.map((l) => l.periods || 1));
       await onRecordResponse(rfq.id, {
         partyId, partyName: partyMap.get(partyId)?.name || "Arrendador",
-        pricePerPeriod: price, billingCycle: defaultCycle, periods: n,
-        totalEstimate: price * n, availabilityDate: availability || undefined,
-        conditions: conditions || undefined,
+        pricePerPeriod: ppSum, billingCycle: defaultCycle, periods: maxPeriods,
+        totalEstimate: totalEst, availabilityDate: availability || undefined,
+        conditions: conditions || undefined, lines, extractedByAi: aiUsed,
       });
       toast({ title: "Cotización registrada" });
-      setPartyId(""); setPricePerPeriod(""); setPeriods(1); setAvailability(""); setConditions("");
+      resetForm();
       setRespOpen(false);
     } catch {
       toast({ variant: "destructive", title: "Error", description: "No se pudo registrar la cotización." });
@@ -393,7 +645,7 @@ function RfqCard({
     setBusy(true);
     try {
       const res = await onAward(rfq.id, responseId, { periods: periodsForAward });
-      toast({ title: "¡Arriendo adjudicado!", description: `Contrato de arriendo generado (${res.rentalContractId.slice(0, 8)}). Revisa el módulo Arriendos.` });
+      toast({ title: "¡Arriendo adjudicado!", description: `Orden de Compra ${res.ocNumber} lista para emitir. Pulsa "Emitir OC →" para generarla y confirmarla.` });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Error al adjudicar", description: e?.message || "No se pudo generar el contrato." });
     } finally { setBusy(false); }
@@ -418,9 +670,15 @@ function RfqCard({
             </CardDescription>
           </div>
           {!awarded && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={() => handleDownloadPdf()} disabled={!canManage}>
+                <Download className="h-3.5 w-3.5 mr-1" /> Solicitud PDF
+              </Button>
+              <Button size="sm" variant="outline" onClick={openEmail} disabled={!canManage}>
+                <Mail className="h-3.5 w-3.5 mr-1" /> Enviar por correo
+              </Button>
               {rfq.status === "draft" && (
-                <Button size="sm" variant="outline" onClick={() => onSend(rfq.id)} disabled={!canManage}>
+                <Button size="sm" variant="ghost" onClick={() => onSend(rfq.id)} disabled={!canManage}>
                   <Send className="h-3.5 w-3.5 mr-1" /> Marcar enviado
                 </Button>
               )}
@@ -428,12 +686,30 @@ function RfqCard({
                 <DialogTrigger asChild>
                   <Button size="sm" disabled={!canManage}><Plus className="h-3.5 w-3.5 mr-1" /> Cotización</Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Registrar cotización</DialogTitle>
-                    <DialogDescription>Ingresa la oferta de un arrendador para {rfq.title}.</DialogDescription>
+                    <DialogDescription>Sube el PDF del arrendador y la IA precarga los precios por ítem, o complétalos a mano. Revisa antes de guardar.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
+                    {/* Subir PDF → extraer con IA */}
+                    <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-muted-foreground">¿Tienes el PDF del proveedor? Súbelo y la IA llena los precios.</span>
+                      </div>
+                      <label className="shrink-0">
+                        <input
+                          type="file" accept="application/pdf" className="hidden" disabled={extracting}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExtractPdf(f); e.target.value = ""; }}
+                        />
+                        <span className={`inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-2 text-sm font-medium cursor-pointer hover:bg-muted ${extracting ? "opacity-60 pointer-events-none" : ""}`}>
+                          {extracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                          {extracting ? "Analizando…" : "Subir PDF"}
+                        </span>
+                      </label>
+                    </div>
+
                     <div className="space-y-2">
                       <Label>Arrendador</Label>
                       <Select value={partyId} onValueChange={setPartyId}>
@@ -442,23 +718,41 @@ function RfqCard({
                           {invited.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      {aiUsed && <p className="text-[11px] text-info-subtle-foreground flex items-center gap-1"><Sparkles className="h-3 w-3" /> Precargado por IA — verifica los montos.</p>}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label>Precio por período ({CYCLE_LABELS[defaultCycle]})</Label>
-                        <Input type="number" value={pricePerPeriod} onChange={(e) => setPricePerPeriod(e.target.value)} placeholder="0" />
+
+                    {/* Tabla de líneas por ítem */}
+                    <div className="space-y-1.5">
+                      <Label>Precios por ítem ({CYCLE_LABELS[defaultCycle]})</Label>
+                      <div className="rounded-xl border overflow-hidden">
+                        <div className="grid grid-cols-[1fr_88px_56px_64px_92px] gap-2 px-3 py-2 bg-muted/50 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          <span>Equipo</span><span className="text-right">Precio</span><span className="text-right">Cant.</span><span className="text-right">Per.</span><span className="text-right">Total</span>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto divide-y">
+                          {rfq.items.map((it) => {
+                            const r = lineRows[it.id] || { price: "", qty: String(it.quantity || 1), periods: "1" };
+                            return (
+                              <div key={it.id} className="grid grid-cols-[1fr_88px_56px_64px_92px] gap-2 px-3 py-2 items-center">
+                                <span className="text-sm truncate" title={it.name}>{it.name}</span>
+                                <Input type="number" min={0} step="any" className="h-8 text-right text-sm" placeholder="0" value={r.price} onChange={(e) => setCell(it.id, "price", e.target.value)} />
+                                <Input type="number" min={1} step={1} className="h-8 text-right text-sm" value={r.qty} onChange={(e) => setCell(it.id, "qty", e.target.value)} />
+                                <Input type="number" min={1} step={1} className="h-8 text-right text-sm" value={r.periods} onChange={(e) => setCell(it.id, "periods", e.target.value)} />
+                                <span className="text-sm text-right tabular-nums text-muted-foreground">{money(lineTotalOf(r))}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center justify-between px-3 py-2 bg-muted/30 text-sm font-semibold">
+                          <span>Total cotización</span><span className="tabular-nums">{money(grandTotal)}</span>
+                        </div>
                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-2">
-                        <Label>N° de períodos</Label>
-                        <Input type="number" min={1} value={periods} onChange={(e) => setPeriods(e.target.value)} />
+                        <Label>Disponibilidad desde (opcional)</Label>
+                        <Input type="date" value={availability} onChange={(e) => setAvailability(e.target.value)} />
                       </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Total estimado: <b>{money((Number(pricePerPeriod) || 0) * (Number(periods) || 1))}</b>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Disponibilidad desde (opcional)</Label>
-                      <Input type="date" value={availability} onChange={(e) => setAvailability(e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label>Condiciones (opcional)</Label>
@@ -466,13 +760,20 @@ function RfqCard({
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button variant="outline" onClick={() => setRespOpen(false)}>Cancelar</Button>
-                    <Button onClick={handleSaveResponse} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar"}</Button>
+                    <Button variant="outline" onClick={() => { resetForm(); setRespOpen(false); }}>Cancelar</Button>
+                    <Button onClick={handleSaveResponse} disabled={busy || extracting}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar"}</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
               <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => onDelete(rfq.id)} disabled={!canManage}>
                 <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          {awarded && rfq.rentalContractId && (
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" onClick={() => router.push(`/dashboard/rentals/contracts/${rfq.rentalContractId}`)}>
+                <FileText className="h-3.5 w-3.5 mr-1" /> Emitir OC →
               </Button>
             </div>
           )}
@@ -488,12 +789,17 @@ function RfqCard({
           ))}
         </div>
 
+        {/* Comparador por ítem (matriz equipo × proveedor) */}
+        {rfq.responses.some((r) => r.lines?.length) && (
+          <ItemMatrix rfq={rfq} responses={rfq.responses} />
+        )}
+
         {/* Comparador */}
         {rfq.responses.length === 0 ? (
           <p className="text-sm text-muted-foreground">Sin cotizaciones aún.</p>
         ) : (
           <div className="space-y-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Comparador</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Comparador (totales)</p>
             {[...rfq.responses]
               .sort((a, b) => (a.totalEstimate ?? a.pricePerPeriod) - (b.totalEstimate ?? b.pricePerPeriod))
               .map((r) => {
@@ -508,8 +814,19 @@ function RfqCard({
                         {isWinner && <Badge className="badge-success text-[9px]"><Trophy className="h-3 w-3 mr-0.5" /> Adjudicado</Badge>}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {money(r.pricePerPeriod)} / {CYCLE_LABELS[r.billingCycle]} · {r.periods || 1} período(s) · <b>Total {money(r.totalEstimate ?? r.pricePerPeriod)}</b>
+                        {money(r.pricePerPeriod)} / {CYCLE_LABELS[r.billingCycle]} · {r.periods || 1} período(s)
                       </div>
+                      {(() => {
+                        const net = r.totalEstimate ?? r.pricePerPeriod * (r.periods || 1);
+                        const iva = net * IVA_RATE;
+                        return (
+                          <div className="text-[11px] text-muted-foreground flex flex-wrap gap-x-3">
+                            <span>Neto {money(net)}</span>
+                            <span>IVA {money(iva)}</span>
+                            <span className="font-semibold text-foreground">Total {money(net + iva)}</span>
+                          </div>
+                        );
+                      })()}
                       {r.conditions && <div className="text-[11px] text-muted-foreground italic">{r.conditions}</div>}
                     </div>
                     {!awarded && (
@@ -523,6 +840,37 @@ function RfqCard({
           </div>
         )}
       </CardContent>
+
+      {/* Dialog enviar solicitud de cotización por correo */}
+      <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar solicitud de cotización</DialogTitle>
+            <DialogDescription>Se adjunta el PDF de la solicitud {rfq.internalCode || ""} a los arrendadores.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Destinatarios (separados por coma)</Label>
+              <Input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="arrendador@correo.cl, otro@correo.cl" />
+              {invited.some((p) => !p.email) && (
+                <p className="text-[11px] text-warning-subtle-foreground">
+                  Algún arrendador invitado no tiene email cargado. Puedes escribirlo a mano o agregarlo en Arrendadores y Clientes.
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Mensaje (opcional)</Label>
+              <Textarea value={emailMsg} onChange={(e) => setEmailMsg(e.target.value)} rows={3} placeholder="Estimado proveedor, agradeceremos cotizar el siguiente arriendo…" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSendEmail} disabled={sending}>
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="mr-2 h-4 w-4" /> Enviar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

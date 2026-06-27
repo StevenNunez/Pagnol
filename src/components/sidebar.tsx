@@ -71,6 +71,7 @@ import {
   ClipboardCheck,
   FileBadge,
   PackageSearch,
+  Settings,
 } from 'lucide-react';
 
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
@@ -269,6 +270,10 @@ const getCommitteeNavItems = () => [
   { href: '/dashboard/cphs/meetings', icon: Users, label: 'Reuniones' },
 ];
 
+const getSettingsNavItems = () => [
+  { href: '/dashboard/configuracion', icon: Settings, label: 'Datos y Correlativos' },
+];
+
 const getSuperAdminNavItems = () => [
   { href: '/dashboard/super-admin',           icon: LayoutDashboard, label: 'Panel Global'      },
   { href: '/dashboard/super-admin/tenants',   icon: Building2,       label: 'Empresas'          },
@@ -372,6 +377,9 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
     }
     if (pathname.startsWith('/dashboard/super-admin')) {
       return { navItems: getSuperAdminNavItems(), moduleTitle: 'Super Admin', moduleIcon: Crown };
+    }
+    if (pathname.startsWith('/dashboard/configuracion')) {
+      return { navItems: getSettingsNavItems(), moduleTitle: 'Configuración', moduleIcon: Settings };
     }
 
     return { navItems: [], moduleTitle: 'PAGNOL', moduleIcon: LayoutDashboard };

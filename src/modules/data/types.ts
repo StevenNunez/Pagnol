@@ -270,6 +270,7 @@ export interface AppStateContextType extends AppDataState {
   generateRentalSchedule: (contractId: string, installments: number, opts: { startFrom?: Date | string; firstDueOffsetDays?: number } | undefined) => Promise<void>;
   markRentalOcSent: (contractId: string) => Promise<void>;
   confirmRentalOc: (contractId: string, opts: { installments: number; firstDueOffsetDays?: number }) => Promise<void>;
+  materializeRentalContractAssets: (contractId: string) => Promise<number>;
   markRentalPaymentPaid: (id: string, details: { paidDate: Date | string; paymentMethod?: string; reference?: string }) => Promise<void>;
   updateRentalPayment: (id: string, data: Partial<RentalPayment>) => Promise<void>;
   deleteRentalPayment: (id: string) => Promise<void>;

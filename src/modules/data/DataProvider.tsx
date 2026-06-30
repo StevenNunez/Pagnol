@@ -638,6 +638,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         generateRentalSchedule: bindContext(rentalMutations.generateRentalSchedule),
         markRentalOcSent: bindContext(rentalMutations.markRentalOcSent),
         confirmRentalOc: bindContext(rentalMutations.confirmRentalOc),
+        materializeRentalContractAssets: bindContext(rentalMutations.materializeRentalContractAssets),
         markRentalPaymentPaid: bindContext(rentalMutations.markRentalPaymentPaid),
         updateRentalPayment: bindContext(rentalMutations.updateRentalPayment),
         deleteRentalPayment: bindContext(rentalMutations.deleteRentalPayment),

@@ -20,7 +20,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
   ArrowLeft, Plus, Trash2, Pencil, Package, CalendarClock, CheckCircle2, ListPlus,
-  PackageCheck, Undo2, FileText, Download, Mail, Send, Loader2,
+  PackageCheck, PackagePlus, Undo2, FileText, Download, Mail, Send, Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -54,10 +54,10 @@ export default function RentalContractDetailPage() {
   const router = useRouter();
   const contractId = String(params.id);
   const {
-    rentalContracts, rentalParties, suppliers, rentalAssets, rentalPayments, currentTenant,
+    rentalContracts, rentalParties, suppliers, rentalAssets, rentalPayments, currentTenant, materials,
     addRentalAsset, updateRentalAsset, deleteRentalAsset, returnRentalAsset,
     generateRentalSchedule, markRentalOcSent, confirmRentalOc, markRentalPaymentPaid, deleteRentalPayment,
-    closeRentalContract,
+    closeRentalContract, materializeRentalContractAssets,
     can, notify,
   } = useAppState();
   const { user } = useAuth();
@@ -82,6 +82,24 @@ export default function RentalContractDetailPage() {
     return undefined;
   }, [contract?.partyId, suppliers, rentalParties]);
   const assets = useMemo(() => (rentalAssets || []).filter((a) => a.contractId === contractId), [rentalAssets, contractId]);
+  // Activos del contrato AÚN en arriendo que todavía no se materializaron como activos
+  // del módulo Pagnol (registros en `materials` con rentalAssetId apuntando a ellos).
+  const pendingMaterialize = useMemo(() => {
+    const done = new Set((materials || []).filter((m) => m.rentalContractId === contractId).map((m) => m.rentalAssetId));
+    return assets.filter((a) => a.status === 'active' && !done.has(a.id));
+  }, [assets, materials, contractId]);
+
+  const handleMaterialize = async () => {
+    setMaterializing(true);
+    try {
+      const n = await materializeRentalContractAssets(contractId);
+      notify(n > 0 ? `${n} equipo(s) ingresado(s) a inventario Pagnol.` : 'Todos los equipos ya estaban en inventario.', n > 0 ? 'success' : 'default');
+    } catch (e: any) {
+      notify(e?.message || 'No se pudo ingresar a inventario.', 'destructive');
+    } finally {
+      setMaterializing(false);
+    }
+  };
   const payments = useMemo(
     () => (rentalPayments || []).filter((p) => p.contractId === contractId)
       .sort((a, b) => new Date(a.dueDate as any).getTime() - new Date(b.dueDate as any).getTime()),
@@ -110,6 +128,7 @@ export default function RentalContractDetailPage() {
   const [closeNotes, setCloseNotes] = useState('');
   const [cancelFuture, setCancelFuture] = useState(true);
   const [closing, setClosing] = useState(false);
+  const [materializing, setMaterializing] = useState(false);
 
   // Return single asset dialog
   const [returningAsset, setReturningAsset] = useState<RentalAsset | null>(null);
@@ -526,6 +545,17 @@ export default function RentalContractDetailPage() {
           <h2 className="text-lg font-bold flex items-center gap-2"><Package className="h-5 w-5 text-primary" /> Activos arrendados</h2>
           {canManageContracts && <Button onClick={openNewAsset} size="sm" className="rounded-xl gap-2"><Plus className="h-4 w-4" /> Agregar activo</Button>}
         </div>
+        {canManageContracts && ocConfirmed && pendingMaterialize.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-info-subtle bg-info-subtle/40 p-4">
+            <p className="text-sm text-foreground">
+              {pendingMaterialize.length} equipo(s) de este arriendo aún no están en el inventario de Pagnol.
+              Ingrésalos para trazarlos (movimientos, ficha técnica, mantenimiento, QR).
+            </p>
+            <Button onClick={handleMaterialize} disabled={materializing} size="sm" className="rounded-xl gap-2 shrink-0">
+              <PackagePlus className="h-4 w-4" /> {materializing ? 'Ingresando…' : 'Ingresar a inventario Pagnol'}
+            </Button>
+          </div>
+        )}
         <DataTable
           columns={assetColumns}
           data={assets}

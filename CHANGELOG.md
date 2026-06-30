@@ -19,6 +19,40 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Agregado
+- **Los equipos arrendados ahora son activos del módulo Pagnol (trazabilidad completa)**.
+  Hasta ahora un equipo arrendado vivía SOLO en `rental_assets` (ligado al contrato, para lo
+  financiero) y **no aparecía en `/dashboard/pagnol/activos`**, por lo que no tenía movimientos
+  (quién retira/entrega), ficha técnica, mantenimiento/OT ni QR — todo eso cuelga de la tabla
+  `materials` (en Pagnol, un "activo" es un `Material`; `type Asset = Material`). Ahora, **al
+  confirmar la OC** del arriendo, cada `rental_asset` se **materializa** como un `Material`
+  espejo marcado `ownership='arrendado'`, con `rentalContractId`/`rentalAssetId` para enlazarlos.
+  Así hereda **toda** la trazabilidad de Pagnol sin reimplementar nada, y se registra un
+  movimiento inicial de ingreso a inventario.
+  - **Al devolver / cerrar** el arriendo (`closeRentalContract` / `returnRentalAsset`), el activo
+    espejo se **archiva** (`archived=true`): sale del inventario operativo pero **conserva su
+    historial** de movimientos/OT/ficha.
+  - **Badge "Arrendado"** en cada tarjeta de activo (módulo Pagnol → Activos).
+  - **Botón "Ingresar a inventario Pagnol"** en el detalle del contrato de arriendo
+    (`rentals/contracts/[id]`): aviso + acción para materializar los equipos de **contratos ya
+    activos** (los confirmados antes de este cambio). Idempotente (índice único por
+    `rental_asset_id`): no duplica.
+  - Soporte de datos: nuevas columnas `materials.ownership` (default `'propio'`),
+    `materials.rental_contract_id`, `materials.rental_asset_id` (FKs ON DELETE SET NULL + índice
+    único parcial). Tipos (`Material`), mapper, `addMaterial`, nueva mutación
+    `materializeRentalContractAssets` (wired en DataProvider + `types.ts`). Migración
+    `20260628000000_materials_rental_origin.sql`. **Aplicada en Supabase** (verificado 2026-06-28: funciona).
+
+---
+
+## [2026-06-21 — 2026-06-28] — Configuración de App, Arriendos (multi-ítem + OC + IA) y Autorización ADC
+
+Commits: *Pagnol Solicitud de Arriendos*, *…01*, *…02*, *fix01 Dark Mode*.
+
+> **Migraciones de este bloque: TODAS aplicadas en Supabase** (verificado 2026-06-28
+> sondeando el esquema real de la base). Las notas "pendiente de aplicar" que aparecían
+> aquí quedaron corregidas a "aplicada".
+
+### Agregado
 - **Módulo de Configuración de App (`/dashboard/configuracion`)**. Panel por tenant, gateado por el
   nuevo permiso `module_settings:view` (admin/soporte-pagnol lo tienen). Tres bloques:
   1. **Datos de la empresa**: nombre, RUT, representante legal + su RUT, dirección y faenas
@@ -31,8 +65,8 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   - Soporte de datos: nueva columna `tenants.code_prefix` + `tenants.logo_url`/`code_prefix` ahora
     editables en `updateTenant` y mapeados en el `Tenant` (DataProvider + AuthProvider). El RPC
     `next_internal_code` consulta `code_prefix` como paso intermedio (override semántico →
-    code_prefix → iniciales). Migración `20260626020000_tenant_code_prefix.sql`. **Pendiente de
-    aplicar en Supabase.**
+    code_prefix → iniciales). Migración `20260626020000_tenant_code_prefix.sql`. **Aplicada en
+    Supabase** (verificado 2026-06-28).
 - **Botón "Emitir OC →" en el RFQ adjudicado (Abastecimiento → Arriendos)**. Tras adjudicar, el
   contrato y su OC se gestionan en otro módulo (Arriendos → Contratos) y no había forma directa de
   llegar: el usuario quedaba sin saber el siguiente paso. Ahora la tarjeta del RFQ **adjudicado**
@@ -72,7 +106,7 @@ Cambios en el árbol de trabajo, aún sin commit/push.
     datos de empresa del **tenant** (nombre, RUT, dirección, logo), no hardcodeados.
   - Migración `20260626000000_rental_oc_flow.sql` (columnas `oc_number`, `oc_status`, `oc_sent_at`,
     `oc_confirmed_at`, `payment_terms_days`, `tax_rate` en `rental_contracts`; backfill: contratos
-    previos quedan con OC 'confirmed' para no atascarse). **Pendiente de aplicar en Supabase.**
+    previos quedan con OC 'confirmed' para no atascarse). **Aplicada en Supabase** (verificado 2026-06-28).
   - Nuevas mutations `markRentalOcSent` y `confirmRentalOc`; `generateRentalSchedule` ahora acepta
     un ancla de fecha + offset para arrancar el calendario desde la confirmación de la OC.
 
@@ -89,7 +123,7 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   sigue indexado por la clave interna estable** (p.ej. `PUR`), así que renombrar el segmento visible
   NO reinicia ni choca la numeración. Migraciones `20260626050000_tenant_code_prefixes.sql` (prefijo)
   y `20260626060000_tenant_code_types.sql` (tipo; superset idempotente, deja el esquema final aunque
-  no se haya aplicado la 050000). **Pendientes de aplicar en Supabase** (basta con aplicar la 060000).
+  no se haya aplicado la 050000). **Aplicadas en Supabase** (verificado 2026-06-28: `code_prefixes`/`code_types` existen).
 
 ### Corregido
 - **No se podía enviar la OC de arriendo por correo después de confirmarla**. Al confirmar la OC
@@ -131,13 +165,13 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   `20260626030000` re-creó el bucket pero **omitió el ALTER de la columna**. Al guardar el logo,
   PostgREST rechazaba el UPDATE por columna inexistente. Nueva migración idempotente
   `20260626040000_tenant_logo_url_column.sql` (`ADD COLUMN IF NOT EXISTS logo_url text` +
-  `NOTIFY pgrst, 'reload schema'`). **Pendiente de aplicar en Supabase.**
+  `NOTIFY pgrst, 'reload schema'`). **Aplicada en Supabase** (verificado 2026-06-28).
 - **"Bucket not found" al subir el logo**. El bucket `tenant-logos` (y sus policies de aislamiento
   por tenant) estaba definido en migraciones antiguas (`20260611000000`, `20260612000002`) que no
   se habían aplicado en el proyecto. Nueva migración consolidada e idempotente
   `20260626030000_tenant_logos_bucket.sql` que crea el bucket público y deja las policies finales
-  (escritura acotada a `<tenant_id>/...`, lectura pública) en una sola pasada. **Pendiente de
-  aplicar en Supabase.**
+  (escritura acotada a `<tenant_id>/...`, lectura pública) en una sola pasada. **Aplicada en
+  Supabase** (verificado 2026-06-28: bucket `tenant-logos` existe).
 - **Número de OC legible y correlativo (no el UUID)**. Al adjudicar, el toast mostraba el UUID del
   contrato (`b032d0a4…`), que confunde. Ahora `awardRentalQuote` devuelve también el `ocNumber`
   correlativo (`{INICIALES}-OCA-0001`, vía `next_internal_code`) y el toast lo muestra: "Orden de
@@ -166,7 +200,7 @@ Cambios en el árbol de trabajo, aún sin commit/push.
     el acto. Migración `20260626010000_unify_lessors_suppliers.sql`: inserta como `suppliers`
     los arrendadores existentes (dedup por tenant+nombre) y re-apunta contratos y cotizaciones
     (`party_ids`, `responses[].partyId`, `awarded_party_id`). Idempotente; no borra los
-    `rental_parties` migrados. **Pendiente de aplicar en Supabase.**
+    `rental_parties` migrados. **Aplicada en Supabase** (verificado 2026-06-28).
 - **Correo de cotización/OC: protagonismo del tenant + reply-to al remitente**. La ruta
   `/api/purchasing/send-order` (compartida por compras y arriendos) ahora acepta datos opcionales
   (`companyName`, `companyLogoUrl`, `senderName/Email/Phone/Role`, `docLabel`) y con ellos:
@@ -231,7 +265,7 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   Abastecimiento. Implementación **aditiva** (sin tocar los enums de estado): 2 columnas por
   tabla `adc_authorized_at` / `adc_authorized_by` en `material_requests`, `purchase_requests` y
   `rental_requests` (migración `20260625030000_adc_authorization.sql`, additiva + backfill de
-  existentes como autorizadas — **pendiente de aplicar**). Nuevos permisos
+  existentes como autorizadas — **aplicada en Supabase**, verificado 2026-06-28). Nuevos permisos
   `material_requests:authorize` / `purchase_requests:authorize` / `rentals:authorize` asignados
   al rol **adc** (y a director-faena); el rol ADC pasó de solo-informes a autorizador de
   solicitudes. Helper `userCan(user, permission)` para gating en mutaciones. Nuevas mutaciones
@@ -342,8 +376,8 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   opcional. El historial del solicitante y la gestión de compras (`purchasing/purchase-requests`)
   muestran el contrato. Cambios: migración `20260623020000_purchase_requests_contract.sql`
   (columnas `contract_id` FK→`contracts` ON DELETE SET NULL + `contract_name` + índice),
-  `PurchaseRequest` (interfaz + mapper) y `addPurchaseRequest`. **Pendiente: aplicar la
-  migración en Supabase.**
+  `PurchaseRequest` (interfaz + mapper) y `addPurchaseRequest`. **Aplicada en Supabase**
+  (verificado 2026-06-28: `purchase_requests.contract_id` existe).
   > Nota: la creación de materiales inexistentes ya estaba resuelta en este flujo (nombre por
   > texto libre; el material se crea al recibir la OC en `receivePurchaseRequest`).
 
@@ -547,9 +581,24 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   administradores del propio tenant; super-admin sin restricción) y GRANTs explícitos.
   Aísla la configuración de permisos entre empresas.
 
-### Migraciones (aplicadas en Supabase)
+### Migraciones (todas aplicadas en Supabase — verificado 2026-06-28)
 - `20260621000000_material_min_stock.sql`
 - `20260621010000_roles_per_tenant.sql`
+- `20260623000000_material_requests_contract.sql`
+- `20260623020000_purchase_requests_contract.sql`
+- `20260624000000_rental_requests.sql`
+- `20260625000000_rental_requests_items.sql`
+- `20260625010000_rental_categories.sql`
+- `20260625020000_internal_code_prefix_override.sql`
+- `20260625030000_adc_authorization.sql`
+- `20260625040000_push_subscriptions.sql`
+- `20260626000000_rental_oc_flow.sql`
+- `20260626010000_unify_lessors_suppliers.sql`
+- `20260626020000_tenant_code_prefix.sql`
+- `20260626030000_tenant_logos_bucket.sql`
+- `20260626040000_tenant_logo_url_column.sql`
+- `20260626050000_tenant_code_prefixes.sql`
+- `20260626060000_tenant_code_types.sql`
 
 ---
 

@@ -188,6 +188,9 @@ export async function addMaterial(data: any, { user, tenantId }: Context) {
             failure_probability: materialData.failureProbability || 1,
             failure_impact: materialData.failureImpact || 1,
             parent_id: materialData.parentId || null,
+            ownership: materialData.ownership || 'propio',
+            rental_contract_id: materialData.rentalContractId || null,
+            rental_asset_id: materialData.rentalAssetId || null,
             tenant_id: tenantId,
         })
         .select()

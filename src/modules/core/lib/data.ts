@@ -226,6 +226,12 @@ export interface Material {
   mttr?: number; // Mean Time To Repair (horas)
   availability?: number; // % Disponibilidad histórica
   documents?: { id: string; name: string; url: string; type: 'Manual' | 'Garantía' | 'Certificado' | 'RCA' | 'Otro'; date: string }[];
+
+  // Origen del activo. 'arrendado' = espejo de un equipo de arriendo (rental_assets),
+  // creado al confirmar la OC; conserva el vínculo al contrato y al activo de arriendo.
+  ownership?: 'propio' | 'arrendado';
+  rentalContractId?: string | null;
+  rentalAssetId?: string | null;
 }
 
 // ISO 55001 - Mantenimiento

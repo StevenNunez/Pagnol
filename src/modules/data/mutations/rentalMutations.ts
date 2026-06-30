@@ -1,13 +1,15 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { mappers } from '../mappers';
 import { addMonths, addWeeks, addDays, format } from 'date-fns';
-import type {
-  RentalParty,
-  RentalContract,
-  RentalAsset,
-  RentalPayment,
-  RentalBillingCycle,
+import {
+  rentalCategoryLabel,
+  type RentalParty,
+  type RentalContract,
+  type RentalAsset,
+  type RentalPayment,
+  type RentalBillingCycle,
 } from '@/modules/core/lib/data';
+import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 
 import type { MutationContext as Context } from './context';
 
@@ -211,6 +213,14 @@ export async function closeRentalContract(
     .eq('status', 'active');
   if (aErr) throw aErr;
 
+  // 2b. Archiva los activos espejo en Pagnol (salen del inventario operativo pero
+  //     conservan su historial de trazabilidad: movimientos, OT, ficha).
+  await supabase
+    .from('materials')
+    .update({ archived: true })
+    .eq('rental_contract_id', contractId)
+    .eq('tenant_id', tenantId);
+
   // 3. Cuotas pendientes futuras → eliminadas (corta el calendario).
   if (opts.cancelFuturePayments !== false) {
     const { error: pErr } = await supabase
@@ -239,6 +249,101 @@ export async function returnRentalAsset(
     .eq('tenant_id', tenantId);
 
   if (error) throw error;
+
+  // Archiva el activo espejo en Pagnol (conserva su historial de trazabilidad).
+  await supabase
+    .from('materials')
+    .update({ archived: true })
+    .eq('rental_asset_id', id)
+    .eq('tenant_id', tenantId);
+}
+
+/**
+ * Materializa los equipos de un contrato de arriendo como activos del módulo Pagnol
+ * (registros en `materials` con ownership='arrendado'), para que hereden la trazabilidad
+ * de Pagnol (movimientos quién retira/entrega, mantenimiento/OT, ficha técnica, QR).
+ *
+ * Idempotente: no duplica un activo ya materializado (índice único por `rental_asset_id`).
+ * Se llama automáticamente al confirmar la OC; también puede dispararse manualmente para
+ * contratos ya activos. Devuelve cuántos activos nuevos creó.
+ */
+export async function materializeRentalContractAssets(
+  contractId: string,
+  { user, tenantId }: Context,
+): Promise<number> {
+  if (!user || !tenantId) throw new Error('No autenticado.');
+
+  // Solo los activos AÚN en arriendo: un equipo ya devuelto no debe reingresar al inventario.
+  const { data: assets, error } = await supabase
+    .from('rental_assets')
+    .select('*')
+    .eq('contract_id', contractId)
+    .eq('tenant_id', tenantId)
+    .eq('status', 'active');
+  if (error) throw error;
+  if (!assets?.length) return 0;
+
+  // ¿Cuáles ya tienen material espejo? (evita duplicar)
+  const { data: existing } = await supabase
+    .from('materials')
+    .select('rental_asset_id')
+    .eq('tenant_id', tenantId)
+    .in('rental_asset_id', assets.map((a) => a.id));
+  const done = new Set((existing || []).map((m) => m.rental_asset_id));
+
+  let created = 0;
+  for (const a of assets) {
+    if (done.has(a.id)) continue;
+    const qty = Number(a.quantity) || 1;
+    const internalCode = await nextInternalCode(tenantId, 'ACT');
+
+    const { data: mat, error: insErr } = await supabase
+      .from('materials')
+      .insert({
+        name: a.name,
+        stock: qty,
+        in_use: 0,
+        unit: 'Unidad',
+        category: rentalCategoryLabel(a.category),
+        status: 'Disponible',
+        usage_type: 'Reutilizable Controlado',
+        unit_cost: a.unit_price ?? null,
+        serial_number: a.identifier || null,
+        internal_code: internalCode,
+        ownership: 'arrendado',
+        rental_contract_id: contractId,
+        rental_asset_id: a.id,
+        archived: false,
+        failure_probability: 1,
+        failure_impact: 1,
+        tenant_id: tenantId,
+      })
+      .select('id')
+      .single();
+
+    if (insErr) {
+      // Carrera: otro proceso ya lo creó (viola el índice único). Seguimos sin romper.
+      if ((insErr as any).code === '23505') continue;
+      throw insErr;
+    }
+
+    // Movimiento inicial = ingreso del equipo arrendado al inventario (trazabilidad).
+    if (qty > 0) {
+      await supabase.from('stock_movements').insert({
+        material_id: mat.id,
+        material_name: a.name,
+        quantity_change: qty,
+        new_stock: qty,
+        type: 'initial',
+        justification: 'Ingreso por arriendo (OC confirmada)',
+        user_id: user.id,
+        user_name: user.name,
+        tenant_id: tenantId,
+      });
+    }
+    created++;
+  }
+  return created;
 }
 
 // ── Activos arrendados (líneas del contrato) ─────────────────────────────────
@@ -493,6 +598,10 @@ export async function confirmRentalOc(
     .eq('id', contractId)
     .eq('tenant_id', tenantId);
   if (error) throw error;
+
+  // Materializa los equipos como activos del módulo Pagnol (idempotente). El equipo
+  // entra a faena al confirmar la OC: aquí empieza su trazabilidad en Pagnol.
+  await materializeRentalContractAssets(contractId, context);
 
   // Evita duplicar el calendario si ya se generó antes.
   const { count } = await supabase

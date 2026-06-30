@@ -668,6 +668,11 @@ export default function ActivosPage() {
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></div>
                     <p className="text-[9px] sm:text-[10px] text-primary font-black uppercase tracking-[0.2em]">{asset.category}</p>
+                    {asset.ownership === 'arrendado' && (
+                      <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-info-subtle text-info-subtle-foreground text-[8px] font-black uppercase tracking-widest">
+                        <Package size={10} /> Arrendado
+                      </span>
+                    )}
                   </div>
                   <h4 className="font-black text-base sm:text-lg tracking-tight mb-4 leading-tight group-hover:text-primary transition-colors min-h-[3rem] line-clamp-2 uppercase">
                     {asset.name}

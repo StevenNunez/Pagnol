@@ -40,6 +40,9 @@ export const mappers = {
         failureProbability: item.failure_probability || 1,
         failureImpact: item.failure_impact || 1,
         parentId: item.parent_id || null,
+        ownership: item.ownership || 'propio',
+        rentalContractId: item.rental_contract_id || null,
+        rentalAssetId: item.rental_asset_id || null,
     }),
     profiles: (item: any): User => ({
         id: item.id,

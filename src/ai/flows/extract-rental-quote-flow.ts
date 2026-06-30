@@ -14,12 +14,14 @@ const RequestedItemSchema = z.object({
   quantity: z.number(),
 });
 
-export const ExtractRentalQuoteInputSchema = z.object({
+// NOTA: este archivo es `'use server'`, que SOLO puede exportar funciones async.
+// Por eso los esquemas/tipos quedan locales (sin `export`); nadie los usa fuera.
+const ExtractRentalQuoteInputSchema = z.object({
   pdfDataUri: z.string().describe('PDF de la cotización en data URI (base64).'),
   items: z.array(RequestedItemSchema).describe('Ítems solicitados en el RFQ, con su id.'),
   cycleLabel: z.string().describe('Etiqueta del ciclo de facturación (Mensual, Diario, etc.).'),
 });
-export type ExtractRentalQuoteInput = z.infer<typeof ExtractRentalQuoteInputSchema>;
+type ExtractRentalQuoteInput = z.infer<typeof ExtractRentalQuoteInputSchema>;
 
 const QuoteLineSchema = z.object({
   itemId: z.string().describe('id del ítem solicitado que mejor corresponde a esta línea del PDF. Si ninguno corresponde, usa "".'),
@@ -30,14 +32,14 @@ const QuoteLineSchema = z.object({
   total: z.number().describe('Total NETO de la línea. Si no aparece, calcula pricePerPeriod * quantity * periods.'),
 });
 
-export const ExtractRentalQuoteOutputSchema = z.object({
+const ExtractRentalQuoteOutputSchema = z.object({
   partyName: z.string().describe('Nombre / razón social del arrendador que emite la cotización. "" si no se detecta.'),
   availabilityDate: z.string().describe('Fecha de disponibilidad en formato YYYY-MM-DD, o "" si no aparece.'),
   validityDate: z.string().describe('Fecha de validez de la oferta en YYYY-MM-DD, o "" si no aparece.'),
   conditions: z.string().describe('Condiciones relevantes (incluye traslado/operador/combustible, etc.). "" si no hay.'),
   lines: z.array(QuoteLineSchema).describe('Una línea por cada precio de equipo encontrado en el PDF.'),
 });
-export type ExtractRentalQuoteOutput = z.infer<typeof ExtractRentalQuoteOutputSchema>;
+type ExtractRentalQuoteOutput = z.infer<typeof ExtractRentalQuoteOutputSchema>;
 
 export async function extractRentalQuoteFlow(
   input: ExtractRentalQuoteInput,

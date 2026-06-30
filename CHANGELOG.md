@@ -18,6 +18,14 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Seguridad
+- **Cron de alertas de arriendo: endpoint `fail-closed`**. `GET /api/cron/rental-alerts` era
+  *fail-open*: si `CRON_SECRET` no estaba en el runtime, `if (secret && …)` no bloqueaba nada y el
+  endpoint quedaba **abierto** — cualquiera con la URL podía dispararlo y enviar push. Ahora: sin
+  `CRON_SECRET` responde **503** ("Cron no configurado"); con secret pero sin el header
+  `Authorization: Bearer <CRON_SECRET>` responde **401**. Sirve también de diagnóstico: abrir la URL
+  en el navegador debe dar 401 (protegido) o 503 (falta la var), nunca `ok:true`.
+
 ### Agregado
 - **Los equipos arrendados ahora son activos del módulo Pagnol (trazabilidad completa)**.
   Hasta ahora un equipo arrendado vivía SOLO en `rental_assets` (ligado al contrato, para lo

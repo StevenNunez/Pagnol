@@ -9,10 +9,16 @@ const supabase = getSupabaseAdmin();
 // días, y envía una notificación push resumida a las suscripciones de ese tenant.
 
 export async function GET(req: NextRequest) {
-  // Protección: Vercel Cron envía `Authorization: Bearer <CRON_SECRET>`.
+  // Protección (fail-closed): Vercel Cron envía `Authorization: Bearer <CRON_SECRET>`.
+  // Si el secret NO está configurado, deshabilitamos el endpoint en vez de dejarlo
+  // abierto (antes era fail-open: sin secret, cualquiera podía dispararlo y enviar push).
   const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    console.error('CRON_SECRET no configurado — cron deshabilitado por seguridad.');
+    return NextResponse.json({ error: 'Cron no configurado (falta CRON_SECRET).' }, { status: 503 });
+  }
   const authHeader = req.headers.get('authorization');
-  if (secret && authHeader !== `Bearer ${secret}`) {
+  if (authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 

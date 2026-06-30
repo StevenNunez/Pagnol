@@ -18,6 +18,14 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Corregido
+- **Build de producción roto por `extract-rental-quote-flow.ts`**. El flow es `'use server'`
+  pero exportaba esquemas Zod (`ExtractRentalQuoteInputSchema`/`OutputSchema`): un archivo
+  `'use server'` solo puede exportar funciones async, así que `next build` fallaba al recolectar
+  page data (`A "use server" file can only export async functions, found object`). `tsc --noEmit`
+  no lo detecta (solo `next build`). Los esquemas/tipos no se usan fuera del archivo → pasan a ser
+  locales (sin `export`). Validado con `next build` local.
+
 ### Seguridad
 - **Cron de alertas de arriendo: endpoint `fail-closed`**. `GET /api/cron/rental-alerts` era
   *fail-open*: si `CRON_SECRET` no estaba en el runtime, `if (secret && …)` no bloqueaba nada y el

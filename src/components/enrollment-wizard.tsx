@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useForm, Controller, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { useAuth } from '@/modules/core/contexts/app-provider';
 import { loadBiometricModels, captureBiometrics } from '@/lib/biometricService';
-import { ROLES, ROLES_ORDER } from '@/modules/core/lib/permissions';
-import { User } from '@/modules/core/lib/data';
+import { ROLES, ROLES_ORDER, PLANS } from '@/modules/core/lib/permissions';
+import { User, Tenant, UserRole } from '@/modules/core/lib/data';
 import {
     X, ChevronRight, ChevronLeft, ScanFace, CheckCircle,
     Camera, Loader2, FileBadge, Smartphone, Monitor, QrCode,
@@ -23,8 +23,6 @@ import QRCode from 'react-qr-code';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/modules/core/lib/supabase';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-
-const pagnolRolesAssignable = ['administrador', 'panolero', 'supervisor', 'operador'] as const;
 
 const FormSchema = z.object({
     name: z.string().min(3, 'El nombre es requerido.'),
@@ -60,7 +58,19 @@ export function EnrollmentWizard({
     tenantId,
 }: EnrollmentWizardProps) {
     const { toast } = useToast();
-    const { user: currentUser } = useAuth();
+    const { user: currentUser, currentTenantId, tenants } = useAuth();
+
+    // Roles asignables al enrolar: los del plan del tenant (mismo criterio que el
+    // Centro de Invitaciones), excluyendo super-admin salvo que el actor lo sea.
+    const assignableRoles = useMemo<UserRole[]>(() => {
+        const currentTenant = (tenants || []).find(
+            (t: Tenant) => t.id === currentTenantId || t.tenantId === currentTenantId
+        );
+        const plan = PLANS[(currentTenant as Tenant & { plan?: keyof typeof PLANS })?.plan as keyof typeof PLANS] || PLANS.professional;
+        const ordered = ROLES_ORDER.filter(r => plan.allowedRoles.includes(r));
+        return currentUser?.role === 'super-admin' ? ordered : ordered.filter(r => r !== 'super-admin');
+    }, [tenants, currentTenantId, currentUser]);
+
     const [mode, setMode] = useState<EnrollmentMode>('choose');
     const [step, setStep] = useState<DesktopStep>('info');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -469,8 +479,8 @@ export function EnrollmentWizard({
                                         <Controller name="role" control={control} render={({ field }) => (
                                             <Select onValueChange={field.onChange} value={field.value} disabled={!!selectedUser}>
                                                 <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Seleccionar rol..." /></SelectTrigger>
-                                                <SelectContent>
-                                                    {pagnolRolesAssignable.map(r => <SelectItem key={r} value={r}>{ROLES[r]?.label || r}</SelectItem>)}
+                                                <SelectContent className="max-h-72">
+                                                    {assignableRoles.map(r => <SelectItem key={r} value={r}>{ROLES[r]?.label || r}</SelectItem>)}
                                                 </SelectContent>
                                             </Select>
                                         )} />

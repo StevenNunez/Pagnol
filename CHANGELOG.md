@@ -19,6 +19,11 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Corregido
+- **Modal "Registro de Personal" mostraba solo 4 roles al enrolar**. `EnrollmentWizard`
+  tenía hardcodeada la lista `pagnolRolesAssignable` (`administrador`, `panolero`,
+  `supervisor`, `operador`), así que no se podían enrolar trabajadores con el resto de
+  roles del plan. Ahora el selector de rol usa los roles del plan del tenant (mismo criterio
+  que el Centro de Invitaciones), excluyendo `super-admin` salvo que el actor lo sea.
 - **Invitados no aparecían en "Gestión de Personal" (módulo Pagnol)**. El perfil se creaba
   bien al aceptar la invitación (`/api/invite/accept`), pero la lista de `personal/page.tsx`
   filtraba a solo 4 roles (`administrador`, `panolero`, `supervisor`, `operador`) para todo

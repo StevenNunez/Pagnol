@@ -19,6 +19,13 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Corregido
+- **Invitados no aparecían en "Gestión de Personal" (módulo Pagnol)**. El perfil se creaba
+  bien al aceptar la invitación (`/api/invite/accept`), pero la lista de `personal/page.tsx`
+  filtraba a solo 4 roles (`administrador`, `panolero`, `supervisor`, `operador`) para todo
+  usuario que no fuera `super-admin`. Como el Centro de Invitaciones permite invitar con
+  cualquiera de los ~24 roles del plan, cualquier invitado con otro rol quedaba registrado
+  pero oculto de la vista. Ahora la lista muestra a todo el personal del tenant y solo oculta
+  las cuentas de plataforma (`super-admin`/`soporte-pagnol`).
 - **Build de producción roto por `extract-rental-quote-flow.ts`**. El flow es `'use server'`
   pero exportaba esquemas Zod (`ExtractRentalQuoteInputSchema`/`OutputSchema`): un archivo
   `'use server'` solo puede exportar funciones async, así que `next build` fallaba al recolectar

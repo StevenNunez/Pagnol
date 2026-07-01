@@ -25,7 +25,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { EnrollmentWizard } from '@/components/enrollment-wizard';
 
-const pagnolRolesAssignable = ["administrador", "panolero", "supervisor", "operador"] as const;
+// Cuentas de plataforma que no son "personal de faena": se ocultan de Gestión de Personal
+// para todos salvo super-admin (que ve todo).
+const platformRoles = new Set<UserRole>(["super-admin", "soporte-pagnol"]);
 
 
 
@@ -139,10 +141,11 @@ export default function PersonalPage() {
   const filteredUsers = useMemo(() => {
     let userList: User[] = users || [];
 
-    // Si el usuario actual no es super-admin, filtramos para que solo vea roles de Pagnol.
+    // Si el usuario actual no es super-admin, ocultamos solo las cuentas de plataforma
+    // (super-admin/soporte-pagnol). Todo el resto del personal del tenant se muestra,
+    // incluidos los invitados con cualquier rol del plan.
     if (currentUser?.role !== 'super-admin') {
-      const pagnolRolesSet = new Set(pagnolRolesAssignable);
-      userList = userList.filter(emp => pagnolRolesSet.has(emp.role as any));
+      userList = userList.filter(emp => !platformRoles.has(emp.role));
     }
 
     // Aplicamos el filtro de búsqueda de texto

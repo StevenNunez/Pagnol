@@ -252,6 +252,40 @@ export async function POST(req: Request) {
             if (error) throw error;
         }
 
+        // 5b. Ledger de existencias (material_stocks): la carga masiva entra al
+        // pool central (contract_id NULL); se reparte a contratos con transferencias.
+        const ledgerToInsert = materialsToInsert
+            .filter((m) => (m.stock || 0) > 0)
+            .map((m) => ({ tenant_id: tenantId, material_id: m.id, contract_id: null, warehouse_id: null, qty: m.stock }));
+        for (let i = 0; i < ledgerToInsert.length; i += BATCH) {
+            const { error } = await supabaseAdmin
+                .from('material_stocks')
+                .insert(ledgerToInsert.slice(i, i + BATCH));
+            if (error) throw error;
+        }
+
+        // Para los actualizados (stock sobrescrito) se recalcula la fila del pool:
+        // pool = max(0, stockNuevo - lo ya asignado a contratos).
+        if (materialsToUpdate.length) {
+            const updatedIds = materialsToUpdate.map((u) => u.id);
+            const { data: ledgerRows } = await supabaseAdmin
+                .from('material_stocks')
+                .select('id, material_id, contract_id, qty')
+                .eq('tenant_id', tenantId)
+                .in('material_id', updatedIds);
+            for (const { id, patch } of materialsToUpdate) {
+                const rows = (ledgerRows || []).filter((r) => r.material_id === id);
+                const assigned = rows.filter((r) => r.contract_id !== null).reduce((acc, r) => acc + Number(r.qty), 0);
+                const poolRow = rows.find((r) => r.contract_id === null);
+                const poolQty = Math.max(0, (patch.stock || 0) - assigned);
+                if (poolRow) {
+                    await supabaseAdmin.from('material_stocks').update({ qty: poolQty }).eq('id', poolRow.id);
+                } else if (poolQty > 0) {
+                    await supabaseAdmin.from('material_stocks').insert({ tenant_id: tenantId, material_id: id, contract_id: null, warehouse_id: null, qty: poolQty });
+                }
+            }
+        }
+
         // 6. Update Counters
         const countersToUpsert = [
             { id: materialCounterId, tenant_id: tenantId, entity_type: 'ACT', last_sequence: materialCounter, last_updated: new Date().toISOString() },

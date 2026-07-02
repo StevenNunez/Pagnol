@@ -10,6 +10,7 @@ import {
   type RentalBillingCycle,
 } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
+import { addToLedger } from './stockLedger';
 
 import type { MutationContext as Context } from './context';
 
@@ -291,6 +292,18 @@ export async function materializeRentalContractAssets(
     .in('rental_asset_id', assets.map((a) => a.id));
   const done = new Set((existing || []).map((m) => m.rental_asset_id));
 
+  // Contrato (obra) heredado de la solicitud de arriendo que originó este
+  // contrato de arriendo. Sin solicitud/obra ⇒ pool central.
+  const { data: sourceReq } = await supabase
+    .from('rental_requests')
+    .select('contract_id, contract_name')
+    .eq('rental_contract_id', contractId)
+    .eq('tenant_id', tenantId)
+    .limit(1)
+    .maybeSingle();
+  const obraContractId: string | null = sourceReq?.contract_id || null;
+  const obraContractName: string | null = sourceReq?.contract_name || null;
+
   let created = 0;
   for (const a of assets) {
     if (done.has(a.id)) continue;
@@ -329,6 +342,7 @@ export async function materializeRentalContractAssets(
 
     // Movimiento inicial = ingreso del equipo arrendado al inventario (trazabilidad).
     if (qty > 0) {
+      await addToLedger({ tenantId, materialId: mat.id, contractId: obraContractId, qty });
       await supabase.from('stock_movements').insert({
         material_id: mat.id,
         material_name: a.name,
@@ -338,6 +352,8 @@ export async function materializeRentalContractAssets(
         justification: 'Ingreso por arriendo (OC confirmada)',
         user_id: user.id,
         user_name: user.name,
+        contract_id: obraContractId,
+        contract_name: obraContractName,
         tenant_id: tenantId,
       });
     }

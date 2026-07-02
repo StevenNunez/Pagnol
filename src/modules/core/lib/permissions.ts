@@ -51,6 +51,8 @@ export const ALL_PERMISSIONS = {
     'materials:archive': { label: 'Archivar Materiales', group: 'Materiales y Stock' },
     'stock:add_manual': { label: 'Ingresar Stock Manualmente', group: 'Materiales y Stock' },
     'stock:receive_order': { label: 'Recibir Material de Compra', group: 'Materiales y Stock' },
+    'stock:transfer': { label: 'Transferir Stock entre Contratos', group: 'Materiales y Stock' },
+    'warehouses:manage': { label: 'Gestionar Pañoles', group: 'Materiales y Stock' },
 
     'material_requests:create': { label: 'Crear Solicitudes de Material', group: 'Solicitudes Internas' },
     'material_requests:approve_class_a': { label: 'Aprobar Solicitudes Clase A (Críticos)', group: 'Solicitudes Internas' },
@@ -179,7 +181,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             // Activos y Stock
             'materials:create', 'materials:view_all', 'materials:edit', 'materials:delete', 'materials:archive',
             'tools:create', 'tools:view_all', 'tools:edit', 'tools:delete', 'tools:checkout', 'tools:return',
-            'stock:add_manual', 'stock:receive_order',
+            'stock:add_manual', 'stock:receive_order', 'stock:transfer', 'warehouses:manage',
             // Solicitudes
             'material_requests:create', 'material_requests:view_all', 'material_requests:approve', 'material_requests:select_any_contract',
             'material_requests:approve_class_a', 'material_requests:approve_class_b', 'material_requests:approve_class_c',
@@ -311,7 +313,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'module_pagnol:view', 'module_warehouse:view', 'module_bodega:view',
             'materials:view_all', 'materials:edit', 'materials:create',
             'tools:view_all', 'tools:checkout', 'tools:return',
-            'stock:receive_order', 'stock:add_manual',
+            'stock:receive_order', 'stock:add_manual', 'stock:transfer',
             'material_requests:view_all', 'material_requests:approve',
             'material_requests:approve_class_b', 'material_requests:approve_class_c',
             'return_requests:view_all', 'return_requests:approve',

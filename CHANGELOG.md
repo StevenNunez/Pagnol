@@ -18,6 +18,67 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado
+- **Activos por Contrato y Pañol — Fase 2 (CRUD de pañoles + scope del panolero)**:
+  - **Página de administración de pañoles** (`/dashboard/bodega/warehouses`, entrada
+    "Pañoles" en el sidebar de Bodega): tabla con encargado, contratos que atiende,
+    existencias asignadas (suma del ledger) y estado; diálogo crear/editar con nombre,
+    ubicación, encargado (panolero), contratos N:M (checkboxes), estado y notas; eliminación
+    con confirmación (bloqueada por FK si el pañol tiene existencias). Acciones gated por
+    `warehouses:manage`.
+  - **Scope del panolero por pañol** en el flujo biométrico (`pagnol/movimientos`): si el
+    usuario logueado es encargado de pañol(es) activos, la transacción queda imputada a su
+    pañol (1 → autocarga; varios → chips para elegir "pañol que entrega/recibe").
+    `addAndApproveMaterialRequest` y `addAndCompleteReturnRequest` aceptan `warehouseId`:
+    se estampa en el kardex (`stock_movements.warehouse_id`), las devoluciones reingresan
+    al ledger en ese pañol, y `consumeFromLedger` consume primero las existencias del pañol
+    que entrega dentro de cada nivel de la cascada (contrato → pool → otros).
+  - Verificado: `tsc --noEmit` limpio, `next build` OK, suite vitest offline 12/12.
+- **Activos por Contrato y Pañol — Fase 1 (aplicación completa)**. Todo el ciclo de stock
+  respeta ahora el desglose por contrato (`material_stocks`):
+  - **Motor de ledger** (`src/modules/data/mutations/stockLedger.ts`): `addToLedger` (upsert),
+    `consumeFromLedger` (cascada contrato → pool central → otros contratos, devolviendo el
+    origen real para anotar el kardex) y `transferInLedger` (transferencia estricta, sin cascada).
+  - **Integración en TODOS los flujos que tocan stock**: entrega de pañol (inmediata y por
+    aprobación), devoluciones (pendiente/inmediata), recepción de OC (`goods_receipts`, calce
+    ítem→solicitud por id o por nombre), recepción directa de solicitud de compra, ingreso
+    manual (pool central), ajuste de stock desde edición (delta sobre pool con cascada), alta
+    de material con stock inicial, materialización de equipos arrendados (heredan el contrato
+    de la solicitud de arriendo) y carga masiva (`/api/bulk-upload`, pool central + recálculo
+    del pool en updates).
+  - **Transferencias entre contratos** (`warehouseMutations.transferMaterialStock`): permiso
+    nuevo `stock:transfer` (administrador y pañolero), doble asiento en kardex tipo
+    `contract-transfer`, el total no cambia.
+  - **CRUD de pañoles** (mutaciones `addWarehouse`/`updateWarehouse`/`deleteWarehouse` +
+    permiso `warehouses:manage`; la página de administración queda para Fase 2).
+  - **UI**: componente compartido `<ContractStockBreakdown>` (desglose por contrato + diálogo
+    de transferencia + alerta de drift) integrado en la fila expandida de Activos; filtro
+    "Contrato" en Activos (incluye "Pool central"); chip de contrato en la tabla de
+    Movimientos; disponibilidad "N contrato · M pool" en el selector de materiales de la
+    solicitud del supervisor.
+  - **Scoping por trabajador (contract_workers)**: el flujo biométrico del pañol imputa el
+    despacho/devolución al contrato del trabajador identificado (1 contrato → autocarga;
+    varios → el pañolero elige; ninguno → pool central con aviso). Las solicitudes de
+    material ya venían scoped (`material_requests:select_any_contract`).
+  - Kardex (`stock_movements`) registra `contract_id`/`contract_name`/`warehouse_id` y la
+    justificación anota el fallback de origen ("Incluye N de pool central").
+  - Verificado: `tsc --noEmit` limpio, `next build` OK, suite vitest offline 12/12.
+- **Activos por Contrato y Pañol — Fase 0 (migración)** (`supabase/migrations/20260701010000_warehouses_material_stocks.sql`,
+  ✅ **aplicada en Supabase el 2026-07-01**). Base de datos para diferenciar los activos según
+  el contrato/proyecto al que pertenecen (caso Valar: contrato Torres vs. Miscelánios) y el
+  pañol donde están:
+  - `warehouses` (pañoles) + `warehouse_contracts` (N:M — un pañol puede atender varios
+    contratos o un contrato tener su propio pañol).
+  - `material_stocks`: desglose de existencias material × contrato × pañol. La ficha del
+    material sigue siendo única y `materials.stock` sigue siendo el total; `contract_id NULL`
+    = pool central de la empresa. Índice único `NULLS NOT DISTINCT` para upserts deterministas.
+  - Kardex (`stock_movements`) y devoluciones (`return_requests`) ganan `contract_id`
+    (+ `contract_name`, + `warehouse_id` en kardex) para registrar de qué contrato salió/reingresó.
+  - RLS por tenant, GRANTs, Realtime y **backfill**: todo el stock existente queda como pool
+    central (sin contrato) y se repartirá con la acción de transferencia (Fase 1).
+  - CLAUDE.md: actualizado (tests de vitest, migraciones manuales, módulo offline, gotchas
+    `use server`/RLS, mapa de módulos completo).
+
 ### Cambiado
 - **Panel unificado de usuario (Capa 3)**. Se creó `<UserPanel>` (`src/components/user-panel.tsx`):
   un único diálogo con pestañas — **Identidad · Contrato/RRHH · Biometría · Seguridad ·

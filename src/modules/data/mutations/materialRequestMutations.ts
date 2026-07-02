@@ -5,6 +5,7 @@ import { MaterialRequest, Material, ReturnRequest, UserRole } from '@/modules/co
 import { ROLES, Permission, userCan } from '@/modules/core/lib/permissions';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
+import { addToLedger, consumeFromLedger, describeConsumeSources } from './stockLedger';
 
 import type { MutationContext as Context } from './context';
 
@@ -69,6 +70,8 @@ export async function addAndApproveMaterialRequest(
     supervisorId: string;
     contractUrl?: string | null;
     internalCode?: string;
+    /** Pañol desde el que se entrega (scope del panolero). */
+    warehouseId?: string | null;
   },
   context: Context
 ) {
@@ -129,8 +132,14 @@ export async function addAndApproveMaterialRequest(
   });
   if (reqErr) throw reqErr;
 
+  const contractId = requestData.contractId ?? null;
+  const warehouseId = requestData.warehouseId ?? null;
   for (const u of updates) {
     await supabase.from('materials').update({ stock: u.newStock, in_use: u.newInUse, status: u.newStatus }).eq('id', u.mat.id);
+    // Descuenta del desglose del contrato (cascada a pool central si no alcanza),
+    // prefiriendo las existencias del pañol que entrega.
+    const sources = await consumeFromLedger({ tenantId, materialId: u.mat.id, contractId, warehouseId, qty: u.item.quantity });
+    const fallbackNote = await describeConsumeSources(sources, contractId);
     await supabase.from('stock_movements').insert({
       material_id: u.mat.id,
       material_name: u.mat.name,
@@ -138,10 +147,13 @@ export async function addAndApproveMaterialRequest(
       new_stock: u.newStock,
       type: 'request-delivery',
       date: now,
-      justification: `Entrega inmediata en Pañol (TX: ${requestId})`,
+      justification: `Entrega inmediata en Pañol (TX: ${requestId})${fallbackNote ? ` — ${fallbackNote}` : ''}`,
       user_id: requestData.supervisorId,
       user_name: supervisorName,
       related_request_id: requestId,
+      contract_id: contractId,
+      contract_name: requestData.contractName || null,
+      warehouse_id: warehouseId,
       tenant_id: tenantId,
     });
   }
@@ -221,8 +233,12 @@ export async function updateMaterialRequestStatus(
     }
 
     // Apply updates
+    const contractId = request.contract_id ?? null;
     for (const u of updates) {
       await supabase.from('materials').update({ stock: u.newStock, in_use: u.newInUse, status: u.newStatus }).eq('id', u.mat.id);
+      // Descuenta del desglose del contrato de la solicitud (cascada a pool central).
+      const sources = await consumeFromLedger({ tenantId, materialId: u.mat.id, contractId, qty: u.item.quantity });
+      const fallbackNote = await describeConsumeSources(sources, contractId);
       await supabase.from('stock_movements').insert({
         material_id: u.mat.id,
         material_name: u.mat.name,
@@ -230,10 +246,12 @@ export async function updateMaterialRequestStatus(
         new_stock: u.newStock,
         type: 'request-delivery',
         date: now,
-        justification: `Entrega para solicitud ${request.internal_code}`,
+        justification: `Entrega para solicitud ${request.internal_code}${fallbackNote ? ` — ${fallbackNote}` : ''}`,
         user_id: request.supervisor_id,
         user_name: request.supervisor_name,
         related_request_id: requestId,
+        contract_id: contractId,
+        contract_name: request.contract_name || null,
         tenant_id: tenantId,
       });
     }
@@ -280,6 +298,7 @@ export async function deliverApprovedMaterialRequest(
 export async function addReturnRequest(
   items: { materialId: string; quantity: number; materialName: string; unit: string }[],
   notes: string,
+  contract: { contractId?: string | null; contractName?: string | null } | undefined,
   { user, tenantId }: Context
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
@@ -297,6 +316,8 @@ export async function addReturnRequest(
       unit: item.unit,
       status: 'pending',
       notes: notes || '',
+      contract_id: contract?.contractId || null,
+      contract_name: contract?.contractName || null,
       tenant_id: tenantId,
       created_at: new Date().toISOString()
     });
@@ -318,6 +339,10 @@ export async function addAndCompleteReturnRequest(
     workerId: string;
     workerName: string;
     evidenceUrl?: string;
+    contractId?: string | null;
+    contractName?: string | null;
+    /** Pañol que recibe la devolución (scope del panolero). */
+    warehouseId?: string | null;
   },
   { user: handler, tenantId }: Context
 ) {
@@ -344,6 +369,8 @@ export async function addAndCompleteReturnRequest(
       handler_name: handler.name,
       return_condition: item.condition,
       evidence_url: item.evidenceUrl || data.evidenceUrl || null,
+      contract_id: data.contractId || null,
+      contract_name: data.contractName || null,
       created_at: now,
       items: [{ materialId: item.materialId, quantity: item.quantity, condition: item.condition }],
     });
@@ -362,6 +389,15 @@ export async function addAndCompleteReturnRequest(
       }
       await supabase.from('materials').update({ stock: newStock, in_use: newInUse, status: newStatus }).eq('id', mat.id);
 
+      // Reingresa al desglose del contrato indicado (o pool central), en el pañol que recibe.
+      await addToLedger({
+        tenantId,
+        materialId: item.materialId,
+        contractId: data.contractId ?? null,
+        warehouseId: data.warehouseId ?? null,
+        qty: item.quantity,
+      });
+
       await supabase.from('stock_movements').insert({
         material_id: item.materialId,
         material_name: item.materialName,
@@ -373,6 +409,9 @@ export async function addAndCompleteReturnRequest(
         user_id: data.workerId,
         user_name: data.workerName,
         related_request_id: requestId,
+        contract_id: data.contractId || null,
+        contract_name: data.contractName || null,
+        warehouse_id: data.warehouseId ?? null,
         tenant_id: tenantId,
       });
     }
@@ -405,6 +444,9 @@ export async function updateReturnRequestStatus(
       }
       await supabase.from('materials').update({ stock: newStock, in_use: newInUse, status: newStatus }).eq('id', mat.id);
 
+      // Reingresa al desglose del contrato registrado en la devolución (o pool central).
+      await addToLedger({ tenantId, materialId: returnReq.material_id, contractId: returnReq.contract_id ?? null, qty: returnReq.quantity });
+
       await supabase.from('stock_movements').insert({
         material_id: returnReq.material_id,
         material_name: returnReq.material_name,
@@ -416,6 +458,8 @@ export async function updateReturnRequestStatus(
         user_id: returnReq.supervisor_id,
         user_name: returnReq.supervisor_name,
         related_request_id: requestId,
+        contract_id: returnReq.contract_id || null,
+        contract_name: returnReq.contract_name || null,
         tenant_id: tenantId,
       });
     }

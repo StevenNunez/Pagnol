@@ -3,6 +3,7 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { nanoid } from 'nanoid';
 import type { ReceiptItem, ReceiptPhoto } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
+import { addToLedger } from './stockLedger';
 
 const RECEPTION_BUCKET = 'reception-photos';
 
@@ -51,6 +52,7 @@ async function getAlreadyReceived(purchaseOrderId: string, tenantId: string): Pr
 async function ingestStock(
     item: ReceiptItem,
     poCode: string,
+    contract: { contractId: string | null; contractName: string | null },
     { user, tenantId }: Context,
 ): Promise<string> {
     let materialId = item.materialId;
@@ -83,6 +85,14 @@ async function ingestStock(
         if (updErr) throw updErr;
     }
 
+    // El stock recibido entra al desglose del contrato de la solicitud de compra.
+    await addToLedger({
+        tenantId: tenantId!,
+        materialId: materialId!,
+        contractId: contract.contractId,
+        qty: item.receivedQuantity,
+    });
+
     const { error: movErr } = await supabase.from('stock_movements').insert({
         material_id: materialId,
         material_name: existingMat.name || item.name,
@@ -92,6 +102,8 @@ async function ingestStock(
         justification: `Recepción de OC ${poCode}`,
         user_id: user!.id,
         user_name: user!.name,
+        contract_id: contract.contractId,
+        contract_name: contract.contractName,
         tenant_id: tenantId,
     });
     if (movErr) throw movErr;
@@ -128,10 +140,38 @@ export async function receiveGoodsReceipt(
 
     const poCode = po.internal_code || po.official_oc_id || po.id;
 
+    // Contrato de origen por ítem. Dos formas de calzar ítem de OC → solicitud
+    // de compra (que lleva contract_id): por id (OC de createPurchaseOrder, donde
+    // item.id = requestId) y, si no, por nombre de material (OC de
+    // generatePurchaseOrder, que agrupa por nombre sin id). Sin match ⇒ pool central.
+    type ContractRef = { contractId: string | null; contractName: string | null };
+    const contractByRequest = new Map<string, ContractRef>();
+    const contractByName = new Map<string, ContractRef>();
+    if ((po.request_ids || []).length) {
+        const { data: reqs } = await supabase
+            .from('purchase_requests')
+            .select('id, material_name, contract_id, contract_name')
+            .in('id', po.request_ids);
+        for (const r of reqs || []) {
+            const ref: ContractRef = { contractId: r.contract_id || null, contractName: r.contract_name || null };
+            contractByRequest.set(r.id, ref);
+            const nameKey = (r.material_name || '').trim().toLowerCase();
+            if (!nameKey) continue;
+            const prev = contractByName.get(nameKey);
+            // Nombre repetido con contratos distintos ⇒ ambiguo, va al pool central.
+            if (prev && prev.contractId !== ref.contractId) contractByName.set(nameKey, { contractId: null, contractName: null });
+            else if (!prev) contractByName.set(nameKey, ref);
+        }
+    }
+
     // Ingreso de stock + resolución de materialId definitivo por ítem.
     const ingestedItems: ReceiptItem[] = [];
     for (const it of toReceive) {
-        const materialId = await ingestStock(it, poCode, { user, tenantId });
+        const contract =
+            contractByRequest.get(it.itemId) ||
+            contractByName.get((it.name || '').trim().toLowerCase()) ||
+            { contractId: null, contractName: null };
+        const materialId = await ingestStock(it, poCode, contract, { user, tenantId });
         ingestedItems.push({ ...it, materialId });
     }
 

@@ -48,12 +48,11 @@ export default function SupervisorReturnRequestPage() {
 
   const materialMap = useMemo(() => new Map((materials || []).map((m: Material) => [m.id, m])), [materials]);
 
-  const aggregatedTakenMaterials = useMemo(() => {
-    if (!authUser) return [];
-    
-    const takenMap = new Map<string, { materialName: string; unit: string; totalQuantity: number }>();
+  const { aggregatedTakenMaterials, returnContract } = useMemo(() => {
+    if (!authUser) return { aggregatedTakenMaterials: [] as ReturnableItem[], returnContract: undefined };
 
-    ((requests || []) as CompatibleMaterialRequest[])
+    const takenMap = new Map<string, { materialName: string; unit: string; totalQuantity: number }>();
+    const sourceRequests = ((requests || []) as CompatibleMaterialRequest[])
       .filter(req => {
         if (req.supervisorId !== authUser.id || req.status !== 'approved') return false;
         if (selectedDate) {
@@ -62,8 +61,9 @@ export default function SupervisorReturnRequestPage() {
           return isSameDay(relevantDate, selectedDate);
         }
         return true;
-      })
-      .forEach(req => {
+      });
+
+    sourceRequests.forEach(req => {
         (req.items || []).forEach(item => {
           const material = materialMap.get(item.materialId) as Material | undefined;
           if (material) {
@@ -80,13 +80,22 @@ export default function SupervisorReturnRequestPage() {
         });
       });
 
-    return Array.from(takenMap.entries()).map(([materialId, data]) => ({
+    // Contrato de la devolución: si todas las solicitudes de origen comparten
+    // el mismo contrato, el material reingresa a ese contrato; si hay mezcla,
+    // queda sin contrato (pool central) y se corrige por transferencia.
+    const contractIds = new Set(sourceRequests.map(r => r.contractId ?? null));
+    const returnContract = contractIds.size === 1
+      ? { contractId: sourceRequests[0]?.contractId ?? null, contractName: sourceRequests[0]?.contractName ?? null }
+      : undefined;
+
+    const aggregatedTakenMaterials = Array.from(takenMap.entries()).map(([materialId, data]) => ({
       materialId,
       materialName: data.materialName,
       unit: data.unit,
       maxQuantity: data.totalQuantity,
       returnQuantity: "",
     }));
+    return { aggregatedTakenMaterials, returnContract };
   }, [requests, materialMap, authUser, selectedDate]);
 
   React.useEffect(() => {
@@ -132,7 +141,7 @@ export default function SupervisorReturnRequestPage() {
 
     setIsSubmitting(true);
     try {
-      await addReturnRequest(itemsToReturn, justification);
+      await addReturnRequest(itemsToReturn, justification, returnContract);
       toast({ title: 'Éxito', description: 'Tu solicitud de devolución ha sido enviada para confirmación.'});
       setReturnableItems(aggregatedTakenMaterials); // Reset quantities
       setJustification('');

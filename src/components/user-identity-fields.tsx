@@ -66,7 +66,7 @@ export function UserIdentityFields<T extends FieldValues & UserIdentityValues>({
         <div className={cn('grid gap-5', columns === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1')}>
             <div className="space-y-1.5">
                 <Label className={labelCls}>Nombre Completo</Label>
-                <Input placeholder="Ej: Pedro Picapiedra" {...f('name')} readOnly={readOnlyIdentity} className={inputCls} />
+                <Input placeholder="Ej: Juan López" {...f('name')} readOnly={readOnlyIdentity} className={inputCls} />
                 {e.name && <p className="text-xs text-destructive">{e.name.message as string}</p>}
             </div>
 

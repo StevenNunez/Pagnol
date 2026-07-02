@@ -70,7 +70,7 @@ type CompatibleMaterialRequest = MaterialRequest & {
 };
 
 export default function SupervisorRequestPage() {
-  const { materials, addMaterialRequest, requests, contracts, contractWorkers, can } = useAppState();
+  const { materials, addMaterialRequest, requests, contracts, contractWorkers, materialStocks, can } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
@@ -132,6 +132,20 @@ export default function SupervisorRequestPage() {
       setContractId(myAssignedContracts[0].id);
     }
   }, [isFieldWorkerSingleContract, myAssignedContracts, contractId]);
+
+  // Existencias del contrato seleccionado (y del pool central) por material,
+  // para mostrar de dónde saldría el stock al solicitar.
+  const contractAvailability = useMemo(() => {
+    const acc = new Map<string, { contract: number; pool: number }>();
+    (materialStocks || []).forEach((s) => {
+      if (s.qty <= 0) return;
+      const entry = acc.get(s.materialId) || { contract: 0, pool: 0 };
+      if (contractId && s.contractId === contractId) entry.contract += s.qty;
+      else if (s.contractId === null) entry.pool += s.qty;
+      acc.set(s.materialId, entry);
+    });
+    return acc;
+  }, [materialStocks, contractId]);
 
   // Group materials by category for better UX in the Command component
   const groupedMaterials = useMemo(() => {
@@ -353,6 +367,16 @@ export default function SupervisorRequestPage() {
                                             <div className="flex justify-between w-full items-center">
                                                 <span className={cn(m.stock <= 0 && "text-muted-foreground line-through")}>{m.name}</span>
                                                 <div className="flex items-center gap-2">
+                                                    {contractId && (() => {
+                                                        const avail = contractAvailability.get(m.id);
+                                                        const inContract = avail?.contract || 0;
+                                                        const inPool = avail?.pool || 0;
+                                                        return (
+                                                            <Badge variant="outline" className={cn("text-[9px] font-bold", inContract > 0 ? "text-primary border-primary/30" : "text-muted-foreground")}>
+                                                                {inContract} contrato{inPool > 0 ? ` · ${inPool} pool` : ''}
+                                                            </Badge>
+                                                        );
+                                                    })()}
                                                     <span className={cn("text-xs", m.stock < 10 ? "text-red-500 font-bold" : "text-muted-foreground")}>
                                                         {m.stock} {m.unit}
                                                     </span>

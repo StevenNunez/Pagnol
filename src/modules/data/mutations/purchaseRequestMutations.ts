@@ -5,6 +5,7 @@ import { PurchaseRequest, Material, PurchaseLot, PurchaseOrder } from '@/modules
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { userCan } from '@/modules/core/lib/permissions';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
+import { addToLedger } from './stockLedger';
 
 import type { MutationContext as Context } from './context';
 
@@ -181,6 +182,14 @@ export async function receivePurchaseRequest(
     }).eq('id', requestId);
   }
 
+  // El stock recibido entra al desglose del contrato de la solicitud de compra.
+  await addToLedger({
+    tenantId,
+    materialId: materialId!,
+    contractId: request.contract_id ?? null,
+    qty: receivedQuantity,
+  });
+
   // Stock Movement
   const movId = await nextInternalCode(tenantId, 'MOV');
   await supabase.from('stock_movements').insert({
@@ -195,6 +204,8 @@ export async function receivePurchaseRequest(
     user_id: user.id,
     user_name: user.name,
     related_request_id: requestId,
+    contract_id: request.contract_id || null,
+    contract_name: request.contract_name || null,
     tenant_id: tenantId,
   });
 }

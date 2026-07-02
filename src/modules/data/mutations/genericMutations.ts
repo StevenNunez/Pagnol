@@ -8,6 +8,7 @@ import type { UserRole, Tenant, WorkItem, ProgressLog, PaymentState, SupplierDoc
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { mappers } from '../mappers';
 import type { MutationContext as Context } from './context';
+import { addToLedger, consumeFromLedger } from './stockLedger';
 
 // --- Tenant ---
 export async function addTenant({ tenantName, tenantId, adminName, adminEmail }: any, { user }: Context) {
@@ -255,6 +256,10 @@ export async function addMaterial(data: any, { user, tenantId }: Context) {
 
     // Create Initial Movement
     if (data.stock > 0) {
+        // El stock inicial entra al contrato indicado o al pool central.
+        const contractId = materialData.contractId ?? null;
+        await addToLedger({ tenantId, materialId: newMaterial.id, contractId, qty: data.stock });
+
         const { error: movementError } = await supabase
             .from('stock_movements')
             .insert({
@@ -266,6 +271,8 @@ export async function addMaterial(data: any, { user, tenantId }: Context) {
                 justification: justification || 'Stock inicial',
                 user_id: user.id,
                 user_name: user.name,
+                contract_id: contractId,
+                contract_name: materialData.contractName ?? null,
                 tenant_id: tenantId,
             });
 
@@ -292,6 +299,9 @@ export async function addManualStockEntry(materialId: string, quantity: number, 
         .eq('id', materialId);
 
     if (updateError) throw updateError;
+
+    // Entrada manual: al pool central (se reasigna a contrato con transferencia).
+    await addToLedger({ tenantId, materialId, contractId: null, qty: quantity });
 
     const { error: movementError } = await supabase
         .from('stock_movements')
@@ -376,6 +386,14 @@ export async function updateMaterial(materialId: string, data: any, { user, tena
     if (updateError) throw updateError;
 
     if (hasStockChange) {
+        // Ajuste de total: el delta se refleja en el pool central (positivo suma;
+        // negativo descuenta en cascada pool → contratos).
+        if (stockDifference > 0) {
+            await addToLedger({ tenantId, materialId, contractId: null, qty: stockDifference });
+        } else if (stockDifference < 0) {
+            await consumeFromLedger({ tenantId, materialId, contractId: null, qty: -stockDifference });
+        }
+
         const { error: movementError } = await supabase
             .from('stock_movements')
             .insert({

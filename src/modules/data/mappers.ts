@@ -4,6 +4,7 @@ import {
     AssignedSafetyTask, ChecklistTemplate, SafetyInspection, BehaviorObservation,
     WorkItem, ProgressLog, PaymentState, DailyTalk, MaintenanceOrder, MaintenanceLog, EADocument,
     ProtocolTemplate, Protocol, ShiftSchedule, Contract, ContractWorker,
+    Warehouse, WarehouseContract, MaterialStock,
     RentalParty, RentalContract, RentalAsset, RentalPayment, WorkReport,
     RentalRequest, RentalQuoteRequest,
     LeaveRequest, HRDocument, WorkOrder, WorkWeeklyReport
@@ -97,7 +98,11 @@ export const mappers = {
         date: item.date ? new Date(item.date) : new Date(),
         justification: item.justification || item.reason || '',
         userId: item.user_id || item.worker_id || '',
-        userName: item.user_name || ''
+        userName: item.user_name || '',
+        relatedRequestId: item.related_request_id || undefined,
+        contractId: item.contract_id || null,
+        contractName: item.contract_name || null,
+        warehouseId: item.warehouse_id || null,
     }),
     attendance_logs: (item: any): AttendanceLog => ({
         id: item.id,
@@ -153,6 +158,32 @@ export const mappers = {
         startDate: item.start_date || null,
         endDate: item.end_date || null,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+    }),
+    warehouses: (item: any): Warehouse => ({
+        id: item.id,
+        tenantId: item.tenant_id,
+        name: item.name,
+        location: item.location || null,
+        managerId: item.manager_id || null,
+        managerName: item.manager_name || null,
+        status: item.status || 'active',
+        notes: item.notes || null,
+        createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+    }),
+    warehouse_contracts: (item: any): WarehouseContract => ({
+        id: item.id,
+        tenantId: item.tenant_id,
+        warehouseId: item.warehouse_id,
+        contractId: item.contract_id,
+        createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+    }),
+    material_stocks: (item: any): MaterialStock => ({
+        id: item.id,
+        tenantId: item.tenant_id,
+        materialId: item.material_id,
+        contractId: item.contract_id || null,
+        warehouseId: item.warehouse_id || null,
+        qty: Number(item.qty) || 0,
     }),
     rental_parties: (item: any): RentalParty => ({
         id: item.id,
@@ -501,6 +532,8 @@ export const mappers = {
         tenantId: item.tenant_id,
         returnCondition: item.return_condition,
         evidenceUrl: item.evidence_url,
+        contractId: item.contract_id || null,
+        contractName: item.contract_name || null,
     }),
     purchase_lots: (item: any): PurchaseLot => ({
         id: item.id,

@@ -43,6 +43,7 @@ import {
   FileUp
 } from 'lucide-react';
 import { QRWithPagnolLogo } from '@/components/qr-with-pagnol-logo';
+import { ContractStockBreakdown } from '@/components/contract-stock-breakdown';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { generateStrategicReport } from '@/actions/ask-ferro';
 import ReactMarkdown from 'react-markdown';
@@ -99,7 +100,7 @@ const assetSchema = z.object({
 type FormData = z.infer<typeof assetSchema>;
 
 export default function ActivosPage() {
-  const { materials, addMaterial, deleteMaterial, updateMaterial, materialCategories, units, can } = useAppState();
+  const { materials, addMaterial, deleteMaterial, updateMaterial, materialCategories, units, can, materialStocks, contracts } = useAppState();
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
 
@@ -108,6 +109,7 @@ export default function ActivosPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [selectedUseType, setSelectedUseType] = useState<string>('ALL');
+  const [selectedContract, setSelectedContract] = useState<string>('ALL'); // ALL | POOL | contractId
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -226,6 +228,25 @@ export default function ActivosPage() {
     return maintenanceDate < today;
   };
 
+  // Contratos activos para el filtro "Contrato" (dimensión de existencias).
+  const activeContractsForFilter = useMemo(
+    () => (contracts || []).filter((c: any) => c.status === 'active').sort((a: any, b: any) => a.name.localeCompare(b.name)),
+    [contracts]
+  );
+
+  // Materiales con existencias (>0) en el contrato seleccionado (o pool central).
+  const materialIdsInContract = useMemo(() => {
+    if (selectedContract === 'ALL') return null;
+    const ids = new Set<string>();
+    (materialStocks || []).forEach((s: any) => {
+      if (s.qty <= 0) return;
+      if (selectedContract === 'POOL' ? s.contractId === null : s.contractId === selectedContract) {
+        ids.add(s.materialId);
+      }
+    });
+    return ids;
+  }, [materialStocks, selectedContract]);
+
   const filteredAssets = useMemo(() => {
     return (materials || []).filter((a: Material) => {
       const status = getStatusLabel(a);
@@ -234,15 +255,16 @@ export default function ActivosPage() {
       const matchesClass = selectedClass === 'ALL' || a.class === selectedClass;
       const matchesUse = selectedUseType === 'ALL' || a.usageType === selectedUseType;
       const matchesOverdue = !showOverdueOnly || isMaintenanceOverdue(a.nextMaintenanceDate);
-      return matchesSearch && matchesStatus && matchesClass && matchesUse && matchesOverdue;
+      const matchesContract = materialIdsInContract === null || materialIdsInContract.has(a.id);
+      return matchesSearch && matchesStatus && matchesClass && matchesUse && matchesOverdue && matchesContract;
     });
-  }, [materials, filter, selectedStatus, selectedClass, selectedUseType, showOverdueOnly, getStatusLabel, isMaintenanceOverdue]);
+  }, [materials, filter, selectedStatus, selectedClass, selectedUseType, showOverdueOnly, getStatusLabel, isMaintenanceOverdue, materialIdsInContract]);
 
   // Reset pagination whenever filters change
   useEffect(() => {
     setVisibleCount(24);
     setListPage(0);
-  }, [filter, selectedStatus, selectedClass, selectedUseType, showOverdueOnly]);
+  }, [filter, selectedStatus, selectedClass, selectedUseType, showOverdueOnly, selectedContract]);
 
   const openQrModal = (asset: Asset) => {
     setQrAsset(asset);
@@ -612,8 +634,20 @@ export default function ActivosPage() {
             </Select>
           </div>
 
+          <div className="flex flex-col space-y-2">
+            <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1">Contrato</label>
+            <Select value={selectedContract} onValueChange={setSelectedContract}>
+              <SelectTrigger className="bg-muted/50 border rounded-xl px-4 py-2 h-10 text-[10px] font-bold uppercase tracking-widest transition-all w-full sm:w-48"><SelectValue /></SelectTrigger>
+              <SelectContent className="rounded-xl shadow-2xl border-none">
+                <SelectItem value="ALL">TODOS LOS CONTRATOS</SelectItem>
+                <SelectItem value="POOL">POOL CENTRAL (S/CONTRATO)</SelectItem>
+                {activeContractsForFilter.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
           <Button
-            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setFilter(''); }}
+            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setSelectedContract('ALL'); setFilter(''); }}
             variant="ghost"
             className="h-10 px-4 text-[9px] font-black text-muted-foreground rounded-xl hover:bg-muted transition-all uppercase tracking-widest flex items-center gap-2"
           >
@@ -902,6 +936,9 @@ export default function ActivosPage() {
                                     </div>
                                   </div>
                                 </div>
+                              </div>
+                              <div className="mt-8 pt-6 border-t border-border">
+                                <ContractStockBreakdown material={asset} />
                               </div>
                             </div>
                           </td>

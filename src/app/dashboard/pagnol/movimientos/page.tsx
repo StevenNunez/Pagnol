@@ -29,6 +29,7 @@ import {
   Download,
   MapPin,
   Settings2,
+  Warehouse as WarehouseIcon,
 } from 'lucide-react';
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from '@/modules/core/lib/supabase';
@@ -69,6 +70,7 @@ interface DisplayTransaction {
   isApproved?: boolean;
   deliveryDate?: string | null;
   contractUrl?: string | null;
+  contractName?: string | null; // contrato (obra) al que se imputa
 }
 
 type CompatibleMaterialRequest = MaterialRequest & {
@@ -84,6 +86,9 @@ export default function MovimientosPagnolPage() {
     materials,
     users,
     currentTenant,
+    contracts,
+    contractWorkers,
+    warehouses,
     addMaterialRequest,
     addAndApproveMaterialRequest,
     deliverApprovedMaterialRequest,
@@ -132,6 +137,40 @@ export default function MovimientosPagnolPage() {
   const usersMap = useMemo(() => new Map((users || []).map(u => [u.id, u])), [users]);
   const materialsMap = useMemo(() => new Map((materials || []).map(m => [m.id, m])), [materials]);
 
+  // ── Contrato del trabajador (scoping vía contract_workers) ────────────────
+  // El despacho/devolución se imputa al contrato del trabajador identificado:
+  // 1 contrato activo → autocarga; varios → el pañolero elige; ninguno → pool central.
+  const [txContractId, setTxContractId] = useState<string | null>(null);
+  const contractsMap = useMemo(() => new Map((contracts || []).map(c => [c.id, c])), [contracts]);
+  const employeeContracts = useMemo(() => {
+    if (!selectedEmployee) return [];
+    const myIds = new Set(
+      (contractWorkers || [])
+        .filter(cw => cw.userId === selectedEmployee.id)
+        .map(cw => cw.contractId)
+    );
+    return (contracts || []).filter(c => c.status === 'active' && myIds.has(c.id));
+  }, [selectedEmployee, contractWorkers, contracts]);
+
+  useEffect(() => {
+    // Autocarga cuando el trabajador tiene exactamente un contrato activo.
+    setTxContractId(employeeContracts.length === 1 ? employeeContracts[0].id : null);
+  }, [employeeContracts]);
+
+  const txContractName = txContractId ? (contractsMap.get(txContractId)?.name ?? null) : null;
+
+  // ── Pañol del panolero (scope por warehouse) ───────────────────────────────
+  // Si el usuario logueado es encargado de pañol(es), los movimientos que
+  // registra quedan imputados a su pañol: 1 → autocarga; varios → elige.
+  const myWarehouses = useMemo(
+    () => (warehouses || []).filter(w => w.status === 'active' && w.managerId === currentUser?.id),
+    [warehouses, currentUser?.id]
+  );
+  const [txWarehouseId, setTxWarehouseId] = useState<string | null>(null);
+  useEffect(() => {
+    setTxWarehouseId(myWarehouses.length > 0 ? myWarehouses[0].id : null);
+  }, [myWarehouses]);
+
   const transactions: DisplayTransaction[] = useMemo(() => {
     const combinedList: DisplayTransaction[] = [];
 
@@ -156,6 +195,7 @@ export default function MovimientosPagnolPage() {
         isApproved: r.status === 'approved',
         deliveryDate: r.deliveryDate ? new Date(r.deliveryDate as any).toISOString() : null,
         contractUrl: r.contractUrl || null,
+        contractName: r.contractName || null,
       });
     });
 
@@ -170,6 +210,7 @@ export default function MovimientosPagnolPage() {
         timestamp: r.createdAt ? new Date(r.createdAt as any).toISOString() : new Date().toISOString(),
         status: r.status,
         isApproved: r.status === 'completed',
+        contractName: r.contractName || null,
       });
     });
 
@@ -469,6 +510,8 @@ export default function MovimientosPagnolPage() {
           await addMaterialRequest({
             items: selectedAssetIds.map(id => ({ materialId: id, quantity: 1 })),
             area: site,
+            contractId: txContractId,
+            contractName: txContractName,
             supervisorId: selectedEmployee?.id || '',
             supervisorName: selectedEmployee?.name ?? undefined,
             highestClass: computedClass,
@@ -707,9 +750,12 @@ export default function MovimientosPagnolPage() {
           addAndApproveMaterialRequest({
             items: selectedAssetIds.map(id => ({ materialId: id, quantity: 1 })),
             area: site,
+            contractId: txContractId,
+            contractName: txContractName,
             supervisorId: selectedEmployee.id,
             contractUrl: contractUrl,
             internalCode: directTxCode,
+            warehouseId: txWarehouseId,
           }),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Tiempo de espera excedido al registrar la entrega. Verifica tu conexión y reintenta.')), 20000)
@@ -737,6 +783,9 @@ export default function MovimientosPagnolPage() {
             notes: description || 'Devolución directa en Pañol',
             workerId: selectedEmployee.id,
             workerName: selectedEmployee.name,
+            contractId: txContractId,
+            contractName: txContractName,
+            warehouseId: txWarehouseId,
           }),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Tiempo de espera excedido al registrar la devolución. Verifica tu conexión y reintenta.')), 20000)
@@ -946,6 +995,9 @@ export default function MovimientosPagnolPage() {
                         <span className="text-success">Bodega</span>
                       </div>
                     )}
+                    <span className={`inline-flex mt-1.5 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${tx.contractName ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground/60'}`}>
+                      {tx.contractName || 'Pool central'}
+                    </span>
                   </td>
                   <td className="px-6 sm:px-10 py-6 font-black text-xs uppercase">
                     {usersMap.get(tx.employeeId)?.name || 'Usuario desconocido'}
@@ -1219,6 +1271,65 @@ export default function MovimientosPagnolPage() {
 
               {flowStep === 'ITEMS SELECTION' && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4">
+                  {/* Contrato del trabajador: define de qué desglose sale (o a cuál vuelve) el stock */}
+                  <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20">
+                    <p className="text-[9px] font-black text-primary uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                      <ClipboardList size={11} /> Contrato {selectedType === 'WITHDRAWAL' ? 'de Cargo' : 'de Devolución'}
+                    </p>
+                    {employeeContracts.length === 0 ? (
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                        {selectedEmployee?.name || 'El trabajador'} no está asignado a ningún contrato — se imputará al pool central.
+                      </p>
+                    ) : employeeContracts.length === 1 ? (
+                      <span className="inline-flex px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-primary text-primary-foreground">
+                        {employeeContracts[0].name}
+                      </span>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {employeeContracts.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setTxContractId(txContractId === c.id ? null : c.id)}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${txContractId === c.id ? 'bg-primary text-primary-foreground border-primary shadow-md' : 'bg-card text-muted-foreground border-primary/20 hover:border-primary/40'}`}
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {employeeContracts.length > 1 && !txContractId && (
+                      <p className="text-[8px] text-primary/70 font-bold mt-2 uppercase tracking-widest">
+                        El trabajador tiene varios contratos — seleccione a cuál se imputa
+                      </p>
+                    )}
+                  </div>
+                  {/* Pañol del panolero: dónde queda registrado el movimiento */}
+                  {myWarehouses.length > 0 && (
+                    <div className="p-4 bg-info-subtle rounded-2xl border border-info/20">
+                      <p className="text-[9px] font-black text-info uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <WarehouseIcon size={11} /> Pañol {selectedType === 'WITHDRAWAL' ? 'que entrega' : 'que recibe'}
+                      </p>
+                      {myWarehouses.length === 1 ? (
+                        <span className="inline-flex px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-info text-info-foreground">
+                          {myWarehouses[0].name}
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {myWarehouses.map(w => (
+                            <button
+                              key={w.id}
+                              type="button"
+                              onClick={() => setTxWarehouseId(w.id)}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${txWarehouseId === w.id ? 'bg-info text-info-foreground border-info shadow-md' : 'bg-card text-muted-foreground border-info/20 hover:border-info/40'}`}
+                            >
+                              {w.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {selectedType === 'WITHDRAWAL' && (
                     <div className="p-4 bg-pagnol-orange/10 rounded-2xl border border-pagnol-orange/20">
                       <p className="text-[9px] font-black text-pagnol-orange uppercase tracking-widest mb-3 flex items-center gap-1.5">

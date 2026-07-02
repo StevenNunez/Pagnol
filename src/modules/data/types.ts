@@ -43,6 +43,9 @@ import {
   ShiftSchedule,
   Contract,
   ContractWorker,
+  Warehouse,
+  WarehouseContract,
+  MaterialStock,
   ScanResult,
   RentalParty,
   RentalContract,
@@ -111,6 +114,9 @@ export interface AppDataState {
   shiftSchedules: ShiftSchedule[];
   contracts: Contract[];
   contractWorkers: ContractWorker[];
+  warehouses: Warehouse[];
+  warehouseContracts: WarehouseContract[];
+  materialStocks: MaterialStock[];
   rentalParties: RentalParty[];
   rentalContracts: RentalContract[];
   rentalAssets: RentalAsset[];
@@ -150,12 +156,13 @@ export interface AppStateContextType extends AppDataState {
 
   // Material Requests
   addMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; supervisorName?: string; highestClass?: 'A' | 'B' | 'C'; tenantPrefix?: string; }) => Promise<void>;
-  addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; }) => Promise<void>;
+  addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; warehouseId?: string | null; }) => Promise<void>;
   authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
   deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null) => Promise<void>;
-  addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string }[], notes: string) => Promise<void>;
-  addAndCompleteReturnRequest: (data: { items: { materialId: string; quantity: number; materialName: string; unit: string; condition: 'OK' | 'CON FALLA' | 'ROTO' }[]; notes: string; workerId: string; workerName: string; evidenceUrl?: string; }) => Promise<void>;
+  // `contract` es obligatorio (aunque sea undefined) para que bindContext inyecte el contexto en el slot correcto.
+  addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string }[], notes: string, contract: { contractId?: string | null; contractName?: string | null } | undefined) => Promise<void>;
+  addAndCompleteReturnRequest: (data: { items: { materialId: string; quantity: number; materialName: string; unit: string; condition: 'OK' | 'CON FALLA' | 'ROTO' }[]; notes: string; workerId: string; workerName: string; evidenceUrl?: string; contractId?: string | null; contractName?: string | null; warehouseId?: string | null; }) => Promise<void>;
   updateReturnRequestStatus: (requestId: string, status: 'completed' | 'rejected', additionalData?: { condition: 'OK' | 'CON FALLA' | 'ROTO', evidenceUrl?: string }) => Promise<void>;
   deleteMaterialRequest: (requestId: string) => Promise<void>;
   deleteReturnRequest: (requestId: string) => Promise<void>;
@@ -250,6 +257,12 @@ export interface AppStateContextType extends AppDataState {
   addContractWorker: (contractId: string, userId: string, shiftScheduleId: string | null, roleInContract?: string) => Promise<void>;
   removeContractWorker: (contractWorkerId: string) => Promise<void>;
   updateContractWorker: (id: string, data: Partial<ContractWorker>) => Promise<void>;
+
+  // Pañoles y existencias por contrato
+  addWarehouse: (data: { name: string; location?: string | null; managerId?: string | null; managerName?: string | null; notes?: string | null; contractIds?: string[] }) => Promise<Warehouse>;
+  updateWarehouse: (id: string, data: Partial<Warehouse> & { contractIds?: string[] }) => Promise<void>;
+  deleteWarehouse: (id: string) => Promise<void>;
+  transferMaterialStock: (params: { materialId: string; qty: number; fromContractId: string | null; toContractId: string | null; warehouseId?: string | null; justification?: string }) => Promise<void>;
 
   // Turnos
   addShiftSchedule: (data: Omit<ShiftSchedule, 'id' | 'tenantId' | 'createdAt'>) => Promise<ShiftSchedule>;

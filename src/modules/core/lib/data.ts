@@ -318,6 +318,9 @@ export interface ReturnRequest {
   tenantId: string;
   returnCondition?: 'OK' | 'CON FALLA' | 'ROTO';
   evidenceUrl?: string;
+  // Contrato del que salió el material (la devolución reingresa ahí)
+  contractId?: string | null;
+  contractName?: string | null;
 }
 
 export type PurchaseRequestStatus = "pending" | "approved" | "rejected" | "received" | "ordered" | "batched";
@@ -466,6 +469,43 @@ export interface ContractWorker {
   startDate?: Date | string | null;
   endDate?: Date | string | null;
   createdAt: Date;
+}
+
+// ── Pañoles y existencias por contrato ───────────────────────────────────────
+
+export interface Warehouse {
+  id: string;
+  tenantId: string;
+  name: string;
+  location?: string | null;
+  managerId?: string | null;   // encargado (panolero) → profiles.id
+  managerName?: string | null;
+  status: 'active' | 'inactive';
+  notes?: string | null;
+  createdAt: Date;
+}
+
+/** N:M — contratos que atiende cada pañol. */
+export interface WarehouseContract {
+  id: string;
+  tenantId: string;
+  warehouseId: string;
+  contractId: string;
+  createdAt: Date;
+}
+
+/**
+ * Desglose de existencias de un material por contrato × pañol.
+ * `materials.stock` sigue siendo el TOTAL; esto dice dónde están sus unidades.
+ * contractId NULL = pool central de la empresa; warehouseId NULL = sin pañol.
+ */
+export interface MaterialStock {
+  id: string;
+  tenantId: string;
+  materialId: string;
+  contractId: string | null;
+  warehouseId: string | null;
+  qty: number;
 }
 
 // ── Arriendos (Rentals) ──────────────────────────────────────────────────────
@@ -1099,12 +1139,16 @@ export interface StockMovement {
   materialName: string;
   quantityChange: number; // Positive for entry, negative for exit
   newStock: number;
-  type: 'manual-entry' | 'initial' | 'request-delivery' | 'return-reentry' | 'adjustment';
+  type: 'manual-entry' | 'initial' | 'request-delivery' | 'return-reentry' | 'adjustment' | 'contract-transfer';
   date: Date;
   justification: string;
   userId: string; // User who performed the action
   userName: string;
   relatedRequestId?: string;
+  // Dimensión contrato/pañol (null = pool central / sin pañol)
+  contractId?: string | null;
+  contractName?: string | null;
+  warehouseId?: string | null;
 }
 
 export interface PurchaseLot {

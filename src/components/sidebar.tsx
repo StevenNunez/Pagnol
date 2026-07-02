@@ -169,6 +169,7 @@ const getBodegaNavItems = () => [
   { href: '/dashboard/bodega/tools/print-qrs', icon: QrCode, label: 'Imprimir QRs' },
   { href: '/dashboard/bodega/materials', icon: Package, label: 'Materiales' },
   { href: '/dashboard/bodega/manual-stock-entry', icon: PackagePlus, label: 'Ingreso Manual' },
+  { href: '/dashboard/bodega/warehouses', icon: Warehouse, label: 'Pañoles' },
   { href: '/dashboard/bodega/units', icon: Ruler, label: 'Unidades' },
   { href: '/dashboard/bodega/categories', icon: FolderTree, label: 'Categorías' },
   { href: '/dashboard/bodega/purchase-requests', icon: ShoppingCart, label: 'Solicitudes Compra' },

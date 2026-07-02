@@ -82,21 +82,72 @@ export async function addUser(data: any, { user, tenantId }: Context) {
     return json;
 }
 
+// Enrola biometría + KYC a un usuario existente. Va por service role (/api/users/enroll)
+// para que también puedan enrolar roles no-admin (Calidad con pagnol:enroll_personal) y
+// para escribir los documentos KYC en la tabla protegida profile_documents.
+export async function enrollUser(userId: string, data: any, { user }: Context) {
+    const res = await fetch('/api/users/enroll', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+            userId,
+            internalId: data.internalId ?? data.internal_id,
+            biometric_template: data.biometric_template || null,
+            kyc_face_image: data.kyc_face_image || null,
+            kyc_id_front: data.kyc_id_front || null,
+            kyc_id_back: data.kyc_id_back || null,
+            enrolledByName: user?.name || 'System',
+        }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || 'Error al enrolar al usuario.');
+    return json;
+}
+
+// Actualiza SOLO campos de ficha RRHH vía service role (/api/users/hr-update), para que el
+// rol recursos-humanos (que no es is_tenant_admin) pueda editar la ficha sin chocar con RLS
+// y sin darle acceso a KYC/rol/sueldo.
+export async function hrUpdateUser(userId: string, data: any, { }: Context) {
+    const res = await fetch('/api/users/hr-update', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+            userId,
+            cargo: data.cargo,
+            phone: data.phone,
+            address: data.address,
+            birthDate: data.birthDate ?? null,
+            emergencyContactName: data.emergencyContactName,
+            emergencyContactPhone: data.emergencyContactPhone,
+            employmentStatus: data.employmentStatus,
+        }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || 'Error al actualizar la ficha.');
+    return json;
+}
+
 export async function updateUserPermissions(userId: string, permissions: string[], { user }: Context) {
-    if (user?.role !== 'administrador' && user?.role !== 'super-admin') {
+    if (user?.role !== 'administrador' && user?.role !== 'soporte-pagnol' && user?.role !== 'super-admin') {
         throw new Error("Solo los administradores pueden otorgar permisos especiales.");
     }
 
-    const { error } = await supabase
+    // `.select()` para detectar el UPDATE silencioso de 0 filas (RLS que no matchea):
+    // sin esto el cambio no persiste y no se lanza error.
+    const { data: rows, error } = await supabase
         .from('profiles')
         .update({
             granted_permissions: permissions,
             enrolled_by: user.name,
             enrolled_at: new Date().toISOString(),
         })
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id');
 
     if (error) throw error;
+    if (!rows || rows.length === 0) {
+        throw new Error('No se pudo guardar: no tienes permiso para editar a este usuario (RLS).');
+    }
 }
 
 export async function updateUser(userId: string, data: any, { user }: Context) {
@@ -135,12 +186,16 @@ export async function updateUser(userId: string, data: any, { user }: Context) {
         }
     });
 
-    const { error } = await supabase
+    const { data: rows, error } = await supabase
         .from('profiles')
         .update(updatePayload)
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id');
 
     if (error) throw error;
+    if (!rows || rows.length === 0) {
+        throw new Error('No se pudo guardar: no tienes permiso para editar a este usuario (RLS).');
+    }
 }
 
 export async function deleteUser(userId: string, { }: Context) {

@@ -163,6 +163,8 @@ export interface AppStateContextType extends AppDataState {
   // Generic CRUD
   addTenant: (data: any) => Promise<void>;
   addUser: (data: any) => Promise<any>;
+  enrollUser: (userId: string, data: any) => Promise<any>;
+  hrUpdateUser: (userId: string, data: any) => Promise<any>;
   updateUser: (userId: string, data: Partial<User>) => Promise<void>;
   updateUserPermissions: (userId: string, permissions: string[]) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;

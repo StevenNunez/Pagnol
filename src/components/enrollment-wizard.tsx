@@ -1,22 +1,21 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useForm, Controller, SubmitHandler } from 'react-hook-form';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { useAuth } from '@/modules/core/contexts/app-provider';
 import { loadBiometricModels, captureBiometrics } from '@/lib/biometricService';
-import { ROLES, ROLES_ORDER, PLANS } from '@/modules/core/lib/permissions';
-import { User, Tenant, UserRole } from '@/modules/core/lib/data';
+import { ROLES_ORDER } from '@/modules/core/lib/permissions';
+import { useAssignableRoles } from '@/modules/core/hooks/use-assignable-roles';
+import { UserIdentityFields } from '@/components/user-identity-fields';
+import { User } from '@/modules/core/lib/data';
 import {
     X, ChevronRight, ChevronLeft, ScanFace, CheckCircle,
-    Camera, Loader2, FileBadge, Smartphone, Monitor, QrCode,
+    Camera, Loader2, Smartphone, Monitor, QrCode,
     FileText, User as UserIcon, Sparkles
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
@@ -44,7 +43,7 @@ interface EnrollmentWizardProps {
     selectedUser: User | null;
     generateInternalId: () => string;
     onAddUser: (data: any) => Promise<any>;
-    onUpdateUser: (id: string, data: any) => Promise<any>;
+    onEnrollUser: (id: string, data: any) => Promise<any>;
     tenantId: string | null;
 }
 
@@ -54,22 +53,12 @@ export function EnrollmentWizard({
     selectedUser,
     generateInternalId,
     onAddUser,
-    onUpdateUser,
+    onEnrollUser,
     tenantId,
 }: EnrollmentWizardProps) {
     const { toast } = useToast();
-    const { user: currentUser, currentTenantId, tenants } = useAuth();
-
-    // Roles asignables al enrolar: los del plan del tenant (mismo criterio que el
-    // Centro de Invitaciones), excluyendo super-admin salvo que el actor lo sea.
-    const assignableRoles = useMemo<UserRole[]>(() => {
-        const currentTenant = (tenants || []).find(
-            (t: Tenant) => t.id === currentTenantId || t.tenantId === currentTenantId
-        );
-        const plan = PLANS[(currentTenant as Tenant & { plan?: keyof typeof PLANS })?.plan as keyof typeof PLANS] || PLANS.professional;
-        const ordered = ROLES_ORDER.filter(r => plan.allowedRoles.includes(r));
-        return currentUser?.role === 'super-admin' ? ordered : ordered.filter(r => r !== 'super-admin');
-    }, [tenants, currentTenantId, currentUser]);
+    const { user: currentUser } = useAuth();
+    const assignableRoles = useAssignableRoles();
 
     const [mode, setMode] = useState<EnrollmentMode>('choose');
     const [step, setStep] = useState<DesktopStep>('info');
@@ -301,7 +290,7 @@ export function EnrollmentWizard({
             };
 
             if (selectedUser) {
-                await onUpdateUser(selectedUser.id, { ...kycPayload, internal_id: data.internalId });
+                await onEnrollUser(selectedUser.id, { ...kycPayload, internalId: data.internalId });
                 toast({ title: 'Enrolamiento Completado', description: `${selectedUser.name} ha sido certificado exitosamente.` });
             } else {
                 await onAddUser({ ...data, ...kycPayload });
@@ -459,47 +448,16 @@ export function EnrollmentWizard({
 
                         {mode === 'desktop' && step === 'info' && (
                             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(() => setStep('document'))(); }} className="p-8 space-y-5">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                    <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre Completo</Label>
-                                        <Input placeholder="Ej: Pedro Picapiedra" {...register('name')} readOnly={!!selectedUser} className="h-12 rounded-xl" />
-                                        {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">RUT</Label>
-                                        <Input placeholder="12.345.678-9" {...register('rut')} readOnly={!!selectedUser} className="h-12 rounded-xl" />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Correo Electrónico</Label>
-                                        <Input type="email" placeholder="trabajador@empresa.cl" {...register('email')} readOnly={!!selectedUser} className="h-12 rounded-xl" />
-                                        {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rol en el Sistema</Label>
-                                        <Controller name="role" control={control} render={({ field }) => (
-                                            <Select onValueChange={field.onChange} value={field.value} disabled={!!selectedUser}>
-                                                <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Seleccionar rol..." /></SelectTrigger>
-                                                <SelectContent className="max-h-72">
-                                                    {assignableRoles.map(r => <SelectItem key={r} value={r}>{ROLES[r]?.label || r}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
-                                        )} />
-                                    </div>
-                                    {!selectedUser && (
-                                        <div className="space-y-1.5">
-                                            <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Contraseña Temporal</Label>
-                                            <Input type="password" placeholder="Mínimo 6 caracteres" {...register('password')} className="h-12 rounded-xl" />
-                                            {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
-                                        </div>
-                                    )}
-                                    <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">ID Interno (Auto)</Label>
-                                        <div className="relative">
-                                            <FileBadge size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
-                                            <Input readOnly {...register('internalId')} className="h-12 rounded-xl pl-10 bg-slate-50 font-mono" />
-                                        </div>
-                                    </div>
-                                </div>
+                                <UserIdentityFields
+                                    register={register}
+                                    control={control}
+                                    errors={errors}
+                                    assignableRoles={assignableRoles}
+                                    columns={2}
+                                    showPassword={!selectedUser}
+                                    readOnlyIdentity={!!selectedUser}
+                                    roleDisabled={!!selectedUser}
+                                />
                                 <div className="flex justify-between items-center pt-4">
                                     {!selectedUser && (
                                         <Button

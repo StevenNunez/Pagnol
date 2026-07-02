@@ -28,8 +28,9 @@ import { useAuth } from "@/modules/auth/useAuth";
 import { supabase } from "@/modules/core/lib/supabase";
 import { nanoid } from "nanoid";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import { Tenant, UserRole } from "@/modules/core/lib/data";
-import { PLANS, ROLES, ROLES_ORDER } from "@/modules/core/lib/permissions";
+import { UserRole } from "@/modules/core/lib/data";
+import { ROLES } from "@/modules/core/lib/permissions";
+import { useAssignableRoles } from "@/modules/core/hooks/use-assignable-roles";
 
 interface Invitation {
     id: string;
@@ -48,7 +49,7 @@ import { es } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function InvitacionesPage() {
-    const { user, currentTenantId, tenants } = useAuth();
+    const { user, currentTenantId } = useAuth();
     const { toast } = useToast();
     const [email, setEmail] = useState("");
     const [role, setRole] = useState<UserRole>("supervisor");
@@ -56,20 +57,7 @@ export default function InvitacionesPage() {
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const currentTenant = React.useMemo(() => {
-        if (!currentTenantId) return null;
-        return (tenants || []).find((t: Tenant) => t.id === currentTenantId || t.tenantId === currentTenantId);
-    }, [currentTenantId, tenants]);
-
-    const plan = PLANS[(currentTenant as Tenant & { plan?: keyof typeof PLANS })?.plan as keyof typeof PLANS] || PLANS.professional;
-
-    const allowedRoles = React.useMemo(() => {
-        const ordered = ROLES_ORDER.filter((r) => plan.allowedRoles.includes(r));
-        if (user?.role !== "super-admin") {
-            return ordered.filter((r) => r !== "super-admin");
-        }
-        return ordered;
-    }, [plan, user]);
+    const allowedRoles = useAssignableRoles();
 
     React.useEffect(() => {
         if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {

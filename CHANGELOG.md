@@ -18,7 +18,82 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado
+- **Panel unificado de usuario (Capa 3)**. Se creó `<UserPanel>` (`src/components/user-panel.tsx`):
+  un único diálogo con pestañas — **Identidad · Contrato/RRHH · Biometría · Seguridad ·
+  Permisos** — que reemplaza las ventanas dispersas que editaban al mismo usuario. Las
+  pestañas se muestran/ocultan según el permiso de quien lo abre (`users:edit`,
+  `hr_employees:edit`, `users:create`/`pagnol:enroll_personal`, `permissions:manage`) y hay
+  un modo `self` para Mi Perfil. Reutiliza `<UserIdentityFields>`, el `EnrollmentWizard`, los
+  diálogos de contraseña/correo y el nuevo `<UserPermissionsEditor>`.
+  - Se extrajo `<UserPermissionsEditor>` (`src/components/user-permissions-editor.tsx`) como
+    fuente única del selector de autorizaciones; Gestión de Personal ahora lo reutiliza en vez
+    de su copia inline.
+  - Recableado: Módulo Usuarios, Mi Perfil y Ficha de RRHH ahora abren `<UserPanel>`. Se
+    **eliminó** `edit-user-form.tsx` (su rol lo cumple el panel).
+  - `<UserIdentityFields>` ganó `emailReadOnly` para editar identidad sin desbloquear el correo.
+- **Consolidación de formularios de usuario (Capa 2, anti-duplicación)**. Los campos de
+  identidad (nombre, RUT, email, rol, ID interno, contraseña, teléfono) que estaban
+  duplicados entre `CreateUserForm` y el paso "info" del `EnrollmentWizard` se extrajeron a
+  un componente compartido `<UserIdentityFields>` (`src/components/user-identity-fields.tsx`),
+  genérico sobre el tipo del form (react-hook-form) y con props para layout (1/2 columnas),
+  contraseña/teléfono opcionales y campos de solo-lectura. La ficha de RRHH
+  (`rrhh/empleados`) se dejó **deliberadamente aparte**: usa otro permiso (`hr_employees:edit`,
+  no `users:edit`), otro subconjunto de campos y otra UX; fusionarla habría acoplado cosas
+  separadas y roto su modelo de permisos.
+- **Consolidación de formularios de usuario (Capa 1, anti-duplicación)**. Los puntos que
+  crean/editan usuarios (Crear Usuario, Enrolar, Invitar, Editar) compartían lógica copiada.
+  Ahora hay fuentes únicas:
+  - `useAssignableRoles()` (`src/modules/core/hooks/use-assignable-roles.ts`) — encapsula la
+    lógica "roles del plan ∩ ROLES_ORDER, sin super-admin salvo super-admin". Reemplaza **3
+    copias** (create-user-form, invitaciones, enrollment-wizard).
+  - `<RoleSelect>` (`src/components/role-select.tsx`) — selector de rol único; pinta labels
+    desde `ROLES` y siempre incluye el valor actual aunque el plan ya no lo permita.
+  - `generateUserInternalId()` (`src/modules/core/lib/user-internal-id.ts`) — un solo
+    generador de ID interno con algoritmo robusto (máx+1, tolera `PAG-####` y el viejo
+    `PAG-EMP-####`). Antes había **dos formatos distintos** (personal usaba `PAG-`, crear
+    usuario usaba `PAG-EMP-` con `length+1` frágil).
+  - Se eliminaron los `z.enum([...24 roles a mano...])` **hardcodeados** en create/edit user
+    form (ahora derivan de `ROLES_ORDER`), que se desincronizaban al cambiar roles.
+
+### Agregado
+- **Autorizaciones por usuario (permisos específicos)**. El modal de "Permisos" en Gestión
+  de Personal pasó de un único toggle a un **selector completo de permisos agrupado con
+  búsqueda**: marca/desmarca permisos puntuales para un trabajador (se guardan en
+  `granted_permissions`, aditivos sobre el rol; los heredados del rol se muestran como
+  bloqueados/"heredado"). Permite, p.ej., dar SOLO "Enrolar Personal" a un usuario de Calidad.
+
+### Seguridad
+- **RRHH puede editar la ficha sin acceso a datos sensibles (API service-role acotada)**.
+  El rol `recursos-humanos` no es `is_tenant_admin()`, así que editar la ficha de otro
+  empleado vía `updateUser` (cliente anon) chocaba con RLS. Nueva API `/api/users/hr-update`
+  (service role) gateada por `hr_employees:edit` que escribe **solo** columnas de RRHH
+  (cargo, teléfono, dirección, nacimiento, contacto de emergencia, estado laboral) — NUNCA
+  rol, sueldo, previsión ni KYC. El `<UserPanel>` enruta el guardado por esta API cuando el
+  actor es RRHH puro, y oculta los campos de identidad/nómina para ese rol. Alternativa más
+  segura a meter `recursos-humanos` en `is_tenant_admin()` (que le habría dado acceso a KYC).
+- **RLS: un admin del tenant no podía actualizar perfiles de OTROS usuarios**. La única
+  policy de UPDATE en `profiles` era `profiles_update_own` (solo el propio perfil o
+  super-admin). Por eso `updateUser()`/`updateUserPermissions()` (cliente anon) hacían
+  UPDATE de 0 filas **sin error** y no persistían: enrolar biometría a un usuario existente,
+  delegar permisos o editar datos de RRHH de otro trabajador "no hacían nada". Nueva
+  migración `20260701000000_profiles_admin_update.sql` añade `profiles_update_tenant_admin`
+  (`is_tenant_admin() AND tenant_id = get_my_tenant_id()`). El trigger anti-escalada no
+  estorba (solo aplica al editar la propia fila). **Pendiente de aplicar en Supabase.**
+
 ### Corregido
+- **Enrolamiento de usuarios existentes no quedaba guardado ("como si nada")**. Al enrolar
+  biometría a un trabajador ya creado, el wizard usaba `updateUser()` por cliente anon y RLS
+  lo bloqueaba en silencio. Ahora pasa por una API service-role dedicada
+  (`/api/users/enroll`) que además guarda los documentos KYC en `profile_documents` (antes
+  ese flujo ni los guardaba). Como defensa, `updateUser`/`updateUserPermissions` ahora usan
+  `.select()` y lanzan error explícito si el UPDATE afecta 0 filas (RLS).
+- **El permiso "Enrolar Personal" (`pagnol:enroll_personal`) no servía para nada**. Estaba
+  definido y se podía delegar, pero el botón de enrolar y la API exigían `users:create`, así
+  que darlo no habilitaba a nadie. Ahora el botón (`personal/page.tsx`) y las APIs
+  (`/api/users/create` y `/api/users/enroll`) aceptan `users:create` **o**
+  `pagnol:enroll_personal`. Un rol como Calidad ya puede ayudar a enrolar sin control total
+  de usuarios.
 - **Modal "Registro de Personal" mostraba solo 4 roles al enrolar**. `EnrollmentWizard`
   tenía hardcodeada la lista `pagnolRolesAssignable` (`administrador`, `panolero`,
   `supervisor`, `operador`), así que no se podían enrolar trabajadores con el resto de

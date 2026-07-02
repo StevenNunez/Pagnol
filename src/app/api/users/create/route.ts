@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
-import { requireAuth, resolveTenant } from '@/modules/core/lib/api-auth';
+import { requireAuth, resolveTenant, hasPermission } from '@/modules/core/lib/api-auth';
 
 export async function POST(request: Request) {
     try {
-        const auth = await requireAuth(request, { permission: 'users:create' });
+        const auth = await requireAuth(request);
         if (!auth.ok) return auth.response;
         const { ctx } = auth;
+
+        // Crear/enrolar personal: basta con gestión de usuarios O el permiso de enrolar
+        // (para roles como Calidad que solo ayudan a enrolar, sin control total de usuarios).
+        if (!hasPermission(ctx, 'users:create') && !hasPermission(ctx, 'pagnol:enroll_personal')) {
+            return NextResponse.json({ error: 'No autorizado para crear personal.' }, { status: 403 });
+        }
 
         const { email, password, name, role, tenantId: bodyTenantId, internalId, rut,
                 biometric_template, kyc_face_image, kyc_id_front, kyc_id_back,

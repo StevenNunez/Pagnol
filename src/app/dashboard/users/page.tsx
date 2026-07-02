@@ -13,7 +13,7 @@ import type { User, UserRole } from "@/modules/core/lib/data";
 import { MoreHorizontal, Trash2, Edit, QrCode, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { EditUserForm } from "@/components/admin/edit-user-form";
+import { UserPanel } from "@/components/user-panel";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import QRCode from "react-qr-code";
@@ -84,7 +84,7 @@ export default function AdminUsersPage() {
       />
 
       {editingUser && can('users:edit') && (
-        <EditUserForm
+        <UserPanel
           user={editingUser}
           isOpen={!!editingUser}
           onClose={() => setEditingUser(null)}

@@ -508,6 +508,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         // Generic CRUD
         addTenant: bindContext(genericMutations.addTenant),
         addUser: bindContext(genericMutations.addUser),
+        enrollUser: bindContext(genericMutations.enrollUser),
+        hrUpdateUser: bindContext(genericMutations.hrUpdateUser),
         updateUser: bindContext(genericMutations.updateUser),
         updateUserPermissions: bindContext(genericMutations.updateUserPermissions),
         deleteUser: bindContext(genericMutations.deleteUser),

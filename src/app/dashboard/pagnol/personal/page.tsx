@@ -9,6 +9,8 @@ import { supabase } from "@/modules/core/lib/supabase";
 import { generateEAPDF } from "@/lib/ea-pdf-generator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ROLES } from "@/modules/core/lib/permissions";
+import { generateUserInternalId } from "@/modules/core/lib/user-internal-id";
+import { UserPermissionsEditor } from "@/components/user-permissions-editor";
 import {
   Fingerprint, UserPlus, Mail, ShieldCheck, Search, X,
   User as UserIcon, FileText, CheckCircle, AlertCircle,
@@ -43,7 +45,7 @@ type DisplayTransaction = {
 };
 
 export default function PersonalPage() {
-  const { users, requests, returnRequests, materials, addUser, updateUser, eaDocuments, generateEADocument, confirmEASentToDT, updateTenant } = useAppState();
+  const { users, requests, returnRequests, materials, addUser, enrollUser, eaDocuments, generateEADocument, confirmEASentToDT, updateTenant } = useAppState();
   const { user: currentUser, can } = useAuth();
   const { toast } = useToast();
 
@@ -109,7 +111,6 @@ export default function PersonalPage() {
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<User | null>(null);
   const [permissionsOverride, setPermissionsOverride] = useState<Map<string, string[]>>(new Map());
-  const { updateUserPermissions } = useAppState();
 
   const getEffectivePermissions = (emp: User): string[] =>
     permissionsOverride.get(emp.id) ?? emp.grantedPermissions ?? [];
@@ -118,19 +119,12 @@ export default function PersonalPage() {
   const [isEAModalOpen, setIsEAModalOpen] = useState(false);
   const [selectedEmployeeForEA, setSelectedEmployeeForEA] = useState<User | null>(null);
 
-  const canManageEmployees = can('users:create');
+  // Puede enrolar quien gestiona usuarios O tiene el permiso específico de enrolar
+  // (p.ej. Calidad, sin control total de usuarios).
+  const canManageEmployees = can('users:create') || can('pagnol:enroll_personal');
   const canDelegatePermissions = can('permissions:manage');
 
-  const generateInternalId = useCallback(() => {
-    const patterns = (users || [])
-      .map(u => {
-        const match = u.internalId?.match(/PAG-(\d+)/);
-        return match ? parseInt(match[1]) : 0;
-      })
-      .filter(n => !isNaN(n));
-    const maxNumber = patterns.length > 0 ? Math.max(...patterns) : 1000;
-    return `PAG-${(maxNumber + 1).toString().padStart(4, '0')}`;
-  }, [users]);
+  const generateInternalId = useCallback(() => generateUserInternalId(users), [users]);
 
   const handleOpenEnrollment = (emp?: User) => {
     setSelectedUserForEnrollment(emp || null);
@@ -195,25 +189,6 @@ export default function PersonalPage() {
   const handleOpenPermissions = (emp: User) => {
     setSelectedUserForPermissions(emp);
     setIsPermissionsModalOpen(true);
-  };
-
-  const handleToggleEnrollmentPermission = async (targetUser: User) => {
-    try {
-      const currentPerms = getEffectivePermissions(targetUser);
-      const hasPermission = currentPerms.includes('pagnol:enroll_personal');
-      const newPermissions = hasPermission
-        ? currentPerms.filter((p: string) => p !== 'pagnol:enroll_personal')
-        : [...currentPerms, 'pagnol:enroll_personal'];
-      await updateUserPermissions(targetUser.id, newPermissions);
-      setPermissionsOverride(prev => new Map(prev).set(targetUser.id, newPermissions));
-      if (selectedUserForPermissions?.id === targetUser.id) {
-        setSelectedUserForPermissions(prev => prev ? { ...prev, grantedPermissions: newPermissions } : prev);
-      }
-      toast({ title: "Seguridad Actualizada", description: `Se ha ${hasPermission ? 'revocado' : 'otorgado'} el permiso de enrolamiento para ${targetUser.name}.` });
-      setIsPermissionsModalOpen(false);
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: "Error de Autorización", description: err.message });
-    }
   };
 
 
@@ -381,7 +356,7 @@ export default function PersonalPage() {
         selectedUser={selectedUserForEnrollment}
         generateInternalId={generateInternalId}
         onAddUser={addUser}
-        onUpdateUser={updateUser}
+        onEnrollUser={enrollUser}
         tenantId={currentUser?.tenantId || null}
       />
 
@@ -526,54 +501,25 @@ export default function PersonalPage() {
         </Dialog>
       )}
 
-      {/* MODAL DE PERMISOS ESPECIALES */}
+      {/* MODAL DE AUTORIZACIONES POR USUARIO */}
       {isPermissionsModalOpen && selectedUserForPermissions && (
         <Dialog open={isPermissionsModalOpen} onOpenChange={setIsPermissionsModalOpen}>
-          <DialogContent className="max-w-md p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-3xl">
-            <div className="flex flex-col bg-card rounded-[2.5rem] overflow-hidden">
+          <DialogContent className="max-w-2xl p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-3xl">
+            <div className="flex flex-col bg-card rounded-[2.5rem] overflow-hidden max-h-[90vh]">
               <DialogHeader className="p-8 industrial-gradient text-white shrink-0 relative">
-                <DialogTitle className="text-2xl font-black tracking-tighter uppercase leading-none font-outfit">Control de Acceso</DialogTitle>
-                <DialogDescription className="text-white/60 text-[10px] font-bold uppercase tracking-[0.1em] mt-2">Delegación de Funciones Críticas</DialogDescription>
+                <DialogTitle className="text-2xl font-black tracking-tighter uppercase leading-none font-outfit">Autorizaciones · {selectedUserForPermissions.name}</DialogTitle>
+                <DialogDescription className="text-white/60 text-[10px] font-bold uppercase tracking-[0.1em] mt-2">Permisos específicos, adicionales a los de su rol</DialogDescription>
                 <Button onClick={() => setIsPermissionsModalOpen(false)} variant="ghost" size="icon" className="p-2 bg-white/5 rounded-xl text-white/40 hover:text-white absolute top-6 right-6"><X size={20} /></Button>
               </DialogHeader>
-              <div className="p-8 space-y-8">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center text-lg font-black text-muted-foreground">
-                    {selectedUserForPermissions.name[0]}
-                  </div>
-                  <div>
-                    <h4 className="font-black text-foreground uppercase tracking-tight">{selectedUserForPermissions.name}</h4>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{getRoleDisplayName(selectedUserForPermissions.role)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between p-5 bg-muted rounded-3xl border">
-                  <div className="space-y-1 pr-4">
-                    <div className="flex items-center gap-2">
-                      <UserPlus size={16} className="text-pagnol-orange" />
-                      <h5 className="font-black text-xs uppercase tracking-tight text-foreground">Permiso de Enrolamiento</h5>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground font-medium leading-relaxed">
-                      Permite a este supervisor realizar enrolamiento biométrico de trabajadores.
-                    </p>
-                  </div>
-                  <Button
-                    onClick={() => handleToggleEnrollmentPermission(selectedUserForPermissions)}
-                    variant={getEffectivePermissions(selectedUserForPermissions).includes('pagnol:enroll_personal') ? "destructive" : "default"}
-                    className="rounded-xl font-black text-[9px] uppercase tracking-widest px-4 h-10 shadow-lg"
-                  >
-                    {getEffectivePermissions(selectedUserForPermissions).includes('pagnol:enroll_personal') ? "Revocar" : "Otorgar"}
-                  </Button>
-                </div>
-                <div className="p-4 bg-warning-subtle rounded-2xl border border-warning/20 flex gap-3 items-start">
-                  <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
-                  <p className="text-[9px] font-bold text-warning-subtle-foreground leading-normal uppercase">
-                    Esta acción será auditada. Se registrará que <b>{currentUser?.name}</b> autorizó esta delegación.
-                  </p>
-                </div>
+              <div className="flex-1 overflow-y-auto p-6 min-h-0">
+                <UserPermissionsEditor
+                  user={selectedUserForPermissions}
+                  onSaved={(granted) => {
+                    setPermissionsOverride(prev => new Map(prev).set(selectedUserForPermissions.id, granted));
+                    setIsPermissionsModalOpen(false);
+                  }}
+                />
               </div>
-              <DialogFooter className="p-6 bg-muted border-t">
-                <Button onClick={() => setIsPermissionsModalOpen(false)} className="w-full bg-foreground text-background border-none hover:bg-foreground/90 font-black uppercase text-[10px] tracking-widest rounded-xl h-12">Finalizar Gestión</Button>
-              </DialogFooter>
             </div>
           </DialogContent>
         </Dialog>

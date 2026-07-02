@@ -27,7 +27,7 @@ import { supabase } from '@/modules/core/lib/supabase';
 import QRCode from "react-qr-code";
 import { ChangePasswordDialog } from '@/components/change-password-dialog';
 import { ChangeEmailDialog } from '@/components/change-email-dialog';
-import { EditUserForm } from '@/components/admin/edit-user-form';
+import { UserPanel } from '@/components/user-panel';
 import { UserRole } from '@/modules/core/lib/data';
 import { ROLES } from '@/modules/core/lib/permissions';
 import SignaturePad from '@/components/signature-pad';
@@ -231,10 +231,12 @@ export default function ProfilePage() {
             />
 
             {isEditingUser && user && (
-                <EditUserForm
+                <UserPanel
                     user={user}
                     isOpen={isEditingUser}
                     onClose={() => setIsEditingUser(false)}
+                    self
+                    defaultTab="contrato"
                 />
             )}
 
@@ -267,7 +269,7 @@ export default function ProfilePage() {
                                 {roleName}
                             </Badge>
                             <p className="mt-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
-                                ID INTERNO: {user!.internalId || 'PAG-EMP-PEND'}
+                                ID INTERNO: {user!.internalId || 'PAG-PEND'}
                             </p>
                         </CardContent>
                     </Card>

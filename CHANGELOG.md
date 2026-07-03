@@ -19,10 +19,108 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Cambiado
+- **Vistas legacy de préstamos migradas al modelo de activos.** El Panel Ejecutivo de
+  Reportes de Trabajo ("Herramientas pendientes de devolución") y el Reporte de Inventario
+  (tab Herramientas) leían `tool_logs`/`tools`, vacíos tras la migración herramientas→activos,
+  por lo que siempre mostraban "todo devuelto"/"disponible". Ahora derivan los préstamos
+  abiertos de solicitudes entregadas + devoluciones completadas (mismo modelo que
+  `pagnol/herramientas`), con quién tiene cada herramienta y días sin devolver.
+
+### Agregado
+- **Jerarquía de categorías: Familia → Subcategoría** (ej: Herramientas → Herramientas
+  Eléctricas / Manuales), aprobada con el usuario como parte del modelo "Pagnol = control
+  total de activos" (naturaleza = tipo de uso; clasificación = categoría jerárquica;
+  criticidad A/B/C ortogonal que ya gobierna la autorización de salida del pañol):
+  - **Migración `20260703000000_material_categories_parent.sql` (PENDIENTE DE APLICAR):**
+    columna `parent_id` autoreferente (ON DELETE SET NULL: borrar una familia deja a sus
+    hijas como familias) + índice + check anti auto-referencia. Crear categorías planas
+    sigue funcionando aunque no esté aplicada. Incluye además **saneo de duplicados**:
+    el catálogo acumulaba categorías repetidas exactas (DEMO tenía 183 filas, decenas
+    idénticas) — se deduplica por (tenant, nombre) y se agrega unique index para que no
+    vuelva a ocurrir (seguro: los materiales referencian la categoría por nombre).
+  - **Catálogos:** crear/editar categoría con selector "Familia" (solo 2 niveles: una
+    familia con hijas no puede volverse subcategoría); lista agrupada familia →
+    subcategorías indentadas; en búsqueda se muestra la familia junto a cada resultado.
+  - **Activos:** nuevo filtro "Categoría" jerárquico — elegir una familia incluye todas
+    sus subcategorías; la sugerencia de Tipo de Uso "Herramienta Menor" ahora también
+    aplica cuando la FAMILIA de la categoría elegida es de herramientas.
+  - **Herramientas:** filtro por subcategoría (las categorías presentes entre las
+    herramientas registradas).
+  - **Ficha de activo (modal crear/editar en Activos):** el selector "Categoría
+    Logística" ahora muestra la jerarquía (familias en negrita, subcategorías
+    indentadas) y se agregaron los campos **Fecha de Adquisición** (calendario) y
+    **Proveedor** — ambos ya se persistían en la BD pero la ficha no los exponía.
+  - **Formulario de Catálogos explícito:** toggle "¿Qué quieres crear? Familia /
+    Subcategoría" (feedback del usuario: no era obvio que la familia se creaba
+    dejando el padre vacío).
+
+### Cambiado
+- **Página Herramientas fusionada en Gestión de Activos** (decisión del usuario:
+  "todo centralizado en Activos"). Lo que aportaba se movió antes de matarla:
+  - **Activos muestra "En posesión de {trabajador}"** (tarjeta y lista) para los
+    activos prestados, derivado de entregas − devoluciones (helper `tool-loans`);
+    el buscador también encuentra activos por el nombre de quien los tiene.
+  - **Impresión de QRs en lote generalizada**: `pagnol/activos/print-qrs` imprime
+    credenciales de CUALQUIER activo (filtros por tipo de uso, categoría jerárquica
+    y texto), con botón "Imprimir QRs" en la barra de Activos. Antes solo herramientas.
+  - `/pagnol/herramientas` y su print-qrs son redirects (el primero aterriza en
+    Activos con el filtro Herramienta Menor preaplicado vía `?tipo=`); la entrada
+    "Herramientas" desapareció del sidebar; la alta rápida se reemplaza por
+    "Registrar Activo" + sugerencia automática de tipo por categoría.
+
+- **Lenguaje minero en toda la UI del pañol** (foco del producto: pañol de minería,
+  ya sin módulo Bodega): barrido "Bodega→Pañol" y "obra→faena" en todos los textos
+  visibles — Transacciones (Pañol → Faena / Faena → Pañol, rutas del kardex),
+  Informes (Valorización en Pañol, Retorno a Pañol, Pañol Central), Solicitudes
+  ("devoluciones desde faena"), Solicitudes de Compra ("ingreso al pañol"),
+  placeholders (sector chancado), home ("activos, pañol, solicitudes y
+  transacciones"), flujos del supervisor (Solicitar al Pañol, Contrato / Faena),
+  purchasing/abastecimiento/reporte de entregas, etiquetas de permisos y pricing
+  ("pañol de terreno"). Se conservan a propósito: "bodegas" en DTE (lenguaje SII),
+  "Bodegas ordenadas" del checklist SQM (réplica fiel), y "Obra" en
+  construction-control/work-reports/safety (dominios de construcción o campos de BD).
+
+### Eliminado
+- **Colección `toolLogs` y tipo `ToolLog`**: la página fusionada era su último lector
+  (la tabla `tool_logs` está vacía en todos los tenants tras la migración
+  herramientas→activos); una suscripción Realtime y una colección menos en el
+  navegador. La colección `tools` legacy se conserva (asistente IA y fallback de
+  nombres del panel Pagnol).
+
+### Corregido
+- **`pagnol/activos` no permitía crear herramientas (ni los demás tipos de uso canónicos).**
+  El formulario y el filtro usaban la taxonomía legacy de Bodega (`Consumible/Retornable/
+  Permanente`): todo activo nuevo quedaba como Consumible (una "herramienta eléctrica" nunca
+  aparecía en Herramientas), elegir Retornable/Permanente violaba el constraint
+  `materials_usage_type_check`, y editar una herramienta la degradaba a "Permanente"
+  (`mapUsageType`). Ahora el formulario ofrece los 6 tipos canónicos con descripción
+  (Consumible, Reutilizable Controlado, Herramienta Menor, Repuesto Crítico, Activo Fijo,
+  IT Controlado), el filtro "Modelo de Uso" los usa y normaliza valores legacy guardados,
+  y al elegir una categoría que contenga "herramienta" se sugiere automáticamente
+  Herramienta Menor (sin pisar la elección manual).
+
+### Agregado
+- **Helper compartido `src/modules/core/lib/tool-loans.ts`**: `computeToolHolderMap` /
+  `computeActiveToolLoans` reconstruyen la posesión de herramientas por event-sourcing
+  (entregas/devoluciones en orden cronológico); `pagnol/herramientas`, el panel de
+  work-reports y el reporte de inventario comparten esta única implementación.
+
+### Eliminado
+- **Código muerto del módulo de herramientas legacy** (sin importadores): `tool-checkout-card`,
+  `edit-tool-form`, `generate-tool-form` y `toolMutations.ts` completo (add/update/delete/
+  checkout/return/findActiveLogForTool) junto con sus firmas en el contexto. Las colecciones
+  `tools`/`toolLogs` se conservan como historial de solo lectura (tarjeta legado en
+  `pagnol/herramientas`, fallback de nombres en el panel Pagnol, contexto del asistente IA).
+
+## [2026-06-29 — 2026-07-02] — Stock por Contrato/Pañol, Fusión Bodega→Pagnol, Beneficiario y Herramientas→Activos
+
+Commiteado en `bd02368` y `d32437e`.
+
+### Cambiado
 - **Unificación Herramientas → Activos.** El sistema paralelo de herramientas (tabla `tools` +
   `tool_logs`, préstamo express sin stock/costo/contrato, herencia de la app de construcción)
   se unifica con los activos Pagnol:
-  - **Migración `20260702130000_tools_to_materials.sql` (PENDIENTE DE APLICAR):** cada `tool` se
+  - **Migración `20260702130000_tools_to_materials.sql` (APLICADA 2026-07-02):** cada `tool` se
     materializa como `material` (usage_type 'Herramienta Menor', Clase C, unidad, categoría
     'Herramientas'). **Drift de esquema descubierto al aplicar la v1**: `tools` real NO tiene
     `qr_code` (tiene `serial_number`/`internal_code`/`assigned_to`, todos NULL en prod) y

@@ -87,7 +87,6 @@ const getPanolNavItems = (can: (p: Permission) => boolean) => [
   { href: '/dashboard/pagnol/solicitudes', icon: ClipboardList, label: 'Solicitudes y Devoluciones' },
   { href: '/dashboard/pagnol/movimientos', icon: ArrowLeftRight, label: 'Transacciones' },
   { href: '/dashboard/pagnol/mantenimiento', icon: Wrench, label: 'Mantenimiento (OT)' },
-  { href: '/dashboard/pagnol/herramientas', icon: QrCode, label: 'Herramientas' },
   { href: '/dashboard/pagnol/ingreso-stock', icon: PackagePlus, label: 'Ingreso Manual' },
   { href: '/dashboard/pagnol/panoles', icon: Warehouse, label: 'Pañoles' },
   { href: '/dashboard/pagnol/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes Compra' },

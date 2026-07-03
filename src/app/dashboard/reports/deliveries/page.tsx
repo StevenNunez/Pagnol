@@ -124,7 +124,7 @@ export default function DeliveryReportPage() {
     return (
         <div className="flex flex-col gap-8">
             <PageHeader
-                title="Reporte de Entregas de Bodega"
+                title="Reporte de Entregas de Pañol"
                 description="Visualiza todas las entregas de materiales por trabajador y por APR."
             />
 

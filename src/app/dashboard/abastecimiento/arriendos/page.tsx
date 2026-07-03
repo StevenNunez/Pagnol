@@ -223,7 +223,7 @@ export default function AbastecimientoArriendosPage() {
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span>{fmt(req.startDate)} → {fmt(req.endDate)}</span>
                       <span>{CYCLE_LABELS[req.billingCycleEstimate]}</span>
-                      <span><b>Obra:</b> {req.contractName || "—"}</span>
+                      <span><b>Contrato:</b> {req.contractName || "—"}</span>
                       <span><b>Solicita:</b> {req.supervisorName}</span>
                     </div>
                     {req.justification && <div className="text-xs text-muted-foreground italic">"{req.justification}"</div>}

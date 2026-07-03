@@ -275,7 +275,7 @@ export default function PurchaseRequestFormPage() {
     <div className="flex flex-col gap-8 pb-12 fade-in">
       <PageHeader
         title="Solicitud de Compra"
-        description="Gestiona la adquisición de materiales externos o sin stock en bodega."
+        description="Gestiona la adquisición de materiales externos o sin stock en el pañol."
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
@@ -442,7 +442,7 @@ export default function PurchaseRequestFormPage() {
 
                             {/* Contrato / Obra */}
                             <div className="space-y-1.5">
-                                <Label htmlFor="contract" className="text-[10px] text-muted-foreground">Contrato / Obra <span className="text-destructive">*</span></Label>
+                                <Label htmlFor="contract" className="text-[10px] text-muted-foreground">Contrato / Faena <span className="text-destructive">*</span></Label>
                                 {isFieldWorkerSingleContract ? (
                                     <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/40 text-sm">
                                         <Package className="h-4 w-4 text-primary shrink-0" />

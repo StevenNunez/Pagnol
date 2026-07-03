@@ -161,7 +161,7 @@ function ReceiveRequestDialog({
             Recepción de Material
           </DialogTitle>
           <DialogDescription>
-            Ingreso a bodega de: <span className="font-semibold text-foreground">{request.materialName}</span>
+            Ingreso al pañol de: <span className="font-semibold text-foreground">{request.materialName}</span>
           </DialogDescription>
         </DialogHeader>
         
@@ -504,7 +504,7 @@ export default function PurchasingHubPage() {
       await receivePurchaseRequest(requestId, quantity, existingMaterialId);
       toast({
         title: "¡Recepción Exitosa!",
-        description: "El stock ha sido actualizado en bodega correctamente.",
+        description: "El stock ha sido actualizado en el pañol correctamente.",
       });
       setReceivingRequest(null);
     } catch (error) {
@@ -654,7 +654,7 @@ export default function PurchasingHubPage() {
               <Warehouse className="h-5 w-5" /> Consulta Rápida de Stock
             </CardTitle>
             <CardDescription>
-              Verifica disponibilidad actual en bodega para nuevas solicitudes.
+              Verifica disponibilidad actual en el pañol para nuevas solicitudes.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

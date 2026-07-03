@@ -7,6 +7,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { Material, User as UserType, MaterialCategory, Unit, Tool } from '@/modules/core/lib/data';
+import { computeToolHolderMap } from '@/modules/core/lib/tool-loans';
+import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/page-header';
 import {
   Grid,
@@ -69,6 +71,27 @@ type Asset = Material; // Alias para compatibilidad con el nuevo diseño
 type AssetStatus = 'Disponible' | 'En Mantenimiento' | 'Para Baja' | 'Extraviado' | 'En Uso' | 'Agotado' | 'Stock Crítico' | 'Archivado';
 type ModalType = 'ADD' | 'EDIT' | 'MAINTENANCE' | 'RETIRE';
 
+// Tipos de uso canónicos — deben calzar con el constraint
+// materials_usage_type_check de Supabase (los legacy Retornable/Permanente
+// ya no son válidos; ver normalizeUsageType).
+const USAGE_TYPES = [
+  'Consumible',
+  'Reutilizable Controlado',
+  'Herramienta Menor',
+  'Repuesto Crítico',
+  'Activo Fijo',
+  'IT Controlado',
+] as const;
+type UsageType = typeof USAGE_TYPES[number];
+
+// Normaliza valores legacy guardados con el constraint viejo.
+const normalizeUsageType = (type?: string | null): UsageType => {
+  if ((USAGE_TYPES as readonly string[]).includes(type || '')) return type as UsageType;
+  if (type === 'Retornable') return 'Reutilizable Controlado';
+  if (type === 'Permanente') return 'Activo Fijo';
+  return 'Consumible';
+};
+
 const assetSchema = z.object({
   name: z.string().min(3, "La descripción técnica es obligatoria."),
   serialNumber: z.string().optional(),
@@ -79,7 +102,7 @@ const assetSchema = z.object({
   technicalSheetName: z.string().optional(),
 
   // Defaulted fields to avoid showing them in the simplified form
-  usageType: z.enum(['Consumible', 'Retornable', 'Permanente']).default('Consumible'),
+  usageType: z.enum(USAGE_TYPES).default('Consumible'),
   unit: z.string().min(1).default('unidad'),
   stock: z.coerce.number().min(0).default(1),
   status: z.enum(['Disponible', 'En Mantenimiento', 'Para Baja', 'Extraviado', 'En Uso']).optional(),
@@ -100,15 +123,27 @@ const assetSchema = z.object({
 type FormData = z.infer<typeof assetSchema>;
 
 export default function ActivosPage() {
-  const { materials, addMaterial, deleteMaterial, updateMaterial, materialCategories, units, can, materialStocks, contracts } = useAppState();
+  const { materials, addMaterial, deleteMaterial, updateMaterial, materialCategories, units, suppliers, requests, returnRequests, users, can, materialStocks, contracts } = useAppState();
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
+
+  // Preset de filtros vía URL (?tipo=Herramienta Menor) — lo usan los
+  // redirects de la antigua página de Herramientas. En effect (no en el
+  // initializer) para no desalinear la hidratación SSR.
+  useEffect(() => {
+    const tipo = new URLSearchParams(window.location.search).get('tipo');
+    if (tipo && (USAGE_TYPES as readonly string[]).includes(tipo)) {
+      setSelectedUseType(tipo);
+    }
+  }, []);
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filter, setFilter] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [selectedUseType, setSelectedUseType] = useState<string>('ALL');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL'); // ALL | categoryId
   const [selectedContract, setSelectedContract] = useState<string>('ALL'); // ALL | POOL | contractId
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
@@ -186,6 +221,24 @@ export default function ActivosPage() {
   const failureImp = watch('failureImpact') || 1;
   const currentClass = watch('class');
   const currentUsageType = watch('usageType');
+  const currentCategoryId = watch('categoryId');
+
+  // Sugerencia al crear: una categoría tipo "Herramienta..." normalmente es
+  // Herramienta Menor (préstamo/devolución). Solo al cambiar la categoría,
+  // para no pisar una elección manual del usuario.
+  const prevCategoryIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (modalType !== 'ADD' || !isModalOpen) return;
+    if (prevCategoryIdRef.current === currentCategoryId) return;
+    prevCategoryIdRef.current = currentCategoryId;
+    const cats = (materialCategories || []) as MaterialCategory[];
+    const cat = cats.find((c) => c.id === currentCategoryId);
+    const parent = cat?.parentId ? cats.find((c) => c.id === cat.parentId) : undefined;
+    // Cuenta también la familia: "Herramientas → Taladros" sigue siendo herramienta.
+    if ((cat?.name && /herramienta/i.test(cat.name)) || (parent?.name && /herramienta/i.test(parent.name))) {
+      setValue('usageType', 'Herramienta Menor');
+    }
+  }, [currentCategoryId, modalType, isModalOpen, materialCategories, setValue]);
   // Sugerencias de unidad para el <datalist>: texto libre (materials.unit es un string plano,
   // no una FK), deduplicado — la colección `units` puede estar vacía o tener nombres repetidos.
   const uniqueUnitNames = useMemo(
@@ -235,6 +288,42 @@ export default function ActivosPage() {
     return maintenanceDate < today;
   };
 
+  // Jerarquía de categorías (Familia → Subcategoría) para el filtro "Categoría".
+  // materials.category guarda el NOMBRE, así que se resuelve por nombres:
+  // elegir una familia incluye también todas sus subcategorías.
+  const categoryTree = useMemo(() => {
+    const all = (materialCategories || []) as MaterialCategory[];
+    const byName = (a: MaterialCategory, b: MaterialCategory) => a.name.localeCompare(b.name);
+    const families = all.filter(c => !c.parentId).sort(byName);
+    const rows: { category: MaterialCategory; depth: 0 | 1 }[] = [];
+    families.forEach(f => {
+      rows.push({ category: f, depth: 0 });
+      all.filter(c => c.parentId === f.id).sort(byName)
+        .forEach(child => rows.push({ category: child, depth: 1 }));
+    });
+    // Huérfanas (padre eliminado) al final como nivel superior.
+    all.filter(c => c.parentId && !all.some(p => p.id === c.parentId)).sort(byName)
+      .forEach(c => rows.push({ category: c, depth: 0 }));
+    return rows;
+  }, [materialCategories]);
+
+  const categoryNamesForFilter = useMemo(() => {
+    if (selectedCategory === 'ALL') return null;
+    const all = (materialCategories || []) as MaterialCategory[];
+    const cat = all.find(c => c.id === selectedCategory);
+    if (!cat) return null;
+    const names = new Set<string>([cat.name]);
+    all.filter(c => c.parentId === cat.id).forEach(child => names.add(child.name));
+    return names;
+  }, [materialCategories, selectedCategory]);
+
+  // Quién tiene cada activo prestable (entregas − devoluciones, mismo modelo
+  // que usaba pagnol/herramientas antes de fusionarse aquí).
+  const holderMap = useMemo(
+    () => computeToolHolderMap(requests, returnRequests, users),
+    [requests, returnRequests, users]
+  );
+
   // Contratos activos para el filtro "Contrato" (dimensión de existencias).
   const activeContractsForFilter = useMemo(
     () => (contracts || []).filter((c: any) => c.status === 'active').sort((a: any, b: any) => a.name.localeCompare(b.name)),
@@ -257,21 +346,23 @@ export default function ActivosPage() {
   const filteredAssets = useMemo(() => {
     return (materials || []).filter((a: Material) => {
       const status = getStatusLabel(a);
-      const matchesSearch = a.name.toLowerCase().includes(filter.toLowerCase()) || a.id.toLowerCase().includes(filter.toLowerCase()) || (a.internalCode || '').toLowerCase().includes(filter.toLowerCase());
+      const matchesSearch = a.name.toLowerCase().includes(filter.toLowerCase()) || a.id.toLowerCase().includes(filter.toLowerCase()) || (a.internalCode || '').toLowerCase().includes(filter.toLowerCase())
+        || (holderMap.get(a.id)?.name || '').toLowerCase().includes(filter.toLowerCase());
       const matchesStatus = selectedStatus === 'ALL' || status === selectedStatus;
       const matchesClass = selectedClass === 'ALL' || a.class === selectedClass;
-      const matchesUse = selectedUseType === 'ALL' || a.usageType === selectedUseType;
+      const matchesUse = selectedUseType === 'ALL' || normalizeUsageType(a.usageType) === selectedUseType;
+      const matchesCategory = categoryNamesForFilter === null || categoryNamesForFilter.has(a.category || '');
       const matchesOverdue = !showOverdueOnly || isMaintenanceOverdue(a.nextMaintenanceDate);
       const matchesContract = materialIdsInContract === null || materialIdsInContract.has(a.id);
-      return matchesSearch && matchesStatus && matchesClass && matchesUse && matchesOverdue && matchesContract;
+      return matchesSearch && matchesStatus && matchesClass && matchesUse && matchesCategory && matchesOverdue && matchesContract;
     });
-  }, [materials, filter, selectedStatus, selectedClass, selectedUseType, showOverdueOnly, getStatusLabel, isMaintenanceOverdue, materialIdsInContract]);
+  }, [materials, filter, selectedStatus, selectedClass, selectedUseType, categoryNamesForFilter, showOverdueOnly, getStatusLabel, isMaintenanceOverdue, materialIdsInContract, holderMap]);
 
   // Reset pagination whenever filters change
   useEffect(() => {
     setVisibleCount(24);
     setListPage(0);
-  }, [filter, selectedStatus, selectedClass, selectedUseType, showOverdueOnly, selectedContract]);
+  }, [filter, selectedStatus, selectedClass, selectedUseType, selectedCategory, showOverdueOnly, selectedContract]);
 
   const openQrModal = (asset: Asset) => {
     setQrAsset(asset);
@@ -360,6 +451,7 @@ export default function ActivosPage() {
       description: '',
       technicalSheetUrl: '',
       technicalSheetName: '',
+      supplierId: null,
       parentId: null,
       failureProbability: 1,
       failureImpact: 1,
@@ -372,27 +464,12 @@ export default function ActivosPage() {
     setTechSheetFile(null);
     const category = materialCategories.find(c => c.name === asset.category);
 
-    // Map asset usageType to form usageType
-    const mapUsageType = (type: string): 'Consumible' | 'Retornable' | 'Permanente' => {
-      const typeMap: Record<string, 'Consumible' | 'Retornable' | 'Permanente'> = {
-        'Consumible': 'Consumible',
-        'Retornable': 'Retornable',
-        'Reutilizable Controlado': 'Retornable',
-        'Permanente': 'Permanente',
-        'Herramienta Menor': 'Permanente',
-        'Repuesto Crítico': 'Permanente',
-        'Activo Fijo': 'Permanente',
-        'IT Controlado': 'Permanente',
-      };
-      return typeMap[type] || 'Consumible';
-    };
-
     reset({
       name: asset.name,
       serialNumber: asset.serialNumber || '',
       categoryId: category?.id || '',
       class: asset.class || 'C',
-      usageType: mapUsageType(asset.usageType || 'Consumible'),
+      usageType: normalizeUsageType(asset.usageType),
       unitCost: asset.unitCost || 0,
       status: asset.status || 'Disponible',
       stock: asset.stock || 1,
@@ -403,6 +480,7 @@ export default function ActivosPage() {
       description: asset.description || '',
       technicalSheetUrl: asset.technicalSheetUrl || '',
       technicalSheetName: asset.technicalSheetName || '',
+      supplierId: asset.supplierId || null,
       parentId: asset.parentId || null,
       failureProbability: asset.failureProbability || 1,
       failureImpact: asset.failureImpact || 1,
@@ -588,6 +666,15 @@ export default function ActivosPage() {
             />
           </div>
           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            {can('users:print_qr') && (
+              <Button
+                variant="outline"
+                onClick={() => router.push('/dashboard/pagnol/activos/print-qrs')}
+                className="w-full sm:w-auto flex items-center justify-center gap-3 px-6 py-5 sm:py-4 rounded-[1.5rem]"
+              >
+                <Printer size={18} /> Imprimir QRs
+              </Button>
+            )}
             {canManageCatalog && (
               <Button
                 onClick={openAddModal}
@@ -636,7 +723,22 @@ export default function ActivosPage() {
               <SelectTrigger className="bg-muted/50 border rounded-xl px-4 py-2 h-10 text-[10px] font-bold uppercase tracking-widest transition-all w-full sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent className="rounded-xl shadow-2xl border-none">
                 <SelectItem value="ALL">TODOS LOS TIPOS</SelectItem>
-                {['Consumible', 'Retornable', 'Permanente'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                {USAGE_TYPES.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col space-y-2">
+            <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1">Categoría</label>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="bg-muted/50 border rounded-xl px-4 py-2 h-10 text-[10px] font-bold uppercase tracking-widest transition-all w-full sm:w-48"><SelectValue /></SelectTrigger>
+              <SelectContent className="rounded-xl shadow-2xl border-none">
+                <SelectItem value="ALL">TODAS LAS CATEGORÍAS</SelectItem>
+                {categoryTree.map(({ category, depth }) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {depth === 1 ? `— ${category.name}` : category.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -654,7 +756,7 @@ export default function ActivosPage() {
           </div>
 
           <Button
-            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setSelectedContract('ALL'); setFilter(''); }}
+            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setSelectedCategory('ALL'); setSelectedContract('ALL'); setFilter(''); }}
             variant="ghost"
             className="h-10 px-4 text-[9px] font-black text-muted-foreground rounded-xl hover:bg-muted transition-all uppercase tracking-widest flex items-center gap-2"
           >
@@ -729,6 +831,12 @@ export default function ActivosPage() {
                       <span className="uppercase tracking-widest opacity-60">S/N</span>
                       <span className="text-foreground uppercase">{asset.serialNumber || 'N/A'}</span>
                     </div>
+                    {holderMap.has(asset.id) && (
+                      <div className="flex justify-between text-[10px] font-bold text-muted-foreground px-1">
+                        <span className="uppercase tracking-widest opacity-60">En posesión de</span>
+                        <span className="text-info font-black uppercase">{holderMap.get(asset.id)!.name}</span>
+                      </div>
+                    )}
                     {asset.usageType === 'Consumible' && (
                       <div className="flex justify-between text-[10px] font-bold text-muted-foreground px-1">
                         <span className="uppercase tracking-widest opacity-60">Stock Volumen</span>
@@ -837,6 +945,9 @@ export default function ActivosPage() {
                         <td className="px-10 py-6">
                           <div className="text-[10px] font-black text-foreground/60 uppercase tracking-widest">CLASE {asset.class}</div>
                           <div className="text-[9px] text-muted-foreground font-bold uppercase mt-1 tracking-widest">{asset.usageType}</div>
+                          {holderMap.has(asset.id) && (
+                            <div className="text-[9px] text-info font-black uppercase mt-1 tracking-widest">En posesión de {holderMap.get(asset.id)!.name}</div>
+                          )}
                         </td>
                         <td className="px-10 py-6">
                           {asset.nextMaintenanceDate ? (
@@ -1082,7 +1193,11 @@ export default function ActivosPage() {
                           <Select onValueChange={field.onChange} value={field.value}>
                             <SelectTrigger className="py-6 rounded-2xl"><SelectValue placeholder="EPP..." /></SelectTrigger>
                             <SelectContent>
-                              {materialCategories.map((cat: MaterialCategory) => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
+                              {categoryTree.map(({ category, depth }) => (
+                                <SelectItem key={category.id} value={category.id} className={depth === 0 ? 'font-bold' : ''}>
+                                  {depth === 1 ? `— ${category.name}` : category.name}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         )} />
@@ -1119,8 +1234,11 @@ export default function ActivosPage() {
                             <SelectTrigger id="usageType" className="py-6 rounded-2xl"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="Consumible">Consumible (se descuenta por cantidad)</SelectItem>
-                              <SelectItem value="Retornable">Retornable (se presta y devuelve)</SelectItem>
-                              <SelectItem value="Permanente">Permanente (activo fijo único)</SelectItem>
+                              <SelectItem value="Reutilizable Controlado">Reutilizable Controlado (se presta y devuelve)</SelectItem>
+                              <SelectItem value="Herramienta Menor">Herramienta Menor (préstamo con QR — aparece en Herramientas)</SelectItem>
+                              <SelectItem value="Repuesto Crítico">Repuesto Crítico (inventario estratégico)</SelectItem>
+                              <SelectItem value="Activo Fijo">Activo Fijo (único y permanente: container, mobiliario…)</SelectItem>
+                              <SelectItem value="IT Controlado">IT Controlado (computadores y equipos TI)</SelectItem>
                             </SelectContent>
                           </Select>
                         )} />
@@ -1147,6 +1265,39 @@ export default function ActivosPage() {
                         {errors.stock && <p className="text-xs text-destructive">{errors.stock.message}</p>}
                       </div>
                     )}
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Fecha de Adquisición</Label>
+                        <Controller control={control} name="acquisitionDate" render={({ field }) => (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="w-full justify-start text-left font-normal py-6 rounded-2xl">
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {field.value ? format(field.value, "PPP", { locale: es }) : "Selecciona fecha"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                              <CalendarUI mode="single" selected={field.value || undefined} onSelect={(d) => field.onChange(d || null)} />
+                            </PopoverContent>
+                          </Popover>
+                        )} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Proveedor</Label>
+                        <Controller name="supplierId" control={control} render={({ field }) => (
+                          <Select onValueChange={field.onChange} value={field.value || 'ninguno'}>
+                            <SelectTrigger className="py-6 rounded-2xl"><SelectValue placeholder="Sin proveedor" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ninguno">Sin proveedor</SelectItem>
+                              {[...(suppliers || [])].sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
+                                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )} />
+                      </div>
+                    </div>
 
                     <div className="bg-pagnol-orange/10 border border-pagnol-orange/20 p-6 rounded-[2rem] space-y-6">
                       <h6 className="text-[10px] font-black uppercase text-pagnol-orange tracking-widest flex items-center gap-2">

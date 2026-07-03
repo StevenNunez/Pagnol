@@ -30,7 +30,8 @@ import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAppState } from '@/modules/core/contexts/app-provider';
-import type { WorkOrder, WorkReport, ToolLog } from '@/modules/core/lib/data';
+import type { WorkOrder, WorkReport } from '@/modules/core/lib/data';
+import { computeActiveToolLoans, type ActiveToolLoan } from '@/modules/core/lib/tool-loans';
 import { WORK_REPORT_STATUS_LABEL as STATUS_LABEL } from '@/modules/core/lib/work-report-labels';
 
 type Period = 'today' | 'week' | 'month' | 'year' | 'all';
@@ -79,7 +80,7 @@ const fmtDate = (d?: Date | string | null) => {
 export default function WorkReportsExecutiveDashboard() {
   const router = useRouter();
   const {
-    workOrders, workReports, workWeeklyReports, toolLogs, materials,
+    workOrders, workReports, workWeeklyReports, materials, requests, returnRequests, users,
     workReportAreas, workReportSpecialties, can, isLoading,
   } = useAppState();
 
@@ -93,7 +94,6 @@ export default function WorkReportsExecutiveDashboard() {
   const orders = workOrders || [];
   const reports = workReports || [];
   const weeklies = workWeeklyReports || [];
-  const logs = toolLogs || [];
 
   // Índice nombre→costo unitario, para estimar consumo en CLP (las OT guardan
   // material como texto libre; se cruza por nombre con el catálogo de bodega).
@@ -162,8 +162,13 @@ export default function WorkReportsExecutiveDashboard() {
     return { hh, hm, incompletas, cumpl, observados, porAprobar };
   }, [fOrders, fReports]);
 
-  // Herramientas pendientes de devolución (no se filtran por período: son préstamos abiertos).
-  const toolsOut = useMemo(() => logs.filter((l) => !l.returnDate), [logs]);
+  // Herramientas pendientes de devolución (no se filtran por período: son préstamos
+  // abiertos). Se derivan de solicitudes entregadas + devoluciones completadas —
+  // tool_logs quedó legado tras la migración herramientas→activos.
+  const toolsOut = useMemo(
+    () => computeActiveToolLoans(materials, requests, returnRequests, users),
+    [materials, requests, returnRequests, users]
+  );
 
   // Stock crítico: usa minStock si está definido; si no, cae a stock <= 0.
   const criticalStock = useMemo(() => (materials || []).filter((m) => {
@@ -388,7 +393,7 @@ export default function WorkReportsExecutiveDashboard() {
             <DataTable
               columns={toolCols}
               data={toolsOut.slice(0, 12)}
-              rowKey={(l) => l.id}
+              rowKey={(l) => l.materialId}
               isLoading={isLoading}
               empty={{ icon: <CheckCircle2 size={20} />, title: 'Todo devuelto', description: 'No hay herramientas prestadas sin devolver.' }}
             />
@@ -428,14 +433,14 @@ const reportCols: DataTableColumn<WorkReport>[] = [
   { key: 'st', header: 'Estado', cell: (r) => <Badge className={`rounded-xl ${REPORT_BADGE[r.status]}`}>{STATUS_LABEL[r.status]}</Badge> },
 ];
 
-const toolCols: DataTableColumn<ToolLog>[] = [
-  { key: 'tool', header: 'Herramienta', cell: (l) => <span className="font-bold">{l.toolName}</span> },
-  { key: 'user', header: 'Asignada a', cell: (l) => l.userName || '—' },
-  { key: 'date', header: 'Salida', cell: (l) => fmtDate(l.checkoutDate) },
+const toolCols: DataTableColumn<ActiveToolLoan>[] = [
+  { key: 'tool', header: 'Herramienta', cell: (l) => <span className="font-bold">{l.materialName}</span> },
+  { key: 'user', header: 'Asignada a', cell: (l) => l.name || '—' },
+  { key: 'date', header: 'Salida', cell: (l) => fmtDate(l.since) },
   {
     key: 'days', header: 'Días', className: 'text-right', headerClassName: 'text-right',
     cell: (l) => {
-      const d = differenceInDays(new Date(), new Date(l.checkoutDate as any));
+      const d = differenceInDays(new Date(), l.since);
       const days = isNaN(d) ? 0 : Math.max(0, d);
       return <span className={`font-bold tabular-nums ${days > 7 ? 'text-destructive' : ''}`}>{days}</span>;
     },

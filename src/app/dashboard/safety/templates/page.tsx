@@ -246,7 +246,7 @@ export default function AprTemplatesPage() {
                        <Label htmlFor="work-area">Obra / Área de Trabajo</Label>
                        <Input 
                             id="work-area" 
-                            placeholder="Ej: Obra File 721, Bodega Central"
+                            placeholder="Ej: Faena Norte, Pañol Central"
                             value={workArea}
                             onChange={(e) => setWorkArea(e.target.value)}
                         />

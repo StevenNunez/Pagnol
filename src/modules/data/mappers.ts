@@ -1,5 +1,5 @@
 import {
-    Material, User, ToolLog, StockMovement, AttendanceLog, MaterialRequest, PurchaseRequest,
+    Material, User, MaterialCategory, StockMovement, AttendanceLog, MaterialRequest, PurchaseRequest,
     ReturnRequest, PurchaseLot, PurchaseOrder, Supplier, SupplierPayment, SalaryAdvance, QuoteRequest, GoodsReceipt, CostCenter,
     AssignedSafetyTask, ChecklistTemplate, SafetyInspection, BehaviorObservation,
     WorkItem, ProgressLog, PaymentState, DailyTalk, MaintenanceOrder, MaintenanceLog, EADocument,
@@ -75,19 +75,11 @@ export const mappers = {
         emergencyContactPhone: item.emergency_contact_phone || undefined,
         employmentStatus: item.employment_status || 'active',
     }),
-    tool_logs: (item: any): ToolLog => ({
+    material_categories: (item: any): MaterialCategory => ({
         id: item.id,
-        toolId: item.tool_id,
-        toolName: item.tool_name,
-        userId: item.worker_id || item.user_id,
-        userName: item.worker_name || item.user_name,
-        checkoutDate: item.checkout_date ? new Date(item.checkout_date) : new Date(),
-        returnDate: item.return_date || item.actual_return_date ? new Date(item.return_date || item.actual_return_date) : null,
-        checkoutSupervisorId: item.tenant_id,
-        checkoutSupervisorName: 'Admin',
-        returnStatus: item.status,
-        returnNotes: item.observations || item.return_notes
-    } as any),
+        name: item.name,
+        parentId: item.parent_id ?? null,
+    }),
     stock_movements: (item: any): StockMovement => ({
         id: item.id,
         materialId: item.material_id,

@@ -3,5 +3,5 @@
 import { redirect } from 'next/navigation';
 
 export default function Page() {
-  redirect('/dashboard/pagnol/herramientas/print-qrs');
+  redirect('/dashboard/pagnol/activos/print-qrs');
 }

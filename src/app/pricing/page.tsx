@@ -148,7 +148,7 @@ export default function PricingPage() {
                             </div>
                             <CardTitle className="text-3xl font-black uppercase text-slate-900">Con ERP</CardTitle>
                             <CardDescription className="text-base font-medium text-muted-foreground mt-4 leading-relaxed">
-                                Tienes SAP, Oracle, Softland u otro sistema central, pero no llega a la bodega de terreno. Pagnol cubre esa "última milla".
+                                Tienes SAP, Oracle, Softland u otro sistema central, pero no llega al pañol de terreno. Pagnol cubre esa "última milla".
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="p-10 flex-1">

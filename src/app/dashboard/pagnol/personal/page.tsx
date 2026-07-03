@@ -175,7 +175,7 @@ export default function PersonalPage() {
         type: 'RETURN',
         timestamp: (r.createdAt as any)?.toDate ? (r.createdAt as any).toDate().toISOString() : new Date(r.createdAt as any).toISOString(),
         assetIds: [r.materialId],
-        site: "Bodega",
+        site: "Pañol",
         isApproved: r.status === 'completed',
         employeeId: r.supervisorId,
       });

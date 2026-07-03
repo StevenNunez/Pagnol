@@ -130,7 +130,7 @@ export default function SupervisorHubPage() {
         : "Solicitud de material";
       list.push({
         id: `req-${r.id}`, originalId: r.id, type: "request", title,
-        subtitle: `Destino: ${r.area || "Obra"}`, time: toDate(r.createdAt),
+        subtitle: `Destino: ${r.area || "Faena"}`, time: toDate(r.createdAt),
         status: r.status, delivered: !!r.deliveryDate,
       });
     });
@@ -159,7 +159,7 @@ export default function SupervisorHubPage() {
       list.push({
         id: `rent-${r.id}`, originalId: r.id, type: "rental",
         title: `Arriendo: ${r.equipmentName}`,
-        subtitle: `${r.contractName || "Obra"} · ×${r.quantity}`,
+        subtitle: `${r.contractName || "Faena"} · ×${r.quantity}`,
         time: toDate(r.createdAt), status: r.status,
       });
     });
@@ -190,7 +190,7 @@ export default function SupervisorHubPage() {
 
   const getTypeConfig = (t: string) => {
     switch (t) {
-      case "request": return { icon: Package, accent: "primary", label: "Bodega" };
+      case "request": return { icon: Package, accent: "primary", label: "Pañol" };
       case "purchase": return { icon: ShoppingCart, accent: "info", label: "Compra" };
       case "return": return { icon: RotateCcw, accent: "success", label: "Devolución" };
       case "rental": return { icon: KeyRound, accent: "warning", label: "Arriendo" };
@@ -237,7 +237,7 @@ export default function SupervisorHubPage() {
       <div>
         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Acciones rápidas</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <QuickAction href="/dashboard/supervisor/request" icon={Package} title="Solicitar a Bodega" desc="Material disponible" accent="primary" arrow={ArrowUpRight} />
+          <QuickAction href="/dashboard/supervisor/request" icon={Package} title="Solicitar al Pañol" desc="Material disponible" accent="primary" arrow={ArrowUpRight} />
           <QuickAction href="/dashboard/purchasing/purchase-request-form" icon={ShoppingCart} title="Solicitar Compra" desc="Material sin stock" accent="info" arrow={ArrowUpRight} />
           <QuickAction href="/dashboard/supervisor/rental-request" icon={KeyRound} title="Solicitar Arriendo" desc="Equipos de terceros" accent="warning" arrow={ArrowUpRight} />
           <QuickAction href="/dashboard/supervisor/return-request" icon={RotateCcw} title="Devolver Material" desc="Retornar sobrantes" accent="success" arrow={ArrowDownLeft} />
@@ -261,7 +261,7 @@ export default function SupervisorHubPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-4 grid grid-cols-3 sm:grid-cols-5 sm:flex">
               <TabsTrigger value="all">Todo</TabsTrigger>
-              <TabsTrigger value="request" className="gap-2"><Package className="h-4 w-4" /> Bodega</TabsTrigger>
+              <TabsTrigger value="request" className="gap-2"><Package className="h-4 w-4" /> Pañol</TabsTrigger>
               <TabsTrigger value="purchase" className="gap-2"><ShoppingCart className="h-4 w-4" /> Compras</TabsTrigger>
               <TabsTrigger value="rental" className="gap-2"><KeyRound className="h-4 w-4" /> Arriendos</TabsTrigger>
               <TabsTrigger value="return" className="gap-2"><RotateCcw className="h-4 w-4" /> Devol.</TabsTrigger>

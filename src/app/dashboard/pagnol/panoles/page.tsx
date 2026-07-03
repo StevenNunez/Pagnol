@@ -336,7 +336,7 @@ export default function WarehousesPage() {
                                     id="wh-location"
                                     value={form.location}
                                     onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                                    placeholder="Faena norte, bodega 2"
+                                    placeholder="Ej: Faena norte, sector chancado"
                                     className="rounded-xl"
                                 />
                             </div>

@@ -163,6 +163,9 @@ export interface Tool {
 export interface MaterialCategory {
   id: string;
   name: string;
+  // Jerarquía de 2 niveles: NULL = familia (nivel superior); con valor =
+  // subcategoría de esa familia (ej: Herramientas → Herramientas Eléctricas).
+  parentId?: string | null;
 }
 
 // Catálogos de precarga para Reportes de Trabajo (OT). Name-only, tenant-scoped.
@@ -362,22 +365,6 @@ export interface PurchaseRequest {
   // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
   adcAuthorizedAt?: Date | string | null;
   adcAuthorizedById?: string | null;
-}
-
-export interface ToolLog {
-  id: string;
-  toolId: string;
-  toolName: string;
-  userId: string;
-  userName: string;
-  checkoutDate: Date;
-  returnDate: Date | null;
-  checkoutSupervisorId: string;
-  checkoutSupervisorName: string;
-  returnSupervisorId?: string;
-  returnSupervisorName?: string;
-  returnStatus?: 'ok' | 'damaged' | null;
-  returnNotes?: string;
 }
 
 // Códigos de marcas de asistencia (estándar industria minera)

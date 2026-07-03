@@ -115,7 +115,7 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
         <DialogHeader>
           <DialogTitle>Registrar Recepción de Material</DialogTitle>
           <DialogDescription>
-            Confirma la cantidad de <span className="font-semibold">{String(request.materialName ?? "")}</span> que ha llegado a bodega.
+            Confirma la cantidad de <span className="font-semibold">{String(request.materialName ?? "")}</span> que ha llegado al pañol.
           </DialogDescription>
         </DialogHeader>
         <div className="py-4 space-y-4">
@@ -302,7 +302,7 @@ export default function AdminPurchaseRequestsPage() {
   return (
     <PageShell
       title="Solicitudes de Compra"
-      description="Revisa, gestiona y registra el ingreso de materiales aprobados a bodega."
+      description="Revisa, gestiona y registra el ingreso de materiales aprobados al pañol."
     >
       {editingRequest && (
         <EditPurchaseRequestForm

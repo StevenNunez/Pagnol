@@ -156,7 +156,7 @@ export default function SupervisorReturnRequestPage() {
     <div className="flex flex-col gap-8 pb-10 fade-in">
       <PageHeader 
         title="Registrar Devolución de Materiales" 
-        description="Indica la cantidad sobrante de los materiales que retiraste para devolverlos a bodega." 
+        description="Indica la cantidad sobrante de los materiales que retiraste para devolverlos al pañol."
       />
       <Card>
         <CardHeader>

@@ -10,8 +10,8 @@ import type { UserRole } from "./data";
 export const ALL_PERMISSIONS = {
     // ── Acceso a Módulos ─────────────────────────────────────────────
     'module_pagnol:view': { label: 'Acceder a Módulo Pagnol', group: 'Acceso a Módulos' },
-    'module_warehouse:view': { label: 'Acceder a Bodega Central', group: 'Acceso a Módulos' },
-    'module_bodega:view': { label: 'Acceder a Bodega (fusionada en Módulo Pagnol)', group: 'Acceso a Módulos' },
+    'module_warehouse:view': { label: 'Acceder al Pañol Central', group: 'Acceso a Módulos' },
+    'module_bodega:view': { label: 'Acceder al Pañol (ex Bodega, fusionada en Módulo Pagnol)', group: 'Acceso a Módulos' },
     'module_purchasing:view': { label: 'Acceder a Compras', group: 'Acceso a Módulos' },
     'module_users:view': { label: 'Acceder a Usuarios', group: 'Acceso a Módulos' },
     'module_subscriptions:view': { label: 'Acceder a Suscripciones', group: 'Plataforma' },

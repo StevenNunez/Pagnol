@@ -36,7 +36,7 @@ export default function DashboardHub() {
     const modules = [
         {
             title: "Módulo Pagnol",
-            description: "Gestión especializada para minería: activos, bodega, solicitudes y herramientas.",
+            description: "Gestión especializada para minería: activos, pañol, solicitudes y transacciones.",
             icon: Pickaxe,
             href: "/dashboard/pagnol",
             color: "text-cyan-600 dark:text-cyan-400",
@@ -158,7 +158,7 @@ export default function DashboardHub() {
         },
         {
             title: "Módulo Supervisor",
-            description: "Gestiona solicitudes, devoluciones y compras de obra.",
+            description: "Gestiona solicitudes, devoluciones y compras de faena.",
             icon: Construction,
             href: "/dashboard/supervisor",
             color: "text-yellow-600 dark:text-yellow-400",

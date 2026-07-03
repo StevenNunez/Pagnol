@@ -421,18 +421,27 @@ export async function deleteMaterial(materialId: string, { }: Context) {
 }
 
 // --- Categories & Units ---
-export async function addMaterialCategory(name: string, { tenantId }: Context) {
+// OJO bindContext: el contexto va SIEMPRE al final, así que parentId es
+// posicional obligatorio para los llamadores (pasar null si no aplica).
+export async function addMaterialCategory(name: string, parentId: string | null, { tenantId }: Context) {
     if (!tenantId) throw new Error("Inquilino no válido.");
+    // parent_id solo si viene: así crear categorías planas sigue funcionando
+    // aunque la migración 20260703000000 (jerarquía) no esté aplicada aún.
+    const row: Record<string, any> = { name, tenant_id: tenantId };
+    if (parentId) row.parent_id = parentId;
     const { error } = await supabase
         .from('material_categories')
-        .insert({ name, tenant_id: tenantId });
+        .insert(row);
     if (error) throw error;
 }
 
-export async function updateMaterialCategory(id: string, name: string, { }: Context) {
+export async function updateMaterialCategory(id: string, data: { name?: string; parentId?: string | null }, { }: Context) {
+    const patch: Record<string, any> = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.parentId !== undefined) patch.parent_id = data.parentId;
     const { error } = await supabase
         .from('material_categories')
-        .update({ name })
+        .update(patch)
         .eq('id', id);
     if (error) throw error;
 }

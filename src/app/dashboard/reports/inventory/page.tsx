@@ -36,13 +36,14 @@ import {
     Edit,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { Material, Tool, ToolLog } from "@/modules/core/lib/data";
+import type { Material } from "@/modules/core/lib/data";
+import { computeToolHolderMap } from "@/modules/core/lib/tool-loans";
 import { EditMaterialForm } from "@/components/admin/edit-material-form";
 import * as ExcelJS from 'exceljs';
 
 
 export default function InventoryReportPage() {
-    const { materials, tools, toolLogs, isLoading } = useAppState();
+    const { materials, requests, returnRequests, users, isLoading } = useAppState();
     const { user } = useAuth();
     const [isExporting, setIsExporting] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -54,13 +55,19 @@ export default function InventoryReportPage() {
 
     const isPrivilegedUser = user?.role === 'super-admin' || user?.role === 'administrador';
 
-    const checkedOutToolIds = useMemo(() => {
-        return new Set(
-            (toolLogs || [])
-                .filter((log: ToolLog) => log.returnDate === null)
-                .map((log) => log.toolId)
-        );
-    }, [toolLogs]);
+    // Herramientas = activos 'Herramienta Menor' (tools legacy quedó migrado).
+    // Quién tiene cada una se deriva de entregas + devoluciones, igual que en
+    // pagnol/herramientas.
+    const toolMaterials = useMemo(
+        () => (materials || [])
+            .filter((m: Material) => m.usageType === "Herramienta Menor" && !m.archived)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        [materials]
+    );
+    const holderMap = useMemo(
+        () => computeToolHolderMap(requests, returnRequests, users),
+        [requests, returnRequests, users]
+    );
 
     const availableMaterials = useMemo(() => {
         if (!materials) return [];
@@ -75,15 +82,14 @@ export default function InventoryReportPage() {
 
     const stats = useMemo(() => {
         const totalMaterials = (materials || []).length;
-        const totalTools = (tools || []).length;
         const outOfStock = totalMaterials - (materials || []).filter(m => m.stock > 0).length;
         return {
             totalMaterials,
-            totalTools,
+            totalTools: toolMaterials.length,
             available: totalMaterials - outOfStock,
             outOfStock,
         };
-    }, [materials, tools]);
+    }, [materials, toolMaterials]);
 
     const filteredMaterials = useMemo(() => {
         if (!materials) return [];
@@ -96,14 +102,11 @@ export default function InventoryReportPage() {
     }, [materials, searchTerm]);
 
     const filteredTools = useMemo(() => {
-        if (!tools) return [];
-        const filtered = searchTerm
-            ? tools.filter((t: Tool) =>
-                t.name.toLowerCase().includes(searchTerm.toLowerCase())
-              )
-            : tools;
-        return filtered.sort((a, b) => a.name.localeCompare(b.name));
-    }, [tools, searchTerm]);
+        if (!searchTerm) return toolMaterials;
+        return toolMaterials.filter((m) =>
+            m.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [toolMaterials, searchTerm]);
 
     const handleExport = async () => {
         setIsExporting(true);
@@ -300,7 +303,7 @@ export default function InventoryReportPage() {
                                     Materiales ({stats.totalMaterials})
                                 </TabsTrigger>
                                 <TabsTrigger value="tools">
-                                    Herramientas legado ({stats.totalTools})
+                                    Herramientas ({stats.totalTools})
                                 </TabsTrigger>
                             </TabsList>
 
@@ -374,28 +377,36 @@ export default function InventoryReportPage() {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {filteredTools.map((t) => (
-                                                <TableRow key={t.id}>
-                                                    <TableCell>
-                                                        <p className="font-medium">{t.name}</p>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        {t.status === "maintenance" ? (
-                                                            <Badge variant="destructive">
-                                                                Mantenimiento
-                                                            </Badge>
-                                                        ) : checkedOutToolIds.has(t.id) ? (
-                                                            <Badge variant="secondary">
-                                                                En Uso
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge className="bg-green-600 text-white">
-                                                                Disponible
-                                                            </Badge>
-                                                        )}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
+                                            {filteredTools.map((m) => {
+                                                const holder = holderMap.get(m.id);
+                                                return (
+                                                    <TableRow key={m.id}>
+                                                        <TableCell>
+                                                            <p className="font-medium">{m.name}</p>
+                                                            {holder && (
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    En poder de {holder.name}
+                                                                </p>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            {m.status === "En Mantenimiento" ? (
+                                                                <Badge variant="destructive">
+                                                                    Mantenimiento
+                                                                </Badge>
+                                                            ) : holder || (m.inUse || 0) > 0 || m.status === "En Uso" ? (
+                                                                <Badge variant="secondary">
+                                                                    En Uso
+                                                                </Badge>
+                                                            ) : (
+                                                                <Badge className="badge-success">
+                                                                    Disponible
+                                                                </Badge>
+                                                            )}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
                                         </TableBody>
                                     </Table>
                                 </ScrollArea>

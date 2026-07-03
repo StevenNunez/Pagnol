@@ -153,7 +153,7 @@ export default function SafetyInspectionPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Parte 1: Reporte de Observación</CardTitle>
-                    <CardDescription>Llenado por APR, Administrador de Obra o Jefe de Bodega.</CardDescription>
+                    <CardDescription>Llenado por APR, Administrador de Contrato o Jefe de Pañol.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -164,7 +164,7 @@ export default function SafetyInspectionPage() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="location">Ubicación Específica (Opcional)</Label>
-                            <Input id="location" placeholder="Ej: Sector grúas, Bodega N°3" {...register('location')} />
+                            <Input id="location" placeholder="Ej: Sector chancado, Pañol N°3" {...register('location')} />
                         </div>
                     </div>
                      <div className="space-y-2">

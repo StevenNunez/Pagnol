@@ -3,5 +3,5 @@
 import { redirect } from 'next/navigation';
 
 export default function Page() {
-  redirect('/dashboard/pagnol/herramientas');
+  redirect('/dashboard/pagnol/activos?tipo=Herramienta%20Menor');
 }

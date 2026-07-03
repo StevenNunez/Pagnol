@@ -117,7 +117,7 @@ export default function RecepcionPage() {
     return (
         <PageShell
             title="Recepción de Mercadería"
-            description="Recibe las órdenes de compra contra bodega — total o parcial — con evidencia fotográfica. El stock se actualiza automáticamente."
+            description="Recibe las órdenes de compra contra el pañol — total o parcial — con evidencia fotográfica. El stock se actualiza automáticamente."
             toolbar={
                 <div className="relative w-full xl:w-96">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -498,7 +498,7 @@ function ReceiveDialog({
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label className="text-xs">Material destino (bodega)</Label>
+                                    <Label className="text-xs">Material destino (pañol)</Label>
                                     <MaterialPicker
                                         materials={materials}
                                         value={state[l.key]?.materialId}

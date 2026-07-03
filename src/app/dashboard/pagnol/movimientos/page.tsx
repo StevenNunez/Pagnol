@@ -938,7 +938,7 @@ export default function MovimientosPagnolPage() {
               </div>
               <div>
                 <CardTitle className="text-2xl sm:text-3xl font-black uppercase font-outfit">Despacho</CardTitle>
-                <CardDescription className="font-black uppercase tracking-widest text-[9px] sm:text-[10px]">Bodega → Faena</CardDescription>
+                <CardDescription className="font-black uppercase tracking-widest text-[9px] sm:text-[10px]">Pañol → Faena</CardDescription>
               </div>
             </div>
           </CardContent>
@@ -949,7 +949,7 @@ export default function MovimientosPagnolPage() {
               <div className="p-6 bg-success/10 rounded-[2rem] text-success transition-transform group-hover:scale-110"><ArrowDownRight size={40} /></div>
               <div>
                 <CardTitle className="text-3xl font-black uppercase font-outfit">Recepción</CardTitle>
-                <CardDescription className="font-black uppercase tracking-widest text-[10px]">Faena → Bodega</CardDescription>
+                <CardDescription className="font-black uppercase tracking-widest text-[10px]">Faena → Pañol</CardDescription>
               </div>
             </div>
           </CardContent>
@@ -1031,7 +1031,7 @@ export default function MovimientosPagnolPage() {
                   <td className="px-6 sm:px-10 py-6">
                     {tx.type === 'WITHDRAWAL' ? (
                       <div className="flex items-center gap-1 text-[9px] font-black uppercase">
-                        <span className="text-muted-foreground">Bodega</span>
+                        <span className="text-muted-foreground">Pañol</span>
                         <ArrowRight size={10} className="text-muted-foreground/50" />
                         <span className={tx.site ? 'text-pagnol-orange' : 'text-muted-foreground/50'}>
                           {tx.site || '—'}
@@ -1041,7 +1041,7 @@ export default function MovimientosPagnolPage() {
                       <div className="flex items-center gap-1 text-[9px] font-black uppercase">
                         <span className="text-muted-foreground">Faena</span>
                         <ArrowRight size={10} className="text-muted-foreground/50" />
-                        <span className="text-success">Bodega</span>
+                        <span className="text-success">Pañol</span>
                       </div>
                     )}
                     <span className={`inline-flex mt-1.5 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${tx.contractName ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground/60'}`}>
@@ -1636,7 +1636,7 @@ export default function MovimientosPagnolPage() {
                       <div className="flex items-center gap-3 p-4 bg-pagnol-orange/10 rounded-2xl border border-pagnol-orange/20">
                         <MapPin size={16} className="text-pagnol-orange shrink-0" />
                         <div className="flex items-center gap-2 text-[10px] font-black uppercase flex-wrap">
-                          <span className="text-muted-foreground">Bodega</span>
+                          <span className="text-muted-foreground">Pañol</span>
                           <ArrowRight size={12} className="text-muted-foreground" />
                           <span className="text-pagnol-orange">{site || 'Sin destino especificado'}</span>
                         </div>

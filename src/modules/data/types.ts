@@ -3,7 +3,6 @@ import {
   User,
   Material,
   Tool,
-  ToolLog,
   MaterialRequest,
   ReturnRequest,
   PurchaseRequest,
@@ -82,7 +81,6 @@ export interface AppDataState {
   users: User[];
   materials: Material[];
   tools: Tool[];
-  toolLogs: ToolLog[];
   requests: MaterialRequest[];
   returnRequests: ReturnRequest[];
   purchaseRequests: PurchaseRequest[];
@@ -179,8 +177,8 @@ export interface AppStateContextType extends AppDataState {
   updateMaterial: (materialId: string, data: Partial<Material>) => Promise<void>;
   deleteMaterial: (materialId: string) => Promise<void>;
   addManualStockEntry: (materialId: string, quantity: number, justification: string) => Promise<void>;
-  addMaterialCategory: (name: string) => Promise<void>;
-  updateMaterialCategory: (id: string, name: string) => Promise<void>;
+  addMaterialCategory: (name: string, parentId: string | null) => Promise<void>;
+  updateMaterialCategory: (id: string, data: { name?: string; parentId?: string | null }) => Promise<void>;
   deleteMaterialCategory: (id: string) => Promise<void>;
   addUnit: (name: string) => Promise<void>;
   deleteUnit: (id: string) => Promise<void>;
@@ -221,14 +219,6 @@ export interface AppStateContextType extends AppDataState {
   approveWorkItem: (workItemId: string) => Promise<void>;
   rejectWorkItem: (workItemId: string, reason: string) => Promise<void>;
   addPaymentState: (data: Omit<PaymentState, 'id' | 'tenantId' | 'createdAt' | 'status' | 'contractorId' | 'contractorName'>) => Promise<string>;
-
-  // Tools
-  addTool: (name: string) => Promise<void>;
-  updateTool: (toolId: string, data: Partial<Tool>) => Promise<void>;
-  deleteTool: (toolId: string) => Promise<void>;
-  checkoutTool: (toolId: string, userId: string, supervisorId: string) => Promise<void>;
-  returnTool: (logId: string, status: 'ok' | 'damaged', notes: string) => Promise<void>;
-  findActiveLogForTool: (toolId: string) => Promise<ToolLog | null>;
 
   // Safety
   addChecklistTemplate: (template: Pick<ChecklistTemplate, 'title' | 'items'>) => Promise<void>;

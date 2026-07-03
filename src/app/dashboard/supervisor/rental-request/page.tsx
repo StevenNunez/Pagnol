@@ -293,7 +293,7 @@ export default function RentalRequestPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="contract">Contrato / Obra <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="contract">Contrato / Faena <span className="text-destructive">*</span></Label>
                   {isFieldWorkerSingleContract ? (
                     <div className="flex items-center gap-2 h-10 px-3 rounded-xl border bg-muted/40 text-sm">
                       <Truck className="h-4 w-4 text-primary shrink-0" />

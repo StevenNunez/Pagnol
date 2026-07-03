@@ -37,7 +37,6 @@ import * as genericMutations from './mutations/genericMutations';
 import * as rfqMutations from './mutations/rfqMutations';
 import * as receptionMutations from './mutations/receptionMutations';
 import * as costCenterMutations from './mutations/costCenterMutations';
-import * as toolMutations from './mutations/toolMutations';
 import * as safetyMutations from './mutations/safetyMutations';
 import * as attendanceMutations from './mutations/attendanceMutations';
 import * as paymentMutations from './mutations/paymentMutations';
@@ -62,7 +61,6 @@ const initialState: AppDataState = {
     users: [],
     materials: [],
     tools: [],
-    toolLogs: [],
     requests: [],
     returnRequests: [],
     purchaseRequests: [],
@@ -190,12 +188,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const materialsData = useSupabaseCollection('materials', { tenantId, mapper: mappers.materials });
     const toolsData = useSupabaseCollection('tools', { tenantId });
     const usersData = useSupabaseCollection('profiles', { tenantId, mapper: mappers.profiles, softDelete: true });
-    const toolLogsData = useSupabaseCollection('tool_logs', { tenantId, mapper: mappers.tool_logs, orderBy: { column: 'checkout_date', ascending: false } });
     const requestsData = useSupabaseCollection('material_requests', { tenantId, mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const purchaseRequestsData = useSupabaseCollection('purchase_requests', { tenantId, mapper: mappers.purchase_requests, orderBy: { column: 'created_at', ascending: false } });
     const suppliersData = useSupabaseCollection('suppliers', { tenantId, mapper: mappers.suppliers });
-    const materialCategoriesData = useSupabaseCollection('material_categories', { tenantId });
+    const materialCategoriesData = useSupabaseCollection('material_categories', { tenantId, mapper: mappers.material_categories });
     const unitsData = useSupabaseCollection('units', { tenantId });
     const purchaseLotsData = useSupabaseCollection('purchase_lots', { tenantId, mapper: mappers.purchase_lots });
     const purchaseOrdersData = useSupabaseCollection('purchase_orders', { tenantId, mapper: mappers.purchase_orders, orderBy: { column: 'created_at', ascending: false } });
@@ -336,7 +333,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         }
 
         const allDataLoaded = [
-            usersData, materialsData, toolsData, toolLogsData, requestsData,
+            usersData, materialsData, toolsData, requestsData,
             returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
             unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, goodsReceiptsData, costCentersData, supplierPaymentsData,
             salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
@@ -386,7 +383,6 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 users: processData(usersData),
                 materials: processData(materialsData),
                 tools: processData(toolsData),
-                toolLogs: processData(toolLogsData),
                 requests: processData(requestsData),
                 returnRequests: processData(returnRequestsData),
                 purchaseRequests: processData(purchaseRequestsData),
@@ -444,7 +440,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         });
 
     }, [
-        authLoading, user, usersData, materialsData, toolsData, toolLogsData, requestsData,
+        authLoading, user, usersData, materialsData, toolsData, requestsData,
         returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
         unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, supplierPaymentsData,
         salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
@@ -573,14 +569,6 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         approveWorkItem: bindContext(genericMutations.approveWorkItem),
         rejectWorkItem: bindContext(genericMutations.rejectWorkItem),
         addPaymentState: bindContext(genericMutations.addPaymentState),
-
-        // Tools
-        addTool: bindContext(toolMutations.addTool),
-        updateTool: bindContext(toolMutations.updateTool),
-        deleteTool: bindContext(toolMutations.deleteTool),
-        checkoutTool: bindContext(toolMutations.checkoutTool),
-        returnTool: bindContext(toolMutations.returnTool),
-        findActiveLogForTool: bindContext(toolMutations.findActiveLogForTool),
 
         // Safety
         addChecklistTemplate: bindContext(safetyMutations.addChecklistTemplate),

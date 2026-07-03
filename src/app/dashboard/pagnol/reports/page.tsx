@@ -96,7 +96,7 @@ export default function ReportsPage() {
                 type: 'RETURN',
                 timestamp: r.createdAt ? new Date(r.createdAt as any) : new Date(),
                 assetIds: [r.materialId],
-                site: 'Bodega Central',
+                site: 'Pañol Central',
                 status: r.status,
                 employeeId: r.supervisorId,
                 employeeName: emp?.name || r.supervisorName || 'Desconocido',
@@ -299,7 +299,7 @@ export default function ReportsPage() {
                                 <div>
                                     <Badge className="bg-muted text-muted-foreground border-none mb-4 uppercase text-[9px] font-black">Patrimonio Neto</Badge>
                                     <h2 className="text-4xl font-black font-outfit text-foreground">${totalValue.toLocaleString()}</h2>
-                                    <p className="text-[10px] text-muted-foreground font-bold uppercase mt-2 tracking-widest">Valorización total en Bodega</p>
+                                    <p className="text-[10px] text-muted-foreground font-bold uppercase mt-2 tracking-widest">Valorización total en Pañol</p>
                                 </div>
                                 <div className="h-24 mt-6">
                                     <ResponsiveContainer width="100%" height="100%">
@@ -597,8 +597,8 @@ export default function ReportsPage() {
                                                                 <p className="text-[9px] font-bold text-muted-foreground flex items-center gap-1 mt-0.5 flex-wrap">
                                                                     <MapPin size={9} className="shrink-0" />
                                                                     {tx.type === 'WITHDRAWAL'
-                                                                        ? <><span className="text-muted-foreground">Bodega</span> <ArrowRight size={9} className="text-muted-foreground/50 shrink-0" /> <span className={tx.site ? 'text-pagnol-orange font-black' : 'text-muted-foreground/50'}>{tx.site || 'Sin destino'}</span></>
-                                                                        : <><span className="text-muted-foreground">{tx.site || 'Faena'}</span> <ArrowRight size={9} className="text-muted-foreground/50 shrink-0" /> <span className="text-success font-black">Bodega Central</span></>
+                                                                        ? <><span className="text-muted-foreground">Pañol</span> <ArrowRight size={9} className="text-muted-foreground/50 shrink-0" /> <span className={tx.site ? 'text-pagnol-orange font-black' : 'text-muted-foreground/50'}>{tx.site || 'Sin destino'}</span></>
+                                                                        : <><span className="text-muted-foreground">{tx.site || 'Faena'}</span> <ArrowRight size={9} className="text-muted-foreground/50 shrink-0" /> <span className="text-success font-black">Pañol Central</span></>
                                                                     }
                                                                 </p>
                                                                 <p className="text-[9px] text-muted-foreground font-bold mt-0.5">
@@ -711,7 +711,7 @@ export default function ReportsPage() {
                                                             <div className="space-y-2">
                                                                 <div className="flex items-center justify-between">
                                                                     <p className="text-xs font-black uppercase text-foreground">
-                                                                        {tx.type === 'WITHDRAWAL' ? 'Despacho a Faena' : 'Retorno a Bodega'}
+                                                                        {tx.type === 'WITHDRAWAL' ? 'Despacho a Faena' : 'Retorno a Pañol'}
                                                                     </p>
                                                                     <Badge variant="outline" className="text-[9px] font-black font-mono tracking-wider">
                                                                         {tx.internalCode || tx.id.substring(0, 8).toUpperCase()}

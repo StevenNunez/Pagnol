@@ -298,7 +298,7 @@ export default function ManualStockEntryPage() {
               <Label htmlFor="justification">Justificación del Ingreso</Label>
               <Textarea
                 id="justification"
-                placeholder="Ej: Ajuste de inventario, encontrado en bodega, compra directa."
+                placeholder="Ej: Ajuste de inventario, encontrado en pañol, compra directa."
                 {...register("justification")}
               />
               {errors.justification && (

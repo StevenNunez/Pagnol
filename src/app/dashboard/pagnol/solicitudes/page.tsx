@@ -574,7 +574,7 @@ export default function PanolInboxPage() {
   return (
     <PageShell
       title="Solicitudes y Devoluciones"
-      description="Bandeja del pañol: aprueba retiros de material y gestiona las devoluciones de obra."
+      description="Bandeja del pañol: aprueba retiros de material y gestiona las devoluciones desde faena."
     >
       <Tabs value={section} onValueChange={(v) => setSection(v as 'retiros' | 'devoluciones')} className="w-full">
         <TabsList className="grid w-full max-w-xl grid-cols-2 p-1 bg-muted rounded-xl mb-6">

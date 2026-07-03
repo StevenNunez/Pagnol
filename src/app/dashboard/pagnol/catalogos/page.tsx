@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { MoreHorizontal, Edit, Trash2, Search, FolderOpen, FolderTree, Ruler as RulerIcon } from "lucide-react";
+import { MoreHorizontal, Edit, Trash2, Search, FolderOpen, FolderTree, CornerDownRight, Ruler as RulerIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,12 +30,31 @@ function CategoriesSection() {
     const [searchTerm, setSearchTerm] = useState("");
     const { toast } = useToast();
 
+    // Lista jerárquica: familias (sin padre) con sus subcategorías indentadas.
+    // Con búsqueda activa la lista es plana (se indica la familia en cada fila).
+    const categoryById = useMemo(
+        () => new Map((materialCategories || []).map((c: MaterialCategory) => [c.id, c])),
+        [materialCategories]
+    );
     const filteredCategories = useMemo(() => {
-        if (!searchTerm) return materialCategories || [];
-        return (materialCategories || []).filter(c =>
-            c.name.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [materialCategories, searchTerm]);
+        const all = materialCategories || [];
+        if (searchTerm) {
+            return all
+                .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                .map(c => ({ category: c, depth: 0 as const }));
+        }
+        const byName = (a: MaterialCategory, b: MaterialCategory) => a.name.localeCompare(b.name);
+        const families = all.filter(c => !c.parentId).sort(byName);
+        // Huérfanas defensivas: con parentId que ya no existe (padre borrado).
+        const orphans = all.filter(c => c.parentId && !categoryById.has(c.parentId!)).sort(byName);
+        const rows: { category: MaterialCategory; depth: 0 | 1 }[] = [];
+        [...families, ...orphans].forEach(f => {
+            rows.push({ category: f, depth: 0 });
+            all.filter(c => c.parentId === f.id).sort(byName)
+                .forEach(child => rows.push({ category: child, depth: 1 }));
+        });
+        return rows;
+    }, [materialCategories, searchTerm, categoryById]);
 
     const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
         try {
@@ -67,8 +86,8 @@ function CategoriesSection() {
                 <div className="lg:col-span-1">
                     <Card className="border-l-4 border-l-primary shadow-sm">
                         <CardHeader>
-                            <CardTitle>Añadir Categoría</CardTitle>
-                            <CardDescription>Organiza los materiales por tipo o área de uso.</CardDescription>
+                            <CardTitle>Añadir Familia o Subcategoría</CardTitle>
+                            <CardDescription>Organiza los activos en 2 niveles: Familia (Herramientas) → Subcategoría (Eléctricas, Manuales…).</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <CreateCategoryForm />
@@ -97,9 +116,17 @@ function CategoriesSection() {
                         <CardContent>
                             <ScrollArea className="h-[500px] border rounded-md">
                                 <div className="space-y-2 p-3">
-                                    {filteredCategories.length > 0 ? filteredCategories.map((category: MaterialCategory) => (
-                                        <div key={category.id} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors gap-4">
-                                            <p className="font-medium text-sm">{category.name}</p>
+                                    {filteredCategories.length > 0 ? filteredCategories.map(({ category, depth }) => (
+                                        <div key={category.id} className={`flex items-center justify-between px-4 py-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors gap-4 ${depth === 1 ? "ml-8 border-dashed" : ""}`}>
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                {depth === 1 && <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                                                <p className={`text-sm truncate ${depth === 0 && !searchTerm ? "font-bold" : "font-medium"}`}>{category.name}</p>
+                                                {searchTerm && category.parentId && categoryById.has(category.parentId) && (
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground shrink-0">
+                                                        {categoryById.get(category.parentId)!.name}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" className="h-8 w-8 p-0 shrink-0">
@@ -124,6 +151,7 @@ function CategoriesSection() {
                                                                 <AlertDialogTitle>¿Eliminar "{category.name}"?</AlertDialogTitle>
                                                                 <AlertDialogDescription>
                                                                     Esta acción no se puede deshacer. Fallará si algún material o proveedor usa esta categoría.
+                                                                    Si es una familia, sus subcategorías quedarán como familias independientes.
                                                                 </AlertDialogDescription>
                                                             </AlertDialogHeader>
                                                             <AlertDialogFooter>

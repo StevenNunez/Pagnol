@@ -340,7 +340,7 @@ export default function SupervisorRequestPage() {
     <div className="flex flex-col gap-8 pb-10 fade-in">
       <PageHeader
         title="Solicitud de Materiales"
-        description="Genera pedidos de material a la bodega central para tus obras."
+        description="Genera pedidos de material al pañol central para tu faena."
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -376,7 +376,7 @@ export default function SupervisorRequestPage() {
                           <CommandList>
                             <CommandEmpty>
                               {!hasMaterials
-                                ? "Sin materiales en bodega. Contacta al administrador."
+                                ? "Sin materiales en pañol. Contacta al administrador."
                                 : "Material no encontrado."}
                             </CommandEmpty>
                             {Object.entries(groupedMaterials).map(([category, items]) => (
@@ -519,7 +519,7 @@ export default function SupervisorRequestPage() {
 
                 <div className="space-y-3 pt-2">
                   <div className="space-y-2">
-                    <Label htmlFor="contract">Contrato / Obra <span className="text-destructive">*</span></Label>
+                    <Label htmlFor="contract">Contrato / Faena <span className="text-destructive">*</span></Label>
                     {isFieldWorkerSingleContract ? (
                       // Personal de terreno: su contrato viene fijado, no se elige.
                       <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/40 text-sm">

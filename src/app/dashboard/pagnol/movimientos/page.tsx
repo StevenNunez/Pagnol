@@ -71,6 +71,10 @@ interface DisplayTransaction {
   deliveryDate?: string | null;
   contractUrl?: string | null;
   contractName?: string | null; // contrato (obra) al que se imputa
+  // ── Beneficiario: quién debe retirar (puede diferir del solicitante) ──
+  deliveryMode?: 'self' | 'directed' | 'open';
+  beneficiaryId?: string | null;
+  beneficiaryName?: string | null;
 }
 
 type CompatibleMaterialRequest = MaterialRequest & {
@@ -196,6 +200,9 @@ export default function MovimientosPagnolPage() {
         deliveryDate: r.deliveryDate ? new Date(r.deliveryDate as any).toISOString() : null,
         contractUrl: r.contractUrl || null,
         contractName: r.contractName || null,
+        deliveryMode: r.deliveryMode || 'self',
+        beneficiaryId: r.beneficiaryId || null,
+        beneficiaryName: r.beneficiaryName || null,
       });
     });
 
@@ -309,13 +316,29 @@ export default function MovimientosPagnolPage() {
   };
 
   const handleContinueDelivery = async (tx: DisplayTransaction) => {
+    // Retiro abierto: no hay destinatario fijo — primero se identifica (biometría)
+    // a quien retira; sus entregas pendientes (incluidas las abiertas) aparecen
+    // en el paso de selección y desde ahí se completa la entrega.
+    if (tx.deliveryMode === 'open') {
+      toast({
+        variant: 'info',
+        title: 'Retiro Abierto',
+        description: 'Identifica al trabajador que retira; luego selecciona esta entrega en su panel.',
+      });
+      startTransaction('WITHDRAWAL');
+      return;
+    }
+
+    // Quién debe retirar: el beneficiario (dirigida) o el solicitante (para mí).
+    const receiverId = tx.deliveryMode === 'directed' && tx.beneficiaryId ? tx.beneficiaryId : tx.employeeId;
+
     // 1. Intentamos obtener del mapa local
-    let emp = usersMap.get(tx.employeeId);
+    let emp = usersMap.get(receiverId);
 
     // 2. Si no tiene template o no está en mapa, refetch fresco de Supabase
     if (!emp || !emp.biometric_template) {
       try {
-        const { data: snap, error } = await supabase.from('profiles').select('*').eq('id', tx.employeeId).single();
+        const { data: snap, error } = await supabase.from('profiles').select('*').eq('id', receiverId).single();
         if (!error && snap) {
           // Fusionamos lo que tenemos con lo fresco
           emp = { ...emp, ...(snap as unknown as UserType), id: snap.id };
@@ -353,6 +376,32 @@ export default function MovimientosPagnolPage() {
     setTxState('PENDIENTE_ENTREGA');
     setFlowStep('CONFIRMATION PAGNOLERO');
     setIsModalOpen(true);
+  };
+
+  // Entregas aprobadas sin retirar que puede recibir el trabajador identificado:
+  // dirigidas a él + las suyas ("para mí") + las de retiro abierto.
+  const pendingDeliveriesForEmployee = useMemo(() => {
+    if (!selectedEmployee) return [];
+    return transactions.filter(t =>
+      t.type === 'WITHDRAWAL' && t.isApproved && !t.deliveryDate && (
+        t.deliveryMode === 'open' ||
+        (t.deliveryMode === 'directed'
+          ? t.beneficiaryId === selectedEmployee.id
+          : t.employeeId === selectedEmployee.id)
+      )
+    );
+  }, [transactions, selectedEmployee]);
+
+  // Continuar una entrega cuando el receptor YA fue verificado biométricamente
+  // en esta sesión (banner del paso de selección de ítems).
+  const continueDeliveryAsIdentified = (tx: DisplayTransaction) => {
+    setSelectedType('WITHDRAWAL');
+    setSelectedAssetIds(tx.assetIds);
+    setPendingDeliveryId(tx.id);
+    setPendingDeliveryCode(tx.internalCode || null);
+    setIsPagnoleroConfirming(false);
+    setTxState('PENDIENTE_ENTREGA');
+    setFlowStep('CONFIRMATION PAGNOLERO');
   };
 
   const startFaceDetect = async (attempt = 0) => {
@@ -534,7 +583,7 @@ export default function MovimientosPagnolPage() {
               payload: {
                 title: `Autorización Requerida — Clase ${computedClass}`,
                 body: `${selectedEmployee?.name || 'Operario'} solicita despacho de ${selectedAssetIds.length} activo(s). Acción inmediata requerida.`,
-                url: '/dashboard/bodega/requests',
+                url: '/dashboard/pagnol/solicitudes',
                 tag: 'approval-request',
                 requireInteraction: true,
               },
@@ -688,9 +737,9 @@ export default function MovimientosPagnolPage() {
           toast({ variant: 'destructive', title: "Error en Contrato", description: "Falló la generación del PDF." });
         }
 
-        // 3. Finalizar transacción (Con o sin URL)
+        // 3. Finalizar transacción (Con o sin URL) — registra al receptor real verificado
         await Promise.race([
-          deliverApprovedMaterialRequest(pendingDeliveryId, contractUrl),
+          deliverApprovedMaterialRequest(pendingDeliveryId, contractUrl, { id: selectedEmployee.id, name: selectedEmployee.name }),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Tiempo de espera excedido al confirmar la entrega. Verifica tu conexión y reintenta.')), 20000)
           ),
@@ -999,8 +1048,20 @@ export default function MovimientosPagnolPage() {
                       {tx.contractName || 'Pool central'}
                     </span>
                   </td>
-                  <td className="px-6 sm:px-10 py-6 font-black text-xs uppercase">
-                    {usersMap.get(tx.employeeId)?.name || 'Usuario desconocido'}
+                  <td className="px-6 sm:px-10 py-6">
+                    <p className="font-black text-xs uppercase">
+                      {usersMap.get(tx.employeeId)?.name || 'Usuario desconocido'}
+                    </p>
+                    {tx.type === 'WITHDRAWAL' && tx.deliveryMode === 'directed' && tx.beneficiaryName && (
+                      <span className="inline-flex mt-1.5 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest bg-info-subtle text-info">
+                        Para: {tx.beneficiaryName}
+                      </span>
+                    )}
+                    {tx.type === 'WITHDRAWAL' && tx.deliveryMode === 'open' && (
+                      <span className="inline-flex mt-1.5 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest bg-warning-subtle text-warning-subtle-foreground">
+                        Retiro abierto
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 sm:px-10 py-6">
                     <p className="text-[10px] font-black text-foreground">
@@ -1271,6 +1332,40 @@ export default function MovimientosPagnolPage() {
 
               {flowStep === 'ITEMS SELECTION' && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4">
+                  {/* Entregas aprobadas listas para retiro por este trabajador (dirigidas / propias / abiertas) */}
+                  {selectedType === 'WITHDRAWAL' && pendingDeliveriesForEmployee.length > 0 && (
+                    <div className="p-4 bg-success-subtle rounded-2xl border border-success/30">
+                      <p className="text-[9px] font-black text-success uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <ClipboardList size={11} /> {pendingDeliveriesForEmployee.length} Entrega{pendingDeliveriesForEmployee.length > 1 ? 's' : ''} Lista{pendingDeliveriesForEmployee.length > 1 ? 's' : ''} para Retiro
+                      </p>
+                      <div className="space-y-2">
+                        {pendingDeliveriesForEmployee.map(tx => (
+                          <div key={tx.id} className="flex items-center justify-between gap-3 p-3 bg-card rounded-xl border border-border">
+                            <div className="min-w-0 space-y-0.5">
+                              <p className="text-[10px] font-black text-foreground uppercase truncate">
+                                {tx.assetIds.slice(0, 2).map(aid => materialsMap.get(aid)?.name || aid).join(', ')}
+                                {tx.assetIds.length > 2 ? ` +${tx.assetIds.length - 2}` : ''}
+                              </p>
+                              <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">
+                                {tx.internalCode || tx.id}
+                                {tx.deliveryMode === 'directed' && ' · Dirigida a este trabajador'}
+                                {tx.deliveryMode === 'open' && ' · Retiro abierto'}
+                                {(!tx.deliveryMode || tx.deliveryMode === 'self') && ' · Solicitada por él'}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => continueDeliveryAsIdentified(tx)}
+                              className="h-8 text-[9px] font-black uppercase bg-success text-success-foreground hover:bg-success/90 shrink-0"
+                            >
+                              Entregar <ArrowRight size={12} className="ml-1" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Contrato del trabajador: define de qué desglose sale (o a cuál vuelve) el stock */}
                   <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20">
                     <p className="text-[9px] font-black text-primary uppercase tracking-widest mb-3 flex items-center gap-1.5">

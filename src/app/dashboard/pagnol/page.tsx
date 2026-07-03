@@ -67,20 +67,20 @@ export default function PagnolMainPage() {
   // Compact AI context (~100 tokens)
   const fullContextString = useMemo(() => {
     const mats = materials || [];
-    const tls = tools || [];
+    const tls = mats.filter(m => m.usageType === 'Herramienta Menor' && !m.archived);
     const classA = mats.filter(m => m.class === 'A');
     const critical = mats.filter(m => m.stock <= 10 && m.stock > 0 && !m.archived);
     const outOfStock = mats.filter(m => m.stock === 0 && !m.archived);
     const pending = (requests || []).filter((r: any) => r.status === 'pending');
     return [
-      `Inventario: ${mats.length} materiales, ${tls.length} herramientas.`,
+      `Inventario: ${mats.length} activos, ${tls.length} son herramientas menores.`,
       `Clase A: ${classA.length} activos críticos.`,
       `Stock crítico (≤10): ${critical.length > 0 ? critical.map(m => `${m.name} (${m.stock})`).join(', ') : 'ninguno'}.`,
       `Sin stock: ${outOfStock.length > 0 ? outOfStock.map(m => m.name).join(', ') : 'ninguno'}.`,
       `Solicitudes pendientes: ${pending.length}.`,
       `Fecha: ${new Date().toLocaleDateString('es-CL')}.`,
     ].join(' ');
-  }, [materials, tools, requests]);
+  }, [materials, requests]);
 
   useEffect(() => {
     refreshData();
@@ -180,12 +180,13 @@ export default function PagnolMainPage() {
   };
 
   const stats = useMemo(() => {
+    // Solo materials: las herramientas ya son activos (usage_type 'Herramienta
+    // Menor') tras la migración tools→materials; contar `tools` duplicaría.
     const mats = materials || [];
-    const tls = tools || [];
-    const totalAssets = mats.length + tls.length;
-    const available = mats.filter(a => a.stock > 0 && !a.archived).length + tls.filter(t => t.status === 'available').length;
-    const inUse = tls.filter(t => t.status === 'in-use').length + mats.reduce((acc, m) => acc + (m.inUse || 0), 0);
-    const maint = tls.filter(t => t.status === 'maintenance').length + mats.filter(m => m.status === 'En Mantenimiento').length;
+    const totalAssets = mats.length;
+    const available = mats.filter(a => a.stock > 0 && !a.archived).length;
+    const inUse = mats.reduce((acc, m) => acc + (m.inUse || 0), 0);
+    const maint = mats.filter(m => m.status === 'En Mantenimiento').length;
     const healthScore = totalAssets > 0 ? Math.round((available / totalAssets) * 100) : 100;
     const alertCount = actionableTransactions.length;
     const totalValue = mats.reduce((acc, item) => acc + (item.unitCost || 0) * (item.stock || 0), 0);
@@ -198,7 +199,7 @@ export default function PagnolMainPage() {
       m.class === 'A' && (isOverdue(m.nextMaintenanceDate) || m.conditionScore === 'Crítico' || m.conditionScore === 'Obsoleto')
     ).length;
     return { total: totalAssets, available, inUse, maint, healthScore, alertCount, totalValue, maintenanceCompliance, criticalRisk, overdueCount };
-  }, [materials, tools, actionableTransactions]);
+  }, [materials, actionableTransactions]);
 
   const formatCLPM = (amount: number) => `CLP$ ${(amount / 1000000).toFixed(1)}M`;
 
@@ -222,6 +223,14 @@ export default function PagnolMainPage() {
 
   const recentWithdrawals = allTransactions.filter(t => t.type === 'WITHDRAWAL').slice(0, 4);
   const recentReturns = allTransactions.filter(t => t.type === 'RETURN').slice(0, 4);
+
+  // Stock crítico (heredado del hub de Bodega): materiales activos con 10 o menos unidades.
+  const lowStockMaterials = useMemo(() => {
+    return (materials || [])
+      .filter(m => !m.archived && m.stock <= 10)
+      .sort((a, b) => a.stock - b.stock)
+      .slice(0, 5);
+  }, [materials]);
 
   // Real activity data — last 7 days from actual transactions
   const flowData = useMemo(() => {
@@ -404,6 +413,49 @@ export default function PagnolMainPage() {
           </Card>
         ))}
       </div>
+
+      {/* STOCK CRÍTICO (heredado de Bodega) */}
+      {lowStockMaterials.length > 0 && (
+        <div className="bg-card p-10 rounded-[3rem] shadow-sm border border-border">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-destructive/10 text-destructive rounded-2xl shadow-sm">
+                <ShieldAlert size={20} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-foreground uppercase tracking-tighter">Stock Crítico</h3>
+                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">Materiales con 10 o menos unidades</p>
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigate('activos')}
+              className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
+            >
+              Ver Inventario <ArrowRight size={14} />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+            {lowStockMaterials.map((m) => (
+              <div key={m.id} className="p-5 bg-muted/30 rounded-[1.5rem] border border-transparent hover:border-border hover:bg-card hover:shadow-lg transition-all duration-300 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-black text-foreground uppercase tracking-tight leading-tight truncate" title={m.name}>{m.name}</p>
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase truncate">{m.category}</p>
+                </div>
+                <div className="flex items-end justify-between gap-2">
+                  <span className={`text-2xl font-black font-outfit ${m.stock === 0 ? 'text-destructive' : 'text-warning'}`}>{m.stock}</span>
+                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">{m.unit}</span>
+                </div>
+                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${m.stock === 0 ? 'bg-destructive' : 'bg-warning'}`}
+                    style={{ width: `${Math.min((m.stock / 20) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ALERTAS CRÍTICAS */}
       {stats.alertCount > 0 && (

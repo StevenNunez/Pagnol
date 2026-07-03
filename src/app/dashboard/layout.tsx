@@ -443,7 +443,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                         </Link>
                       )}
                       {can('material_requests:approve_class_c') && pendingMaterialRequests > 0 && (
-                        <Link href="/dashboard/bodega/requests">
+                        <Link href="/dashboard/pagnol/solicitudes">
                           <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-purple-50/50 dark:hover:bg-purple-950/40">
                             <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg mr-3"><ClipboardList className="h-4 w-4 text-purple-600 dark:text-purple-400" /></div>
                             <span className="text-[11px] font-bold uppercase tracking-tight">{pendingMaterialRequests} Solicitudes de Material</span>

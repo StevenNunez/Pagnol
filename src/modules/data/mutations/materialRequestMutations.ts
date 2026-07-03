@@ -19,6 +19,10 @@ export async function addMaterialRequest(
     supervisorName?: string;
     highestClass?: 'A' | 'B' | 'C';
     tenantPrefix?: string;
+    /** Quién retira: 'self' (default) | 'directed' (beneficiary*) | 'open'. */
+    deliveryMode?: 'self' | 'directed' | 'open';
+    beneficiaryId?: string | null;
+    beneficiaryName?: string | null;
   },
   context: Context
 ) {
@@ -27,6 +31,10 @@ export async function addMaterialRequest(
 
   const supervisorName = requestData.supervisorName || user.name || 'Usuario';
   const highestClass = requestData.highestClass || 'A';
+
+  const deliveryMode = requestData.deliveryMode || 'self';
+  if (deliveryMode === 'directed' && !requestData.beneficiaryId)
+    throw new Error('Una solicitud dirigida requiere un trabajador destinatario.');
 
   const requestId = await nextInternalCode(tenantId, 'TX');
 
@@ -51,6 +59,9 @@ export async function addMaterialRequest(
       tenant_id: tenantId,
       adc_authorized_at: preAuthorized ? now : null,
       adc_authorized_by: preAuthorized ? user.id : null,
+      delivery_mode: deliveryMode,
+      beneficiary_id: deliveryMode === 'directed' ? requestData.beneficiaryId : null,
+      beneficiary_name: deliveryMode === 'directed' ? (requestData.beneficiaryName || null) : null,
       created_at: now,
     });
 
@@ -128,6 +139,10 @@ export async function addAndApproveMaterialRequest(
     adc_authorized_at: now,
     adc_authorized_by: user.id,
     contract_url: requestData.contractUrl || null,
+    // Entrega inmediata: el trabajador identificado retira en el acto.
+    delivery_mode: 'self',
+    received_by_user_id: requestData.supervisorId,
+    received_by_user_name: supervisorName,
     created_at: now
   });
   if (reqErr) throw reqErr;
@@ -276,6 +291,8 @@ export async function updateMaterialRequestStatus(
 export async function deliverApprovedMaterialRequest(
   requestId: string,
   contractUrl: string | null,
+  /** Receptor real verificado (biometría/QR) en el pañol. null = no informado. */
+  receiver: { id: string; name: string } | null,
   context: Context
 ) {
   const { user } = context;
@@ -288,6 +305,8 @@ export async function deliverApprovedMaterialRequest(
       contract_url: contractUrl || null,
       delivered_by_user_id: user.id,
       delivered_by_user_name: user.name,
+      received_by_user_id: receiver?.id || null,
+      received_by_user_name: receiver?.name || null,
     })
     .eq('id', requestId)
     .eq('status', 'approved');

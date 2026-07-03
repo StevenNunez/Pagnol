@@ -298,6 +298,15 @@ export interface MaterialRequest {
   // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
   adcAuthorizedAt?: Date | string | null;
   adcAuthorizedById?: string | null;
+  // ── Beneficiario (quién retira, distinto de quién solicita) ──
+  // 'self' = retira el solicitante | 'directed' = dirigida a beneficiaryId |
+  // 'open' = retiro abierto (el receptor se registra al entregar).
+  deliveryMode?: 'self' | 'directed' | 'open';
+  beneficiaryId?: string | null;
+  beneficiaryName?: string | null;
+  // Receptor real verificado (biometría/QR) al momento de la entrega.
+  receivedByUserId?: string | null;
+  receivedByUserName?: string | null;
 }
 
 export interface ReturnRequest {

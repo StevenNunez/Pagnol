@@ -18,6 +18,7 @@ TypeScript type-checking is the main correctness tool — `npx tsc --noEmit` to 
 **Gotchas the type-checker does NOT catch:**
 - Files with `"use server"` (e.g. `src/ai/flows/*`) may only export async functions. Exporting Zod schemas or plain objects breaks `next build` but passes `tsc` — run `npm run build` after touching those files.
 - Supabase anon-client `UPDATE`s that match 0 rows because of RLS **do not throw** — they silently succeed. Chain `.select()` and verify rows came back when the update must have happened.
+- Any mutation that changes `materials.stock` must also update the per-contract breakdown via `src/modules/data/mutations/stockLedger.ts` (`addToLedger`/`consumeFromLedger`) or the ledger silently drifts from the total — `tsc` won't catch a missed call.
 
 **CHANGELOG:** update `CHANGELOG.md` (root, Keep a Changelog format) with every change or bug fix before closing a task.
 
@@ -90,6 +91,19 @@ Key permission patterns:
 7. Create pages under `src/app/dashboard/{module}/`.
 8. Add nav entry in `src/components/sidebar.tsx`.
 
+### Stock by Contract & Warehouse (Pañol)
+
+Each `Material` has one `stock` total, but tenants running multiple contracts/faenas at once need to know *where* those units are. `material_stocks` breaks the total down by contract × warehouse (`contract_id NULL` = company-wide pool, `warehouse_id NULL` = unassigned pañol); `warehouses` are the physical pañoles, linked N:M to `contracts` via `warehouse_contracts`.
+
+`src/modules/data/mutations/stockLedger.ts` owns the invariant `sum(material_stocks.qty) == materials.stock`:
+- `addToLedger` — upsert qty into a contract/warehouse row.
+- `consumeFromLedger` — cascades requested contract → pool → other contracts (largest first); optionally prefers a given `warehouseId` within each level. Returns where units actually came from, for kardex notes.
+- `transferInLedger` — strict move between contracts (no cascade), used by `warehouseMutations.transferMaterialStock`.
+
+Which contract a delivery/return is attributed to comes from `contract_workers` (worker ↔ active contract, N:M): one active contract auto-fills, several let the pañolero pick, zero falls back to the pool. A `warehouses` row has a `managerId` (the pañolero); when that user runs the biometric flow in `pagnol/movimientos`, their own warehouse(s) auto-scope the transaction's `warehouseId` the same way.
+
+`stock_movements` (kardex) carries `contract_id`/`contract_name`/`warehouse_id` for traceability. `/dashboard/reports/contract-stock` reads the ledger + kardex to build valuation (qty × `materials.unitCost`), a material×contract matrix, and a per-period kardex, with Excel export.
+
 ### API Routes
 
 Server-side operations that must bypass RLS (user creation, invitations, bulk upload, server-side PDF rendering, push notifications) live in `src/app/api/`. They use `getSupabaseAdmin()`. Everything else should go through the client-side mutation pattern above.
@@ -161,13 +175,13 @@ Toda página de `/dashboard` DEBE seguir este estándar. El lenguaje visual can�
 
 `/dashboard` sub-routes and their purpose:
 - `pagnol/` — Asset management core (activos, movimientos, mantenimiento, OT). Also the design-system reference.
-- `bodega/` — Materials warehouse, stock, requests
+- `bodega/` — Materials warehouse, stock, requests; `bodega/warehouses` manages pañoles (see [Stock by Contract & Warehouse](#stock-by-contract--warehouse-pañol))
 - `abastecimiento/` — Procurement umbrella hub: solicitudes, RFQ + quote comparator, órdenes, recepción (linked to OC), proveedores 360°, costos (cost centers), reportes/alertas. Reuses purchasing/payments/bodega data.
 - `purchasing/` — Purchase requests, orders, suppliers, lots
 - `payments/` — Invoices, advances, supplier payments
 - `rentals/` — Equipment rentals: contracts, lessors (unified with suppliers via `party_id`), rental payments. Confirmed rental OCs materialize each asset as a `Material` with `ownership='arrendado'`.
 - `work-reports/` — Cascading field reports: OT → daily → weekly (SQM 4-page format), each level with PDF + signatures
-- `reports/` — Reporting dashboards (deliveries, inventory, stats)
+- `reports/` — Reporting dashboards (deliveries, inventory, stats, stock-by-contract valuation)
 - `attendance/` — Daily attendance, weekly/monthly reports, payroll calc, severance
 - `rrhh/` — HR: employees, documents, employee requests
 - `safety/` — CPHS: daily talks, checklists, inspections, behavior observations (`cphs/` is the CPHS role home)

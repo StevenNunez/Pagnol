@@ -185,6 +185,13 @@ export default function ActivosPage() {
   const failureProb = watch('failureProbability') || 1;
   const failureImp = watch('failureImpact') || 1;
   const currentClass = watch('class');
+  const currentUsageType = watch('usageType');
+  // Sugerencias de unidad para el <datalist>: texto libre (materials.unit es un string plano,
+  // no una FK), deduplicado — la colección `units` puede estar vacía o tener nombres repetidos.
+  const uniqueUnitNames = useMemo(
+    () => Array.from(new Set((units || []).map((u: Unit) => u.name))),
+    [units]
+  );
 
   useEffect(() => {
     // ISO 55001 Auto-classification based on Risk Matrix (Probability x Impact)
@@ -1103,6 +1110,43 @@ export default function ActivosPage() {
                         <Input id="unitCost" type="number" placeholder="0" {...register("unitCost")} className="py-6 rounded-2xl" />
                       </div>
                     </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="usageType" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Tipo de Uso</Label>
+                        <Controller name="usageType" control={control} render={({ field }) => (
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <SelectTrigger id="usageType" className="py-6 rounded-2xl"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Consumible">Consumible (se descuenta por cantidad)</SelectItem>
+                              <SelectItem value="Retornable">Retornable (se presta y devuelve)</SelectItem>
+                              <SelectItem value="Permanente">Permanente (activo fijo único)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )} />
+                      </div>
+                      {currentUsageType === 'Consumible' && (
+                        <div className="space-y-2">
+                          <Label htmlFor="unit" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Unidad de Medida</Label>
+                          <Input id="unit" list="unit-suggestions" placeholder="Ej: Saco, Kg, Litro, Caja..." {...register('unit')} className="py-6 rounded-2xl" />
+                          <datalist id="unit-suggestions">
+                            {uniqueUnitNames.map((name) => <option key={name} value={name} />)}
+                          </datalist>
+                          {errors.unit && <p className="text-xs text-destructive">{errors.unit.message}</p>}
+                        </div>
+                      )}
+                    </div>
+
+                    {currentUsageType === 'Consumible' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="stock" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">
+                          {modalType === 'ADD' ? 'Cantidad Inicial' : 'Cantidad en Stock'}
+                        </Label>
+                        <Input id="stock" type="number" min={0} placeholder="0" {...register("stock")} className="py-6 rounded-2xl" />
+                        <p className="text-xs text-muted-foreground ml-2">Ej: 500 (sacos de cemento), 200 (metros de cable)...</p>
+                        {errors.stock && <p className="text-xs text-destructive">{errors.stock.message}</p>}
+                      </div>
+                    )}
 
                     <div className="bg-pagnol-orange/10 border border-pagnol-orange/20 p-6 rounded-[2rem] space-y-6">
                       <h6 className="text-[10px] font-black uppercase text-pagnol-orange tracking-widest flex items-center gap-2">

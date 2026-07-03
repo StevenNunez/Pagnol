@@ -20,7 +20,6 @@ import {
     Wallet,
     Construction,
     ShieldAlert,
-    Warehouse,
     Pickaxe,
     Receipt,
     KeyRound,
@@ -37,25 +36,15 @@ export default function DashboardHub() {
     const modules = [
         {
             title: "Módulo Pagnol",
-            description: "Gestión especializada para minería (Activos y Herramientas).",
+            description: "Gestión especializada para minería: activos, bodega, solicitudes y herramientas.",
             icon: Pickaxe,
             href: "/dashboard/pagnol",
             color: "text-cyan-600 dark:text-cyan-400",
             bg: "bg-cyan-100 dark:bg-cyan-500/10",
             border: "hover:border-cyan-300 dark:hover:border-cyan-500/50",
             shadow: "hover:shadow-cyan-500/20 dark:hover:shadow-cyan-500/10",
-            permission: 'module_pagnol:view'
-        },
-        {
-            title: "Módulo Bodega",
-            description: "Gestión de bodega.",
-            icon: Warehouse,
-            href: "/dashboard/bodega",
-            color: "text-cyan-600 dark:text-cyan-400",
-            bg: "bg-cyan-100 dark:bg-cyan-500/10",
-            border: "hover:border-cyan-300 dark:hover:border-cyan-500/50",
-            shadow: "hover:shadow-cyan-500/20 dark:hover:shadow-cyan-500/10",
-            permission: 'module_warehouse:view'
+            // Bodega fusionada en Pagnol: visible para quien veía cualquiera de los dos.
+            permissions: ['module_pagnol:view', 'module_bodega:view', 'module_warehouse:view']
         },
         {
             title: "Control de Obra",

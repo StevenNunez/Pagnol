@@ -155,11 +155,11 @@ export interface AppStateContextType extends AppDataState {
   returnToPool: (requestIds: string[]) => Promise<void>;
 
   // Material Requests
-  addMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; supervisorName?: string; highestClass?: 'A' | 'B' | 'C'; tenantPrefix?: string; }) => Promise<void>;
+  addMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; supervisorName?: string; highestClass?: 'A' | 'B' | 'C'; tenantPrefix?: string; deliveryMode?: 'self' | 'directed' | 'open'; beneficiaryId?: string | null; beneficiaryName?: string | null; }) => Promise<void>;
   addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; warehouseId?: string | null; }) => Promise<void>;
   authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
-  deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null) => Promise<void>;
+  deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null) => Promise<void>;
   // `contract` es obligatorio (aunque sea undefined) para que bindContext inyecte el contexto en el slot correcto.
   addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string }[], notes: string, contract: { contractId?: string | null; contractName?: string | null } | undefined) => Promise<void>;
   addAndCompleteReturnRequest: (data: { items: { materialId: string; quantity: number; materialName: string; unit: string; condition: 'OK' | 'CON FALLA' | 'ROTO' }[]; notes: string; workerId: string; workerName: string; evidenceUrl?: string; contractId?: string | null; contractName?: string | null; warehouseId?: string | null; }) => Promise<void>;

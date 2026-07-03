@@ -484,7 +484,12 @@ export const mappers = {
         deliveredByUserId: item.delivered_by_user_id,
         deliveredByUserName: item.delivered_by_user_name,
         adcAuthorizedAt: item.adc_authorized_at || null,
-        adcAuthorizedById: item.adc_authorized_by || null
+        adcAuthorizedById: item.adc_authorized_by || null,
+        deliveryMode: item.delivery_mode || 'self',
+        beneficiaryId: item.beneficiary_id || null,
+        beneficiaryName: item.beneficiary_name || null,
+        receivedByUserId: item.received_by_user_id || null,
+        receivedByUserName: item.received_by_user_name || null
     }),
     purchase_requests: (item: any): PurchaseRequest => ({
         id: item.id,

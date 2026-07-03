@@ -93,7 +93,7 @@ export default function AdminUsersPage() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 items-start">
         {can('users:create') && (
-          <div className="lg:col-span-1 sticky top-8">
+          <div className="lg:col-span-1 lg:sticky lg:top-8">
             <Card className="rounded-[2.5rem] border-none shadow-2xl bg-card overflow-hidden">
               <CardHeader className="industrial-gradient text-white p-8">
                 <CardTitle className="text-xl font-black uppercase tracking-tight">Crear Nuevo Usuario</CardTitle>

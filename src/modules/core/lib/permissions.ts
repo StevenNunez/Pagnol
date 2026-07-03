@@ -11,7 +11,7 @@ export const ALL_PERMISSIONS = {
     // ── Acceso a Módulos ─────────────────────────────────────────────
     'module_pagnol:view': { label: 'Acceder a Módulo Pagnol', group: 'Acceso a Módulos' },
     'module_warehouse:view': { label: 'Acceder a Bodega Central', group: 'Acceso a Módulos' },
-    'module_bodega:view': { label: 'Acceder a Bodega (Módulo)', group: 'Acceso a Módulos' },
+    'module_bodega:view': { label: 'Acceder a Bodega (fusionada en Módulo Pagnol)', group: 'Acceso a Módulos' },
     'module_purchasing:view': { label: 'Acceder a Compras', group: 'Acceso a Módulos' },
     'module_users:view': { label: 'Acceder a Usuarios', group: 'Acceso a Módulos' },
     'module_subscriptions:view': { label: 'Acceder a Suscripciones', group: 'Plataforma' },
@@ -484,7 +484,9 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             // Módulos (acceso al hub + los módulos que orquesta)
             'module_abastecimiento:view',
             'module_purchasing:view', 'module_payments:view',
-            'module_warehouse:view', 'module_bodega:view',
+            // Bodega fusionada en Pagnol: se mantiene module_bodega por roles
+            // por-tenant que aún lo referencian, y se agrega el módulo destino.
+            'module_warehouse:view', 'module_bodega:view', 'module_pagnol:view',
             // Solicitudes de Compra (ciclo completo)
             'purchase_requests:create', 'purchase_requests:view_all',
             'purchase_requests:approve', 'purchase_requests:delete',

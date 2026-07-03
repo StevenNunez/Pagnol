@@ -51,7 +51,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Material, MaterialRequest, Contract, ContractWorker } from "@/modules/core/lib/data";
+import type { Material, MaterialRequest, Contract, ContractWorker, User } from "@/modules/core/lib/data";
+
+type DeliveryMode = 'self' | 'directed' | 'open';
 
 interface CartItem {
   materialId: string;
@@ -70,7 +72,7 @@ type CompatibleMaterialRequest = MaterialRequest & {
 };
 
 export default function SupervisorRequestPage() {
-  const { materials, addMaterialRequest, requests, contracts, contractWorkers, materialStocks, can } = useAppState();
+  const { materials, addMaterialRequest, requests, contracts, contractWorkers, materialStocks, users, can } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
@@ -79,6 +81,11 @@ export default function SupervisorRequestPage() {
   const [contractId, setContractId] = useState("");
   const [area, setArea] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ¿Quién retira? 'self' = yo mismo | 'directed' = un trabajador específico | 'open' = retiro abierto
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('self');
+  const [beneficiaryId, setBeneficiaryId] = useState<string | null>(null);
+  const [beneficiaryPopoverOpen, setBeneficiaryPopoverOpen] = useState(false);
 
   // State for the temporary item being added
   const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
@@ -93,6 +100,18 @@ export default function SupervisorRequestPage() {
   // --- Memos & Helpers ---
 
   const materialMap = useMemo(() => new Map((materials || []).map((m: Material) => [m.id, m])), [materials]);
+
+  // Trabajadores elegibles como destinatario de la solicitud (todos menos el propio solicitante).
+  const beneficiaryOptions = useMemo(
+    () => ((users || []) as User[])
+      .filter((u) => u.id !== authUser?.id)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [users, authUser?.id]
+  );
+  const selectedBeneficiary = useMemo(
+    () => (beneficiaryId ? beneficiaryOptions.find((u) => u.id === beneficiaryId) || null : null),
+    [beneficiaryId, beneficiaryOptions]
+  );
 
   // Solo contratos activos para asociar la solicitud a una obra/contrato específico.
   const activeContracts = useMemo(
@@ -282,6 +301,10 @@ export default function SupervisorRequestPage() {
       toast({ variant: "destructive", title: "Cantidad inválida", description: "Todos los ítems deben tener cantidad mayor a 0." });
       return;
     }
+    if (deliveryMode === 'directed' && !beneficiaryId) {
+      toast({ variant: "destructive", title: "Falta el destinatario", description: "Selecciona al trabajador que retirará el pedido." });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -292,11 +315,16 @@ export default function SupervisorRequestPage() {
         contractId,
         contractName: contract?.name || null,
         supervisorId: authUser.id,
+        deliveryMode,
+        beneficiaryId: deliveryMode === 'directed' ? beneficiaryId : null,
+        beneficiaryName: deliveryMode === 'directed' ? (selectedBeneficiary?.name || null) : null,
       });
       toast({ title: "Solicitud Enviada", description: "El administrador revisará tu pedido." });
       setCart([]);
       setContractId("");
       setArea("");
+      setDeliveryMode('self');
+      setBeneficiaryId(null);
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo procesar la solicitud." });
     } finally {
@@ -532,6 +560,73 @@ export default function SupervisorRequestPage() {
                       </p>
                     )}
                   </div>
+                  {/* ¿Quién retira? — separa solicitante de receptor (caso APR → EPPs) */}
+                  <div className="space-y-2">
+                    <Label>¿Quién retira? <span className="text-destructive">*</span></Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { value: 'self', label: 'Yo mismo' },
+                        { value: 'directed', label: 'Otro trabajador' },
+                        { value: 'open', label: 'Retiro abierto' },
+                      ] as { value: DeliveryMode; label: string }[]).map((opt) => (
+                        <Button
+                          key={opt.value}
+                          type="button"
+                          variant={deliveryMode === opt.value ? 'default' : 'outline'}
+                          size="sm"
+                          className="text-xs"
+                          disabled={isSubmitting}
+                          onClick={() => {
+                            setDeliveryMode(opt.value);
+                            if (opt.value !== 'directed') setBeneficiaryId(null);
+                          }}
+                        >
+                          {opt.label}
+                        </Button>
+                      ))}
+                    </div>
+                    {deliveryMode === 'directed' && (
+                      <Popover open={beneficiaryPopoverOpen} onOpenChange={setBeneficiaryPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" role="combobox" className="w-full justify-between h-10" disabled={isSubmitting}>
+                            <span className="truncate">
+                              {selectedBeneficiary ? selectedBeneficiary.name : "Selecciona al trabajador que retira..."}
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Buscar trabajador..." />
+                            <CommandList>
+                              <CommandEmpty>No se encontró el trabajador.</CommandEmpty>
+                              <CommandGroup>
+                                {beneficiaryOptions.map((u) => (
+                                  <CommandItem
+                                    key={u.id}
+                                    value={u.name}
+                                    onSelect={() => {
+                                      setBeneficiaryId(u.id);
+                                      setBeneficiaryPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Check className={cn("mr-2 h-4 w-4", beneficiaryId === u.id ? "opacity-100" : "opacity-0")} />
+                                    {u.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      {deliveryMode === 'self' && "Retirarás el pedido tú mismo en el pañol (verificación biométrica)."}
+                      {deliveryMode === 'directed' && "El pedido quedará dirigido: solo ese trabajador podrá retirarlo, verificado por biometría."}
+                      {deliveryMode === 'open' && "Cualquier trabajador podrá retirarlo; quien retire quedará registrado al momento de la entrega."}
+                    </p>
+                  </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="area">Detalle / Ubicación <span className="text-muted-foreground font-normal">(opcional)</span></Label>
                     <Input
@@ -595,6 +690,16 @@ export default function SupervisorRequestPage() {
                                             <div>
                                                 <span className="font-semibold text-muted-foreground">Contrato:</span> {req.contractName || contractMap.get(req.contractId || "")?.name || "—"}
                                             </div>
+                                            {req.deliveryMode === 'directed' && req.beneficiaryName && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    <span className="font-semibold">Retira:</span> {req.beneficiaryName}
+                                                </div>
+                                            )}
+                                            {req.deliveryMode === 'open' && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    <span className="font-semibold">Retiro:</span> Abierto (cualquier trabajador)
+                                                </div>
+                                            )}
                                             {req.area && (
                                                 <div className="text-xs text-muted-foreground">
                                                     <span className="font-semibold">Detalle:</span> {req.area}

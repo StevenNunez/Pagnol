@@ -213,7 +213,7 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
             )}
 
             <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
-                <DialogContent className="max-w-3xl p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-2xl">
+                <DialogContent hideClose className="max-w-3xl p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-2xl">
                     <div className="flex flex-col bg-card rounded-[2.5rem] overflow-hidden max-h-[90vh]">
                         <DialogHeader className="p-8 industrial-gradient text-white shrink-0 relative">
                             <div className="flex items-center gap-5">

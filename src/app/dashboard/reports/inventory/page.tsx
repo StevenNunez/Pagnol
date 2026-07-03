@@ -300,7 +300,7 @@ export default function InventoryReportPage() {
                                     Materiales ({stats.totalMaterials})
                                 </TabsTrigger>
                                 <TabsTrigger value="tools">
-                                    Herramientas ({stats.totalTools})
+                                    Herramientas legado ({stats.totalTools})
                                 </TabsTrigger>
                             </TabsList>
 

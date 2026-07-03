@@ -84,8 +84,14 @@ import { Button } from '@/components/ui/button';
 const getPanolNavItems = (can: (p: Permission) => boolean) => [
   { href: '/dashboard/pagnol', icon: LayoutDashboard, label: 'Panel Principal' },
   { href: '/dashboard/pagnol/activos', icon: Package, label: 'Gestión de Activos' },
-  { href: '/dashboard/pagnol/mantenimiento', icon: Wrench, label: 'Mantenimiento (OT)' },
+  { href: '/dashboard/pagnol/solicitudes', icon: ClipboardList, label: 'Solicitudes y Devoluciones' },
   { href: '/dashboard/pagnol/movimientos', icon: ArrowLeftRight, label: 'Transacciones' },
+  { href: '/dashboard/pagnol/mantenimiento', icon: Wrench, label: 'Mantenimiento (OT)' },
+  { href: '/dashboard/pagnol/herramientas', icon: QrCode, label: 'Herramientas' },
+  { href: '/dashboard/pagnol/ingreso-stock', icon: PackagePlus, label: 'Ingreso Manual' },
+  { href: '/dashboard/pagnol/panoles', icon: Warehouse, label: 'Pañoles' },
+  { href: '/dashboard/pagnol/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes Compra' },
+  { href: '/dashboard/pagnol/catalogos', icon: FolderTree, label: 'Catálogos' },
   { href: '/dashboard/pagnol/reports', icon: BarChart3, label: 'Informes y Reportes' },
   { href: '/dashboard/pagnol/personal', icon: Users, label: 'Gestión de Personal' },
   { href: '/dashboard/pagnol/invitaciones', icon: UserPlus, label: 'Invitaciones' },
@@ -157,22 +163,9 @@ const getPaymentsNavItems = () => [
 const getReportsNavItems = () => [
   { href: '/dashboard/reports', icon: LayoutDashboard, label: 'Panel de Reportes' },
   { href: '/dashboard/reports/inventory', icon: Package, label: 'Reporte Inventario' },
+  { href: '/dashboard/reports/contract-stock', icon: Warehouse, label: 'Stock por Contrato' },
   { href: '/dashboard/reports/deliveries', icon: ArrowLeftRight, label: 'Reporte Entregas' },
   { href: '/dashboard/reports/stats', icon: BarChart3, label: 'Estadísticas' },
-];
-
-const getBodegaNavItems = () => [
-  { href: '/dashboard/bodega', icon: LayoutDashboard, label: 'Resumen Bodega' },
-  { href: '/dashboard/bodega/requests', icon: ClipboardList, label: 'Gestionar Solicitudes' },
-  { href: '/dashboard/bodega/return-requests', icon: RotateCcw, label: 'Gestionar Devoluciones' },
-  { href: '/dashboard/bodega/tools', icon: Wrench, label: 'Herramientas' },
-  { href: '/dashboard/bodega/tools/print-qrs', icon: QrCode, label: 'Imprimir QRs' },
-  { href: '/dashboard/bodega/materials', icon: Package, label: 'Materiales' },
-  { href: '/dashboard/bodega/manual-stock-entry', icon: PackagePlus, label: 'Ingreso Manual' },
-  { href: '/dashboard/bodega/warehouses', icon: Warehouse, label: 'Pañoles' },
-  { href: '/dashboard/bodega/units', icon: Ruler, label: 'Unidades' },
-  { href: '/dashboard/bodega/categories', icon: FolderTree, label: 'Categorías' },
-  { href: '/dashboard/bodega/purchase-requests', icon: ShoppingCart, label: 'Solicitudes Compra' },
 ];
 
 const getDteNavItems = () => [
@@ -351,8 +344,10 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
     if (pathname.startsWith('/dashboard/reports')) {
       return { navItems: getReportsNavItems(), moduleTitle: 'Reportes', moduleIcon: BarChart3 };
     }
+    // Bodega fusionada en el Módulo Pagnol: las rutas viejas redirigen, pero si
+    // el usuario aterriza en una, mostramos el nav de Pagnol.
     if (pathname.startsWith('/dashboard/bodega')) {
-      return { navItems: getBodegaNavItems(), moduleTitle: 'Bodega Central', moduleIcon: Warehouse };
+      return { navItems: getPanolNavItems(can), moduleTitle: 'Módulo Pagnol', moduleIcon: Warehouse };
     }
     if (pathname.startsWith('/dashboard/dte')) {
       return { navItems: getDteNavItems(), moduleTitle: 'Facturación DTE', moduleIcon: Receipt };

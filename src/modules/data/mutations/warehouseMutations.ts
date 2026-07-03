@@ -180,6 +180,7 @@ export async function transferMaterialStock(
             justification: `Transferencia a ${labelOf(params.toContractId)}${reason}`,
             contract_id: params.fromContractId,
             contract_name: params.fromContractId ? labelOf(params.fromContractId) : null,
+            // El origen puede venir de varios pañoles (cascada) — sin pañol único.
         },
         {
             ...base,
@@ -187,6 +188,7 @@ export async function transferMaterialStock(
             justification: `Transferencia desde ${labelOf(params.fromContractId)}${reason}`,
             contract_id: params.toContractId,
             contract_name: params.toContractId ? labelOf(params.toContractId) : null,
+            warehouse_id: params.warehouseId ?? null,
         },
     ]);
     if (movErr) throw movErr;

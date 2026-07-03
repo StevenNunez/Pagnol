@@ -18,7 +18,129 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado
+- **Unificación Herramientas → Activos.** El sistema paralelo de herramientas (tabla `tools` +
+  `tool_logs`, préstamo express sin stock/costo/contrato, herencia de la app de construcción)
+  se unifica con los activos Pagnol:
+  - **Migración `20260702130000_tools_to_materials.sql` (PENDIENTE DE APLICAR):** cada `tool` se
+    materializa como `material` (usage_type 'Herramienta Menor', Clase C, unidad, categoría
+    'Herramientas'). **Drift de esquema descubierto al aplicar la v1**: `tools` real NO tiene
+    `qr_code` (tiene `serial_number`/`internal_code`/`assigned_to`, todos NULL en prod) y
+    `tool_logs` usa `actual_return_date` (no `return_date`) y está **vacío** — el módulo legacy
+    ya operaba sobre un esquema distinto al del código. La v2 usa las columnas reales y genera
+    un serial determinístico `TOOL-XXXXXXXXXX` desde el id (idempotente), que es el QR que
+    imprime la página nueva y reconoce el escáner de movimientos. Los **préstamos activos**
+    (si existieran) migran como `material_requests` entregadas para que la devolución fluya por
+    `pagnol/movimientos`; las tools "in-use" sin registro de préstamo migran como Disponibles
+    con nota. Ledger y kardex consistentes; `tools`/`tool_logs` no se tocan (historial legado).
+  - **`pagnol/herramientas` reescrita sobre materials:** alta rápida (activo Clase C con QR),
+    estado y "en posesión de" reconstruidos desde solicitudes/devoluciones, renombrar/eliminar,
+    CTA a Transacciones (Clase C se entrega al instante: identificar → escanear → firmar), e
+    **historial del módulo antiguo** en tarjeta colapsable de solo lectura. Se retiró el panel
+    de "Entrega y Devolución Rápida" que escribía en la tabla legacy (habría generado drift).
+  - **`print-qrs` reescrita:** imprime QR de materials (`serialNumber`), con nombre del tenant.
+  - Dashboard Pagnol: stats solo desde materials (contar `tools` legacy duplicaría);
+    `reports/inventory` marca su pestaña de herramientas como "legado".
+  - Beneficio: las herramientas ahora entran a valorización, stock por contrato, kardex,
+    mantenimiento y al flujo de beneficiario, con verificación biométrica en cada entrega.
+
 ### Agregado
+- **Beneficiario en solicitudes de material ("¿Quién retira?").** Separa quién solicita de
+  quién retira — caso motor: el APR pide EPPs para un trabajador. Tres modos por solicitud:
+  - **Yo mismo** (`self`, default): comportamiento histórico, retira el solicitante.
+  - **Otro trabajador** (`directed`): la solicitud viaja dirigida a un beneficiario; en el
+    pañol solo él puede retirarla (verificación biométrica del beneficiario, no del solicitante).
+  - **Retiro abierto** (`open`): sin destinatario fijo; quien retira queda registrado al entregar.
+  Piezas: migración `20260702120000_material_requests_beneficiary.sql` (**PENDIENTE DE APLICAR**
+  en el SQL editor: `delivery_mode`, `beneficiary_id/_name`, `received_by_user_id/_name` + check +
+  índice), selector "¿Quién retira?" en el formulario de solicitud (`supervisor/request`),
+  y en `pagnol/movimientos`: al identificar biométricamente a un trabajador aparece el panel
+  "N entregas listas para retiro" (dirigidas a él + propias + abiertas) con entrega en un toque;
+  el botón "Entregar" de la tabla verifica al **beneficiario** cuando la solicitud es dirigida;
+  toda entrega registra al **receptor real** (`received_by_*`) además del pañolero. La bandeja
+  `pagnol/solicitudes` muestra "Retira: X" / "Retiro abierto" / "Recibió: X" y un aviso
+  **"Sin retirar hace X días"** en aprobadas sin entregar (el stock ya salió al aprobar —
+  decisión de mantener ese comportamiento en esta fase). La entrega inmediata biométrica
+  (`addAndApproveMaterialRequest`) registra al trabajador identificado como receptor.
+
+### Cambiado
+- **Fusión de módulos: Bodega absorbida por el Módulo Pagnol (big-bang).** El módulo Bodega
+  (herencia de la versión de construcción) desaparece como módulo independiente; toda su
+  funcionalidad vive ahora bajo `/dashboard/pagnol` con la interfaz Pagnol. Los datos no se
+  tocaron (ambos módulos ya operaban sobre las mismas tablas). Detalle del mapeo:
+  - `bodega/requests` + `bodega/return-requests` → **`pagnol/solicitudes`** (página nueva:
+    bandeja unificada con pestañas Retiros/Devoluciones y contadores de pendientes).
+  - `bodega/tools` (+ `print-qrs`) → **`pagnol/herramientas`** (checkout/QR intactos).
+  - `bodega/manual-stock-entry` → **`pagnol/ingreso-stock`**.
+  - `bodega/warehouses` → **`pagnol/panoles`**.
+  - `bodega/categories` + `bodega/units` → **`pagnol/catalogos`** (página nueva con pestañas).
+  - `bodega/purchase-requests` → **`pagnol/solicitudes-compra`**.
+  - `bodega/materials` → redirige a **`pagnol/activos`** (muere el CRUD duplicado de
+    materiales; `activos` ya cubría archivo, edición, eliminación y desglose por contrato).
+  - `bodega/permissions` (legacy) → redirige a `/dashboard/users`.
+  - Todas las rutas `/dashboard/bodega/*` quedan como **redirects** — ningún bookmark se rompe.
+  - Sidebar: el nav de Pagnol incorpora las entradas nuevas; el módulo "Bodega Central"
+    desaparece. Home: la tarjeta "Módulo Bodega" se fusiona en la tarjeta Pagnol (visible para
+    quien tenga `module_pagnol:view`, `module_bodega:view` o `module_warehouse:view`).
+  - Permisos: el rol `abastecimiento` (tenía Bodega pero no Pagnol) recibe `module_pagnol:view`;
+    `module_bodega:view` se conserva como permiso legado para roles por-tenant en BD.
+  - El panel Pagnol hereda el widget **Stock Crítico** (top 5 con ≤10 unidades) del hub de
+    Bodega para no perder funcionalidad.
+  - Notificación push de aprobación y campanita del layout ahora apuntan a
+    `pagnol/solicitudes` en vez de `bodega/requests`.
+
+### Corregido
+- **Herramientas: el botón "Sí, eliminar" del diálogo de confirmación no eliminaba.** En la
+  página original de Bodega, el confirm llamaba a `onDelete()`, que solo seteaba un estado
+  (`deleteCandidate`) que nadie consumía — la herramienta nunca se borraba. En la página
+  migrada (`pagnol/herramientas`) el confirm llama directamente a `handleDelete()`.
+- **Credenciales QR de herramientas imprimían "CONSTRUCTORA FERROACTIVA" hardcodeado**
+  (herencia de la app de construcción). Ahora imprimen el nombre del tenant actual.
+- **Gestión de Activos (pagnol/activos): no había forma de indicar cantidad al crear un activo
+  Consumible.** El formulario "Registrar Activo" fijaba por código `usageType: 'Consumible'`,
+  `unit: 'unidad'`, `stock: 1` sin ningún control visible — todo activo nuevo quedaba con
+  cantidad 1 sí o sí (confirmado en datos reales de Valar: "Cemento especial Melon 25k" existía
+  con `stock: 1`). Se agregó un selector **Tipo de Uso** (Consumible/Retornable/Permanente) y,
+  cuando es Consumible, aparecen **Unidad de Medida** (texto libre con sugerencias — no un
+  `Select` atado a la colección `units`, que en Valar está vacía y en otros tenants puede tener
+  nombres duplicados) y **Cantidad Inicial**. Mismo formulario sirve para ADD y EDIT. Verificado
+  de punta a punta (creación real vía navegador + BD: `stock`, `unit`, ledger `material_stocks`
+  y kardex `stock_movements` quedan correctos). Archivo: `src/app/dashboard/pagnol/activos/page.tsx`.
+- **Gestión de Usuarios: tarjeta "Crear Nuevo Usuario" invadía la lista en mobile.** Tenía
+  `sticky top-8` sin condicionar al breakpoint; en el layout de una sola columna (mobile) la
+  tarjeta quedaba fija cerca del top mientras la lista de usuarios scrolleaba por detrás,
+  superponiendo avatares y texto. Ahora el sticky solo aplica desde `lg:` (donde el grid es
+  realmente de 3 columnas). Archivo: `src/app/dashboard/users/page.tsx`.
+- **Doble botón "X" superpuesto en diálogos con header propio** (p. ej. editar usuario en
+  `<UserPanel>`, historial/permisos en `pagnol/personal`): `DialogContent` siempre dibujaba su
+  botón de cierre por defecto además del que cada diálogo ya pinta a mano con el estilo del
+  header industrial — en mobile el X genérico (sin contraste sobre el header oscuro) quedaba
+  visible como un "fantasma" detrás del botón correcto. Se agregó el prop opcional `hideClose`
+  a `src/components/ui/dialog.tsx` (default `false`, no afecta otros usos) y se activó en
+  `<UserPanel>`.
+
+### Agregado
+- **Activos por Contrato y Pañol — Fase 3 (Reporte Stock por Contrato)**. Página nueva
+  `/dashboard/reports/contract-stock` (entrada "Stock por Contrato" en el sidebar de Reportes):
+  - **Valorización por contrato**: tarjetas con $ total (cantidad × `unitCost`), % del total y
+    unidades por contrato; el pool central se destaca como valor "sin asignar a contrato";
+    aviso de materiales sin costo unitario que no se valorizan.
+  - **Matriz por contrato**: material × contrato (columnas dinámicas según contratos con
+    existencias + pool central), con total y valorización por fila; búsqueda por material.
+  - **Detalle por pañol**: filas planas material × contrato × pañol con filtros de contrato
+    y pañol (incluye "Pool central" y "Sin pañol").
+  - **Kardex del período**: movimientos filtrados por contrato/pañol/material con rango de
+    fechas y resumen Entradas / Salidas / Neto; tipos etiquetados (Entrega, Devolución,
+    Transferencia, etc.) con badges semánticos.
+  - **Export Excel** (exceljs) con 3 hojas: Valorización, Matriz por contrato y Kardex del período.
+  - Sin migración: todo se calcula de `material_stocks`, `stock_movements`, `contracts`,
+    `warehouses` y `materials` ya presentes en el estado.
+  - Verificado en navegador (puppeteer, tenant DEMO) + `tsc` + `next build`.
+
+### Corregido
+- **Transferencias entre contratos ahora estampan `warehouse_id` en el kardex** (asiento de
+  entrada): el ledger ya guardaba el pañol destino pero el movimiento no lo registraba, por lo
+  que el reporte mostraba "—" en la columna Pañol.
 - **Activos por Contrato y Pañol — Fase 2 (CRUD de pañoles + scope del panolero)**:
   - **Página de administración de pañoles** (`/dashboard/bodega/warehouses`, entrada
     "Pañoles" en el sidebar de Bodega): tabla con encargado, contratos que atiende,

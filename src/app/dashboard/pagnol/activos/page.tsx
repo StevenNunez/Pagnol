@@ -8,6 +8,9 @@ import * as z from 'zod';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { Material, User as UserType, MaterialCategory, Unit, Tool } from '@/modules/core/lib/data';
 import { computeToolHolderMap } from '@/modules/core/lib/tool-loans';
+import { supabase } from '@/modules/core/lib/supabase';
+import { compressImage } from '@/lib/compress-image';
+import { nanoid } from 'nanoid';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/page-header';
 import {
@@ -54,6 +57,7 @@ import * as ExcelJS from 'exceljs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -106,6 +110,7 @@ const assetSchema = z.object({
   unit: z.string().min(1).default('unidad'),
   stock: z.coerce.number().min(0).default(1),
   status: z.enum(['Disponible', 'En Mantenimiento', 'Para Baja', 'Extraviado', 'En Uso']).optional(),
+  requiresMaintenance: z.boolean().default(false),
   nextMaintenanceDate: z.date().optional().nullable(),
   photos: z.string().optional(),
   acquisitionDate: z.date().optional().nullable(),
@@ -124,7 +129,7 @@ type FormData = z.infer<typeof assetSchema>;
 
 export default function ActivosPage() {
   const { materials, addMaterial, deleteMaterial, updateMaterial, materialCategories, units, suppliers, requests, returnRequests, users, can, materialStocks, contracts } = useAppState();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, currentTenantId } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -140,11 +145,19 @@ export default function ActivosPage() {
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filter, setFilter] = useState<string>('');
+  const [debouncedFilter, setDebouncedFilter] = useState<string>('');
+  // El input responde al instante; el filtrado real (sobre todo el inventario)
+  // se aplica con un pequeño retraso para no recomputar en cada tecla.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFilter(filter), 150);
+    return () => clearTimeout(t);
+  }, [filter]);
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [selectedUseType, setSelectedUseType] = useState<string>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL'); // ALL | categoryId
   const [selectedContract, setSelectedContract] = useState<string>('ALL'); // ALL | POOL | contractId
+  const [segment, setSegment] = useState<'all' | 'assets' | 'consumables'>('all'); // segmento Activos/Consumibles
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -167,6 +180,11 @@ export default function ActivosPage() {
 
   const [techSheetFile, setTechSheetFile] = useState<File | null>(null);
   const [isUploadingTechSheet, setIsUploadingTechSheet] = useState(false);
+
+  // Fotos del activo: se suben a Supabase Storage (bucket asset-photos) y se
+  // guardan como URLs en materials.photos. Estado local sincronizado con el form.
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   const formatCLP = (amount: number) => {
     return new Intl.NumberFormat('es-CL', {
@@ -200,6 +218,50 @@ export default function ActivosPage() {
     }
   };
 
+  // Sube una o varias fotos: comprime en el navegador y las manda al bucket
+  // asset-photos bajo la carpeta del tenant (RLS exige `<tenant>/...`).
+  const handlePhotoUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const tenantId = currentUser?.role === 'super-admin' ? currentTenantId : currentUser?.tenantId;
+    if (!tenantId) {
+      toast({ variant: 'destructive', title: 'Sin tenant', description: 'No se pudo determinar la empresa.' });
+      return;
+    }
+    setIsUploadingPhoto(true);
+    const uploaded: string[] = [];
+    try {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith('image/')) continue;
+        const compressed = await compressImage(file, { maxDimension: 1600, quality: 0.72 });
+        const path = `${tenantId}/${nanoid()}.jpg`;
+        const { error } = await supabase.storage.from('asset-photos').upload(path, compressed, { contentType: 'image/jpeg', upsert: false });
+        if (error) throw error;
+        const { data: { publicUrl } } = supabase.storage.from('asset-photos').getPublicUrl(path);
+        uploaded.push(publicUrl);
+      }
+      if (uploaded.length > 0) {
+        setPhotoUrls(prev => {
+          const next = [...prev, ...uploaded];
+          setValue('photos', next.join(','));
+          return next;
+        });
+        toast({ title: uploaded.length > 1 ? `${uploaded.length} fotos subidas` : 'Foto subida' });
+      }
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error al subir foto', description: e.message });
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const removePhoto = (url: string) => {
+    setPhotoUrls(prev => {
+      const next = prev.filter(u => u !== url);
+      setValue('photos', next.join(','));
+      return next;
+    });
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -213,7 +275,7 @@ export default function ActivosPage() {
 
   const canManageCatalog = can('materials:create');
 
-  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, control, reset, setValue, watch, getValues, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(assetSchema)
   });
 
@@ -222,6 +284,21 @@ export default function ActivosPage() {
   const currentClass = watch('class');
   const currentUsageType = watch('usageType');
   const currentCategoryId = watch('categoryId');
+  const currentRequiresMaintenance = watch('requiresMaintenance');
+
+  // Tipos de uso que TÍPICAMENTE llevan mantenimiento (equipos), vs. los que no
+  // (consumibles, herramientas menores, reutilizables simples).
+  const USAGE_TYPES_WITH_MAINTENANCE = ['Activo Fijo', 'IT Controlado', 'Repuesto Crítico'];
+
+  // Sugerencia al crear: auto-marcar "requiere mantenimiento" según el tipo de uso.
+  // Solo al cambiar el tipo en modo ADD, para no pisar una elección manual.
+  const prevUsageTypeRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (modalType !== 'ADD' || !isModalOpen) return;
+    if (prevUsageTypeRef.current === currentUsageType) return;
+    prevUsageTypeRef.current = currentUsageType;
+    setValue('requiresMaintenance', USAGE_TYPES_WITH_MAINTENANCE.includes(currentUsageType));
+  }, [currentUsageType, modalType, isModalOpen, setValue]);
 
   // Sugerencia al crear: una categoría tipo "Herramienta..." normalmente es
   // Herramienta Menor (préstamo/devolución). Solo al cambiar la categoría,
@@ -343,26 +420,44 @@ export default function ActivosPage() {
     return ids;
   }, [materialStocks, selectedContract]);
 
-  const filteredAssets = useMemo(() => {
+  // Filtrado base (todos los filtros MENOS el segmento activos/consumibles).
+  const baseFilteredAssets = useMemo(() => {
     return (materials || []).filter((a: Material) => {
       const status = getStatusLabel(a);
-      const matchesSearch = a.name.toLowerCase().includes(filter.toLowerCase()) || a.id.toLowerCase().includes(filter.toLowerCase()) || (a.internalCode || '').toLowerCase().includes(filter.toLowerCase())
-        || (holderMap.get(a.id)?.name || '').toLowerCase().includes(filter.toLowerCase());
+      const q = debouncedFilter.toLowerCase();
+      const matchesSearch = a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q) || (a.internalCode || '').toLowerCase().includes(q)
+        || (holderMap.get(a.id)?.name || '').toLowerCase().includes(q);
       const matchesStatus = selectedStatus === 'ALL' || status === selectedStatus;
       const matchesClass = selectedClass === 'ALL' || a.class === selectedClass;
       const matchesUse = selectedUseType === 'ALL' || normalizeUsageType(a.usageType) === selectedUseType;
       const matchesCategory = categoryNamesForFilter === null || categoryNamesForFilter.has(a.category || '');
-      const matchesOverdue = !showOverdueOnly || isMaintenanceOverdue(a.nextMaintenanceDate);
+      const matchesOverdue = !showOverdueOnly || (a.requiresMaintenance === true && isMaintenanceOverdue(a.nextMaintenanceDate));
       const matchesContract = materialIdsInContract === null || materialIdsInContract.has(a.id);
       return matchesSearch && matchesStatus && matchesClass && matchesUse && matchesCategory && matchesOverdue && matchesContract;
     });
-  }, [materials, filter, selectedStatus, selectedClass, selectedUseType, categoryNamesForFilter, showOverdueOnly, getStatusLabel, isMaintenanceOverdue, materialIdsInContract, holderMap]);
+  }, [materials, debouncedFilter, selectedStatus, selectedClass, selectedUseType, categoryNamesForFilter, showOverdueOnly, getStatusLabel, isMaintenanceOverdue, materialIdsInContract, holderMap]);
+
+  // Segmento Activos vs Consumibles. Un "Consumible" es stock que se agota por
+  // cantidad (no tiene identidad individual); el resto son activos trazables.
+  const segmentCounts = useMemo(() => {
+    let cons = 0;
+    for (const a of baseFilteredAssets) if (normalizeUsageType(a.usageType) === 'Consumible') cons++;
+    return { all: baseFilteredAssets.length, consumables: cons, assets: baseFilteredAssets.length - cons };
+  }, [baseFilteredAssets]);
+
+  const filteredAssets = useMemo(() => {
+    if (segment === 'all') return baseFilteredAssets;
+    return baseFilteredAssets.filter(a => {
+      const isCons = normalizeUsageType(a.usageType) === 'Consumible';
+      return segment === 'consumables' ? isCons : !isCons;
+    });
+  }, [baseFilteredAssets, segment]);
 
   // Reset pagination whenever filters change
   useEffect(() => {
     setVisibleCount(24);
     setListPage(0);
-  }, [filter, selectedStatus, selectedClass, selectedUseType, selectedCategory, showOverdueOnly, selectedContract]);
+  }, [debouncedFilter, selectedStatus, selectedClass, selectedUseType, selectedCategory, showOverdueOnly, selectedContract, segment]);
 
   const openQrModal = (asset: Asset) => {
     setQrAsset(asset);
@@ -434,6 +529,7 @@ export default function ActivosPage() {
   const openAddModal = () => {
     setModalType('ADD');
     setTechSheetFile(null);
+    setPhotoUrls([]);
     reset({
       name: '',
       serialNumber: '',
@@ -443,6 +539,7 @@ export default function ActivosPage() {
       unitCost: 0,
       status: 'Disponible',
       stock: 1,
+      requiresMaintenance: false,
       nextMaintenanceDate: null,
       unit: 'unidad',
       photos: '',
@@ -462,6 +559,7 @@ export default function ActivosPage() {
   const openEditModal = (asset: Asset) => {
     setModalType('EDIT');
     setTechSheetFile(null);
+    setPhotoUrls(asset.photos || []);
     const category = materialCategories.find(c => c.name === asset.category);
 
     reset({
@@ -473,6 +571,7 @@ export default function ActivosPage() {
       unitCost: asset.unitCost || 0,
       status: asset.status || 'Disponible',
       stock: asset.stock || 1,
+      requiresMaintenance: asset.requiresMaintenance ?? false,
       nextMaintenanceDate: asset.nextMaintenanceDate ? toDate(asset.nextMaintenanceDate) : null,
       unit: asset.unit,
       photos: (asset.photos || []).join(', '),
@@ -507,11 +606,10 @@ export default function ActivosPage() {
 
   const handleSaveAsset = async (data: FormData) => {
     const category = materialCategories.find(c => c.id === data.categoryId);
-    const photosArray = data.photos ? data.photos.split(',').map(p => p.trim()).filter(p => p) : [];
 
     const finalData: any = {
       ...data,
-      photos: photosArray,
+      photos: photoUrls, // fuente de verdad: el estado del uploader
       category: category?.name,
       supplierId: data.supplierId === 'ninguno' ? null : data.supplierId,
     };
@@ -535,6 +633,23 @@ export default function ActivosPage() {
     try {
       await updateMaterial(selectedAsset.id, { status });
       toast({ title: `Estado actualizado a ${status}` });
+      setIsModalOpen(false);
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  // Guardado del modal de Mantenimiento: actualización PARCIAL (fecha + estado),
+  // sin pasar por la validación del schema completo (que exige name/categoría/clase
+  // y hacía que el submit fallara en silencio).
+  const handleSaveMaintenance = async () => {
+    if (!selectedAsset.id) return;
+    try {
+      await updateMaterial(selectedAsset.id, {
+        nextMaintenanceDate: getValues('nextMaintenanceDate') ?? undefined,
+        status: getValues('status'),
+      });
+      toast({ title: 'Plan de mantenimiento actualizado' });
       setIsModalOpen(false);
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -756,7 +871,7 @@ export default function ActivosPage() {
           </div>
 
           <Button
-            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setSelectedCategory('ALL'); setSelectedContract('ALL'); setFilter(''); }}
+            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setSelectedCategory('ALL'); setSelectedContract('ALL'); setFilter(''); setSegment('all'); }}
             variant="ghost"
             className="h-10 px-4 text-[9px] font-black text-muted-foreground rounded-xl hover:bg-muted transition-all uppercase tracking-widest flex items-center gap-2"
           >
@@ -764,17 +879,40 @@ export default function ActivosPage() {
           </Button>
         </div>
 
-        <div className="ml-auto bg-pagnol-dark text-white px-4 py-2 rounded-xl flex items-center gap-3 shrink-0">
-          <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">{filteredAssets.length} Activos</span>
+        <div className="w-full lg:w-auto lg:ml-auto flex flex-wrap items-center gap-3">
+          {/* Chips de segmento: Activos (trazables) vs Consumibles (stock que se agota) */}
+          <div className="flex items-center gap-1 bg-muted/50 border rounded-xl p-1">
+            {([
+              ['all', 'Todos', segmentCounts.all],
+              ['assets', 'Activos', segmentCounts.assets],
+              ['consumables', 'Consumibles', segmentCounts.consumables],
+            ] as const).map(([key, label, count]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSegment(key)}
+                className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${segment === key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {label}
+                <span className={`px-1.5 py-0.5 rounded-md text-[8px] ${segment === key ? 'bg-primary-foreground/20' : 'bg-muted-foreground/10'}`}>{count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="bg-pagnol-dark text-white px-4 py-2 rounded-xl flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">
+              {filteredAssets.length} {segment === 'consumables' ? 'Consumibles' : segment === 'assets' ? 'Activos' : 'Ítems'}
+            </span>
+          </div>
         </div>
       </div>
 
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
           {filteredAssets.slice(0, visibleCount).map(asset => {
-            const overdue = isMaintenanceOverdue(asset.nextMaintenanceDate);
-            const soon = isMaintenanceSoon(asset.nextMaintenanceDate);
+            const needsMaint = asset.requiresMaintenance === true;
+            const overdue = needsMaint && isMaintenanceOverdue(asset.nextMaintenanceDate);
+            const soon = needsMaint && isMaintenanceSoon(asset.nextMaintenanceDate);
             const status = getStatusLabel(asset);
 
             return (
@@ -821,7 +959,7 @@ export default function ActivosPage() {
                     {asset.name}
                   </h4>
                   <div className="space-y-3 mb-6">
-                    {asset.nextMaintenanceDate && (
+                    {needsMaint && asset.nextMaintenanceDate && (
                       <div className={`flex items-center gap-3 p-3 rounded-xl border ${overdue ? 'bg-destructive/10 border-destructive/30 text-destructive' : soon ? 'bg-warning-subtle border-warning/20 text-warning' : 'bg-muted text-muted-foreground'}`}>
                         {overdue ? <AlertCircle size={14} className="shrink-0" /> : <CalendarClock size={14} className="shrink-0" />}
                         <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest">Mantenimiento: {toDate(asset.nextMaintenanceDate)?.toLocaleDateString('es-CL') || 'N/A'}</span>
@@ -915,8 +1053,9 @@ export default function ActivosPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {filteredAssets.slice(listPage * LIST_PAGE_SIZE, (listPage + 1) * LIST_PAGE_SIZE).map(asset => {
-                  const overdue = isMaintenanceOverdue(asset.nextMaintenanceDate);
-                  const soon = isMaintenanceSoon(asset.nextMaintenanceDate);
+                  const needsMaint = asset.requiresMaintenance === true;
+                  const overdue = needsMaint && isMaintenanceOverdue(asset.nextMaintenanceDate);
+                  const soon = needsMaint && isMaintenanceSoon(asset.nextMaintenanceDate);
                   const isExpanded = expandedRowId === asset.id;
 
                   return (
@@ -950,7 +1089,9 @@ export default function ActivosPage() {
                           )}
                         </td>
                         <td className="px-10 py-6">
-                          {asset.nextMaintenanceDate ? (
+                          {!needsMaint ? (
+                            <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">No aplica</span>
+                          ) : asset.nextMaintenanceDate ? (
                             <div className={`flex items-center gap-2 font-black text-[9px] uppercase tracking-widest ${overdue ? 'text-destructive' : soon ? 'text-warning' : 'text-muted-foreground'}`}>
                               {overdue ? <AlertCircle size={14} className="animate-pulse" /> : soon ? <CalendarClock size={14} /> : <Calendar size={14} />}
                               {toDate(asset.nextMaintenanceDate)?.toLocaleDateString('es-CL')}
@@ -973,18 +1114,27 @@ export default function ActivosPage() {
                           <td colSpan={canManageCatalog ? 7 : 6} className="p-8">
                             <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
                               <div className="lg:col-span-1">
-                                <div className="w-full aspect-square rounded-[3rem] overflow-hidden border-8 border-card shadow-2xl relative">
-                                  <Image
-                                    src={asset.photos?.[0] || `https://picsum.photos/seed/${asset.id}/400/400`}
-                                    alt={asset.name}
-                                    layout="fill"
-                                    loading="lazy"
-                                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-pagnol-dark/80 backdrop-blur-md text-white rounded-xl text-[9px] font-black uppercase tracking-widest">
-                                    Vista Técnica 01
-                                  </div>
+                                <div className="w-full max-w-[200px] mx-auto lg:max-w-none lg:mx-0 aspect-square rounded-[2rem] lg:rounded-[3rem] overflow-hidden border-4 lg:border-8 border-card shadow-2xl relative bg-muted">
+                                  {asset.photos && asset.photos.length > 0 ? (
+                                    <>
+                                      <Image
+                                        src={asset.photos[0]}
+                                        alt={asset.name}
+                                        layout="fill"
+                                        loading="lazy"
+                                        sizes="(max-width: 1024px) 200px, 25vw"
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-pagnol-dark/80 backdrop-blur-md text-white rounded-xl text-[9px] font-black uppercase tracking-widest">
+                                        Vista Técnica 01
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground gap-2">
+                                      <Camera size={40} strokeWidth={1} />
+                                      <span className="text-[9px] font-black uppercase tracking-widest">Sin foto</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-10">
@@ -1049,7 +1199,9 @@ export default function ActivosPage() {
                                         <Button disabled variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 opacity-30">Sin Ficha Técnica <Download size={14} /></Button>
                                       )}
                                       <Button onClick={() => openEditModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Editar Ficha <Edit3 size={14} /></Button>
-                                      <Button onClick={() => openMaintenanceModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Mantenimiento <Calendar size={14} /></Button>
+                                      {asset.requiresMaintenance && (
+                                        <Button onClick={() => openMaintenanceModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Mantenimiento <Calendar size={14} /></Button>
+                                      )}
                                       {canManageCatalog && <Button onClick={() => openRetireModal(asset)} variant="destructive" className="w-full justify-between bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-[1.5rem] h-12 px-6 border-none shadow-sm">Solicitar Baja <Trash2 size={14} /></Button>}
                                     </div>
                                   </div>
@@ -1105,7 +1257,7 @@ export default function ActivosPage() {
       {/* MODALS */}
       {isModalOpen && (
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          <DialogContent className="max-w-xl p-0 border-none bg-transparent overflow-hidden sm:rounded-[3rem] shadow-3xl h-full sm:h-auto">
+          <DialogContent hideClose className="max-w-xl p-0 border-none bg-transparent overflow-hidden sm:rounded-[3rem] shadow-3xl h-full sm:h-auto">
             <div className="flex flex-col h-full sm:max-h-[90vh] bg-card sm:rounded-[3rem] overflow-hidden">
               <DialogHeader className="p-6 sm:p-10 industrial-gradient text-white flex flex-row justify-between items-center shrink-0 relative">
                 <div>
@@ -1133,7 +1285,7 @@ export default function ActivosPage() {
                   </DialogFooter>
                 </div>
               ) : modalType === 'MAINTENANCE' ? (
-                <form onSubmit={handleSubmit(handleSaveAsset)} className="flex flex-col flex-1 overflow-y-auto">
+                <form onSubmit={(e) => { e.preventDefault(); handleSaveMaintenance(); }} className="flex flex-col flex-1 overflow-y-auto">
                   <div className="p-10 space-y-8">
                     <div className="bg-warning-subtle border border-warning/20 p-8 rounded-3xl flex gap-6 items-center uppercase tracking-tight">
                       <div className="p-4 bg-card rounded-2xl text-warning shadow-sm"><Wrench size={32} /></div>
@@ -1299,6 +1451,40 @@ export default function ActivosPage() {
                       </div>
                     </div>
 
+                    <div className="flex items-start justify-between gap-6 bg-muted border border-border p-6 rounded-[2rem]">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-card rounded-2xl text-primary shadow-sm shrink-0"><Wrench size={20} /></div>
+                        <div>
+                          <Label htmlFor="requiresMaintenance" className="text-sm font-black text-foreground uppercase tracking-tight cursor-pointer">¿Requiere Mantenimiento?</Label>
+                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-md">
+                            Actívalo para equipos que llevan plan de mantenimiento (maquinaria, equipos TI, repuestos críticos). Las herramientas menores y consumibles normalmente no lo necesitan.
+                          </p>
+                        </div>
+                      </div>
+                      <Controller control={control} name="requiresMaintenance" render={({ field }) => (
+                        <Switch id="requiresMaintenance" checked={!!field.value} onCheckedChange={field.onChange} className="mt-1 shrink-0" />
+                      )} />
+                    </div>
+
+                    {currentRequiresMaintenance && (
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Próxima Fecha de Mantenimiento (opcional)</Label>
+                        <Controller control={control} name="nextMaintenanceDate" render={({ field }) => (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="w-full justify-start text-left font-normal py-6 rounded-2xl">
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {field.value ? format(field.value, "PPP", { locale: es }) : "Selecciona fecha"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                              <CalendarUI mode="single" selected={field.value ?? undefined} onSelect={(d) => field.onChange(d || null)} />
+                            </PopoverContent>
+                          </Popover>
+                        )} />
+                      </div>
+                    )}
+
                     <div className="bg-pagnol-orange/10 border border-pagnol-orange/20 p-6 rounded-[2rem] space-y-6">
                       <h6 className="text-[10px] font-black uppercase text-pagnol-orange tracking-widest flex items-center gap-2">
                         <ShieldCheck size={14} /> ISO 55001 - Matriz de Riesgo y Jerarquía
@@ -1327,6 +1513,44 @@ export default function ActivosPage() {
                           </Select>
                         )} />
                       </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Fotos del Activo</Label>
+                      <div className="flex flex-wrap gap-3">
+                        {photoUrls.map((url) => (
+                          <div key={url} className="relative w-24 h-24 rounded-2xl overflow-hidden border border-border group/photo shrink-0">
+                            <Image src={url} alt="Foto del activo" fill sizes="96px" className="object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removePhoto(url)}
+                              className="absolute top-1 right-1 p-1 bg-destructive text-destructive-foreground rounded-lg opacity-0 group-hover/photo:opacity-100 transition-opacity shadow-md"
+                              aria-label="Quitar foto"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => document.getElementById('asset-photo-input')?.click()}
+                          disabled={isUploadingPhoto}
+                          className="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted transition-all shrink-0 disabled:opacity-50"
+                        >
+                          {isUploadingPhoto ? <Loader2 size={20} className="animate-spin" /> : <Camera size={20} />}
+                          <span className="text-[8px] font-black uppercase tracking-widest">{isUploadingPhoto ? 'Subiendo' : 'Agregar'}</span>
+                        </button>
+                        <input
+                          type="file"
+                          id="asset-photo-input"
+                          className="hidden"
+                          accept="image/*"
+                          capture="environment"
+                          multiple
+                          onChange={(e) => { handlePhotoUpload(e.target.files); e.target.value = ''; }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground ml-2">Toma una foto o sube imágenes del activo. Se comprimen automáticamente.</p>
                     </div>
 
                     <div className="space-y-4">
@@ -1382,7 +1606,7 @@ export default function ActivosPage() {
       {/* QR MODAL */}
       {isQrModalOpen && qrAsset && (
         <Dialog open={isQrModalOpen} onOpenChange={setIsQrModalOpen}>
-          <DialogContent className="max-w-md p-0 border-none bg-transparent overflow-hidden rounded-[3rem] shadow-3xl">
+          <DialogContent hideClose className="max-w-md p-0 border-none bg-transparent overflow-hidden rounded-[3rem] shadow-3xl">
             <div className="bg-card rounded-[3rem] overflow-hidden">
               <DialogHeader className="p-10 bg-pagnol-dark text-white flex flex-row justify-between items-center shrink-0 relative">
                 <div>
@@ -1415,7 +1639,7 @@ export default function ActivosPage() {
       {/* REPORT MODAL */}
       {isReportModalOpen && (
         <Dialog open={isReportModalOpen} onOpenChange={setIsReportModalOpen}>
-          <DialogContent className="max-w-5xl p-0 border-none bg-transparent overflow-hidden rounded-[3rem] shadow-3xl">
+          <DialogContent hideClose className="max-w-5xl p-0 border-none bg-transparent overflow-hidden rounded-[3rem] shadow-3xl">
             <div className="flex flex-col max-h-[90vh] bg-card rounded-[3rem] overflow-hidden">
               <DialogHeader className="p-10 industrial-gradient text-white flex flex-row justify-between items-center shrink-0 relative">
                 <div className="flex items-center gap-6">

@@ -17,15 +17,15 @@ import { ATTENDANCE_MARK_LABELS } from "@/modules/core/lib/data";
 import type { AttendanceMark } from "@/modules/core/lib/data";
 
 const MARK_COLORS: Record<string, string> = {
-  P:   'bg-green-100 text-green-700',
-  A:   'bg-red-100 text-red-600',
-  D:   'bg-indigo-50 text-indigo-500',
-  LM:  'bg-amber-100 text-amber-700',
-  PSG: 'bg-orange-100 text-orange-600',
-  V:   'bg-blue-100 text-blue-600',
-  PP:  'bg-purple-100 text-purple-600',
-  MJ:  'bg-teal-100 text-teal-600',
-  ATR: 'bg-yellow-100 text-yellow-700',
+  P:   'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300',
+  A:   'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300',
+  D:   'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-500 dark:text-indigo-300',
+  LM:  'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300',
+  PSG: 'bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-300',
+  V:   'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300',
+  PP:  'bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-300',
+  MJ:  'bg-teal-100 dark:bg-teal-500/20 text-teal-600 dark:text-teal-300',
+  ATR: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
 };
 
 const MONTH_MAP: Record<string, number> = {
@@ -167,7 +167,7 @@ export default function AttendanceImportPage() {
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
           className={`border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center gap-4 transition-all cursor-pointer ${
-            dragging ? 'border-orange-400 bg-orange-50' : 'border-border hover:border-slate-400 hover:bg-slate-50/50'
+            dragging ? 'border-orange-400 dark:border-orange-500/50 bg-orange-50 dark:bg-orange-500/15' : 'border-border hover:border-border hover:bg-muted/50'
           }`}
           onClick={() => fileRef.current?.click()}
         >
@@ -194,11 +194,11 @@ export default function AttendanceImportPage() {
               { label: 'Trabajadores',     value: totalWorkers,     icon: Users },
               { label: 'Registros totales',value: totalMarks,       icon: CheckCircle2 },
             ].map(({ label, value, icon: Icon }) => (
-              <div key={label} className="bg-slate-100 rounded-2xl p-4 flex items-center gap-3">
-                <Icon size={18} className="text-slate-600 shrink-0" />
+              <div key={label} className="bg-muted rounded-2xl p-4 flex items-center gap-3">
+                <Icon size={18} className="text-muted-foreground shrink-0" />
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">{label}</p>
-                  <p className="text-2xl font-black text-slate-700">{value}</p>
+                  <p className="text-2xl font-black text-foreground">{value}</p>
                 </div>
               </div>
             ))}
@@ -223,7 +223,7 @@ export default function AttendanceImportPage() {
           {sheets.map(sheet => (
             <div key={sheet.sheetName} className="bg-card border border-border rounded-2xl overflow-hidden">
               <button
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50/50 transition-colors"
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/50 transition-colors"
                 onClick={() => toggleExpanded(sheet.sheetName)}
               >
                 <div className="flex items-center gap-3">
@@ -243,7 +243,7 @@ export default function AttendanceImportPage() {
               {expanded.has(sheet.sheetName) && (
                 <div className="border-t border-border overflow-x-auto">
                   <table className="w-full text-xs">
-                    <thead className="bg-slate-50">
+                    <thead className="bg-muted">
                       <tr>
                         <th className="px-4 py-2 text-left font-black text-[9px] uppercase tracking-widest text-muted-foreground">Nombre</th>
                         <th className="px-4 py-2 text-left font-black text-[9px] uppercase tracking-widest text-muted-foreground">Cargo</th>
@@ -253,7 +253,7 @@ export default function AttendanceImportPage() {
                     </thead>
                     <tbody className="divide-y divide-border">
                       {sheet.workers.map((w, i) => (
-                        <tr key={i} className="hover:bg-slate-50/50">
+                        <tr key={i} className="hover:bg-muted/50">
                           <td className="px-4 py-2 font-bold">{w.name}</td>
                           <td className="px-4 py-2 text-muted-foreground">{w.cargo || '—'}</td>
                           <td className="px-4 py-2 text-muted-foreground">{w.turnName}</td>
@@ -262,7 +262,7 @@ export default function AttendanceImportPage() {
                               {Object.entries(w.marks).slice(0, 10).map(([day, mark]) => (
                                 <span
                                   key={day}
-                                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-black ${MARK_COLORS[mark] ?? 'bg-slate-100 text-slate-600'}`}
+                                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-black ${MARK_COLORS[mark] ?? 'bg-muted text-muted-foreground'}`}
                                   title={`Día ${day}: ${ATTENDANCE_MARK_LABELS[mark as AttendanceMark] ?? mark}`}
                                 >
                                   {day}/{mark}
@@ -283,11 +283,11 @@ export default function AttendanceImportPage() {
           ))}
 
           {/* Warning */}
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
-            <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-2xl p-4">
+            <AlertTriangle size={16} className="text-amber-600 dark:text-amber-300 shrink-0 mt-0.5" />
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Antes de importar</p>
-              <p className="text-xs text-amber-600 mt-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">Antes de importar</p>
+              <p className="text-xs text-amber-600 dark:text-amber-300 mt-1">
                 El sistema buscará coincidencias por nombre exacto. Los trabajadores que no estén registrados en Pagnol serán ignorados.
                 Los registros existentes del mismo período NO serán eliminados — se agregarán como marcas adicionales.
               </p>

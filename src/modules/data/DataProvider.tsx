@@ -90,6 +90,7 @@ const initialState: AppDataState = {
     protocolTemplates: [],
     protocols: [],
     shiftSchedules: [],
+    clients: [],
     contracts: [],
     contractWorkers: [],
     rentalParties: [],
@@ -225,6 +226,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const protocolTemplatesData = useSupabaseCollection('protocol_templates', { tenantId, mapper: mappers.protocol_templates, orderBy: { column: 'created_at', ascending: false } });
     const protocolsData = useSupabaseCollection('protocols', { tenantId, mapper: mappers.protocols, orderBy: { column: 'created_at', ascending: false } });
     const shiftSchedulesData = useSupabaseCollection('shift_schedules', { tenantId, mapper: mappers.shift_schedules, orderBy: { column: 'created_at', ascending: true } });
+    const clientsData = useSupabaseCollection('clients', { tenantId, mapper: mappers.clients, orderBy: { column: 'name', ascending: true } });
     const contractsData = useSupabaseCollection('contracts', { tenantId, mapper: mappers.contracts, orderBy: { column: 'created_at', ascending: false } });
     const contractWorkersData = useSupabaseCollection('contract_workers', { tenantId, mapper: mappers.contract_workers });
     const warehousesData = useSupabaseCollection('warehouses', { tenantId, mapper: mappers.warehouses, orderBy: { column: 'name', ascending: true } });
@@ -341,7 +343,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             subscriptionPlansData, workItemsData, progressLogsData, dynamicRolesData, paymentStatesData,
             dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
             protocolTemplatesData, protocolsData,
-            shiftSchedulesData, contractsData, contractWorkersData,
+            shiftSchedulesData, clientsData, contractsData, contractWorkersData,
             warehousesData, warehouseContractsData, materialStocksData,
             rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData,
             rentalRequestsData, rentalQuoteRequestsData, rentalCategoriesData,
@@ -412,6 +414,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 protocolTemplates: processData(protocolTemplatesData),
                 protocols: processData(protocolsData),
                 shiftSchedules: processData(shiftSchedulesData),
+                clients: processData(clientsData),
                 contracts: processData(contractsData),
                 contractWorkers: processData(contractWorkersData),
                 warehouses: processData(warehousesData),
@@ -448,7 +451,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         subscriptionPlansData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
         protocolTemplatesData, protocolsData,
-        shiftSchedulesData, contractsData, contractWorkersData,
+        shiftSchedulesData, clientsData, contractsData, contractWorkersData,
         warehousesData, warehouseContractsData, materialStocksData,
         rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData, workReportsData,
         rentalRequestsData, rentalQuoteRequestsData, rentalCategoriesData,
@@ -614,6 +617,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         confirmEASentToDT: bindContext(eaMutations.confirmEASentToDT),
 
         // Contratos y Turnos
+        addClient: bindContext(contractMutations.addClient),
+        updateClient: bindContext(contractMutations.updateClient),
+        deleteClient: bindContext(contractMutations.deleteClient),
         addContract: bindContext(contractMutations.addContract),
         updateContract: bindContext(contractMutations.updateContract),
         deleteContract: bindContext(contractMutations.deleteContract),

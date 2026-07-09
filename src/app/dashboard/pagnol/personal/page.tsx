@@ -362,7 +362,7 @@ export default function PersonalPage() {
 
       {isHistoryModalOpen && selectedEmployeeForHistory && (
         <Dialog open={isHistoryModalOpen} onOpenChange={setIsHistoryModalOpen}>
-          <DialogContent className="max-w-5xl p-0 border-none bg-transparent overflow-hidden rounded-[3rem] shadow-3xl">
+          <DialogContent hideClose className="max-w-5xl p-0 border-none bg-transparent overflow-hidden rounded-[3rem] shadow-3xl">
             <div className="flex flex-col max-h-[90vh] bg-card rounded-[3rem] overflow-hidden">
               <DialogHeader className="p-10 industrial-gradient text-white flex flex-row justify-between items-center shrink-0 relative">
                 <div className="flex items-center gap-6">
@@ -504,7 +504,7 @@ export default function PersonalPage() {
       {/* MODAL DE AUTORIZACIONES POR USUARIO */}
       {isPermissionsModalOpen && selectedUserForPermissions && (
         <Dialog open={isPermissionsModalOpen} onOpenChange={setIsPermissionsModalOpen}>
-          <DialogContent className="max-w-2xl p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-3xl">
+          <DialogContent hideClose className="max-w-2xl p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-3xl">
             <div className="flex flex-col bg-card rounded-[2.5rem] overflow-hidden max-h-[90vh]">
               <DialogHeader className="p-8 industrial-gradient text-white shrink-0 relative">
                 <DialogTitle className="text-2xl font-black tracking-tighter uppercase leading-none font-outfit">Autorizaciones · {selectedUserForPermissions.name}</DialogTitle>
@@ -629,7 +629,7 @@ export default function PersonalPage() {
 
         return (
           <Dialog open={isEAModalOpen} onOpenChange={(o) => !o && setIsEAModalOpen(false)}>
-            <DialogContent className="max-w-4xl p-0 border-none rounded-[2.5rem] overflow-hidden shadow-2xl">
+            <DialogContent hideClose className="max-w-4xl p-0 border-none rounded-[2.5rem] overflow-hidden shadow-2xl">
               {/* Header */}
               <div className="bg-pagnol-dark text-white px-10 py-8 flex items-start justify-between gap-6">
                 <div className="flex items-center gap-5">

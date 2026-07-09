@@ -4,7 +4,6 @@ import React from 'react';
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
-  Fingerprint,
   BarChart3,
   PackageCheck,
   ChevronRight,
@@ -13,9 +12,6 @@ import {
   Building2,
   Lock,
   Linkedin,
-  Twitter,
-  Instagram,
-  Facebook,
   FileSpreadsheet,
   QrCode,
   Wrench,
@@ -28,8 +24,12 @@ import {
   FileText,
   Hammer,
   UserPlus,
+  ScanFace,
+  HardHat,
+  ShoppingCart,
+  Menu,
+  X,
 } from 'lucide-react';
-import { ThemeSwitcher } from '@/components/theme-switcher';
 
 const MODULES = [
   {
@@ -64,14 +64,14 @@ const MODULES = [
   },
   {
     icon: Hammer,
-    title: "Herramientas",
-    desc: "Control independiente del pool de herramientas con estados: disponible, en uso y en mantenimiento. Trazabilidad por operario y turno.",
+    title: "Herramientas como Activos",
+    desc: "El pool de herramientas se gestiona dentro de Activos (superficie única): estados disponible / en uso / en mantenimiento, \"en posesión de\" por trabajador y trazabilidad por operario y turno.",
     badge: "Core"
   },
   {
     icon: Users,
     title: "Gestión de Personal",
-    desc: "Directorio de empleados con roles, cargos, biometría DigitalPersona, historial de activos asignados y control de permisos granular por módulo.",
+    desc: "Directorio de empleados con roles, cargos, reconocimiento facial (Face-API), historial de activos asignados y control de permisos granular por módulo.",
     badge: "Core"
   },
   {
@@ -118,7 +118,80 @@ const BADGE_COLORS: Record<string, string> = {
   "Legal": "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400",
 };
 
+// Flujo core del pañol — la historia del producto en 4 pasos
+const PANOL_STEPS = [
+  {
+    icon: UserPlus,
+    title: "Enrola",
+    desc: "Cada trabajador queda registrado con su credencial QR y su rostro. Enrolamiento presencial o por link de invitación.",
+  },
+  {
+    icon: ScanFace,
+    title: "Verifica",
+    desc: "En el mesón del pañol, verificación facial 1:1 contra su registro. Nadie retira activos a nombre de otro.",
+  },
+  {
+    icon: PackageCheck,
+    title: "Entrega y Devuelve",
+    desc: "Despacho y recepción con aprobación según criticidad del activo (Clase A/B/C), firma digital y acta imprimible.",
+  },
+  {
+    icon: BarChart3,
+    title: "Trazabilidad Total",
+    desc: "Kardex en tiempo real: quién tiene qué, en qué contrato y en qué pañol — con stock valorizado y exportable.",
+  },
+];
+
+// La suite que crece alrededor del pañol
+const SUITE_GROUPS = [
+  {
+    icon: ShoppingCart,
+    title: "Abastecimiento",
+    desc: "El ciclo completo de compras conectado al pañol.",
+    features: [
+      "Solicitudes de material, compra y arriendo con autorización ADC",
+      "RFQ con comparador de cotizaciones — la IA lee los PDF de tus proveedores",
+      "Órdenes de compra, recepción ligada a OC y proveedores 360°",
+      "Costos por centro de costo y alertas de abastecimiento",
+    ],
+  },
+  {
+    icon: HardHat,
+    title: "Terreno",
+    desc: "Lo que pasa en la faena, documentado y firmado.",
+    features: [
+      "Reportes de trabajo en cascada: OT → diario → semanal (formato SQM)",
+      "PDF y firmas digitales en cada nivel",
+      "Órdenes de trabajo con modo offline — opera sin señal y sincroniza al volver",
+      "Panel ejecutivo de avance",
+    ],
+  },
+  {
+    icon: Users,
+    title: "Personas",
+    desc: "Del registro diario al finiquito, sin planillas paralelas.",
+    features: [
+      "Asistencia diaria con reportes semanales y mensuales",
+      "Cálculo de remuneraciones y finiquitos",
+      "RRHH: empleados, documentos y solicitudes",
+      "Seguridad CPHS: charlas, checklists, inspecciones y observaciones",
+    ],
+  },
+  {
+    icon: Building2,
+    title: "Administración",
+    desc: "El control financiero y contractual de la operación.",
+    features: [
+      "Arriendos de equipos — cada equipo arrendado se vuelve un activo trazable",
+      "Estados de pago por contrato",
+      "Facturas, adelantos y pagos a proveedores",
+      "Multi-empresa: cada tenant con sus datos aislados, logo y correlativos propios",
+    ],
+  },
+];
+
 const LandingPage: React.FC = () => {
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary selection:text-white">
 
@@ -131,13 +204,14 @@ const LandingPage: React.FC = () => {
           </Link>
         </div>
         <div className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-widest text-muted-foreground">
+          <Link href="#panol" className="hover:text-foreground transition-colors">Pañol</Link>
           <Link href="#modules" className="hover:text-foreground transition-colors">Módulos</Link>
+          <Link href="#suite" className="hover:text-foreground transition-colors">Suite</Link>
           <Link href="#iso" className="hover:text-foreground transition-colors">ISO 55001</Link>
           <Link href="#hardware" className="hover:text-foreground transition-colors">Hardware</Link>
           <Link href="#about" className="hover:text-foreground transition-colors">Nosotros</Link>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
-          <ThemeSwitcher />
           <Button asChild variant="outline" className="inline-flex bg-transparent border-[#1A3A44] text-[#1A3A44] dark:border-[#1A3A44] dark:text-[#1A3A44] px-3 py-2.5 rounded-xl font-bold text-[10px] sm:text-xs transition-all hover:bg-[#1A3A44] hover:text-white gap-2 uppercase tracking-widest shrink-0">
             <Link href="/pricing">
               <Building2 className="h-4 w-4" />
@@ -150,23 +224,50 @@ const LandingPage: React.FC = () => {
               <span>Acceso Personal</span>
             </Link>
           </Button>
+          <button
+            type="button"
+            aria-label={mobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+            onClick={() => setMobileMenuOpen((o) => !o)}
+            className="md:hidden p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
       </nav>
 
+      {/* Menú móvil (anchors) */}
+      {mobileMenuOpen && (
+        <div className="md:hidden sticky top-[65px] z-40 bg-background/95 backdrop-blur-md border-b border-border px-6 py-4 flex flex-col gap-1 text-sm font-bold uppercase tracking-widest text-muted-foreground">
+          {[
+            ["#panol", "Pañol"],
+            ["#modules", "Módulos"],
+            ["#suite", "Suite"],
+            ["#iso", "ISO 55001"],
+            ["#hardware", "Hardware"],
+            ["#about", "Nosotros"],
+          ].map(([href, label]) => (
+            <Link key={href} href={href} onClick={() => setMobileMenuOpen(false)} className="py-2.5 px-3 rounded-xl hover:bg-muted hover:text-foreground transition-colors">
+              {label}
+            </Link>
+          ))}
+        </div>
+      )}
+
       {/* Hero */}
-      <section className="relative px-8 py-20 md:py-36 max-w-7xl mx-auto overflow-hidden">
-        <div className="relative z-10 max-w-3xl text-center md:text-left">
+      <section className="relative px-8 py-20 md:py-28 max-w-7xl mx-auto overflow-hidden">
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-16 items-center">
+        <div className="text-center md:text-left">
           <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 px-3 py-1 rounded-full text-primary text-[10px] font-black uppercase tracking-widest mb-6 animate-bounce">
-            <ShieldCheck size={12} /> Solución Estándar Minero
+            <ShieldCheck size={12} /> Control Total en el Corazón de tu Faena
           </div>
           <h1 className="text-4xl xs:text-5xl md:text-7xl font-black leading-[1.1] mb-6 tracking-tighter text-foreground">
-            Control <span className="text-primary">Total</span> en el Corazón de la Faena.
+            El <span className="text-primary">Pagnol digital</span> de tu faena.
           </h1>
           <p className="text-muted-foreground text-base md:text-xl leading-relaxed mb-8 max-w-2xl">
-            PAGNOL es el sistema de gestión de activos diseñado a tu medida ya que conectamos tu Sistema de Inventario o ERP con la Faena para que tengas la información actualizada siempre.
+            PAGNOL es el sistema de gestión de activos diseñado para todos los activos de tu empresa. Cada activo es trazable en tiempo real: quién la tiene, quien la autorizo y en qué pañol. PAGNOL parte por ordenar tu pañol y crece hasta cubrir toda tu operación.
           </p>
           <div className="flex flex-wrap gap-3 mb-10 justify-center md:justify-start">
-            {["12 Módulos Operativos", "ISO 55000/55001/55002 Package Completo", "Acta EA — Art. 11 CT Chile"].map((f, i) => (
+            {["Verificación Facial", "Funciona Sin Señal", "Stock Multi-Contrato", "Acta EA — Art. 11 CT Chile"].map((f, i) => (
               <span key={i} className="flex items-center gap-1.5 bg-muted border border-border text-foreground px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">
                 <CheckCircle2 size={10} className="text-primary" /> {f}
               </span>
@@ -185,19 +286,35 @@ const LandingPage: React.FC = () => {
             </Button>
           </div>
         </div>
+        {/* Screenshot real del producto */}
+        <div className="relative hidden lg:block">
+          <div className="bg-card p-3 rounded-[2rem] shadow-2xl shadow-primary/15 border border-border rotate-1 hover:rotate-0 transition-transform duration-500">
+            <img
+              src="/img/landing/movimientos.png"
+              alt="PAGNOL — Control de Movimientos: trazabilidad biométrica de activos, despacho y recepción"
+              className="rounded-[1.5rem] w-full"
+            />
+          </div>
+          <div className="absolute -bottom-5 -left-5 bg-[#0F172A] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+            <ScanFace className="text-primary" size={26} />
+            <div>
+              <p className="text-[9px] font-bold text-white/60 uppercase tracking-widest">El producto real</p>
+              <p className="text-sm font-black uppercase tracking-tight">Trazabilidad Biométrica</p>
+            </div>
+          </div>
+        </div>
+        </div>
         <div className="absolute top-1/2 -right-20 -translate-y-1/2 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[120px] pointer-events-none"></div>
-        <div className="hidden lg:block absolute top-1/2 right-0 -translate-y-1/2 w-1/3 aspect-square border-2 border-[#1A3A44]/40 rounded-[4rem] rotate-12 -z-0 opacity-60"></div>
-        <div className="hidden lg:block absolute top-1/3 right-10 -translate-y-1/2 w-1/4 aspect-square border border-[#1A3A44]/20 rounded-[3rem] -rotate-6 -z-0"></div>
       </section>
 
       {/* Stats Bar */}
       <section className="border-y border-[#1A3A44]/30 bg-[#1A3A44]">
         <div className="max-w-7xl mx-auto px-8 py-8 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
-            { value: "12", label: "Módulos Activos" },
+            { value: "+20", label: "Módulos Operativos" },
             { value: "ISO 55000/55001/55002", label: "Package Completo" },
-            { value: "100%", label: "Tiempo Real" },
-            { value: "Art. 11 CT", label: "Chile Laboral" },
+            { value: "Realtime + Offline", label: "Opera Con o Sin Señal" },
+            { value: "Art. 11 CT", label: "Acta EA Digital" },
           ].map((s, i) => (
             <div key={i} className="space-y-1">
               <p className="text-2xl md:text-3xl font-black text-white tracking-tighter">{s.value}</p>
@@ -207,13 +324,58 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
+      {/* El Pañol — flujo core */}
+      <section id="panol" className="px-8 py-24 bg-background">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <div className="inline-block bg-orange-100 dark:bg-orange-500/20 px-3 py-1 rounded-full text-primary text-[10px] font-black uppercase tracking-widest mb-4">El Módulo Central</div>
+            <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-foreground">Todo empieza en el <span className="text-primary">pañol</span>.</h2>
+            <p className="text-muted-foreground font-medium max-w-2xl mx-auto">El mesón donde se entregan y devuelven los activos es donde se pierde — o se gana — el control de la faena. PAGNOL lo digitaliza en 4 pasos.</p>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            <div className="space-y-8">
+              {PANOL_STEPS.map((step, i) => (
+                <div key={i} className="flex items-start gap-5">
+                  <div className="relative shrink-0">
+                    <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
+                      <step.icon size={26} />
+                    </div>
+                    <span className="absolute -top-2 -right-2 w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-[11px] font-black">{i + 1}</span>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-black tracking-tight text-foreground mb-1">{step.title}</h4>
+                    <p className="text-muted-foreground text-sm leading-relaxed">{step.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="relative">
+              <div className="bg-card p-3 rounded-[2rem] shadow-2xl shadow-primary/10 border border-border">
+                <img
+                  src="/img/landing/activos.png"
+                  alt="PAGNOL — Gestión de Activos: catálogo maestro con clasificación por criticidad, filtros por contrato y estados operativos"
+                  className="rounded-[1.5rem] w-full"
+                />
+              </div>
+              <div className="absolute -bottom-5 -right-5 bg-[#0F172A] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+                <QrCode className="text-primary" size={24} />
+                <div>
+                  <p className="text-[9px] font-bold text-white/60 uppercase tracking-widest">Cada activo con</p>
+                  <p className="text-sm font-black uppercase tracking-tight">QR y Criticidad A/B/C</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Modules Grid */}
       <section id="modules" className="px-8 py-24 bg-muted/30">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <div className="inline-block bg-orange-100 dark:bg-orange-500/20 px-3 py-1 rounded-full text-primary text-[10px] font-black uppercase tracking-widest mb-4">Plataforma Completa</div>
+            <div className="inline-block bg-orange-100 dark:bg-orange-500/20 px-3 py-1 rounded-full text-primary text-[10px] font-black uppercase tracking-widest mb-4">El Núcleo — Módulo Pañol</div>
             <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-foreground">Todo lo que necesita<br />para controlar su faena.</h2>
-            <p className="text-muted-foreground font-medium max-w-2xl mx-auto">12 módulos diseñados junto a operadores mineros reales. Activos ISO 55001, mantenimiento, despacho, biometría y documentos legales.</p>
+            <p className="text-muted-foreground font-medium max-w-2xl mx-auto">Diseñado junto a operadores mineros reales. Activos ISO 55001, mantenimiento, despacho, verificación facial y documentos legales — y una suite completa de abastecimiento, terreno y personas alrededor.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -231,6 +393,40 @@ const LandingPage: React.FC = () => {
                   <h4 className="text-lg font-black mb-2 tracking-tight text-foreground">{mod.title}</h4>
                   <p className="text-muted-foreground text-sm leading-relaxed">{mod.desc}</p>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Suite — crece alrededor del pañol */}
+      <section id="suite" className="px-8 py-24 bg-background">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <div className="inline-block bg-orange-100 dark:bg-orange-500/20 px-3 py-1 rounded-full text-primary text-[10px] font-black uppercase tracking-widest mb-4">La Suite Completa</div>
+            <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-foreground">Y crece con <span className="text-primary">tu operación</span>.</h2>
+            <p className="text-muted-foreground font-medium max-w-2xl mx-auto">Alrededor del pañol, más de 20 módulos que comparten los mismos datos: lo que se compra, se arrienda, se entrega y se reporta queda conectado — sin planillas paralelas.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {SUITE_GROUPS.map((group, i) => (
+              <div key={i} className="group p-8 md:p-10 rounded-[2.5rem] bg-card border border-border hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary group-hover:scale-110 group-hover:bg-primary group-hover:text-white transition-all duration-300 shrink-0">
+                    <group.icon size={28} />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-black tracking-tight text-foreground">{group.title}</h4>
+                    <p className="text-muted-foreground text-sm font-medium">{group.desc}</p>
+                  </div>
+                </div>
+                <ul className="space-y-3 mt-6">
+                  {group.features.map((f, j) => (
+                    <li key={j} className="flex items-start gap-2.5 text-sm text-muted-foreground leading-relaxed">
+                      <CheckCircle2 size={16} className="text-primary shrink-0 mt-0.5" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
@@ -280,6 +476,19 @@ const LandingPage: React.FC = () => {
                   <p className="text-white/70 text-xs font-bold uppercase tracking-wide leading-relaxed">{box.desc}</p>
                 </div>
               ))}
+            </div>
+          </div>
+          {/* Prueba visual: módulo de mantenimiento en producción */}
+          <div className="mt-16 relative">
+            <div className="bg-white/5 backdrop-blur-sm p-3 rounded-[2rem] border border-white/15 shadow-2xl">
+              <img
+                src="/img/landing/mantenimiento.png"
+                alt="PAGNOL — Gestión de Mantenimiento ISO 55001: disponibilidad física, MTBF, MTTR y órdenes de trabajo"
+                className="rounded-[1.5rem] w-full"
+              />
+            </div>
+            <div className="absolute -top-5 left-8 bg-primary text-white px-5 py-2.5 rounded-2xl shadow-2xl">
+              <p className="text-xs font-black uppercase tracking-widest">MTBF · MTTR · Disponibilidad — en producción</p>
             </div>
           </div>
         </div>
@@ -338,31 +547,30 @@ const LandingPage: React.FC = () => {
             <p className="text-muted-foreground font-medium text-lg">Experiencia multidisciplinaria unida por la innovación.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-            {[
-              { name: "Javier Ramírez Ch.", age: "54", image: "/img/team/javier.png", roles: ["Emprendedor", "Experto en Nanotecnología", "Fundador y CEO de Nanofix", "MBA, Reino Unido"], socials: { linkedin: "https://www.linkedin.com/GAC" } },
-              { name: "Francisco Valdés A.", age: "42", image: "/img/team/francisco.png", roles: ["Empresario", "Fundador y CEO de Valar Servicios a la Minería", "Magister Innovación y Emprendimiento, UDD", "Ingeniero Industrial"], socials: { linkedin: "https://www.linkedin.com/JRA" } },
-              { name: "Germán Arellano C.", age: "60", image: "/img/team/german.png", roles: ["Emprendedor serial", "Experto en bebidas y aguas", "Fundador y CEO Ur Garbia S.A.", "PhD Advanced Management (U. Lleida)", "MBA (UAI)"], socials: { linkedin: "https://www.linkedin.com/FVA" } },
-              { name: "Steven Nuñez", age: "36", image: "/img/team/steven.png", roles: ["Dev Full stack", "Fundador y CEO de TeoLabs", "CTO Pagnol"], socials: { linkedin: "https://www.linkedin.com/in/steven-nuñez" } },
-            ].map((member, i) => (
+            {([
+              { name: "Javier Ramírez Ch.", image: "/img/team/javier.png", roles: ["Emprendedor", "Experto en Nanotecnología", "Fundador y CEO de Nanofix", "MBA, Reino Unido"], linkedin: null },
+              { name: "Francisco Valdés A.", image: "/img/team/francisco.png", roles: ["Empresario", "Fundador y CEO de Valar Servicios a la Minería", "Magister Innovación y Emprendimiento, UDD", "Ingeniero Industrial"], linkedin: null },
+              { name: "Germán Arellano C.", image: "/img/team/german.png", roles: ["Emprendedor serial", "Experto en bebidas y aguas", "Fundador y CEO Ur Garbia S.A.", "PhD Advanced Management (U. Lleida)", "MBA (UAI)"], linkedin: null },
+              { name: "Steven Nuñez", image: "/img/team/steven.png", roles: ["Dev Full stack", "Fundador y CEO de TeoLabs", "CTO Pagnol"], linkedin: "https://www.linkedin.com/in/steven-nuñez" },
+            ] as { name: string; image: string; roles: string[]; linkedin: string | null }[]).map((member, i) => (
               <div key={i} className="flex flex-col items-center text-center p-8 rounded-[2.5rem] bg-card border border-border hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/10 transition-all group">
                 <div className="w-40 h-40 rounded-[2.5rem] overflow-hidden border-4 border-primary/20 shadow-xl mb-6 group-hover:scale-105 transition-transform">
                   <img src={member.image} alt={member.name} className="w-full h-full object-cover" />
                 </div>
-                <h4 className="text-xl font-black uppercase tracking-tight text-foreground">{member.name} <span className="text-muted-foreground text-sm ml-1">({member.age})</span></h4>
+                <h4 className="text-xl font-black uppercase tracking-tight text-foreground">{member.name}</h4>
                 <div className="w-10 h-1 bg-primary rounded-full my-4 opacity-50"></div>
                 <div className="space-y-2 mb-6">
                   {member.roles.map((role, r) => (
                     <p key={r} className="text-sm font-bold text-muted-foreground leading-tight">{role}</p>
                   ))}
                 </div>
-                <div className="flex items-center gap-4 mt-auto">
-                  <Link href={member.socials.linkedin} className="p-2 bg-muted rounded-xl shadow-sm hover:text-primary transition-colors text-muted-foreground">
-                    <Linkedin size={18} />
-                  </Link>
-                  <Link href="#" className="p-2 bg-muted rounded-xl shadow-sm hover:text-primary transition-colors text-muted-foreground"><Twitter size={18} /></Link>
-                  <Link href="#" className="p-2 bg-muted rounded-xl shadow-sm hover:text-primary transition-colors text-muted-foreground"><Instagram size={18} /></Link>
-                  <Link href="#" className="p-2 bg-muted rounded-xl shadow-sm hover:text-primary transition-colors text-muted-foreground"><Facebook size={18} /></Link>
-                </div>
+                {member.linkedin && (
+                  <div className="flex items-center gap-4 mt-auto">
+                    <Link href={member.linkedin} target="_blank" rel="noopener noreferrer" className="p-2 bg-muted rounded-xl shadow-sm hover:text-primary transition-colors text-muted-foreground">
+                      <Linkedin size={18} />
+                    </Link>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -376,7 +584,7 @@ const LandingPage: React.FC = () => {
       <footer className="px-8 pt-24 bg-[#1A3A44] text-center relative overflow-hidden">
         <div className="max-w-3xl mx-auto relative z-10">
           <h2 className="text-5xl font-black tracking-tighter mb-8 text-white">¿Listo para modernizar su pañol?</h2>
-          <p className="text-white/80 mb-12 text-lg">12 módulos operativos. Mantenimiento ISO 55001. Acta EA legal. Biometría. AI. Todo incluido.</p>
+          <p className="text-white/80 mb-12 text-lg">Del pañol a toda tu operación: activos ISO 55001, mantenimiento, abastecimiento, terreno y personas. Con verificación facial, modo offline y Acta EA legal.</p>
           <Button asChild size="lg" className="inline-flex items-center gap-3 bg-primary text-white hover:bg-primary/90 px-10 py-5 rounded-2xl font-black text-xl transition-all shadow-2xl shadow-black/30 active:scale-95 group">
             <Link href="/pricing">
               Comenzar Ahora <ArrowRight className="group-hover:translate-x-2 transition-transform" />
@@ -384,13 +592,8 @@ const LandingPage: React.FC = () => {
           </Button>
         </div>
         <div className="mt-24 border-t border-white/10">
-          <div className="max-w-7xl mx-auto px-8 py-6 flex flex-col md:flex-row items-center justify-between text-white/60 text-[10px] font-bold uppercase tracking-widest gap-4">
-            <p className="text-center md:text-left">© {new Date().getFullYear()} PAGNOL ASSET MANAGEMENT. ALL RIGHTS RESERVED.</p>
-            <div className="flex items-center gap-8">
-              <Link href="#" className="hover:text-white transition-colors">Privacidad</Link>
-              <Link href="#" className="hover:text-white transition-colors">Términos</Link>
-              <Link href="#" className="hover:text-white transition-colors">Soporte</Link>
-            </div>
+          <div className="max-w-7xl mx-auto px-8 py-6 flex flex-col md:flex-row items-center justify-center text-white/60 text-[10px] font-bold uppercase tracking-widest gap-4">
+            <p className="text-center">© {new Date().getFullYear()} PAGNOL ASSET MANAGEMENT. ALL RIGHTS RESERVED.</p>
           </div>
         </div>
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[1200px] h-[400px] bg-primary/10 rounded-full blur-[120px] -z-0"></div>

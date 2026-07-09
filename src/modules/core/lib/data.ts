@@ -212,6 +212,7 @@ export interface Material {
   serialNumber?: string; // N° de Serie del Fabricante
   status?: 'Disponible' | 'En Mantenimiento' | 'Para Baja' | 'Extraviado' | 'En Uso';
   photos?: string[]; // URLs de las fotos
+  requiresMaintenance?: boolean; // ¿el activo lleva plan de mantenimiento? (herramientas menores/consumibles: no)
   nextMaintenanceDate?: Date | string;
   isITAsset?: boolean;
   internalCode?: string; // Código interno personalizado
@@ -435,12 +436,28 @@ export interface ShiftSchedule {
   createdAt: Date;
 }
 
+// Cliente de la empresa (jerarquía: Empresa/tenant → Cliente → Contratos).
+// Ej: Valar tiene como clientes a Novandino, QPL, SQM; cada uno con sus contratos.
+export interface Client {
+  id: string;
+  tenantId: string;
+  name: string;
+  rut?: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  notes?: string;
+  status: 'active' | 'inactive';
+  createdAt: Date;
+}
+
 export interface Contract {
   id: string;
   tenantId: string;
   name: string;
   code?: string;
-  clientName?: string;
+  clientId?: string | null; // FK a Client (la fuente de verdad)
+  clientName?: string; // legacy: string suelto pre-entidad Cliente (solo lectura)
   location?: string;
   status: 'active' | 'closed' | 'suspended';
   startDate: Date | string;

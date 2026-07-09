@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 import { requireAuth, resolveTenant, hasPermission } from '@/modules/core/lib/api-auth';
 
 export async function POST(request: Request) {
@@ -35,10 +36,13 @@ export async function POST(request: Request) {
 
         const admin = ctx.admin;
 
-        // Create auth user without affecting the current admin session
+        // Create auth user without affecting the current admin session.
+        // Sin password explícita se genera una aleatoria e irrecuperable (el
+        // usuario entra por QR/biometría o vía "olvidé mi contraseña"); antes
+        // el fallback era una constante pública en el código fuente.
         const { data: authData, error: authError } = await admin.auth.admin.createUser({
             email: email.trim().toLowerCase(),
-            password: password || 'TemporaryPassword123!',
+            password: password || randomBytes(24).toString('base64url'),
             email_confirm: true,
             user_metadata: { name, role, tenant_id: tenantId },
         });

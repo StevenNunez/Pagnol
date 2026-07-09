@@ -1127,7 +1127,7 @@ export default function WorkReportDetailPage() {
         </div>
 
         <aside className="space-y-6">
-          <Card className="rounded-[1.5rem] sticky top-4">
+          <Card className="rounded-[1.5rem] xl:sticky xl:top-4">
             <CardContent className="p-5 space-y-5">
               <Badge className="rounded-xl">{STATUS_LABEL[draft.status]}</Badge>
               <div className="grid grid-cols-3 gap-3">

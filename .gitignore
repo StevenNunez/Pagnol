@@ -73,3 +73,6 @@ scripts/
 
 .docs
 
+.CLAUDE.md 
+.CHANGELOG.md 
+PENDIENTES.md

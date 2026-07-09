@@ -2,29 +2,37 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
+    // Solo hosts realmente usados con next/image. NO agregar hosts "por si acaso":
+    // cada patrón amplía la superficie del Image Optimizer (vector de DoS/costo).
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-        pathname: '**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'i.imgur.com',
-        pathname: '**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'picsum.photos',
-        pathname: '**',
-      },
-      {
-        // Supabase Storage — uploads (damage photos, KYC images, PDFs)
+        // Supabase Storage — uploads (damage photos, KYC images, PDFs).
+        // Único host remoto: las fotos de activos salen de aquí; los activos sin
+        // foto muestran un placeholder local (ícono), no una imagen remota.
         protocol: 'https',
         hostname: '*.supabase.co',
         pathname: '/storage/v1/object/public/**',
       },
     ],
+  },
+  // Security headers base. CSP completa se deja para una fase posterior
+  // (requiere inventariar inline scripts de Next + websockets Supabase + Gemini).
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          // Nadie puede embeber Pagnol en un iframe (clickjacking del login)
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // HTTPS forzado 2 años, incluye subdominios
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+          // La app SÍ usa cámara (biometría/QR) y geolocalización (geofence): solo self
+          { key: 'Permissions-Policy', value: 'camera=(self), geolocation=(self), microphone=()' },
+        ],
+      },
+    ];
   },
   transpilePackages: ['jspdf', 'canvg', 'core-js'],
   // Puppeteer/Chromium son paquetes con binarios: no deben bundlearse.

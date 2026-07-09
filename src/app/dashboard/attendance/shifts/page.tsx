@@ -24,12 +24,12 @@ import type { ShiftSchedule, ShiftType } from "@/modules/core/lib/data";
 import { format } from "date-fns";
 
 const SHIFT_PRESETS: Record<ShiftType, { daysOn: number; daysOff: number; label: string; color: string }> = {
-  "5x2":   { daysOn: 5,  daysOff: 2,  label: "5×2 — Lun a Vie",    color: "bg-blue-100 text-blue-800 border-blue-200" },
-  "4x3":   { daysOn: 4,  daysOff: 3,  label: "4×3 — Rot. Corta",   color: "bg-green-100 text-green-800 border-green-200" },
-  "7x7":   { daysOn: 7,  daysOff: 7,  label: "7×7 — Semanal",      color: "bg-orange-100 text-orange-800 border-orange-200" },
-  "14x14": { daysOn: 14, daysOff: 14, label: "14×14 — Quincenal",   color: "bg-purple-100 text-purple-800 border-purple-200" },
-  "21x7":  { daysOn: 21, daysOff: 7,  label: "21×7 — Mensual ext.", color: "bg-red-100 text-red-800 border-red-200" },
-  "custom": { daysOn: 0, daysOff: 0,  label: "Personalizado",       color: "bg-slate-100 text-slate-700 border-slate-200" },
+  "5x2":   { daysOn: 5,  daysOff: 2,  label: "5×2 — Lun a Vie",    color: "bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-500/30" },
+  "4x3":   { daysOn: 4,  daysOff: 3,  label: "4×3 — Rot. Corta",   color: "bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300 border-green-200 dark:border-green-500/30" },
+  "7x7":   { daysOn: 7,  daysOff: 7,  label: "7×7 — Semanal",      color: "bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300 border-orange-200 dark:border-orange-500/30" },
+  "14x14": { daysOn: 14, daysOff: 14, label: "14×14 — Quincenal",   color: "bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30" },
+  "21x7":  { daysOn: 21, daysOff: 7,  label: "21×7 — Mensual ext.", color: "bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300 border-red-200 dark:border-red-500/30" },
+  "custom": { daysOn: 0, daysOff: 0,  label: "Personalizado",       color: "bg-muted text-foreground border-border" },
 };
 
 const shiftSchema = z.object({
@@ -191,7 +191,7 @@ export default function ShiftsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-3 text-sm">
-                    {shift.isNightShift ? <Moon size={14} className="text-indigo-500 shrink-0" /> : <Sun size={14} className="text-amber-500 shrink-0" />}
+                    {shift.isNightShift ? <Moon size={14} className="text-indigo-500 dark:text-indigo-300 shrink-0" /> : <Sun size={14} className="text-amber-500 dark:text-amber-300 shrink-0" />}
                     <span className="font-mono font-bold">{shift.workStart} – {shift.workEnd}</span>
                     <span className="text-muted-foreground text-[10px]">
                       {shift.isNightShift ? "Nocturno" : "Diurno"}
@@ -212,7 +212,7 @@ export default function ShiftsPage() {
                     {Array.from({ length: Math.min(shift.daysOn + shift.daysOff, 28) }).map((_, i) => (
                       <div
                         key={i}
-                        className={`h-2 flex-1 min-w-[6px] rounded-sm ${i < shift.daysOn ? 'bg-green-500' : 'bg-slate-200'}`}
+                        className={`h-2 flex-1 min-w-[6px] rounded-sm ${i < shift.daysOn ? 'bg-green-500' : 'bg-muted'}`}
                       />
                     ))}
                     {shift.daysOn + shift.daysOff > 28 && <span className="text-[9px] text-muted-foreground self-end">…</span>}

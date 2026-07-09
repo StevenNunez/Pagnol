@@ -40,6 +40,7 @@ import {
   Protocol,
   ProtocolSignature,
   ShiftSchedule,
+  Client,
   Contract,
   ContractWorker,
   Warehouse,
@@ -110,6 +111,7 @@ export interface AppDataState {
   protocolTemplates: ProtocolTemplate[];
   protocols: Protocol[];
   shiftSchedules: ShiftSchedule[];
+  clients: Client[];
   contracts: Contract[];
   contractWorkers: ContractWorker[];
   warehouses: Warehouse[];
@@ -239,6 +241,11 @@ export interface AppStateContextType extends AppDataState {
   addManualAttendance: (userId: string, date: Date, time: string, type: 'in' | 'out') => Promise<void>;
   updateAttendanceLog: (logId: string, newTimestamp: Date, newType: 'in' | 'out', originalTimestamp: Date) => Promise<void>;
   deleteAttendanceLog: (logId: string) => Promise<void>;
+
+  // Clientes (jerarquía: Empresa → Cliente → Contratos)
+  addClient: (data: Omit<Client, 'id' | 'tenantId' | 'createdAt'>) => Promise<Client>;
+  updateClient: (id: string, data: Partial<Client>) => Promise<void>;
+  deleteClient: (id: string) => Promise<void>;
 
   // Contratos
   addContract: (data: Omit<Contract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>) => Promise<Contract>;

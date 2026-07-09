@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from '@/modules/core/hooks/use-toast';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -105,13 +106,12 @@ export function usePushNotifications(userId?: string, tenantId?: string) {
       const subscription = await subscribeToPush(reg, VAPID_PUBLIC_KEY);
 
       const subJson = subscription.toJSON();
+      // La identidad la deriva el servidor de la sesión (Bearer), no del body.
       const res = await fetch('/api/push/subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({
           subscription: { endpoint: subJson.endpoint, keys: subJson.keys },
-          userId,
-          tenantId,
         }),
       });
 
@@ -149,7 +149,7 @@ export function usePushNotifications(userId?: string, tenantId?: string) {
       if (sub) {
         await fetch('/api/push/subscribe', {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify({ endpoint: sub.endpoint }),
         });
         await sub.unsubscribe();

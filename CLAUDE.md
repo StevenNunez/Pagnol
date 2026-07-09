@@ -24,7 +24,7 @@ TypeScript type-checking is the main correctness tool — `npx tsc --noEmit` to 
 
 ## Architecture
 
-**Pagnol** is a multi-tenant SaaS ERP for mining/construction faenas. Stack: Next.js 16 App Router, React 19, Supabase (Postgres + Auth + Realtime), Tailwind/Radix/shadcn, Google Genkit for AI, `date-fns` for date math.
+**Pagnol** is a multi-tenant SaaS ERP for mining/construction faenas. Stack: Next.js 16 App Router, React 19, Supabase (Postgres + Auth + Realtime), Tailwind/Radix/shadcn, Google Genkit for AI, `date-fns` for date math. In-browser facial recognition (`@vladmandic/face-api`) and QR credentials (`html5-qrcode` / `qrcode.react`) power worker identity flows (see [Biometría & Credenciales QR](#biometría--credenciales-qr)).
 
 ### Data Flow
 
@@ -103,6 +103,17 @@ Each `Material` has one `stock` total, but tenants running multiple contracts/fa
 Which contract a delivery/return is attributed to comes from `contract_workers` (worker ↔ active contract, N:M): one active contract auto-fills, several let the pañolero pick, zero falls back to the pool. A `warehouses` row has a `managerId` (the pañolero); when that user runs the biometric flow in `pagnol/movimientos`, their own warehouse(s) auto-scope the transaction's `warehouseId` the same way.
 
 `stock_movements` (kardex) carries `contract_id`/`contract_name`/`warehouse_id` for traceability. `/dashboard/reports/contract-stock` reads the ledger + kardex to build valuation (qty × `materials.unitCost`), a material×contract matrix, and a per-period kardex, with Excel export.
+
+### Biometría & Credenciales QR
+
+Worker identity is verified **entirely in the browser** — biometric templates never leave the device as raw images. `src/lib/biometricService.ts` wraps `@vladmandic/face-api`:
+- Models are served statically from `public/models` (`MODEL_URL = '/models'`) and lazy-loaded once via `loadBiometricModels()`. The library is dynamically imported to dodge a `TextEncoder` SSR crash.
+- `captureBiometrics()` detects the most confident face and returns a **descriptor** (128-float `Float32Array`) serialized to JSON as `template`. `verifyBiometrics()` compares live vs. stored descriptor by `euclideanDistance` (1:1 match, thresholded).
+- The `template` is persisted on the `profiles` row (mapped in `mappers.ts`, written via `genericMutations.ts` / the user-creation & enroll API routes).
+
+Two enrollment/verification surfaces:
+- **In-app**: `enrollment-wizard.tsx` / `user-panel.tsx` (admin enrolls a worker); `pagnol/movimientos` runs the biometric close-out for pañol transactions, and `pagnol/hardware/biometric-verification` is the standalone check.
+- **Self-serve via token link**: `/enroll/[token]` (public route) validated/completed through `src/app/api/enroll/*`. QR credential tokens live in the `qr_tokens` table (migration `20260529000000`); credentials are rendered under `dashboard/profile/credential`.
 
 ### API Routes
 
@@ -189,6 +200,8 @@ Toda página de `/dashboard` DEBE seguir este estándar. El lenguaje visual can�
 - `estado-pago/` — Contract payment states
 - `authorizations/` — ADC authorization inbox: gate before Abastecimiento for material/purchase/rental requests
 - `users/` — User management, QR credentials, permissions
+- `permissions/` — Standalone permission-management view (per-tenant role rows)
+- `profile/` — Current user's profile + `profile/credential` (personal QR credential)
 - `configuracion/` — Tenant settings: company data, logo, correlative code prefixes
 - `wallet/` — Salary advances
 - `dte/` — Chilean tax invoicing (UI complete, backend pending)

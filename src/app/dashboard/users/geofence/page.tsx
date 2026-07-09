@@ -148,25 +148,25 @@ export default function GeofencePage() {
                     </Link>
                 </Button>
                 <div className="text-right">
-                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest leading-none">Control de Acceso</p>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none">Control de Acceso</p>
                     <p className="text-sm font-bold text-pagnol-orange">Zona de la Faena</p>
                 </div>
             </div>
 
             {/* Estado actual */}
-            <Card className={`rounded-3xl border-2 ${isConfigured ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'}`}>
+            <Card className={`rounded-3xl border-2 ${isConfigured ? 'border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-500/15' : 'border-orange-200 dark:border-orange-500/30 bg-orange-50 dark:bg-orange-500/15'}`}>
                 <CardContent className="p-6 flex items-center gap-4">
-                    <div className={`p-3 rounded-2xl ${isConfigured ? 'bg-green-100' : 'bg-orange-100'}`}>
+                    <div className={`p-3 rounded-2xl ${isConfigured ? 'bg-green-100 dark:bg-green-500/20' : 'bg-orange-100 dark:bg-orange-500/20'}`}>
                         {isConfigured
-                            ? <ShieldCheck size={24} className="text-green-600" />
-                            : <MapPin size={24} className="text-orange-600" />
+                            ? <ShieldCheck size={24} className="text-green-600 dark:text-green-300" />
+                            : <MapPin size={24} className="text-orange-600 dark:text-orange-300" />
                         }
                     </div>
                     <div className="flex-1">
-                        <p className={`font-black text-sm uppercase tracking-wide ${isConfigured ? 'text-green-700' : 'text-orange-700'}`}>
+                        <p className={`font-black text-sm uppercase tracking-wide ${isConfigured ? 'text-green-700 dark:text-green-300' : 'text-orange-700 dark:text-orange-300'}`}>
                             {isConfigured ? 'Geofence activo' : 'Sin geofence configurado'}
                         </p>
-                        <p className={`text-xs font-semibold mt-0.5 ${isConfigured ? 'text-green-600' : 'text-orange-600'}`}>
+                        <p className={`text-xs font-semibold mt-0.5 ${isConfigured ? 'text-green-600 dark:text-green-300' : 'text-orange-600 dark:text-orange-300'}`}>
                             {isConfigured
                                 ? `Centro: ${config.geo_lat?.toFixed(5)}, ${config.geo_lng?.toFixed(5)} — Radio: ${formatDistance(config.geo_radius_m)}`
                                 : 'Los QR se generan sin validación de ubicación.'
@@ -252,7 +252,7 @@ export default function GeofencePage() {
                             href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-2 text-xs text-blue-600 font-bold hover:underline"
+                            className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-300 font-bold hover:underline"
                         >
                             <ExternalLink size={12} />
                             Verificar coordenadas en OpenStreetMap
@@ -273,7 +273,7 @@ export default function GeofencePage() {
                                 onClick={remove}
                                 disabled={removing}
                                 variant="outline"
-                                className="h-12 px-4 rounded-2xl border-red-200 text-red-600 hover:bg-red-50"
+                                className="h-12 px-4 rounded-2xl border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-300 hover:bg-red-50"
                             >
                                 <Trash2 size={16} />
                             </Button>
@@ -283,9 +283,9 @@ export default function GeofencePage() {
             </Card>
 
             {/* Info */}
-            <Card className="border-none bg-slate-50 rounded-3xl">
+            <Card className="border-none bg-muted rounded-3xl">
                 <CardContent className="p-6 space-y-3">
-                    <p className="text-xs font-black text-slate-600 uppercase tracking-wide">¿Cómo funciona?</p>
+                    <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">¿Cómo funciona?</p>
                     <ul className="text-xs text-muted-foreground font-semibold space-y-2 list-none">
                         <li>📍 Al abrir la credencial, el teléfono del trabajador verifica su GPS</li>
                         <li>✅ Si está dentro del radio → el QR se genera normalmente</li>

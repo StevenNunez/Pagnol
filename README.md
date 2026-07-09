@@ -15,23 +15,46 @@ PAGNOL es un SaaS multi-tenant de gestión operativa para empresas de construcci
 | Base de datos | PostgreSQL via Supabase (RLS multi-tenant) |
 | Auth | Supabase Auth (email/password + OAuth) |
 | AI | Google Genkit + Gemini API |
-| Biometría | Face-API.js (reconocimiento facial 1:N) |
-| Reportes | jsPDF, ExcelJS, Recharts |
-| Notificaciones | Web Push (VAPID) |
+| Biometría | Face-API.js (`@vladmandic/face-api`) — verificación facial 1:1 en el navegador |
+| Credenciales | QR (`html5-qrcode` / `qrcode.react`), tokens de enrolamiento |
+| Reportes | jsPDF, ExcelJS, Recharts; PDFs de servidor con puppeteer-core + @sparticuz/chromium |
+| Notificaciones | Web Push (VAPID) + Service Worker |
+| Offline | Dexie (IndexedDB) + outbox de sincronización (scoped a Órdenes de Trabajo) |
 | Deploy | Vercel |
 
 ---
 
 ## Módulos Principales
 
-- **Pagnol** — Pañol digital: activos, movimientos, personal, biometría, reportes IA
-- **Bodega** — Materiales, solicitudes de compra, devoluciones
-- **Asistencia** — Registro diario, horas extra, finiquitos
-- **Seguridad (CPHS)** — Charlas, checklists, inspecciones, observaciones
-- **Pagos** — Facturas, adelantos, proveedores
-- **Compras** — Solicitudes y órdenes de compra
-- **Control de Obra** — WBS, Gantt, protocolos
-- **Estado de Pago** — Contratos y contratos de obra
+Núcleo operacional
+
+- **Pagnol** — Pañol digital y superficie única de activos: activos (ISO 55001), movimientos/despacho biométrico, personal, mantenimiento (OT), reportes IA. Es también la referencia del sistema de diseño.
+- **Bodega / Pañol** — Materiales, stock, solicitudes; **stock por contrato y pañol** (`material_stocks` + warehouses) con valorización por centro de costo.
+- **Reportes de Trabajo** — Reportes de terreno en cascada: OT → diario → semanal (formato SQM 4 páginas), con PDF y firmas en cada nivel.
+- **Reportes** — Tableros de entregas, inventario, estadísticas y valorización de stock por contrato (export Excel).
+
+Abastecimiento y finanzas
+
+- **Abastecimiento** — Hub de compras: solicitudes, RFQ + comparador de cotizaciones, órdenes, recepción ligada a OC, proveedores 360°, costos (centros de costo), reportes/alertas.
+- **Compras** — Solicitudes y órdenes de compra, proveedores, lotes.
+- **Pagos** — Facturas, adelantos, pagos a proveedores.
+- **Arriendos** — Contratos de arriendo, arrendadores (unificados con proveedores), pagos; las OC de arriendo materializan cada equipo como activo Pagnol.
+- **Estado de Pago** — Estados de pago de contratos.
+- **DTE** — Facturación electrónica Chile (UI lista, backend pendiente).
+
+Personas, seguridad y control
+
+- **Asistencia** — Registro diario, reportes semanales/mensuales, cálculo de remuneraciones, finiquitos.
+- **RRHH** — Empleados, documentos, solicitudes de trabajadores.
+- **Seguridad (CPHS)** — Charlas diarias, checklists, inspecciones, observaciones de conducta.
+- **Control de Obra** — WBS, Gantt, protocolos de calidad.
+- **Autorizaciones (ADC)** — Gate previo a Abastecimiento para solicitudes de material, compra y arriendo.
+
+Administración
+
+- **Usuarios** — Gestión de usuarios, credenciales QR, permisos por tenant.
+- **Configuración** — Datos de empresa, logo, prefijos de correlativos.
+- **Wallet** — Anticipos de sueldo.
 
 ---
 
@@ -92,9 +115,10 @@ src/
 ├── components/       # Componentes UI reutilizables
 ├── modules/
 │   ├── auth/         # AuthProvider, hooks de autenticación
-│   ├── core/         # Tipos, permisos, cliente Supabase
-│   └── data/         # DataProvider, mutations, mappers
-├── ai/               # Flujos Genkit (assistant, safety, reports)
+│   ├── core/         # Tipos, permisos, cliente Supabase, hooks de datos
+│   ├── data/         # DataProvider, mutations, mappers
+│   └── offline/      # Motor offline (Dexie + outbox + sync) — solo OT
+├── ai/               # Flujos Genkit (assistant, safety, reports, extracción de PDF)
 ├── actions/          # Server Actions
 ├── hooks/            # Hooks personalizados
 └── lib/              # Utilidades (PDF, push, seguridad)

@@ -256,7 +256,7 @@ export default function ProfilePage() {
                             </div>
                         </div>
                         <CardContent className="flex flex-col items-center justify-center text-center pt-16 pb-12 px-8">
-                            <div className="p-4 bg-slate-50 rounded-[2rem] shadow-inner border border-slate-100 mb-8 transform hover:scale-105 transition-transform duration-500">
+                            <div className="p-4 bg-muted rounded-[2rem] shadow-inner border border-border mb-8 transform hover:scale-105 transition-transform duration-500">
                                 <QRCode
                                     value={user!.qrCode || user!.id}
                                     size={180}
@@ -264,7 +264,7 @@ export default function ProfilePage() {
                                     fgColor="#1e293b"
                                 />
                             </div>
-                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{user!.name}</h3>
+                            <h3 className="text-2xl font-black text-foreground uppercase tracking-tight">{user!.name}</h3>
                             <Badge variant="outline" className="mt-3 px-4 py-1 text-[10px] font-black uppercase tracking-[0.2em] border-primary/20 text-primary bg-primary/5 rounded-full">
                                 {roleName}
                             </Badge>
@@ -284,16 +284,16 @@ export default function ProfilePage() {
                         </CardHeader>
                         <CardContent className="p-8 pt-4 space-y-6">
                             <div className="space-y-2">
-                                <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">E-mail de Acceso</p>
-                                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-primary/20 transition-all">
-                                    <span className="text-sm font-bold text-slate-600 truncate">{user!.email}</span>
-                                    <AtSign className="h-4 w-4 text-slate-300 group-hover:text-primary transition-colors" />
+                                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">E-mail de Acceso</p>
+                                <div className="flex items-center justify-between p-4 bg-muted rounded-2xl border border-border group hover:border-primary/20 transition-all">
+                                    <span className="text-sm font-bold text-muted-foreground truncate">{user!.email}</span>
+                                    <AtSign className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 gap-3">
                                 <Button
                                     variant="outline"
-                                    className="h-12 rounded-xl justify-start hover:bg-primary/5 border-slate-200 font-bold text-xs uppercase tracking-widest"
+                                    className="h-12 rounded-xl justify-start hover:bg-primary/5 border-border font-bold text-xs uppercase tracking-widest"
                                     onClick={() => setEmailDialogOpen(true)}
                                 >
                                     <Edit className="mr-3 h-4 w-4 text-primary" />
@@ -301,7 +301,7 @@ export default function ProfilePage() {
                                 </Button>
                                 <Button
                                     variant="outline"
-                                    className="h-12 rounded-xl justify-start hover:bg-primary/5 border-slate-200 font-bold text-xs uppercase tracking-widest"
+                                    className="h-12 rounded-xl justify-start hover:bg-primary/5 border-border font-bold text-xs uppercase tracking-widest"
                                     onClick={() => setPasswordDialogOpen(true)}
                                 >
                                     <KeyRound className="mr-3 h-4 w-4 text-primary" />
@@ -315,7 +315,7 @@ export default function ProfilePage() {
                 {/* Columna Derecha - Información y Firma */}
                 <div className="lg:col-span-8 space-y-10">
                     <Card className="rounded-[3rem] border-none shadow-xl bg-card overflow-hidden">
-                        <CardHeader className="p-10 border-b bg-slate-50/50">
+                        <CardHeader className="p-10 border-b bg-muted/50">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                                 <div>
                                     <CardTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
@@ -345,10 +345,10 @@ export default function ProfilePage() {
                                     <InfoField label="SISTEMA DE PREVISIÓN (SALUD)" value={user!.tipoSalud} icon={HeartPulse} />
                                     <InfoField label="CARGAS FAMILIARES" value={user!.cargasFamiliares?.toString()} icon={Users} />
                                     <div className="pt-4 border-t border-dashed">
-                                        <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                        <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-2 flex items-center gap-2">
                                             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" /> Estado de Cuenta
                                         </div>
-                                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-none px-4 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-widest">
+                                        <Badge className="bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300 hover:bg-green-100 border-none px-4 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-widest">
                                             ACTIVO / VIGENTE
                                         </Badge>
                                     </div>
@@ -370,7 +370,7 @@ export default function ProfilePage() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="p-10 pt-0 space-y-6">
-                                <div className="w-full min-h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center p-6">
+                                <div className="w-full min-h-32 bg-muted border-2 border-dashed border-border rounded-[2rem] flex items-center justify-center p-6">
                                     {currentTenant?.logoUrl ? (
                                         <div className="relative">
                                             <Image
@@ -397,7 +397,7 @@ export default function ProfilePage() {
                                     <Button
                                         onClick={() => logoInputRef.current?.click()}
                                         disabled={isUploadingLogo}
-                                        className="h-14 px-10 flex-1 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-slate-900/20"
+                                        className="h-14 px-10 flex-1 rounded-2xl bg-foreground text-background hover:bg-foreground/90 font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-foreground/20"
                                     >
                                         {isUploadingLogo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
                                         {currentTenant?.logoUrl ? 'Reemplazar Logo' : 'Subir Logo'}
@@ -407,7 +407,7 @@ export default function ProfilePage() {
                                             variant="outline"
                                             onClick={handleRemoveLogo}
                                             disabled={isUploadingLogo}
-                                            className="h-14 px-8 rounded-2xl font-black text-[10px] uppercase tracking-widest border-slate-200 text-destructive hover:text-destructive"
+                                            className="h-14 px-8 rounded-2xl font-black text-[10px] uppercase tracking-widest border-border text-destructive hover:text-destructive"
                                         >
                                             <X className="mr-2 h-4 w-4" />
                                             Eliminar
@@ -430,12 +430,12 @@ export default function ProfilePage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="p-10 pt-0 space-y-8">
-                            <div className="w-full h-64 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] relative flex items-center justify-center overflow-hidden group">
+                            <div className="w-full h-64 bg-muted border-2 border-dashed border-border rounded-[2.5rem] relative flex items-center justify-center overflow-hidden group">
                                 {signature ? (
                                     <div className="w-full h-full relative p-8">
                                         <Image src={signature} layout="fill" alt="Firma guardada" className="object-contain filter contrast-125" />
-                                        <div className="absolute inset-x-0 bottom-0 py-4 bg-slate-900/5 backdrop-blur-sm transform translate-y-full group-hover:translate-y-0 transition-transform flex justify-center gap-4">
-                                            <Button variant="ghost" size="sm" onClick={clearSignature} className="text-slate-600 font-bold uppercase text-[9px]">Eliminar y volver a firmar</Button>
+                                        <div className="absolute inset-x-0 bottom-0 py-4 bg-foreground/5 backdrop-blur-sm transform translate-y-full group-hover:translate-y-0 transition-transform flex justify-center gap-4">
+                                            <Button variant="ghost" size="sm" onClick={clearSignature} className="text-muted-foreground font-bold uppercase text-[9px]">Eliminar y volver a firmar</Button>
                                         </div>
                                     </div>
                                 ) : (
@@ -445,10 +445,10 @@ export default function ProfilePage() {
                                 )}
                             </div>
                             <div className="flex flex-col sm:flex-row gap-4">
-                                <Button variant="outline" onClick={clearSignature} disabled={isSavingSignature} className="h-14 px-8 rounded-2xl font-black text-[10px] uppercase tracking-widest border-slate-200">
+                                <Button variant="outline" onClick={clearSignature} disabled={isSavingSignature} className="h-14 px-8 rounded-2xl font-black text-[10px] uppercase tracking-widest border-border">
                                     Limpiar Pizarra
                                 </Button>
-                                <Button onClick={handleSaveSignature} disabled={isSavingSignature} className="h-14 px-10 flex-1 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-slate-900/20">
+                                <Button onClick={handleSaveSignature} disabled={isSavingSignature} className="h-14 px-10 flex-1 rounded-2xl bg-foreground text-background hover:bg-foreground/90 font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-foreground/20">
                                     {isSavingSignature ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                                     Registrar Firma en Pagnol
                                 </Button>

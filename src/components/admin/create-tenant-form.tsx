@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { useAuth } from '@/modules/core/contexts/app-provider';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { supabase } from '@/modules/core/lib/supabase';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -68,7 +69,7 @@ export function CreateTenantForm() {
       // 3. Enviar email
       await fetch('/api/invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({
           email: data.adminEmail,
           role: 'administrador',

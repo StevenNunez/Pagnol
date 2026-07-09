@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/modules/auth/useAuth";
 import { supabase } from "@/modules/core/lib/supabase";
+import { authHeaders } from "@/modules/core/lib/auth-header";
 import { nanoid } from "nanoid";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { UserRole } from "@/modules/core/lib/data";
@@ -188,7 +189,7 @@ export default function InvitacionesPage() {
             // Enviar email en segundo plano — no bloquea la UI
             fetch('/api/invite', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await authHeaders(),
                 body: JSON.stringify({
                     email: emailToInvite,
                     role,

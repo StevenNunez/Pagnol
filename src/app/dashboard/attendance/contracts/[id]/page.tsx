@@ -29,10 +29,10 @@ import { es } from "date-fns/locale";
 type WorkerStatus = 'present' | 'left' | 'absent' | 'rest_day';
 
 const STATUS_CONFIG: Record<WorkerStatus, { label: string; cls: string; dot: string }> = {
-  present:  { label: "Presente",  cls: "bg-green-500/10 text-green-700 border-green-200",  dot: "bg-green-500" },
-  left:     { label: "Salió",     cls: "bg-slate-100 text-slate-600 border-slate-200",     dot: "bg-slate-400" },
-  absent:   { label: "Ausente",   cls: "bg-red-500/10 text-red-600 border-red-200",        dot: "bg-red-400" },
-  rest_day: { label: "Día Libre", cls: "bg-indigo-50 text-indigo-600 border-indigo-200",   dot: "bg-indigo-300" },
+  present:  { label: "Presente",  cls: "bg-green-500/10 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/30",  dot: "bg-green-500" },
+  left:     { label: "Salió",     cls: "bg-muted text-muted-foreground border-border",     dot: "bg-muted-foreground" },
+  absent:   { label: "Ausente",   cls: "bg-red-500/10 text-red-600 dark:text-red-300 border-red-200 dark:border-red-500/30",        dot: "bg-red-400 dark:bg-red-500/70" },
+  rest_day: { label: "Día Libre", cls: "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30",   dot: "bg-indigo-300 dark:bg-indigo-500/50" },
 };
 
 export default function ContractDetailPage() {
@@ -144,7 +144,7 @@ export default function ContractDetailPage() {
     );
   }
 
-  const sc = { active: "bg-green-500/10 text-green-700 border-green-200", suspended: "bg-amber-500/10 text-amber-700 border-amber-200", closed: "bg-slate-100 text-slate-500 border-slate-200" }[contract.status];
+  const sc = { active: "bg-green-500/10 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/30", suspended: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30", closed: "bg-muted text-muted-foreground border-border" }[contract.status];
 
   return (
     <div className="flex flex-col gap-6">
@@ -167,10 +167,10 @@ export default function ContractDetailPage() {
       {/* Info strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: "Dotación Total",    value: stats.total,   icon: Users,     color: "text-slate-700", bg: "bg-slate-100" },
-          { label: "Presentes Hoy",     value: stats.present, icon: UserCheck, color: "text-green-700", bg: "bg-green-50" },
-          { label: "Ausentes Hoy",      value: stats.absent,  icon: UserX,     color: "text-red-600",   bg: "bg-red-50" },
-          { label: "Día Libre (turno)", value: stats.restDay, icon: RotateCcw, color: "text-indigo-600", bg: "bg-indigo-50" },
+          { label: "Dotación Total",    value: stats.total,   icon: Users,     color: "text-foreground", bg: "bg-muted" },
+          { label: "Presentes Hoy",     value: stats.present, icon: UserCheck, color: "text-green-700 dark:text-green-300", bg: "bg-green-50 dark:bg-green-500/15" },
+          { label: "Ausentes Hoy",      value: stats.absent,  icon: UserX,     color: "text-red-600 dark:text-red-300",   bg: "bg-red-50 dark:bg-red-500/15" },
+          { label: "Día Libre (turno)", value: stats.restDay, icon: RotateCcw, color: "text-indigo-600 dark:text-indigo-300", bg: "bg-indigo-50 dark:bg-indigo-500/15" },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className={`${bg} rounded-2xl p-4 flex items-center gap-3`}>
             <div className={`${color} shrink-0`}><Icon size={20} /></div>
@@ -205,8 +205,8 @@ export default function ContractDetailPage() {
                   {workerRows.map(({ cw, user: u, shift, status, firstIn, lastOut }) => {
                     const cfg = STATUS_CONFIG[status];
                     return (
-                      <div key={cw.id} className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/50">
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 font-black text-sm flex items-center justify-center shrink-0 uppercase">
+                      <div key={cw.id} className="flex items-center gap-4 px-5 py-4 hover:bg-muted/50">
+                        <div className="w-9 h-9 rounded-xl bg-muted text-muted-foreground font-black text-sm flex items-center justify-center shrink-0 uppercase">
                           {(u?.name ?? "?").split(' ').map(n => n[0]).join('').substring(0, 2)}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -222,8 +222,8 @@ export default function ContractDetailPage() {
                           </div>
                         </div>
                         <div className="hidden md:flex items-center gap-5 text-xs shrink-0">
-                          <span className="text-green-600 font-bold">{firstIn ?? '—'}</span>
-                          <span className="text-slate-400 font-bold">{lastOut ?? '—'}</span>
+                          <span className="text-green-600 dark:text-green-300 font-bold">{firstIn ?? '—'}</span>
+                          <span className="text-muted-foreground font-bold">{lastOut ?? '—'}</span>
                         </div>
                         <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest shrink-0 ${cfg.cls}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
@@ -263,8 +263,8 @@ export default function ContractDetailPage() {
                     const u = users.find(u => u.id === cw.userId);
                     const shift = shiftSchedules.find(s => s.id === cw.shiftScheduleId);
                     return (
-                      <div key={cw.id} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50/50">
-                        <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 font-black text-xs flex items-center justify-center shrink-0 uppercase">
+                      <div key={cw.id} className="flex items-center gap-4 px-5 py-3 hover:bg-muted/50">
+                        <div className="w-8 h-8 rounded-xl bg-muted text-muted-foreground font-black text-xs flex items-center justify-center shrink-0 uppercase">
                           {(u?.name ?? "?").split(' ').map(n => n[0]).join('').substring(0, 2)}
                         </div>
                         <div className="flex-1 min-w-0">

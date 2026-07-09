@@ -89,13 +89,20 @@ export default function MantenimientoPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // Solo los activos que llevan plan de mantenimiento son candidatos a OT y
+  // entran en el cálculo de disponibilidad (una llave o un consumible no).
+  const maintainableAssets = useMemo(
+    () => materials.filter(m => m.requiresMaintenance && !m.archived),
+    [materials]
+  );
+
   // KPIs
   const kpis = useMemo(() => {
     const completedOrders = maintenanceOrders.filter(o => o.status === 'COMPLETED');
     const totalDowntime = completedOrders.reduce((sum, o) => sum + (o.downtimeHours || 0), 0);
     const avgMttr = completedOrders.length > 0 ? (totalDowntime / completedOrders.length).toFixed(1) : '0';
 
-    const totalOperatingHours = 30 * 24 * Math.max(materials.length, 1);
+    const totalOperatingHours = 30 * 24 * Math.max(maintainableAssets.length, 1);
     const failures = maintenanceOrders.filter(o => o.type === 'CORRECTIVE').length;
     const avgMtbf = failures > 0 ? (totalOperatingHours / failures / 24).toFixed(1) : '>30';
 
@@ -110,7 +117,7 @@ export default function MantenimientoPage() {
       totalOrders: maintenanceOrders.length,
       openOrders: maintenanceOrders.filter(o => o.status !== 'COMPLETED' && o.status !== 'CANCELLED').length,
     };
-  }, [maintenanceOrders, materials]);
+  }, [maintenanceOrders, maintainableAssets]);
 
   const handleOpenCloseModal = (order: MaintenanceOrder) => {
     setSelectedOrder(order);
@@ -348,7 +355,12 @@ export default function MantenimientoPage() {
                   <SelectValue placeholder="Seleccionar activo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {materials.filter(m => !m.archived).map(m => (
+                  {maintainableAssets.length === 0 && (
+                    <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                      No hay activos marcados como &quot;requiere mantenimiento&quot;. Actívalo en la ficha del activo.
+                    </div>
+                  )}
+                  {maintainableAssets.map(m => (
                     <SelectItem key={m.id} value={m.id}>
                       <span className="font-medium">{m.name}</span>
                       {m.internalCode && <span className="ml-2 text-xs text-muted-foreground">{m.internalCode}</span>}

@@ -1183,7 +1183,7 @@ export default function MovimientosPagnolPage() {
           setIsPagnoleroConfirming(false);
         }
       }}>
-        <DialogContent className="max-w-4xl p-0 border-none bg-transparent overflow-hidden sm:rounded-[3rem] h-full sm:h-auto">
+        <DialogContent hideClose className="max-w-4xl p-0 border-none bg-transparent overflow-hidden sm:rounded-[3rem] h-full sm:h-auto">
           <div className="flex flex-col h-full sm:max-h-[90vh] bg-card sm:rounded-[3rem] overflow-hidden border border-border shadow-2xl">
             <DialogHeader className="p-6 sm:p-10 industrial-gradient text-white flex flex-col gap-6 shrink-0 relative overflow-hidden">
               {/* Decorative background for dark mode */}

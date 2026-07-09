@@ -314,7 +314,7 @@ export function EnrollmentWizard({
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
-            <DialogContent className="max-w-3xl p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-2xl">
+            <DialogContent hideClose className="max-w-3xl p-0 border-none bg-transparent overflow-hidden rounded-[2.5rem] shadow-2xl">
                 <VisuallyHidden>
                     <DialogTitle>{selectedUser ? 'Vincular Biometría' : 'Registrar Personal'}</DialogTitle>
                 </VisuallyHidden>

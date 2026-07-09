@@ -114,11 +114,11 @@ export default function AttendanceOverviewPage() {
       {/* KPIs globales */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: 'Dotación Total',   value: globalStats.total,   icon: Users,      color: 'text-slate-700', bg: 'bg-slate-100' },
-          { label: 'Presentes',        value: globalStats.present,  icon: UserCheck,  color: 'text-green-700', bg: 'bg-green-50' },
-          { label: 'Ausentes',         value: globalStats.absent,   icon: UserX,      color: 'text-red-600',   bg: 'bg-red-50' },
-          { label: 'En Descanso',      value: globalStats.restDay,  icon: Bed,        color: 'text-indigo-600',bg: 'bg-indigo-50' },
-          { label: 'Lic. Médica',      value: globalStats.onLM,     icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { label: 'Dotación Total',   value: globalStats.total,   icon: Users,      color: 'text-foreground', bg: 'bg-muted' },
+          { label: 'Presentes',        value: globalStats.present,  icon: UserCheck,  color: 'text-green-700 dark:text-green-300', bg: 'bg-green-50 dark:bg-green-500/15' },
+          { label: 'Ausentes',         value: globalStats.absent,   icon: UserX,      color: 'text-red-600 dark:text-red-300',   bg: 'bg-red-50 dark:bg-red-500/15' },
+          { label: 'En Descanso',      value: globalStats.restDay,  icon: Bed,        color: 'text-indigo-600 dark:text-indigo-300',bg: 'bg-indigo-50 dark:bg-indigo-500/15' },
+          { label: 'Lic. Médica',      value: globalStats.onLM,     icon: AlertTriangle, color: 'text-amber-600 dark:text-amber-300', bg: 'bg-amber-50 dark:bg-amber-500/15' },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className={`${bg} rounded-2xl p-4 flex items-center gap-3`}>
             <Icon size={20} className={`${color} shrink-0`} />
@@ -139,17 +139,17 @@ export default function AttendanceOverviewPage() {
               {Math.round(((globalStats.present) / Math.max(globalStats.total - globalStats.restDay, 1)) * 100)}% de dotación activa
             </p>
           </div>
-          <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex">
+          <div className="h-2 bg-muted rounded-full overflow-hidden flex">
             <div className="bg-green-500 h-full transition-all duration-700" style={{ width: `${(globalStats.present / globalStats.total) * 100}%` }} />
-            <div className="bg-amber-400 h-full transition-all duration-700" style={{ width: `${(globalStats.onLM / globalStats.total) * 100}%` }} />
-            <div className="bg-indigo-200 h-full transition-all duration-700" style={{ width: `${(globalStats.restDay / globalStats.total) * 100}%` }} />
-            <div className="bg-red-200 h-full transition-all duration-700" style={{ width: `${(globalStats.absent / globalStats.total) * 100}%` }} />
+            <div className="bg-amber-400 dark:bg-amber-500/70 h-full transition-all duration-700" style={{ width: `${(globalStats.onLM / globalStats.total) * 100}%` }} />
+            <div className="bg-indigo-200 dark:bg-indigo-500/25 h-full transition-all duration-700" style={{ width: `${(globalStats.restDay / globalStats.total) * 100}%` }} />
+            <div className="bg-red-200 dark:bg-red-500/25 h-full transition-all duration-700" style={{ width: `${(globalStats.absent / globalStats.total) * 100}%` }} />
           </div>
           <div className="flex gap-4 text-[9px] font-black uppercase tracking-widest flex-wrap">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Presentes</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />Lic. Médica</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-200 inline-block" />Descanso</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-200 inline-block" />Ausentes</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400 dark:bg-amber-500/70 inline-block" />Lic. Médica</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-200 dark:bg-indigo-500/25 inline-block" />Descanso</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-200 dark:bg-red-500/25 inline-block" />Ausentes</span>
           </div>
         </div>
       )}
@@ -162,8 +162,8 @@ export default function AttendanceOverviewPage() {
             onClick={() => setFilter(btn.value)}
             className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
               filter === btn.value
-                ? 'bg-slate-900 text-white border-slate-900'
-                : 'bg-transparent text-muted-foreground border-border hover:border-slate-400'
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-transparent text-muted-foreground border-border hover:border-border'
             }`}
           >
             {btn.label}
@@ -183,7 +183,7 @@ export default function AttendanceOverviewPage() {
             return (
               <div
                 key={contract.id}
-                className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-4 hover:border-slate-300 hover:shadow-sm transition-all cursor-pointer group"
+                className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-4 hover:border-border hover:shadow-sm transition-all cursor-pointer group"
                 onClick={() => router.push(`/dashboard/attendance?contract=${contract.id}`)}
               >
                 {/* Header */}
@@ -192,7 +192,7 @@ export default function AttendanceOverviewPage() {
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <p className="font-black text-sm truncate">{contract.name}</p>
                       {contract.isSubcontractor && (
-                        <Badge variant="outline" className="text-[8px] font-black h-4 px-1.5 border-amber-400 text-amber-600">
+                        <Badge variant="outline" className="text-[8px] font-black h-4 px-1.5 border-amber-400 dark:border-amber-500/50 text-amber-600 dark:text-amber-300">
                           Subcontrato
                         </Badge>
                       )}
@@ -221,10 +221,10 @@ export default function AttendanceOverviewPage() {
                 {/* Stats row */}
                 <div className="grid grid-cols-4 gap-2">
                   {[
-                    { label: 'Total',     value: total,   color: 'text-slate-700', dot: 'bg-slate-400' },
-                    { label: 'Presentes', value: present,  color: 'text-green-700', dot: 'bg-green-500' },
-                    { label: 'Ausentes',  value: absent,   color: 'text-red-600',   dot: 'bg-red-400' },
-                    { label: 'Descanso',  value: restDay,  color: 'text-indigo-600',dot: 'bg-indigo-300' },
+                    { label: 'Total',     value: total,   color: 'text-foreground', dot: 'bg-muted-foreground' },
+                    { label: 'Presentes', value: present,  color: 'text-green-700 dark:text-green-300', dot: 'bg-green-500' },
+                    { label: 'Ausentes',  value: absent,   color: 'text-red-600 dark:text-red-300',   dot: 'bg-red-400 dark:bg-red-500/70' },
+                    { label: 'Descanso',  value: restDay,  color: 'text-indigo-600 dark:text-indigo-300',dot: 'bg-indigo-300 dark:bg-indigo-500/50' },
                   ].map(({ label, value, color, dot }) => (
                     <div key={label} className="text-center">
                       <p className={`text-xl font-black ${color}`}>{value}</p>
@@ -243,10 +243,10 @@ export default function AttendanceOverviewPage() {
                       <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Cobertura</p>
                       <p className="text-[9px] font-black text-muted-foreground">{coverage}%</p>
                     </div>
-                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
                       <div className="bg-green-500 h-full transition-all duration-700" style={{ width: `${(present / total) * 100}%` }} />
-                      {onLM > 0 && <div className="bg-amber-400 h-full transition-all duration-700" style={{ width: `${(onLM / total) * 100}%` }} />}
-                      <div className="bg-indigo-200 h-full transition-all duration-700" style={{ width: `${(restDay / total) * 100}%` }} />
+                      {onLM > 0 && <div className="bg-amber-400 dark:bg-amber-500/70 h-full transition-all duration-700" style={{ width: `${(onLM / total) * 100}%` }} />}
+                      <div className="bg-indigo-200 dark:bg-indigo-500/25 h-full transition-all duration-700" style={{ width: `${(restDay / total) * 100}%` }} />
                     </div>
                   </div>
                 )}
@@ -261,7 +261,7 @@ export default function AttendanceOverviewPage() {
                         return (
                           <div
                             key={sc.id}
-                            className="flex items-center justify-between px-2 py-1.5 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                            className="flex items-center justify-between px-2 py-1.5 bg-muted rounded-lg hover:bg-muted transition-colors"
                             onClick={e => { e.stopPropagation(); router.push(`/dashboard/attendance?contract=${sc.id}`); }}
                           >
                             <div>
@@ -271,9 +271,9 @@ export default function AttendanceOverviewPage() {
                               )}
                             </div>
                             <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-[9px] font-black text-green-600">{scStats?.present ?? 0} P</span>
-                              <span className="text-[9px] font-black text-red-500">{scStats?.absent ?? 0} A</span>
-                              <span className="text-[9px] font-black text-slate-500">{scStats?.total ?? 0} T</span>
+                              <span className="text-[9px] font-black text-green-600 dark:text-green-300">{scStats?.present ?? 0} P</span>
+                              <span className="text-[9px] font-black text-red-500 dark:text-red-300">{scStats?.absent ?? 0} A</span>
+                              <span className="text-[9px] font-black text-muted-foreground">{scStats?.total ?? 0} T</span>
                             </div>
                           </div>
                         );

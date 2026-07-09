@@ -3,9 +3,23 @@ import { NextResponse } from 'next/server';
 import type { UserRole } from '@/modules/core/lib/data';
 import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
 import { ROLES } from '@/modules/core/lib/permissions';
+import { requireAuth, hasPermission } from '@/modules/core/lib/api-auth';
+import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 export async function POST(request: Request) {
     try {
+        // Enviar invitaciones = crear usuarios: mismo permiso que /api/users/create.
+        // Sin esto, la ruta era un relay de correo abierto (phishing con branding Pagnol).
+        const auth = await requireAuth(request);
+        if (!auth.ok) return auth.response;
+        if (!hasPermission(auth.ctx, 'users:create')) {
+            return NextResponse.json({ error: 'No autorizado para enviar invitaciones.' }, { status: 403 });
+        }
+
+        if (!(await rateLimitByIp(request, 'invite', 30, 3600))) {
+            return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
+        }
+
         const { email, role, token, tenantName, invitedByName } = await request.json();
 
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';

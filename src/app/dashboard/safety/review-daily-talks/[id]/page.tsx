@@ -135,7 +135,7 @@ export default function DailyTalkDetailPage() {
                     </Card>
                 </div>
 
-                <div className="lg:col-span-1 space-y-8 sticky top-8">
+                <div className="lg:col-span-1 space-y-8 lg:sticky lg:top-8">
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">Evidencia</CardTitle>

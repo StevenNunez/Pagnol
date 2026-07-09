@@ -135,7 +135,7 @@ export default function AdminUsersPage() {
                   <div className="flex items-center gap-6 flex-grow">
                     <div className="relative">
                       <Avatar className="h-16 w-16 rounded-2xl border-2 border-background shadow-xl ring-2 ring-slate-100 group-hover:ring-primary/10 transition-all">
-                        <AvatarFallback className="bg-slate-50 text-muted-foreground font-black text-lg">
+                        <AvatarFallback className="bg-muted text-muted-foreground font-black text-lg">
                           {getInitials(user.name)}
                         </AvatarFallback>
                       </Avatar>
@@ -144,22 +144,22 @@ export default function AdminUsersPage() {
 
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-black text-slate-900 uppercase tracking-tight text-base">{user.name}</h4>
+                        <h4 className="font-black text-foreground uppercase tracking-tight text-base">{user.name}</h4>
                         <Badge variant={getRoleBadgeVariant(user.role)} className="text-[8px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full">
                           {getRoleDisplayName(user.role)}
                         </Badge>
                       </div>
                       <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-2">
-                        <Search size={10} className="text-slate-300" /> {user.email}
+                        <Search size={10} className="text-muted-foreground" /> {user.email}
                       </p>
                       <div className="flex flex-wrap gap-2 mt-1">
                         {user.internalId && (
-                          <span className="text-[9px] font-black text-pagnol-orange bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100 uppercase">
+                          <span className="text-[9px] font-black text-pagnol-orange bg-orange-50 dark:bg-orange-500/15 px-2 py-0.5 rounded-md border border-orange-100 dark:border-orange-500/30 uppercase">
                             ID: {user.internalId}
                           </span>
                         )}
                         {user.rut && (
-                          <span className="text-[9px] font-black text-muted-foreground bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 uppercase">
+                          <span className="text-[9px] font-black text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border uppercase">
                             RUT: {user.rut}
                           </span>
                         )}
@@ -169,14 +169,14 @@ export default function AdminUsersPage() {
 
                   <div className="flex items-center gap-4 shrink-0 justify-end">
                     {user.qrCode && user.qrCode.trim() !== '' && (
-                      <div className="p-2 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 group-hover:border-primary/20 transition-all">
+                      <div className="p-2 bg-muted rounded-xl border-2 border-dashed border-border group-hover:border-primary/20 transition-all">
                         <QRCode value={user.qrCode} size={48} fgColor="#1e293b" />
                       </div>
                     )}
 
                     {can('users:edit') && (
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => setEditingUser(user)} className="h-10 w-10 rounded-xl hover:bg-slate-100">
+                        <Button variant="ghost" size="icon" onClick={() => setEditingUser(user)} className="h-10 w-10 rounded-xl hover:bg-muted">
                           <Edit className="h-4 w-4 text-muted-foreground" />
                         </Button>
 
@@ -191,11 +191,11 @@ export default function AdminUsersPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle className="text-xl font-black uppercase tracking-tight">¿Eliminar Usuario?</AlertDialogTitle>
                                 <AlertDialogDescription className="text-muted-foreground font-medium">
-                                  Esta acción eliminará permanentemente a <span className="font-bold text-slate-900">{user.name}</span> del sistema Pagnol. Esta operación no se puede deshacer.
+                                  Esta acción eliminará permanentemente a <span className="font-bold text-foreground">{user.name}</span> del sistema Pagnol. Esta operación no se puede deshacer.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter className="gap-3">
-                                <AlertDialogCancel className="rounded-xl font-bold uppercase text-[10px] tracking-widest border-slate-200">Cancelar</AlertDialogCancel>
+                                <AlertDialogCancel className="rounded-xl font-bold uppercase text-[10px] tracking-widest border-border">Cancelar</AlertDialogCancel>
                                 <AlertDialogAction
                                   className="bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest"
                                   onClick={() => handleDeleteUser(user.id, user.name)}>
@@ -212,11 +212,11 @@ export default function AdminUsersPage() {
               ))}
 
               {filteredUsers.length === 0 && (
-                <div className="py-24 text-center bg-card rounded-[2.5rem] border-2 border-dashed border-slate-100">
-                  <div className="bg-slate-50 w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                    <Search className="text-slate-300" size={32} />
+                <div className="py-24 text-center bg-card rounded-[2.5rem] border-2 border-dashed border-border">
+                  <div className="bg-muted w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                    <Search className="text-muted-foreground" size={32} />
                   </div>
-                  <h3 className="text-slate-900 font-black uppercase tracking-tight">Sin coincidencias</h3>
+                  <h3 className="text-foreground font-black uppercase tracking-tight">Sin coincidencias</h3>
                   <p className="text-muted-foreground text-xs font-medium mt-2">No encontramos usuarios que coincidan con su búsqueda.</p>
                 </div>
               )}

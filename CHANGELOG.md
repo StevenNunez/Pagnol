@@ -18,6 +18,204 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Seguridad
+- **Endurecimiento pre-lanzamiento (P0 de la auditoría) — verificado end-to-end:**
+  - **`/api/invite` ya no es un relay de correo abierto.** Antes cualquiera podía POSTear
+    y disparar correos con branding Pagnol desde el SMTP propio (phishing + daño de
+    reputación de dominio). Ahora exige `requireAuth` + permiso `users:create` + rate limit
+    (30/h por IP). Los dos llamantes (`invitaciones/page.tsx`, `create-tenant-form.tsx`)
+    adjuntan el Bearer con `authHeaders()`. Verificado: 401 sin sesión, 200 con admin.
+  - **`/api/push/subscribe` ya no permite secuestrar notificaciones.** Antes tomaba
+    `userId`/`tenantId` del body → un atacante registraba su dispositivo como suscripción
+    de cualquier usuario. Ahora la identidad se deriva SIEMPRE de la sesión (`requireAuth`);
+    el `DELETE` solo borra suscripciones propias (`endpoint` + `user_id`). Hook
+    `use-push-notifications` actualizado. Verificado: 401 sin sesión, 200 con sesión.
+  - **Contraseña por defecto pública eliminada** (`/api/users/create`). El fallback
+    `'TemporaryPassword123!'` (constante en el código fuente) se reemplazó por
+    `randomBytes(24)` aleatoria e irrecuperable; el usuario entra por QR/biometría o reset.
+  - **Endpoint de prueba `/api/work-reports/pdf-test` eliminado** — encendía Chromium
+    (`maxDuration 300`) sin auth (vector de costo/DoS). Verificado: 404.
+  - **Security headers** en `next.config.js`: `X-Frame-Options: DENY` (anti-clickjacking
+    del login), `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security`
+    (2 años) y `Permissions-Policy` (cámara/geo solo `self`, micrófono off). Verificados por curl.
+  - **`remotePatterns` reducido** a los 2 hosts realmente usados (`picsum.photos`,
+    `*.supabase.co`); se quitaron `images.unsplash.com` e `i.imgur.com` (superficie del
+    Image Optimizer = vector de DoS/costo). El landing ya no usa Unsplash vía next/image.
+  - **Dependencias:** `next` 16.1.4 → **16.2.10** (fix DoS del Image Optimizer),
+    `nodemailer` → **9.0.3** (fix SMTP command injection vía CRLF), + `npm audit fix`.
+    Quedan vulnerabilidades sin fix no-mayor: `jspdf` (ReDoS; requiere subir a v4 mayor) y
+    la cadena `@genkit-ai`/`@opentelemetry` (transitivas, sin runtime expuesto) — evaluar aparte.
+
+### Agregado
+- **Entidad Cliente — jerarquía Empresa → Cliente → Contratos** (Fase 1 del modelo Valar).
+  Antes el cliente era un string suelto (`contracts.client_name`), imposible de filtrar o
+  agrupar. Ahora es una entidad real:
+  - **Tabla `clients`** (nombre, RUT, contacto, estado) + `contracts.client_id` (FK). Interface,
+    mapper, colección en `AppDataState`, mutaciones CRUD (`addClient`/`updateClient`/`deleteClient`)
+    y wiring en `DataProvider`.
+  - **Formulario de contrato:** el campo "Empresa mandante" (texto libre) pasó a ser un
+    **selector de Cliente** con opción "+ Nuevo cliente…" para crear al vuelo y seleccionarlo.
+    Se conserva `client_name` denormalizado para vistas legacy.
+  - **Migración `20260708020000_clients_entity.sql` — PENDIENTE DE APLICAR:** crea la tabla,
+    la FK, **backfill** (un cliente por cada `client_name` distinto + enlaza sus contratos),
+    RLS por tenant, GRANTs y Realtime. Hasta aplicarla, crear/editar contratos con cliente falla.
+  - Base para las Fases 2 (contrato al enrolar personal) y 3 (filtro Cliente→Contrato en pañol).
+- **Activos — uploader de fotos** (`pagnol/activos`). Antes NO existía forma de subir
+  fotos a un activo: el campo `photos` estaba en el modelo pero sin uploader en la ficha
+  (el único era el de ficha técnica PDF) **y tampoco se persistía en las mutaciones** →
+  todo activo mostraba "SIN FOTO" para siempre, sin salida. Ahora:
+  - **Sección "Fotos del Activo"** en la ficha crear/editar: botón "Agregar" (archivo o
+    **cámara** en móvil vía `capture`), multi-foto, thumbnails con botón de quitar.
+  - Las imágenes se **comprimen en el navegador** (`compressImage`, máx 1600px) y se suben
+    a Supabase Storage (bucket `asset-photos`, carpeta del tenant); se guarda la URL pública
+    en `materials.photos`.
+  - **Persistencia arreglada:** `photos` no se escribía en `addMaterial` ni `updateMaterial`
+    (feature roto de punta a punta) — ahora sí.
+  - **Migración `20260708010000_asset_photos_bucket.sql` — PENDIENTE DE APLICAR:** crea el
+    bucket público `asset-photos` con policies por tenant (mismo patrón que `tenant-logos`).
+    Hasta aplicarla, la subida falla (bucket inexistente). Verificado en navegador el render
+    del uploader; la subida real se valida al aplicar la migración.
+- **Activos — bandera "¿Requiere mantenimiento?"** (`pagnol/activos`). Ahora que las
+  herramientas también son activos, no todos llevan plan de mantenimiento (un martillo no,
+  un generador sí). Antes TODOS los activos mostraban la opción de mantenimiento.
+  - **Nuevo campo `requiresMaintenance`** (columna `requires_maintenance`): toggle en la
+    ficha de crear/editar, con **auto-sugerencia** por tipo de uso (ON para Activo Fijo /
+    IT Controlado / Repuesto Crítico; OFF para Consumible / Herramienta Menor / Reutilizable),
+    siempre editable a mano. Al activarlo aparece el campo "Próxima fecha de mantenimiento".
+  - **UI de mantenimiento condicionada** a la bandera: el badge de mantenimiento (grid),
+    la columna (lista → "No aplica"), el botón "Mantenimiento" de las acciones y el filtro
+    "vencidos" solo aplican a activos que lo requieren.
+  - **Módulo Mantenimiento:** el selector de activo de "Nueva OT" y el KPI de disponibilidad
+    ahora solo consideran activos con `requiresMaintenance` (antes contaba todo el inventario,
+    diluyendo la disponibilidad). Si no hay ninguno marcado, el selector lo explica.
+  - **Bug latente corregido de paso:** `next_maintenance_date` no se escribía en NINGUNA
+    mutación (el modal "Control de Mantenimiento" nunca guardaba la fecha). Ahora se persiste
+    en `addMaterial` y `updateMaterial`.
+  - **Migración `20260708000000_material_requires_maintenance.sql` — PENDIENTE DE APLICAR.**
+    Añade la columna (default `false`) y hace backfill `true` donde ya había fecha de
+    mantenimiento. **Requerida:** hasta aplicarla, crear activos falla (el insert referencia
+    la columna nueva). Verificado en navegador el render/comportamiento del toggle; la
+    persistencia queda validada al aplicar la migración.
+
+### Cambiado
+- **Activos — segmentación Activos/Consumibles + contador honesto** (`pagnol/activos`).
+  La página lista TODOS los `materials` (fusión Bodega→Pagnol intencional), pero el contador
+  "132 Activos" incluía 16 consumibles (stock que se agota, sin identidad individual). Ahora:
+  - **Chips de segmento** "Todos / Activos / Consumibles" con su conteo (ej. 132 / 116 / 16),
+    reutilizando el criterio de `usageType` (Consumible = no-activo). Filtran la vista en 1 clic.
+  - **Contador honesto:** la píldora dice "N Ítems" (o "N Activos" / "N Consumibles" según el
+    segmento activo), en vez de llamar "activos" a todo el inventario.
+  - No se separó en dos módulos ni se migraron datos: se respeta el modelo unificado.
+- **Activos — búsqueda con debounce** (`pagnol/activos`). El filtrado recomputaba sobre
+  todo el inventario en cada tecla; ahora el input responde al instante pero el filtro real
+  se aplica con 150 ms de retraso (sin lag en inventarios grandes).
+
+### Corregido
+- **Activos — modal "Control de Mantenimiento" no guardaba** (`pagnol/activos`). Enviaba
+  vía `handleSubmit(handleSaveAsset)` con el schema completo (exige name/categoría/clase),
+  pero `openMaintenanceModal` solo resetea 2 campos → la validación fallaba en silencio y
+  la fecha/estado nunca se guardaban. Ahora usa un handler dedicado (`handleSaveMaintenance`)
+  con actualización PARCIAL (fecha + estado), sin validar el schema completo. Combinado con
+  el fix de persistencia de `next_maintenance_date`, el modal ya funciona.
+- **Activos — placeholder de imagen y tamaño en mobile** (`pagnol/activos`, vista lista /
+  detalle expandido — verificado en mobile 390×844 y desktop):
+  - **Eliminado el placeholder falso `picsum.photos`:** los activos sin foto mostraban una
+    imagen aleatoria descargada de internet (carga de red innecesaria + parecía que había
+    foto). Ahora muestran un placeholder local limpio (ícono cámara + "Sin foto"),
+    consistente con la vista grid. Verificado: **0 requests a picsum**.
+  - **Imagen del detalle acotada en mobile:** en la fila expandida el contenedor era
+    `w-full aspect-square` → en mobile (1 columna) ocupaba la pantalla completa. Ahora
+    `max-w-[200px] mx-auto lg:max-w-none` — 200×200 en mobile, tamaño normal en desktop
+    (llena su columna del grid de 4, sin cambios). Radio/borde también reducidos en mobile.
+  - **`picsum.photos` removido de `remotePatterns`** en `next.config.js` (ya no se usa) —
+    reduce aún más la superficie del Image Optimizer; único host remoto ahora: Supabase Storage.
+- **Bugs mobile en diálogos y layouts sticky** (P1 de la auditoría — verificado en
+  viewport 390×844):
+  - **Doble botón "X" eliminado** en 8 diálogos con header temático propio que además
+    pintaban la X default: `activos` (3: ficha, QR, reporte), `personal` (3: historial,
+    permisos, ficha), `movimientos` (1: cámara/biométrico) y `enrollment-wizard` (1).
+    Se les activó `hideClose` en `<DialogContent>`. Verificado: el modal "Registrar Activo"
+    ahora muestra UNA sola X (la temática). **No tocados** (dependen de la X default, sin X
+    manual propia): `carga-masiva`, `mantenimiento`, `authorization-inbox` (su X es el botón
+    "Rechazar"), `onboarding-wizard`, `contract-stock-breakdown`.
+  - **`sticky` sin breakpoint** en columnas laterales que colapsan a 1 columna en mobile
+    (la card quedaba flotando sobre el contenido): `construction-control/wbs`,
+    5× `safety/review-*` y `work-reports/[id]` → prefijados al breakpoint donde el grid es
+    multi-columna (`lg:sticky lg:top-8` / `xl:sticky xl:top-4`). Mismo patrón que el fix
+    previo de Gestión de Usuarios.
+
+### Cambiado
+- **Dark mode tokenizado en `attendance`, `profile` y `users`** (P1 de la auditoría —
+  verificado en navegador, dark Y light, sin regresión):
+  - **Neutros (slate):** ~80 usos de paleta cruda `slate-*` → tokens semánticos según el
+    mapeo canónico de `pagnol` (`bg-muted`, `text-foreground`/`text-muted-foreground`,
+    `border-border`, dots neutros `bg-muted-foreground`). Botones/toggles invertidos
+    `bg-slate-900 text-white` → `bg-foreground text-background` (antes el texto blanco
+    desaparecía sobre botón claro en dark).
+  - **Colores de categoría/estado:** los mapas de color (presente=verde, ausente=rojo,
+    día libre=índigo, licencia=ámbar, vacaciones=azul, turnos 5×2/7×7/…) NO caben en los
+    4 tokens semánticos, así que se les añadieron **variantes `dark:`** (tinte translúcido
+    `dark:bg-X-500/15`, texto claro `dark:text-X-300`, borde `dark:border-X-500/30`) que
+    preservan el lenguaje de color y arreglan dark mode. Antes las tarjetas KPI "Dentro"/
+    "Ausentes" (`bg-green-50`/`bg-red-50`) brillaban blancas en dark; ahora son tinte oscuro.
+  - **Excluidas a propósito** (diseño fijo tipo tarjeta física / hoja de impresión):
+    `profile/credential` (credencial digital navy) y `users/print-qrs` (hoja de QRs).
+
+### Documentación
+- **`PENDIENTES.md` (nuevo):** backlog priorizado de la auditoría pre-lanzamiento
+  (P0 seguridad hecho, P1 en curso, P2 mejora continua) + el mapeo canónico de tokens.
+- **`CLAUDE.md`:** documentada la sección **Biometría & Credenciales QR** (face-api en
+  navegador, descriptores en `profiles.template`, modelos en `public/models`, flujo de
+  enrolamiento por token `/enroll/[token]` + `qr_tokens`); mención de face-api/QR en el
+  Stack; y agregadas las rutas `permissions/` y `profile/` al Module Map.
+- **`README.md`:** actualizada la información al estado actual del producto —
+  lista completa de módulos (Abastecimiento, Arriendos, Reportes de Trabajo en cascada,
+  RRHH, Autorizaciones ADC, Estado de Pago, DTE, Configuración, Wallet, stock por
+  contrato/pañol), tabla de stack ampliada (QR, offline Dexie, PDFs de servidor),
+  biometría corregida a **verificación facial 1:1 en navegador**, y `src/modules/offline`
+  en la estructura.
+- **Landing (`src/app/page.tsx`):** corregida la biometría del producto —
+  "DigitalPersona" (dato erróneo) → **reconocimiento facial (Face-API)**; y la tarjeta
+  "Herramientas" reformulada a "Herramientas como Activos" para reflejar la fusión de
+  herramientas dentro de la superficie única de Activos.
+
+### Cambiado
+- **Landing — quick wins + nuevo hero (verificado en navegador):**
+  - **Modo claro SIEMPRE en rutas públicas** (`/`, `/pricing`, `/demo`): `forcedTheme="light"`
+    por pathname en `theme-provider.tsx` — ignora el dark guardado en localStorage por
+    usuarios del dashboard (verificado con puppeteer: landing claro con `theme=dark`
+    almacenado; `/login` y dashboard conservan la preferencia). Se quitó el `ThemeSwitcher`
+    del nav del landing (el toggle vive solo en el dashboard).
+  - **Nuevo hero:** "El pañol digital de tu faena." — se eliminó el claim confuso
+    "conectamos tu Sistema de Inventario o ERP"; copy directo sobre trazabilidad
+    biométrica por contrato/pañol; chips reales (Verificación Facial, Funciona Sin Señal,
+    Stock Multi-Contrato, Acta EA). El tagline "Control Total en el Corazón de la Faena"
+    pasó al badge.
+  - **Claims actualizados:** stats bar "12 Módulos" → "+20 Módulos Operativos",
+    "100% Tiempo Real" → "Realtime + Offline"; intro del grid y CTA del footer alineados.
+  - **Fundadores:** eliminadas las edades; eliminados los LinkedIn rotos/cruzados
+    (`/GAC`, `/JRA`, `/FVA` → 404) y los íconos Twitter/Instagram/Facebook que apuntaban
+    a `#` — solo se muestra LinkedIn cuando hay URL real (hoy: Steven).
+  - **Footer:** eliminados los links muertos Privacidad/Términos/Soporte (`#`).
+- **Landing fase 2 — capturas reales + narrativa "el pañol es el centro" (verificado
+  en navegador, desktop y móvil):**
+  - **Capturas reales del producto** (`public/img/landing/`, generadas con la cuenta
+    demo vía puppeteer, retina 2x, limpiadas de banners de sesión): Movimientos en el
+    hero, Gestión de Activos en la sección pañol y Mantenimiento (MTBF/MTTR/
+    disponibilidad) en la sección ISO — reemplazan la ausencia total de evidencia
+    visual (antes solo había una foto stock de Unsplash).
+  - **Nueva sección "Todo empieza en el pañol"** (`#panol`): el flujo core en 4 pasos
+    (Enrola → Verifica → Entrega y Devuelve → Trazabilidad Total).
+  - **Nueva sección "Y crece con tu operación"** (`#suite`): la suite agrupada en
+    4 frentes — Abastecimiento (ADC, RFQ+IA, recepción, proveedores 360°), Terreno
+    (reportes SQM en cascada, OT offline), Personas (asistencia, remuneraciones, RRHH,
+    CPHS) y Administración (arriendos, estados de pago, multi-empresa).
+  - **Menú móvil (hamburguesa)** con los anchors de navegación — antes en celular no
+    había navegación interna; botón "Comenzar" oculto en pantallas chicas para no
+    saturar la barra.
+  - Grid de módulos re-etiquetado como "El Núcleo — Módulo Pañol"; nav con anchors
+    Pañol y Suite.
+
 ### Cambiado
 - **Vistas legacy de préstamos migradas al modelo de activos.** El Panel Ejecutivo de
   Reportes de Trabajo ("Herramientas pendientes de devolución") y el Reporte de Inventario

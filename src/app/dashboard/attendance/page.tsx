@@ -36,13 +36,13 @@ const formatTime = (date: Date | string | null): string => {
 };
 
 const STATUS_CONFIG: Record<WorkerStatus, { label: string; cls: string; dot: string }> = {
-  present:  { label: 'Presente',      cls: 'bg-green-500/10 text-green-700 border-green-200',   dot: 'bg-green-500' },
-  left:     { label: 'Salió',         cls: 'bg-slate-100 text-slate-600 border-slate-200',      dot: 'bg-slate-400' },
-  absent:   { label: 'Ausente',       cls: 'bg-red-500/10 text-red-600 border-red-200',         dot: 'bg-red-400' },
-  rest_day: { label: 'Día Libre',     cls: 'bg-indigo-50 text-indigo-600 border-indigo-200',    dot: 'bg-indigo-300' },
-  LM:       { label: 'Lic. Médica',   cls: 'bg-amber-50 text-amber-700 border-amber-200',      dot: 'bg-amber-400' },
-  PSG:      { label: 'Perm. s/Goce',  cls: 'bg-orange-50 text-orange-600 border-orange-200',   dot: 'bg-orange-400' },
-  V:        { label: 'Vacaciones',    cls: 'bg-blue-50 text-blue-600 border-blue-200',          dot: 'bg-blue-400' },
+  present:  { label: 'Presente',      cls: 'bg-green-500/10 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/30',   dot: 'bg-green-500' },
+  left:     { label: 'Salió',         cls: 'bg-muted text-muted-foreground border-border',      dot: 'bg-muted-foreground' },
+  absent:   { label: 'Ausente',       cls: 'bg-red-500/10 text-red-600 dark:text-red-300 border-red-200 dark:border-red-500/30',         dot: 'bg-red-400 dark:bg-red-500/70' },
+  rest_day: { label: 'Día Libre',     cls: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30',    dot: 'bg-indigo-300 dark:bg-indigo-500/50' },
+  LM:       { label: 'Lic. Médica',   cls: 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',      dot: 'bg-amber-400 dark:bg-amber-500/70' },
+  PSG:      { label: 'Perm. s/Goce',  cls: 'bg-orange-50 dark:bg-orange-500/15 text-orange-600 dark:text-orange-300 border-orange-200 dark:border-orange-500/30',   dot: 'bg-orange-400 dark:bg-orange-500/70' },
+  V:        { label: 'Vacaciones',    cls: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-500/30',          dot: 'bg-blue-400 dark:bg-blue-500/70' },
 };
 
 export default function AttendancePage() {
@@ -181,8 +181,8 @@ export default function AttendancePage() {
             onClick={() => setSelectedContractId('all')}
             className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
               selectedContractId === 'all'
-                ? 'bg-slate-900 text-white border-slate-900'
-                : 'bg-transparent text-muted-foreground border-border hover:border-slate-400'
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-transparent text-muted-foreground border-border hover:border-border'
             }`}
           >
             Todos los contratos
@@ -193,8 +193,8 @@ export default function AttendancePage() {
               onClick={() => setSelectedContractId(c.id)}
               className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
                 selectedContractId === c.id
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-transparent text-muted-foreground border-border hover:border-slate-400'
+                  ? 'bg-foreground text-background border-foreground'
+                  : 'bg-transparent text-muted-foreground border-border hover:border-border'
               }`}
             >
               {c.name}
@@ -206,10 +206,10 @@ export default function AttendancePage() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Dotación Total',    value: stats.total,   icon: Users,     color: 'text-slate-700', bg: 'bg-slate-100' },
-          { label: 'Dentro Ahora',      value: stats.present, icon: UserCheck, color: 'text-green-700', bg: 'bg-green-50' },
-          { label: 'Salieron',          value: stats.left,    icon: Clock,     color: 'text-slate-500', bg: 'bg-slate-50' },
-          { label: 'Ausentes',          value: stats.absent,  icon: UserX,     color: 'text-red-600',   bg: 'bg-red-50' },
+          { label: 'Dotación Total',    value: stats.total,   icon: Users,     color: 'text-foreground', bg: 'bg-muted' },
+          { label: 'Dentro Ahora',      value: stats.present, icon: UserCheck, color: 'text-green-700 dark:text-green-300', bg: 'bg-green-50 dark:bg-green-500/15' },
+          { label: 'Salieron',          value: stats.left,    icon: Clock,     color: 'text-muted-foreground', bg: 'bg-muted' },
+          { label: 'Ausentes',          value: stats.absent,  icon: UserX,     color: 'text-red-600 dark:text-red-300',   bg: 'bg-red-50 dark:bg-red-500/15' },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className={`${bg} rounded-2xl p-5 flex items-center gap-4`}>
             <div className={`${color} shrink-0`}><Icon size={22} /></div>
@@ -229,16 +229,16 @@ export default function AttendancePage() {
             {stats.total > 0 ? Math.round(((stats.present + stats.left) / Math.max(stats.total - stats.restDay, 1)) * 100) : 0}% de dotación activa
           </p>
         </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex">
+        <div className="h-2 bg-muted rounded-full overflow-hidden flex">
           <div className="bg-green-500 h-full transition-all duration-700" style={{ width: `${stats.total > 0 ? (stats.present / stats.total) * 100 : 0}%` }} />
-          <div className="bg-slate-300 h-full transition-all duration-700" style={{ width: `${stats.total > 0 ? (stats.left / stats.total) * 100 : 0}%` }} />
-          <div className="bg-indigo-200 h-full transition-all duration-700" style={{ width: `${stats.total > 0 ? (stats.restDay / stats.total) * 100 : 0}%` }} />
+          <div className="bg-muted-foreground h-full transition-all duration-700" style={{ width: `${stats.total > 0 ? (stats.left / stats.total) * 100 : 0}%` }} />
+          <div className="bg-indigo-200 dark:bg-indigo-500/25 h-full transition-all duration-700" style={{ width: `${stats.total > 0 ? (stats.restDay / stats.total) * 100 : 0}%` }} />
         </div>
         <div className="flex gap-4 text-[9px] font-black uppercase tracking-widest flex-wrap">
           <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Dentro</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-300 inline-block" />Salió</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-200 inline-block" />Ausente</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-200 inline-block" />Día Libre</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-muted-foreground inline-block" />Salió</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-200 dark:bg-red-500/25 inline-block" />Ausente</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-200 dark:bg-indigo-500/25 inline-block" />Día Libre</span>
         </div>
       </div>
 
@@ -261,8 +261,8 @@ export default function AttendancePage() {
                 onClick={() => setFilterStatus(btn.value)}
                 className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
                   filterStatus === btn.value
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-transparent text-muted-foreground border-border hover:border-slate-400'
+                    ? 'bg-foreground text-background border-foreground'
+                    : 'bg-transparent text-muted-foreground border-border hover:border-border'
                 }`}
               >
                 {btn.label}
@@ -279,8 +279,8 @@ export default function AttendancePage() {
           ) : filtered.map(({ user: u, status, firstIn, lastOut, totalLogs, shiftName }) => {
             const cfg = STATUS_CONFIG[status];
             return (
-              <div key={u.id} className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
-                <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 font-black text-sm flex items-center justify-center shrink-0 uppercase">
+              <div key={u.id} className="flex items-center gap-4 px-5 py-4 hover:bg-muted/50 transition-colors">
+                <div className="w-9 h-9 rounded-xl bg-muted text-muted-foreground font-black text-sm flex items-center justify-center shrink-0 uppercase">
                   {u.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -296,11 +296,11 @@ export default function AttendancePage() {
                   </div>
                 </div>
                 <div className="hidden md:flex items-center gap-6 text-xs shrink-0">
-                  <div className="flex items-center gap-1.5 text-green-600">
+                  <div className="flex items-center gap-1.5 text-green-600 dark:text-green-300">
                     <LogIn size={13} />
                     <span className="font-bold">{firstIn || '—'}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-slate-400">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
                     <LogOut size={13} />
                     <span className="font-bold">{lastOut || '—'}</span>
                   </div>
@@ -323,16 +323,16 @@ export default function AttendancePage() {
       {/* Quick links */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
-          { label: 'Vista General',      icon: Globe,         href: '/dashboard/attendance/overview',       color: 'text-blue-600' },
-          { label: 'Reporte Semanal',    icon: BarChart2,     href: '/dashboard/attendance/report',         color: 'text-violet-600' },
-          { label: 'Horas Extras',       icon: Zap,           href: '/dashboard/attendance/overtime',       color: 'text-amber-500' },
-          { label: 'Liquidación',        icon: FileSpreadsheet, href: '/dashboard/attendance/monthly-report', color: 'text-green-600' },
-          { label: 'Finiquito',          icon: FileText,      href: '/dashboard/attendance/severance',      color: 'text-red-500' },
+          { label: 'Vista General',      icon: Globe,         href: '/dashboard/attendance/overview',       color: 'text-blue-600 dark:text-blue-300' },
+          { label: 'Reporte Semanal',    icon: BarChart2,     href: '/dashboard/attendance/report',         color: 'text-violet-600 dark:text-violet-300' },
+          { label: 'Horas Extras',       icon: Zap,           href: '/dashboard/attendance/overtime',       color: 'text-amber-500 dark:text-amber-300' },
+          { label: 'Liquidación',        icon: FileSpreadsheet, href: '/dashboard/attendance/monthly-report', color: 'text-green-600 dark:text-green-300' },
+          { label: 'Finiquito',          icon: FileText,      href: '/dashboard/attendance/severance',      color: 'text-red-500 dark:text-red-300' },
         ].map(({ label, icon: Icon, href, color }) => (
           <button
             key={href}
             onClick={() => router.push(href)}
-            className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card hover:border-slate-300 hover:shadow-sm transition-all text-left group"
+            className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card hover:border-border hover:shadow-sm transition-all text-left group"
           >
             <Icon size={18} className={`${color} shrink-0`} />
             <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>

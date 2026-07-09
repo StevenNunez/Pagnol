@@ -1,8 +1,76 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { mappers } from '../mappers';
-import type { Contract, ShiftSchedule, ContractWorker } from '@/modules/core/lib/data';
+import type { Client, Contract, ShiftSchedule, ContractWorker } from '@/modules/core/lib/data';
 
 import type { MutationContext as Context } from './context';
+
+// ── Clientes ─────────────────────────────────────────────────────────────────
+// Jerarquía: Empresa (tenant) → Cliente → Contratos.
+
+export async function addClient(
+  data: Omit<Client, 'id' | 'tenantId' | 'createdAt'>,
+  { user, tenantId }: Context
+): Promise<Client> {
+  if (!user || !tenantId) throw new Error('No autenticado.');
+
+  const { data: inserted, error } = await supabase
+    .from('clients')
+    .insert({
+      tenant_id: tenantId,
+      name: data.name.trim(),
+      rut: data.rut || null,
+      contact_name: data.contactName || null,
+      contact_email: data.contactEmail || null,
+      contact_phone: data.contactPhone || null,
+      notes: data.notes || null,
+      status: data.status || 'active',
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mappers.clients(inserted);
+}
+
+export async function updateClient(
+  id: string,
+  data: Partial<Client>,
+  { tenantId }: Context
+): Promise<void> {
+  if (!tenantId) throw new Error('No autenticado.');
+
+  const payload: any = {};
+  if (data.name !== undefined) payload.name = data.name.trim();
+  if (data.rut !== undefined) payload.rut = data.rut || null;
+  if (data.contactName !== undefined) payload.contact_name = data.contactName || null;
+  if (data.contactEmail !== undefined) payload.contact_email = data.contactEmail || null;
+  if (data.contactPhone !== undefined) payload.contact_phone = data.contactPhone || null;
+  if (data.notes !== undefined) payload.notes = data.notes || null;
+  if (data.status !== undefined) payload.status = data.status;
+
+  const { error } = await supabase
+    .from('clients')
+    .update(payload)
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .select();
+
+  if (error) throw error;
+}
+
+export async function deleteClient(id: string, { tenantId }: Context): Promise<void> {
+  if (!tenantId) throw new Error('No autenticado.');
+
+  // Los contratos del cliente quedan con client_id = NULL (ON DELETE SET NULL),
+  // no se borran. El caller decide si eso es aceptable (avisar en la UI).
+  const { error } = await supabase
+    .from('clients')
+    .delete()
+    .eq('id', id)
+    .eq('tenant_id', tenantId);
+
+  if (error) throw error;
+}
 
 // ── Contratos ────────────────────────────────────────────────────────────────
 
@@ -18,7 +86,8 @@ export async function addContract(
       tenant_id: tenantId,
       name: data.name,
       code: data.code || null,
-      client_name: data.clientName || null,
+      client_id: data.clientId || null,
+      client_name: data.clientName || null, // denormalizado para vistas legacy
       location: data.location || null,
       status: data.status,
       start_date: data.startDate,
@@ -43,6 +112,7 @@ export async function updateContract(
   const payload: any = {};
   if (data.name !== undefined) payload.name = data.name;
   if (data.code !== undefined) payload.code = data.code;
+  if (data.clientId !== undefined) payload.client_id = data.clientId || null;
   if (data.clientName !== undefined) payload.client_name = data.clientName;
   if (data.location !== undefined) payload.location = data.location;
   if (data.status !== undefined) payload.status = data.status;

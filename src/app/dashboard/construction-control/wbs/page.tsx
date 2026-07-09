@@ -329,7 +329,7 @@ export default function ConstructionWBSPage() {
         </div>
 
         {/* Columna Derecha: Detalle y Avance */}
-        <div className="lg:col-span-2 sticky top-8">
+        <div className="lg:col-span-2 lg:sticky lg:top-8">
           <Card className="min-h-[70vh]">
             <CardHeader>
               <CardTitle>Detalle y Avance</CardTitle>

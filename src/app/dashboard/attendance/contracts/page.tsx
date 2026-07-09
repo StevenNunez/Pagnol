@@ -33,7 +33,7 @@ const STATUS_CONFIG = {
 const contractSchema = z.object({
   name: z.string().min(1, "Nombre requerido"),
   code: z.string().optional(),
-  clientName: z.string().optional(),
+  clientId: z.string().optional(), // FK a Client (fuente de verdad)
   location: z.string().optional(),
   status: z.enum(["active", "suspended", "closed"]),
   startDate: z.string().min(1, "Fecha de inicio requerida"),
@@ -48,11 +48,15 @@ type ContractFormData = z.infer<typeof contractSchema>;
 
 export default function ContractsPage() {
   const router = useRouter();
-  const { contracts, contractWorkers, attendanceLogs, addContract, updateContract, deleteContract, can } = useAppState();
+  const { clients, contracts, contractWorkers, attendanceLogs, addClient, addContract, updateContract, deleteContract, can } = useAppState();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+
+  const activeClients = useMemo(() => [...clients].sort((a, b) => a.name.localeCompare(b.name)), [clients]);
 
   const canManage = can('contracts:manage') || can('attendance:edit');
   const today = format(new Date(), "yyyy-MM-dd");
@@ -87,7 +91,7 @@ export default function ContractsPage() {
   const openEdit = (c: Contract) => {
     setEditingContract(c);
     reset({
-      name: c.name, code: c.code ?? "", clientName: c.clientName ?? "",
+      name: c.name, code: c.code ?? "", clientId: c.clientId ?? "",
       location: c.location ?? "", status: c.status,
       startDate: typeof c.startDate === 'string' ? c.startDate.substring(0, 10) : format(new Date(c.startDate), "yyyy-MM-dd"),
       endDate: c.endDate ? (typeof c.endDate === 'string' ? c.endDate.substring(0, 10) : format(new Date(c.endDate), "yyyy-MM-dd")) : "",
@@ -100,10 +104,26 @@ export default function ContractsPage() {
     setDialogOpen(true);
   };
 
+  // Crear un cliente al vuelo desde el formulario de contrato y seleccionarlo.
+  const handleCreateClient = async () => {
+    const name = newClientName.trim();
+    if (!name) return;
+    try {
+      const created = await addClient({ name, status: 'active' });
+      setValue("clientId", created.id);
+      setNewClientName("");
+      setCreatingClient(false);
+      toast({ title: "Cliente creado", description: name });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error al crear cliente", description: e.message });
+    }
+  };
+
   const onSubmit = async (data: ContractFormData) => {
     try {
+      const clientName = data.clientId ? (clients.find(c => c.id === data.clientId)?.name ?? undefined) : undefined;
       const payload = {
-        name: data.name, code: data.code, clientName: data.clientName,
+        name: data.name, code: data.code, clientId: data.clientId || null, clientName,
         location: data.location, status: data.status,
         startDate: data.startDate, endDate: data.endDate || null,
         description: data.description,
@@ -255,8 +275,27 @@ export default function ContractsPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Empresa mandante</Label>
-                <Input placeholder="Nombre del cliente" {...register("clientName")} />
+                <Label>Cliente (empresa mandante)</Label>
+                {creatingClient ? (
+                  <div className="flex gap-2">
+                    <Input autoFocus placeholder="Nombre del nuevo cliente" value={newClientName} onChange={e => setNewClientName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateClient(); } }} />
+                    <Button type="button" size="sm" onClick={handleCreateClient} disabled={!newClientName.trim()}>Crear</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setCreatingClient(false); setNewClientName(""); }}>Cancelar</Button>
+                  </div>
+                ) : (
+                  <Select
+                    value={watch("clientId") || "none"}
+                    onValueChange={v => { if (v === "__new__") { setCreatingClient(true); } else { setValue("clientId", v === "none" ? "" : v); } }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Selecciona un cliente" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin cliente</SelectItem>
+                      {activeClients.map(cl => <SelectItem key={cl.id} value={cl.id}>{cl.name}</SelectItem>)}
+                      <SelectItem value="__new__" className="text-primary font-bold">+ Nuevo cliente…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-1">
                 <Label>Faena / Ubicación</Label>

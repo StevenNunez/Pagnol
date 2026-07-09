@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { User } from "@/modules/core/lib/data";
 import { isWorkDay, isRestDay } from "@/modules/core/hooks/use-attendance";
+import { ShiftCycleCalendar } from "@/components/shift-cycle-calendar";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -50,8 +51,15 @@ export default function ContractDetailPage() {
   const [addWorkerOpen, setAddWorkerOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedShiftId, setSelectedShiftId] = useState<string>("");
+  const [rotationStart, setRotationStart] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [roleInContract, setRoleInContract] = useState("");
   const [isAdding, setIsAdding] = useState(false);
+
+  // Turno rotativo = necesita ancla de ciclo (fecha de subida); 5x2 se rige por semana.
+  const isRotatingShift = (shiftId: string | null | undefined) => {
+    const s = shiftSchedules.find(sh => sh.id === shiftId);
+    return !!s && s.shiftType !== '5x2';
+  };
 
   const canManage = can('contracts:manage') || can('attendance:edit');
   const today = format(new Date(), "yyyy-MM-dd");
@@ -81,7 +89,7 @@ export default function ContractDetailPage() {
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       let status: WorkerStatus;
-      if (shift && isRestDay(todayDate, shift)) {
+      if (shift && isRestDay(todayDate, shift, cw.rotationStartDate)) {
         status = 'rest_day';
       } else if (todayLogs.length === 0) {
         status = 'absent';
@@ -112,7 +120,10 @@ export default function ContractDetailPage() {
     if (!selectedUserId) return;
     setIsAdding(true);
     try {
-      await addContractWorker(contractId, selectedUserId, selectedShiftId || null, roleInContract || undefined);
+      await addContractWorker(
+        contractId, selectedUserId, selectedShiftId || null, roleInContract || undefined,
+        isRotatingShift(selectedShiftId) ? (rotationStart || null) : null
+      );
       toast({ title: "Trabajador agregado al contrato" });
       setAddWorkerOpen(false);
       setSelectedUserId(""); setSelectedShiftId(""); setRoleInContract("");
@@ -301,6 +312,22 @@ export default function ContractDetailPage() {
                             </SelectContent>
                           </Select>
                         )}
+                        {canManage && isRotatingShift(cw.shiftScheduleId) && (
+                          <input
+                            type="date"
+                            title="Inicio de ciclo de este trabajador (fecha de subida)"
+                            value={cw.rotationStartDate ?? shift?.rotationReferenceDate ?? ""}
+                            onChange={async (e) => {
+                              try {
+                                await updateContractWorker(cw.id, { rotationStartDate: e.target.value || null });
+                                toast({ title: "Inicio de ciclo actualizado" });
+                              } catch (err: any) {
+                                toast({ variant: "destructive", title: "Error", description: err.message });
+                              }
+                            }}
+                            className="h-7 w-[125px] rounded-lg border bg-background px-2 text-[10px] shrink-0"
+                          />
+                        )}
                         {canManage && (
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0"
                             onClick={() => handleRemoveWorker(cw.id, u?.name ?? "trabajador")}>
@@ -366,10 +393,10 @@ export default function ContractDetailPage() {
             </div>
             <div className="space-y-1">
               <Label>Turno de trabajo</Label>
-              <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
+              <Select value={selectedShiftId || "none"} onValueChange={v => setSelectedShiftId(v === "none" ? "" : v)}>
                 <SelectTrigger><SelectValue placeholder="Selecciona un turno (opcional)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin turno asignado</SelectItem>
+                  <SelectItem value="none">Sin turno asignado</SelectItem>
                   {shiftSchedules.map(s => (
                     <SelectItem key={s.id} value={s.id}>
                       <span className="font-semibold">{s.name}</span>
@@ -379,6 +406,23 @@ export default function ContractDetailPage() {
                 </SelectContent>
               </Select>
             </div>
+            {isRotatingShift(selectedShiftId) && (
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <Label>Inicio de ciclo (fecha de subida)</Label>
+                  <Input type="date" value={rotationStart} onChange={e => setRotationStart(e.target.value)} />
+                  <p className="text-[10px] text-muted-foreground">
+                    Día 1 del ciclo de ESTE trabajador. Permite grupos desfasados con el mismo turno.
+                  </p>
+                </div>
+                <div className="p-3 rounded-2xl border bg-muted/30">
+                  <ShiftCycleCalendar
+                    shift={shiftSchedules.find(s => s.id === selectedShiftId)!}
+                    rotationStartDate={rotationStart || null}
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-1">
               <Label>Rol en el contrato <span className="text-muted-foreground">(opcional)</span></Label>
               <Input placeholder="Ej: Operador LHD, Supervisor de guardia..." value={roleInContract} onChange={e => setRoleInContract(e.target.value)} />

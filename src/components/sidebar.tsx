@@ -221,6 +221,12 @@ const getRrhhNavItems = (can: (p: Permission) => boolean) => [
   ...(can('hr_employees:view') ? [
     { href: '/dashboard/rrhh/empleados', icon: Users, label: 'Ficha de Empleados' },
   ] : []),
+  ...(can('contracts:manage') ? [
+    { href: '/dashboard/rrhh/contratos', icon: Briefcase, label: 'Contratos' },
+  ] : []),
+  ...(can('shifts:manage') ? [
+    { href: '/dashboard/rrhh/turnos', icon: RotateCcw, label: 'Turnos' },
+  ] : []),
   ...(can('hr_leave:view_all') ? [
     { href: '/dashboard/rrhh/solicitudes', icon: ClipboardCheck, label: 'Vacaciones y Licencias' },
   ] : []),
@@ -265,6 +271,7 @@ const getCommitteeNavItems = () => [
 
 const getSettingsNavItems = () => [
   { href: '/dashboard/configuracion', icon: Settings, label: 'Datos y Correlativos' },
+  { href: '/dashboard/configuracion/clientes', icon: Building2, label: 'Clientes y Contratos' },
 ];
 
 const getSuperAdminNavItems = () => [

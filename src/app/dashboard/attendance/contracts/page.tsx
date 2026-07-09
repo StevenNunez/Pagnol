@@ -2,22 +2,15 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { PageHeader } from "@/components/page-header";
 import { useAppState } from "@/modules/core/contexts/app-provider";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { ContractFormDialog } from "@/components/contract-form-dialog";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { Briefcase, Plus, Users, UserCheck, MapPin, ChevronRight, Pencil, Trash2, Building2 } from "lucide-react";
 import type { Contract } from "@/modules/core/lib/data";
@@ -30,43 +23,16 @@ const STATUS_CONFIG = {
   closed:    { label: "Cerrado",   cls: "bg-slate-100 text-slate-500 border-slate-200" },
 };
 
-const contractSchema = z.object({
-  name: z.string().min(1, "Nombre requerido"),
-  code: z.string().optional(),
-  clientId: z.string().optional(), // FK a Client (fuente de verdad)
-  location: z.string().optional(),
-  status: z.enum(["active", "suspended", "closed"]),
-  startDate: z.string().min(1, "Fecha de inicio requerida"),
-  endDate: z.string().optional(),
-  description: z.string().optional(),
-  isSubcontractor: z.boolean().default(false),
-  parentContractId: z.string().optional(),
-  subcontractorCompany: z.string().optional(),
-  subcontractorRut: z.string().optional(),
-});
-type ContractFormData = z.infer<typeof contractSchema>;
-
 export default function ContractsPage() {
   const router = useRouter();
-  const { clients, contracts, contractWorkers, attendanceLogs, addClient, addContract, updateContract, deleteContract, can } = useAppState();
+  const { contracts, contractWorkers, attendanceLogs, deleteContract, can } = useAppState();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [creatingClient, setCreatingClient] = useState(false);
-  const [newClientName, setNewClientName] = useState("");
-
-  const activeClients = useMemo(() => [...clients].sort((a, b) => a.name.localeCompare(b.name)), [clients]);
 
   const canManage = can('contracts:manage') || can('attendance:edit');
   const today = format(new Date(), "yyyy-MM-dd");
-
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<ContractFormData>({
-    resolver: zodResolver(contractSchema),
-    defaultValues: { status: "active", startDate: today },
-  });
-
-  const watchedStatus = watch("status");
 
   // Stats per contract
   const contractStats = useMemo(() => {
@@ -84,65 +50,12 @@ export default function ContractsPage() {
 
   const openCreate = () => {
     setEditingContract(null);
-    reset({ status: "active", startDate: today });
     setDialogOpen(true);
   };
 
   const openEdit = (c: Contract) => {
     setEditingContract(c);
-    reset({
-      name: c.name, code: c.code ?? "", clientId: c.clientId ?? "",
-      location: c.location ?? "", status: c.status,
-      startDate: typeof c.startDate === 'string' ? c.startDate.substring(0, 10) : format(new Date(c.startDate), "yyyy-MM-dd"),
-      endDate: c.endDate ? (typeof c.endDate === 'string' ? c.endDate.substring(0, 10) : format(new Date(c.endDate), "yyyy-MM-dd")) : "",
-      description: c.description ?? "",
-      isSubcontractor: c.isSubcontractor ?? false,
-      parentContractId: c.parentContractId ?? "",
-      subcontractorCompany: c.subcontractorCompany ?? "",
-      subcontractorRut: c.subcontractorRut ?? "",
-    });
     setDialogOpen(true);
-  };
-
-  // Crear un cliente al vuelo desde el formulario de contrato y seleccionarlo.
-  const handleCreateClient = async () => {
-    const name = newClientName.trim();
-    if (!name) return;
-    try {
-      const created = await addClient({ name, status: 'active' });
-      setValue("clientId", created.id);
-      setNewClientName("");
-      setCreatingClient(false);
-      toast({ title: "Cliente creado", description: name });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Error al crear cliente", description: e.message });
-    }
-  };
-
-  const onSubmit = async (data: ContractFormData) => {
-    try {
-      const clientName = data.clientId ? (clients.find(c => c.id === data.clientId)?.name ?? undefined) : undefined;
-      const payload = {
-        name: data.name, code: data.code, clientId: data.clientId || null, clientName,
-        location: data.location, status: data.status,
-        startDate: data.startDate, endDate: data.endDate || null,
-        description: data.description,
-        isSubcontractor: data.isSubcontractor,
-        parentContractId: data.parentContractId || null,
-        subcontractorCompany: data.subcontractorCompany || null,
-        subcontractorRut: data.subcontractorRut || null,
-      };
-      if (editingContract) {
-        await updateContract(editingContract.id, payload);
-        toast({ title: "Contrato actualizado" });
-      } else {
-        await addContract(payload);
-        toast({ title: "Contrato creado" });
-      }
-      setDialogOpen(false);
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Error", description: e.message });
-    }
   };
 
   const handleDelete = async (id: string) => {
@@ -255,128 +168,8 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* Create / Edit dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editingContract ? "Editar contrato" : "Nuevo contrato"}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1 col-span-2 sm:col-span-1">
-                <Label>Nombre del contrato *</Label>
-                <Input placeholder="Ej: Mina El Volcán — Fase 2" {...register("name")} />
-                {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
-              </div>
-              <div className="space-y-1">
-                <Label>Código</Label>
-                <Input placeholder="Ej: CT-2025-001" {...register("code")} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Cliente (empresa mandante)</Label>
-                {creatingClient ? (
-                  <div className="flex gap-2">
-                    <Input autoFocus placeholder="Nombre del nuevo cliente" value={newClientName} onChange={e => setNewClientName(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateClient(); } }} />
-                    <Button type="button" size="sm" onClick={handleCreateClient} disabled={!newClientName.trim()}>Crear</Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => { setCreatingClient(false); setNewClientName(""); }}>Cancelar</Button>
-                  </div>
-                ) : (
-                  <Select
-                    value={watch("clientId") || "none"}
-                    onValueChange={v => { if (v === "__new__") { setCreatingClient(true); } else { setValue("clientId", v === "none" ? "" : v); } }}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Selecciona un cliente" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin cliente</SelectItem>
-                      {activeClients.map(cl => <SelectItem key={cl.id} value={cl.id}>{cl.name}</SelectItem>)}
-                      <SelectItem value="__new__" className="text-primary font-bold">+ Nuevo cliente…</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label>Faena / Ubicación</Label>
-                <Input placeholder="Ej: Sierra Gorda, II Región" {...register("location")} />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label>Estado</Label>
-                <Select value={watchedStatus} onValueChange={v => setValue("status", v as any)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Activo</SelectItem>
-                    <SelectItem value="suspended">Suspendido</SelectItem>
-                    <SelectItem value="closed">Cerrado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Inicio *</Label>
-                <Input type="date" {...register("startDate")} />
-                {errors.startDate && <p className="text-xs text-destructive">{errors.startDate.message}</p>}
-              </div>
-              <div className="space-y-1">
-                <Label>Término</Label>
-                <Input type="date" {...register("endDate")} />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Descripción</Label>
-              <Input placeholder="Alcance del contrato, observaciones..." {...register("description")} />
-            </div>
-
-            {/* Subcontratista */}
-            <div className="border-t border-border pt-3 space-y-3">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isSubcontractor"
-                  className="rounded border-border"
-                  {...register("isSubcontractor")}
-                />
-                <Label htmlFor="isSubcontractor" className="cursor-pointer">Es subcontratista / empresa externa</Label>
-              </div>
-              {watch("isSubcontractor") && (
-                <div className="grid grid-cols-2 gap-3 pl-5">
-                  <div className="space-y-1 col-span-2 sm:col-span-1">
-                    <Label>Empresa subcontratista</Label>
-                    <Input placeholder="Razón social" {...register("subcontractorCompany")} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>RUT empresa</Label>
-                    <Input placeholder="12.345.678-9" {...register("subcontractorRut")} />
-                  </div>
-                  <div className="space-y-1 col-span-2">
-                    <Label>Contrato padre (opcional)</Label>
-                    <Select
-                      value={watch("parentContractId") ?? ""}
-                      onValueChange={v => setValue("parentContractId", v)}
-                    >
-                      <SelectTrigger><SelectValue placeholder="Sin contrato padre" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Sin contrato padre</SelectItem>
-                        {contracts
-                          .filter(c => !c.isSubcontractor && c.status === 'active')
-                          .map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-              <Button type="submit" disabled={isSubmitting}>
-                {editingContract ? "Guardar cambios" : "Crear contrato"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Create / Edit dialog (compartido con Configuración → Clientes y Contratos) */}
+      <ContractFormDialog open={dialogOpen} onOpenChange={setDialogOpen} contract={editingContract} />
 
       {/* Delete confirm */}
       <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>

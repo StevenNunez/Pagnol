@@ -13,11 +13,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     X, Save, Loader2, User as UserIcon, Briefcase, ScanFace, KeyRound,
-    ShieldCheck, Mail, Signature, Lock,
+    ShieldCheck, Mail, Signature, Lock, Trash2, Plus,
 } from 'lucide-react';
 import { UserIdentityFields } from '@/components/user-identity-fields';
 import { UserPermissionsEditor } from '@/components/user-permissions-editor';
 import { EnrollmentWizard } from '@/components/enrollment-wizard';
+import { ShiftCycleCalendar } from '@/components/shift-cycle-calendar';
 import { AdminChangePasswordDialog } from '@/components/admin/admin-change-password-dialog';
 import { ChangePasswordDialog } from '@/components/change-password-dialog';
 import { ChangeEmailDialog } from '@/components/change-email-dialog';
@@ -73,7 +74,11 @@ const labelCls = 'text-[10px] font-black uppercase tracking-widest text-muted-fo
  * Las pestañas se muestran/ocultan según el permiso de quien lo abre.
  */
 export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: UserPanelProps) {
-    const { updateUser, enrollUser, hrUpdateUser, addUser, can, users } = useAppState();
+    const {
+        updateUser, enrollUser, hrUpdateUser, addUser, can, users,
+        contracts, contractWorkers, shiftSchedules, clients,
+        addContractWorker, removeContractWorker, updateContractWorker,
+    } = useAppState();
     const { user: authUser } = useAuth();
     const { toast } = useToast();
     const assignableRoles = useAssignableRoles();
@@ -99,6 +104,75 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
 
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab && tabs.some(t => t.id === defaultTab) ? defaultTab : 'identidad');
     const [enrollOpen, setEnrollOpen] = useState(false);
+
+    // Contratos/faenas asignados (Fase 2 Valar): asignar, cambiar turno o quitar sin
+    // salir del panel. Las acciones guardan al instante (no pasan por "Guardar cambios").
+    const canAssignContracts = !self && (canEditUsers || canHR || can('contracts:manage'));
+    const assignments = useMemo(
+        () => contractWorkers.filter(cw => cw.userId === user.id && !cw.endDate),
+        [contractWorkers, user.id]
+    );
+    const availableContracts = useMemo(
+        () => contracts.filter(c => c.status === 'active' && !assignments.some(a => a.contractId === c.id)),
+        [contracts, assignments]
+    );
+    const [newContractId, setNewContractId] = useState('');
+    const [newShiftId, setNewShiftId] = useState('');
+    const [newRotationStart, setNewRotationStart] = useState(() => new Date().toISOString().slice(0, 10));
+    const [isAssigning, setIsAssigning] = useState(false);
+
+    // Turno rotativo = necesita ancla de ciclo (fecha de subida). 5x2 se rige por semana.
+    const isRotating = (shiftId: string | null | undefined) => {
+        const s = shiftSchedules.find(sh => sh.id === shiftId);
+        return !!s && s.shiftType !== '5x2';
+    };
+    const newShiftIsRotating = isRotating(newShiftId);
+
+    const handleAssignContract = async () => {
+        if (!newContractId) return;
+        setIsAssigning(true);
+        try {
+            await addContractWorker(
+                newContractId, user.id, newShiftId || null, undefined,
+                newShiftIsRotating ? (newRotationStart || null) : null
+            );
+            toast({ title: 'Contrato asignado', description: `${user.name} fue asignado al contrato.` });
+            setNewContractId('');
+            setNewShiftId('');
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'Error al asignar', description: err?.message || 'No se pudo asignar el contrato.' });
+        } finally {
+            setIsAssigning(false);
+        }
+    };
+
+    const handleRemoveAssignment = async (cwId: string, contractName: string) => {
+        if (!confirm(`¿Quitar a ${user.name} del contrato "${contractName}"?`)) return;
+        try {
+            await removeContractWorker(cwId);
+            toast({ title: 'Asignación eliminada' });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'Error', description: err?.message || 'No se pudo quitar la asignación.' });
+        }
+    };
+
+    const handleChangeShift = async (cwId: string, shiftId: string) => {
+        try {
+            await updateContractWorker(cwId, { shiftScheduleId: shiftId || null });
+            toast({ title: 'Turno actualizado' });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'Error', description: err?.message || 'No se pudo cambiar el turno.' });
+        }
+    };
+
+    const handleChangeRotationStart = async (cwId: string, date: string) => {
+        try {
+            await updateContractWorker(cwId, { rotationStartDate: date || null });
+            toast({ title: 'Inicio de ciclo actualizado' });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'Error', description: err?.message || 'No se pudo cambiar el inicio de ciclo.' });
+        }
+    };
     const [pwdOpen, setPwdOpen] = useState(false);
     const [emailOpen, setEmailOpen] = useState(false);
     const [savingSig, setSavingSig] = useState(false);
@@ -164,7 +238,25 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                 if (canEditRole) payload.role = data.role;
                 await updateUser(user.id, payload);
             }
-            toast({ title: 'Usuario actualizado', description: `Los datos de ${data.name} se guardaron correctamente.` });
+            // "Guardar cambios" también confirma una asignación de contrato elegida en el
+            // select pero no confirmada con "Asignar" — antes esa selección se descartaba
+            // en silencio (guardaba la ficha, cerraba con éxito y el contrato no quedaba).
+            let assignedContractName: string | null = null;
+            if (canAssignContracts && newContractId) {
+                assignedContractName = contracts.find(c => c.id === newContractId)?.name ?? null;
+                await addContractWorker(
+                    newContractId, user.id, newShiftId || null, undefined,
+                    newShiftIsRotating ? (newRotationStart || null) : null
+                );
+                setNewContractId('');
+                setNewShiftId('');
+            }
+            toast({
+                title: 'Usuario actualizado',
+                description: assignedContractName
+                    ? `Datos guardados y ${data.name} asignado al contrato "${assignedContractName}".`
+                    : `Los datos de ${data.name} se guardaron correctamente.`,
+            });
             onClose();
         } catch (err: any) {
             toast({ variant: 'destructive', title: 'Error al guardar', description: err?.message || 'No se pudo actualizar.' });
@@ -289,6 +381,116 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                                                 </Field>
                                                 <Field label="Cargas familiares"><Input type="number" {...register('cargasFamiliares')} className="h-12 rounded-xl" /></Field>
                                             </>
+                                        )}
+                                    </div>
+
+                                    {/* Contratos / faenas asignados */}
+                                    <div className="mt-8 pt-6 border-t space-y-4">
+                                        <Label className={labelCls}>Contratos / Faenas asignadas</Label>
+                                        {assignments.length === 0 ? (
+                                            <p className="text-xs text-muted-foreground italic">
+                                                Sin contrato asignado — sus movimientos se atribuyen al pool general.
+                                            </p>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {assignments.map(cw => {
+                                                    const contract = contracts.find(c => c.id === cw.contractId);
+                                                    const clientName = contract
+                                                        ? (clients.find(cl => cl.id === contract.clientId)?.name || contract.clientName)
+                                                        : null;
+                                                    return (
+                                                        <div key={cw.id} className="flex items-center gap-3 p-3 rounded-2xl border bg-muted/40">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-sm font-bold text-foreground truncate">{contract?.name || 'Contrato desconocido'}</p>
+                                                                {clientName && (
+                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground truncate">{clientName}</p>
+                                                                )}
+                                                            </div>
+                                                            <select
+                                                                value={cw.shiftScheduleId ?? ''}
+                                                                disabled={!canAssignContracts}
+                                                                onChange={e => handleChangeShift(cw.id, e.target.value)}
+                                                                className="h-10 rounded-xl border bg-background px-2 text-xs disabled:opacity-60"
+                                                            >
+                                                                <option value="">Sin turno</option>
+                                                                {shiftSchedules.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                                            </select>
+                                                            {isRotating(cw.shiftScheduleId) && (
+                                                                <input
+                                                                    type="date"
+                                                                    title="Inicio de ciclo de este trabajador (fecha de subida)"
+                                                                    value={cw.rotationStartDate ?? shiftSchedules.find(s => s.id === cw.shiftScheduleId)?.rotationReferenceDate ?? ''}
+                                                                    disabled={!canAssignContracts}
+                                                                    onChange={e => handleChangeRotationStart(cw.id, e.target.value)}
+                                                                    className="h-10 rounded-xl border bg-background px-2 text-xs disabled:opacity-60 w-[130px]"
+                                                                />
+                                                            )}
+                                                            {canAssignContracts && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    onClick={() => handleRemoveAssignment(cw.id, contract?.name || 'contrato')}
+                                                                    className="text-muted-foreground hover:text-destructive shrink-0"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {canAssignContracts && availableContracts.length > 0 && (
+                                            <div className="space-y-3">
+                                                <div className="flex flex-col md:flex-row gap-3">
+                                                    <select
+                                                        value={newContractId}
+                                                        onChange={e => setNewContractId(e.target.value)}
+                                                        className="h-11 flex-1 rounded-xl border bg-background px-3 text-sm"
+                                                    >
+                                                        <option value="">Asignar a contrato…</option>
+                                                        {availableContracts.map(c => (
+                                                            <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                                                        ))}
+                                                    </select>
+                                                    <select
+                                                        value={newShiftId}
+                                                        onChange={e => setNewShiftId(e.target.value)}
+                                                        disabled={!newContractId}
+                                                        className="h-11 rounded-xl border bg-background px-3 text-sm disabled:opacity-50 md:w-44"
+                                                    >
+                                                        <option value="">Sin turno</option>
+                                                        {shiftSchedules.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                                    </select>
+                                                    {newShiftIsRotating && (
+                                                        <input
+                                                            type="date"
+                                                            title="Inicio de ciclo (fecha de subida)"
+                                                            value={newRotationStart}
+                                                            onChange={e => setNewRotationStart(e.target.value)}
+                                                            className="h-11 rounded-xl border bg-background px-3 text-sm md:w-[150px]"
+                                                        />
+                                                    )}
+                                                    <Button
+                                                        onClick={handleAssignContract}
+                                                        disabled={!newContractId || isAssigning}
+                                                        className="h-11 rounded-xl font-black uppercase text-[10px] tracking-widest gap-2 px-6"
+                                                    >
+                                                        {isAssigning ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Asignar
+                                                    </Button>
+                                                </div>
+                                                {newShiftIsRotating && (
+                                                    <div className="max-w-[280px] p-3 rounded-2xl border bg-muted/30">
+                                                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-2">
+                                                            Vista previa del ciclo (día 1: {newRotationStart})
+                                                        </p>
+                                                        <ShiftCycleCalendar
+                                                            shift={shiftSchedules.find(s => s.id === newShiftId)!}
+                                                            rotationStartDate={newRotationStart || null}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 </TabsContent>

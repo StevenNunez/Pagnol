@@ -15,6 +15,7 @@ import {
   differenceInCalendarDays,
   startOfDay,
   parseISO,
+  addDays,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { AttendanceLog, ShiftSchedule, ContractWorker } from '@/modules/core/lib/data';
@@ -36,40 +37,64 @@ const STANDARD_HOLIDAYS: string[] = [
   "08-15","09-18","09-19","10-12","10-31","11-01","12-08","12-25",
 ];
 
-/** Returns the position (0-based) in the rotation cycle for a given date. */
-export function getCyclePosition(date: Date, schedule: ShiftSchedule): number {
+/**
+ * Returns the position (0-based) in the rotation cycle for a given date.
+ * `rotationStartDate` (ancla POR TRABAJADOR, contract_workers.rotation_start_date)
+ * tiene prioridad sobre la referencia del turno — permite que grupos desfasados
+ * (A sube cuando B baja) compartan el mismo turno.
+ */
+export function getCyclePosition(
+  date: Date,
+  schedule: ShiftSchedule,
+  rotationStartDate?: string | null
+): number {
   const cycleLength = schedule.daysOn + schedule.daysOff;
-  const refDate = startOfDay(parseISO(schedule.rotationReferenceDate));
+  const refDate = startOfDay(parseISO(rotationStartDate || schedule.rotationReferenceDate));
   const diff = differenceInCalendarDays(startOfDay(date), refDate);
   return ((diff % cycleLength) + cycleLength) % cycleLength;
 }
 
 /** True when the worker is scheduled to work on the given date. */
-export function isWorkDay(date: Date, schedule: ShiftSchedule): boolean {
+export function isWorkDay(
+  date: Date,
+  schedule: ShiftSchedule,
+  rotationStartDate?: string | null
+): boolean {
   if (schedule.shiftType === '5x2') {
     const dow = getDay(date);
     const mmdd = format(date, 'MM-dd');
     return dow !== 0 && dow !== 6 && !STANDARD_HOLIDAYS.includes(mmdd);
   }
   // Rotating shifts: use cycle position only (no weekday/holiday rules)
-  return getCyclePosition(date, schedule) < schedule.daysOn;
+  return getCyclePosition(date, schedule, rotationStartDate) < schedule.daysOn;
 }
 
 /** Returns true for the "rest" (off) portion of a rotating shift. */
-export function isRestDay(date: Date, schedule: ShiftSchedule): boolean {
+export function isRestDay(
+  date: Date,
+  schedule: ShiftSchedule,
+  rotationStartDate?: string | null
+): boolean {
   if (schedule.shiftType === '5x2') return false;
-  return !isWorkDay(date, schedule);
+  return !isWorkDay(date, schedule, rotationStartDate);
 }
 
-/** Finds the active shift for a worker, or null if none assigned. */
+export interface WorkerShiftInfo {
+  shift: ShiftSchedule;
+  /** Ancla del ciclo de este trabajador; null = usa la referencia del turno. */
+  rotationStartDate: string | null;
+}
+
+/** Finds the active shift (+ ancla de ciclo propia) for a worker, or null. */
 export function getWorkerShift(
   userId: string,
   contractWorkers: ContractWorker[],
   shiftSchedules: ShiftSchedule[]
-): ShiftSchedule | null {
-  const cw = contractWorkers.find(w => w.userId === userId && !w.endDate);
+): WorkerShiftInfo | null {
+  const cw = contractWorkers.find(w => w.userId === userId && !w.endDate && w.shiftScheduleId);
   if (!cw?.shiftScheduleId) return null;
-  return shiftSchedules.find(s => s.id === cw.shiftScheduleId) ?? null;
+  const shift = shiftSchedules.find(s => s.id === cw.shiftScheduleId);
+  return shift ? { shift, rotationStartDate: cw.rotationStartDate ?? null } : null;
 }
 
 // ── useMonthlyAttendance ─────────────────────────────────────────────────────
@@ -78,7 +103,9 @@ export function useMonthlyAttendance(
   userId: string | null,
   year: number,
   month: number,
-  shiftSchedule?: ShiftSchedule | null
+  shiftSchedule?: ShiftSchedule | null,
+  /** Ancla del ciclo de ESTE trabajador (contract_workers.rotation_start_date). */
+  rotationStartDate?: string | null
 ) {
   const { attendanceLogs } = useAppState();
   const [report, setReport] = useState<{
@@ -97,16 +124,18 @@ export function useMonthlyAttendance(
   const [loading, setLoading] = useState(false);
 
   const checkIsBusinessDay = useCallback((day: Date): boolean => {
-    if (shiftSchedule) return isWorkDay(day, shiftSchedule);
+    if (shiftSchedule) return isWorkDay(day, shiftSchedule, rotationStartDate);
     const dow = getDay(day);
     if (dow === 0) return false;
     return !STANDARD_HOLIDAYS.includes(format(day, 'MM-dd'));
-  }, [shiftSchedule]);
+  }, [shiftSchedule, rotationStartDate]);
 
   const calculateDailySummary = useCallback(
-    (logs: AttendanceLog[], day: Date): DailySummary => {
+    // `pairedSessions`: sesiones ya pareadas cross-día (turno nocturno). Si no
+    // vienen, se parean las marcas del mismo día calendario (comportamiento clásico).
+    (logs: AttendanceLog[], day: Date, pairedSessions?: [Date, Date][]): DailySummary => {
       const dayIsBusiness = checkIsBusinessDay(day);
-      const dayIsRest = shiftSchedule ? isRestDay(day, shiftSchedule) : false;
+      const dayIsRest = shiftSchedule ? isRestDay(day, shiftSchedule, rotationStartDate) : false;
 
       // Determine work times from shift schedule (or fall back to defaults)
       const workStartStr = shiftSchedule?.workStart ?? (isSaturday(day) ? '08:00' : '08:00');
@@ -135,8 +164,11 @@ export function useMonthlyAttendance(
         };
       }
 
+      const isNight = !!shiftSchedule?.isNightShift;
       const startWorkTime = parse(workStartStr, 'HH:mm', day);
-      const endWorkTime = parse(workEndStr, 'HH:mm', day);
+      // Turno nocturno: la jornada termina al día SIGUIENTE (20:00 → 08:00).
+      let endWorkTime = parse(workEndStr, 'HH:mm', day);
+      if (isNight && endWorkTime <= startWorkTime) endWorkTime = addDays(endWorkTime, 1);
       const lunchStartTime = parse(lunchStartStr, 'HH:mm', day);
       const lunchEndTime = parse(lunchEndStr, 'HH:mm', day);
 
@@ -150,23 +182,34 @@ export function useMonthlyAttendance(
         );
       }
 
-      const sessionPairs: [Date, Date][] = [];
-      for (let i = 0; i < entries.length - 1; i += 2) {
-        if (entries[i].type === 'in' && entries[i + 1]?.type === 'out') {
-          sessionPairs.push([entries[i].dateObj, entries[i + 1].dateObj]);
+      let sessionPairs: [Date, Date][];
+      if (pairedSessions) {
+        sessionPairs = pairedSessions;
+      } else {
+        sessionPairs = [];
+        for (let i = 0; i < entries.length - 1; i += 2) {
+          if (entries[i].type === 'in' && entries[i + 1]?.type === 'out') {
+            sessionPairs.push([entries[i].dateObj, entries[i + 1].dateObj]);
+          }
         }
       }
 
       sessionPairs.forEach(([start, end]) => {
         let sessionMillis = end.getTime() - start.getTime();
-        const lunchOverlapStart = max([start, lunchStartTime]);
-        const lunchOverlapEnd = min([end, lunchEndTime]);
-        const lunchOverlap = Math.max(0, lunchOverlapEnd.getTime() - lunchOverlapStart.getTime());
-        sessionMillis -= lunchOverlap;
+        // La colación solo aplica a jornadas diurnas (en nocturno la ventana
+        // HH:mm del mismo día no representa la pausa real).
+        if (!isNight) {
+          const lunchOverlapStart = max([start, lunchStartTime]);
+          const lunchOverlapEnd = min([end, lunchEndTime]);
+          const lunchOverlap = Math.max(0, lunchOverlapEnd.getTime() - lunchOverlapStart.getTime());
+          sessionMillis -= lunchOverlap;
+        }
         totalMillis += sessionMillis;
       });
 
-      const lastOut = entries.filter(e => e.type === 'out').pop()?.dateObj;
+      const lastOut = sessionPairs.length > 0
+        ? sessionPairs[sessionPairs.length - 1][1]
+        : entries.filter(e => e.type === 'out').pop()?.dateObj;
       if (lastOut && lastOut > endWorkTime) {
         overtimeMillis = lastOut.getTime() - endWorkTime.getTime();
       }
@@ -194,7 +237,7 @@ export function useMonthlyAttendance(
         isAbsent: false,
       };
     },
-    [checkIsBusinessDay, shiftSchedule]
+    [checkIsBusinessDay, shiftSchedule, rotationStartDate]
   );
 
   useEffect(() => {
@@ -205,13 +248,52 @@ export function useMonthlyAttendance(
     const end = endOfMonth(new Date(year, month - 1));
     const monthDays = eachDayOfInterval({ start, end });
 
+    // Nocturno: se recolecta 1 día extra para parear la salida del último turno
+    // del mes (cae en la madrugada del día 1 siguiente).
+    const isNight = !!shiftSchedule?.isNightShift;
+    const collectEnd = isNight ? addDays(end, 1) : end;
+
     const userLogs = (attendanceLogs || []).filter((log: AttendanceLog) => {
       if (log.userId !== userId) return false;
       const logDate = new Date(log.timestamp);
-      return logDate >= start && logDate <= end;
+      return logDate >= start && logDate <= collectEnd;
     });
 
+    // Nocturno: parear sesiones cross-día (entrada→salida siguiente, máx 26 h)
+    // y atribuir cada sesión al día calendario de la ENTRADA.
+    let sessionsByDay: Map<string, { pairs: [Date, Date][]; logs: AttendanceLog[] }> | null = null;
+    if (isNight) {
+      sessionsByDay = new Map();
+      const sorted = [...userLogs].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      for (let i = 0; i < sorted.length; i++) {
+        const cur = sorted[i];
+        if (cur.type !== 'in') continue; // salidas sueltas: sin entrada que parear
+        const inDate = new Date(cur.timestamp);
+        const key = format(inDate, 'yyyy-MM-dd');
+        const bucket = sessionsByDay.get(key) || { pairs: [], logs: [] };
+        const next = sorted[i + 1];
+        if (next?.type === 'out') {
+          const outDate = new Date(next.timestamp);
+          if (outDate.getTime() - inDate.getTime() <= 26 * 3600000) {
+            bucket.pairs.push([inDate, outDate]);
+            bucket.logs.push(cur, next);
+            sessionsByDay.set(key, bucket);
+            i++; // la salida quedó consumida
+            continue;
+          }
+        }
+        bucket.logs.push(cur); // entrada sin salida: se muestra pero no suma horas
+        sessionsByDay.set(key, bucket);
+      }
+    }
+
     const dailySummaries = monthDays.map(day => {
+      if (sessionsByDay) {
+        const bucket = sessionsByDay.get(format(day, 'yyyy-MM-dd')) || { pairs: [], logs: [] };
+        return calculateDailySummary(bucket.logs, day, bucket.pairs);
+      }
       const logsForDay = userLogs.filter((log: AttendanceLog) =>
         isSameDay(new Date(log.timestamp), day)
       );
@@ -249,7 +331,7 @@ export function useMonthlyAttendance(
       },
     });
     setLoading(false);
-  }, [userId, year, month, attendanceLogs, calculateDailySummary, checkIsBusinessDay]);
+  }, [userId, year, month, attendanceLogs, calculateDailySummary, checkIsBusinessDay, shiftSchedule]);
 
   return { report, loading };
 }

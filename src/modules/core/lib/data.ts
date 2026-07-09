@@ -418,7 +418,7 @@ export interface ScanResult {
 
 // ── Contratos y Turnos (Minería) ─────────────────────────────────────────────
 
-export type ShiftType = '5x2' | '4x3' | '7x7' | '14x14' | '21x7' | 'custom';
+export type ShiftType = '5x2' | '4x3' | '4x4' | '7x7' | '10x10' | '14x14' | '21x7' | 'custom';
 
 export interface ShiftSchedule {
   id: string;
@@ -481,6 +481,9 @@ export interface ContractWorker {
   roleInContract?: string;
   startDate?: Date | string | null;
   endDate?: Date | string | null;
+  /** Día 1 del ciclo de rotación de ESTE trabajador (fecha de subida).
+   *  null = hereda rotationReferenceDate del turno. YYYY-MM-DD. */
+  rotationStartDate?: string | null;
   createdAt: Date;
 }
 

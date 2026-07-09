@@ -148,19 +148,23 @@ export async function addContractWorker(
   userId: string,
   shiftScheduleId: string | null,
   roleInContract: string | undefined,
+  rotationStartDate: string | null,
   { user, tenantId }: Context
 ): Promise<void> {
   if (!user || !tenantId) throw new Error('No autenticado.');
 
-  const { error } = await supabase
-    .from('contract_workers')
-    .insert({
-      tenant_id: tenantId,
-      contract_id: contractId,
-      user_id: userId,
-      shift_schedule_id: shiftScheduleId,
-      role_in_contract: roleInContract || null,
-    });
+  const payload: Record<string, any> = {
+    tenant_id: tenantId,
+    contract_id: contractId,
+    user_id: userId,
+    shift_schedule_id: shiftScheduleId,
+    role_in_contract: roleInContract || null,
+  };
+  // Ancla del ciclo de ESTE trabajador; se omite cuando no aplica para no
+  // romper el insert si la migración de la columna aún no se ejecuta.
+  if (shiftScheduleId && rotationStartDate) payload.rotation_start_date = rotationStartDate;
+
+  const { error } = await supabase.from('contract_workers').insert(payload);
 
   if (error) throw error;
 }
@@ -192,6 +196,7 @@ export async function updateContractWorker(
   if (data.roleInContract !== undefined) payload.role_in_contract = data.roleInContract;
   if (data.endDate !== undefined) payload.end_date = data.endDate;
   if (data.startDate !== undefined) payload.start_date = data.startDate;
+  if (data.rotationStartDate !== undefined) payload.rotation_start_date = data.rotationStartDate;
 
   const { error } = await supabase
     .from('contract_workers')

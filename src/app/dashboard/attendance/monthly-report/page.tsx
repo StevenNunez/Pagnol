@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAppState } from "@/modules/core/contexts/app-provider";
-import { useMonthlyAttendance } from "@/modules/core/hooks/use-attendance";
+import { useMonthlyAttendance, getWorkerShift } from "@/modules/core/hooks/use-attendance";
 import { es } from "date-fns/locale";
 import { format } from "date-fns";
 import jsPDF from "jspdf";
@@ -43,7 +43,7 @@ const TOPE_GRATIFICACION_ANUAL = IMM_TOPE * SUELDO_MINIMO;
 const TOPE_GRATIFICACION_MENSUAL = TOPE_GRATIFICACION_ANUAL / 12;
 
 export default function MonthlyReportPage() {
-  const { users, currentTenant } = useAppState();
+  const { users, currentTenant, contractWorkers, shiftSchedules } = useAppState();
   const { toast } = useToast();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
@@ -68,10 +68,20 @@ export default function MonthlyReportPage() {
     [users, selectedUserId]
   );
 
+  // Turno real del trabajador (asignación de contrato): los días hábiles,
+  // descansos y extras se calculan con SU ciclo (14x14, 7x7, …), no con la
+  // semana lunes-viernes por defecto.
+  const workerShift = useMemo(
+    () => (selectedUserId ? getWorkerShift(selectedUserId, contractWorkers, shiftSchedules) : null),
+    [selectedUserId, contractWorkers, shiftSchedules]
+  );
+
   const { report, loading } = useMonthlyAttendance(
     selectedUserId,
     selectedYear,
-    selectedMonth
+    selectedMonth,
+    workerShift?.shift ?? null,
+    workerShift?.rotationStartDate ?? null
   );
 
   useEffect(() => {
@@ -286,7 +296,15 @@ export default function MonthlyReportPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 <div className="lg:col-span-1 space-y-8">
                     <Card>
-                        <CardHeader><CardTitle>Resumen de Asistencia</CardTitle><CardDescription>Período: {format(report.period.start, "MMMM yyyy", { locale: es })}</CardDescription></CardHeader>
+                        <CardHeader>
+                            <CardTitle>Resumen de Asistencia</CardTitle>
+                            <CardDescription>
+                                Período: {format(report.period.start, "MMMM yyyy", { locale: es })}
+                                {workerShift
+                                    ? ` · Turno: ${workerShift.shift.name} (${workerShift.shift.shiftType})`
+                                    : " · Sin turno asignado (regla Lun–Vie)"}
+                            </CardDescription>
+                        </CardHeader>
                         <CardContent className="grid grid-cols-2 gap-4 text-center">
                              <div className="p-2 bg-muted rounded-lg"><p className="text-xs text-muted-foreground">Días Hábiles</p><p className="text-xl font-bold">{report.summary.totalBusinessDays}</p></div>
                              <div className="p-2 bg-muted rounded-lg"><p className="text-xs text-muted-foreground">Días Trabajados</p><p className="text-xl font-bold">{report.summary.workedDays}</p></div>

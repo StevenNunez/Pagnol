@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/modules/core/hooks/use-toast';
-import { useAuth } from '@/modules/core/contexts/app-provider';
+import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { loadBiometricModels, captureBiometrics } from '@/lib/biometricService';
 import { ROLES_ORDER } from '@/modules/core/lib/permissions';
 import { useAssignableRoles } from '@/modules/core/hooks/use-assignable-roles';
@@ -58,11 +58,24 @@ export function EnrollmentWizard({
 }: EnrollmentWizardProps) {
     const { toast } = useToast();
     const { user: currentUser } = useAuth();
+    const { contracts, shiftSchedules } = useAppState();
     const assignableRoles = useAssignableRoles();
 
     const [mode, setMode] = useState<EnrollmentMode>('choose');
     const [step, setStep] = useState<DesktopStep>('info');
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Contrato/turno al crear (Fase 2 Valar). Solo aplica a trabajadores nuevos:
+    // a los existentes se les gestiona desde la pestaña Contrato/RRHH del UserPanel.
+    const [contractId, setContractId] = useState('');
+    const [shiftScheduleId, setShiftScheduleId] = useState('');
+    const [rotationStartDate, setRotationStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const activeContracts = contracts.filter(c => c.status === 'active');
+    // Turno rotativo (no 5x2) = pide fecha de subida (día 1 del ciclo del trabajador).
+    const selectedShiftIsRotating = (() => {
+        const s = shiftSchedules.find(sh => sh.id === shiftScheduleId);
+        return !!s && s.shiftType !== '5x2';
+    })();
 
     // Camera / KYC state
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -114,6 +127,9 @@ export function EnrollmentWizard({
             setQrCompleted(false);
             setQrPolling(false);
             setQrKycImages({ face: null, idFront: null, idBack: null });
+            setContractId('');
+            setShiftScheduleId('');
+            setRotationStartDate(new Date().toISOString().slice(0, 10));
         }
     }, [isOpen, selectedUser, reset, generateInternalId]);
 
@@ -293,7 +309,16 @@ export function EnrollmentWizard({
                 await onEnrollUser(selectedUser.id, { ...kycPayload, internalId: data.internalId });
                 toast({ title: 'Enrolamiento Completado', description: `${selectedUser.name} ha sido certificado exitosamente.` });
             } else {
-                await onAddUser({ ...data, ...kycPayload });
+                const result = await onAddUser({
+                    ...data,
+                    ...kycPayload,
+                    contractId: contractId || null,
+                    shiftScheduleId: contractId ? (shiftScheduleId || null) : null,
+                    rotationStartDate: contractId && selectedShiftIsRotating ? (rotationStartDate || null) : null,
+                });
+                if (result?.warning) {
+                    toast({ variant: 'destructive', title: 'Atención', description: result.warning });
+                }
                 toast({ title: 'Trabajador Registrado', description: `${data.name} ha sido agregado al sistema.` });
             }
             handleClose();
@@ -458,6 +483,56 @@ export function EnrollmentWizard({
                                     readOnlyIdentity={!!selectedUser}
                                     roleDisabled={!!selectedUser}
                                 />
+                                {/* Contrato/faena de destino (opcional). Panel de fondo claro fijo:
+                                    se fuerza text-slate-900 para que no desaparezca en modo noche. */}
+                                {!selectedUser && (
+                                    <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 space-y-4">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                            Contrato / Faena de destino (opcional)
+                                        </p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Contrato</label>
+                                                <select
+                                                    value={contractId}
+                                                    onChange={e => { setContractId(e.target.value); if (!e.target.value) setShiftScheduleId(''); }}
+                                                    className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                                                >
+                                                    <option value="">Sin contrato (pool general)</option>
+                                                    {activeContracts.map(c => (
+                                                        <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Turno</label>
+                                                <select
+                                                    value={shiftScheduleId}
+                                                    onChange={e => setShiftScheduleId(e.target.value)}
+                                                    disabled={!contractId}
+                                                    className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 disabled:opacity-50"
+                                                >
+                                                    <option value="">Sin turno definido</option>
+                                                    {shiftSchedules.map(s => (
+                                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            {selectedShiftIsRotating && (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Inicio de ciclo (fecha de subida)</label>
+                                                    <input
+                                                        type="date"
+                                                        value={rotationStartDate}
+                                                        onChange={e => setRotationStartDate(e.target.value)}
+                                                        className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                                                    />
+                                                    <p className="text-[10px] text-slate-400">Día 1 del ciclo de este trabajador (permite grupos desfasados).</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="flex justify-between items-center pt-4">
                                     {!selectedUser && (
                                         <Button

@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { ClientContractFilter, contractIdsOfClient, CC_ALL, CC_POOL } from "@/components/client-contract-filter";
 import {
     ArrowDownRight, ArrowLeftRight, ArrowUpRight, FileDown, Loader2, Package, PieChart, Search, Warehouse as WarehouseIcon,
 } from "lucide-react";
@@ -40,7 +41,8 @@ export default function ContractStockReportPage() {
     const { materialStocks, contracts, warehouses, materials, stockMovements } = useAppState();
     const { toast } = useToast();
 
-    const [contractFilter, setContractFilter] = useState(ALL);
+    const [clientFilter, setClientFilter] = useState(CC_ALL);
+    const [contractFilter, setContractFilter] = useState(CC_ALL);
     const [warehouseFilter, setWarehouseFilter] = useState(ALL);
     const [searchTerm, setSearchTerm] = useState("");
     const [dateFrom, setDateFrom] = useState(() => isoDay(new Date(Date.now() - 30 * 24 * 3600 * 1000)));
@@ -65,10 +67,28 @@ export default function ContractStockReportPage() {
     const warehouseLabel = (wid: string | null) =>
         wid === null ? "Sin pañol" : warehousesMap.get(wid)?.name || "Pañol eliminado";
 
+    // Predicado de la cascada Cliente→Contrato: contrato puntual (o pool) manda;
+    // si solo hay cliente, la unión de sus contratos. null = sin filtro.
+    const allowedContract = useMemo(() => {
+        if (contractFilter !== CC_ALL) {
+            return contractFilter === CC_POOL
+                ? (cid: string | null) => cid === null
+                : (cid: string | null) => cid === contractFilter;
+        }
+        if (clientFilter !== CC_ALL) {
+            const ids = contractIdsOfClient((contracts || []) as Contract[], clientFilter);
+            return (cid: string | null) => cid !== null && ids.has(cid);
+        }
+        return null;
+    }, [contractFilter, clientFilter, contracts]);
+
     // Filas del ledger con qty > 0 (base de matriz, detalle y valorización).
+    // Escopadas por la cascada: la página entera pasa a ser "vista general /
+    // por cliente / por contrato" (tarjetas de valorización y matriz incluidas).
     const ledger = useMemo(
-        () => ((materialStocks || []) as MaterialStock[]).filter((s) => Number(s.qty) > 0),
-        [materialStocks],
+        () => ((materialStocks || []) as MaterialStock[])
+            .filter((s) => Number(s.qty) > 0 && (!allowedContract || allowedContract(s.contractId))),
+        [materialStocks, allowedContract],
     );
 
     // Columnas de contrato presentes en el ledger (contratos con existencias + pool).
@@ -155,10 +175,7 @@ export default function ContractStockReportPage() {
                 value: mat?.unitCost ? Number(s.qty) * mat.unitCost : null,
             };
         });
-        if (contractFilter !== ALL) {
-            const target = contractFilter === POOL ? null : contractFilter;
-            rows = rows.filter((r) => r.contractId === target);
-        }
+        // El filtro Cliente/Contrato ya viene aplicado en `ledger`.
         if (warehouseFilter !== ALL) {
             const target = warehouseFilter === POOL ? null : warehouseFilter;
             rows = rows.filter((r) => r.warehouseId === target);
@@ -168,7 +185,7 @@ export default function ContractStockReportPage() {
             rows = rows.filter((r) => r.name.toLowerCase().includes(q));
         }
         return rows.sort((a, b) => a.name.localeCompare(b.name) || (b.qty - a.qty));
-    }, [ledger, materialsMap, contractFilter, warehouseFilter, searchTerm]);
+    }, [ledger, materialsMap, warehouseFilter, searchTerm]);
 
     // ── Kardex por contrato (período) ─────────────────────────────────────────
     const kardex = useMemo(() => {
@@ -178,9 +195,8 @@ export default function ContractStockReportPage() {
             const d = new Date(m.date);
             return d >= from && d <= to;
         });
-        if (contractFilter !== ALL) {
-            const target = contractFilter === POOL ? null : contractFilter;
-            rows = rows.filter((m) => (m.contractId ?? null) === target);
+        if (allowedContract) {
+            rows = rows.filter((m) => allowedContract(m.contractId ?? null));
         }
         if (warehouseFilter !== ALL) {
             const target = warehouseFilter === POOL ? null : warehouseFilter;
@@ -194,7 +210,7 @@ export default function ContractStockReportPage() {
         const inflow = rows.filter((m) => m.quantityChange > 0).reduce((a, m) => a + m.quantityChange, 0);
         const outflow = rows.filter((m) => m.quantityChange < 0).reduce((a, m) => a + Math.abs(m.quantityChange), 0);
         return { rows, inflow, outflow, net: inflow - outflow };
-    }, [stockMovements, contractFilter, warehouseFilter, searchTerm, dateFrom, dateTo]);
+    }, [stockMovements, allowedContract, warehouseFilter, searchTerm, dateFrom, dateTo]);
 
     // ── Export Excel (3 hojas) ────────────────────────────────────────────────
     const handleExport = async () => {
@@ -426,12 +442,14 @@ export default function ContractStockReportPage() {
         },
     ];
 
-    const activeContractsForFilter = useMemo(
-        () => ((contracts || []) as Contract[])
-            .filter((c) => c.status === "active" || ledger.some((s) => s.contractId === c.id))
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        [contracts, ledger],
-    );
+    // Ofrece también contratos cerrados que aún tienen existencias en el ledger.
+    const contractHasStock = useMemo(() => {
+        const ids = new Set<string>();
+        for (const s of (materialStocks || []) as MaterialStock[]) {
+            if (Number(s.qty) > 0 && s.contractId) ids.add(s.contractId);
+        }
+        return ids;
+    }, [materialStocks]);
 
     return (
         <PageShell
@@ -449,18 +467,16 @@ export default function ContractStockReportPage() {
                                 className="pl-9 rounded-xl"
                             />
                         </div>
-                        <Select value={contractFilter} onValueChange={setContractFilter}>
-                            <SelectTrigger className="w-[210px] rounded-xl">
-                                <SelectValue placeholder="Contrato" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value={ALL}>Todos los contratos</SelectItem>
-                                <SelectItem value={POOL}>Pool central</SelectItem>
-                                {activeContractsForFilter.map((c) => (
-                                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        <ClientContractFilter
+                            clientId={clientFilter}
+                            contractId={contractFilter}
+                            onClientChange={setClientFilter}
+                            onContractChange={setContractFilter}
+                            includePool
+                            poolLabel="Pool central"
+                            triggerClassName="w-[200px] rounded-xl"
+                            contractPredicate={(c) => c.status === "active" || contractHasStock.has(c.id)}
+                        />
                         <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
                             <SelectTrigger className="w-[190px] rounded-xl">
                                 <SelectValue placeholder="Pañol" />

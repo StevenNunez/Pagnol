@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAppState } from "@/modules/core/contexts/app-provider";
-import { useMonthlyAttendance } from "@/modules/core/hooks/use-attendance";
+import { useMonthlyAttendance, getWorkerShift } from "@/modules/core/hooks/use-attendance";
 import { es } from "date-fns/locale";
 import { format } from "date-fns";
 
@@ -32,15 +32,24 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => ({
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
 export default function OvertimeReportPage() {
-  const { users } = useAppState();
+  const { users, contractWorkers, shiftSchedules } = useAppState();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
+  // Turno real del trabajador: las extras se calculan contra SU ciclo/horario
+  // (trabajar en día de descanso del ciclo = todo extra), no contra Lun–Vie.
+  const workerShift = useMemo(
+    () => (selectedUserId ? getWorkerShift(selectedUserId, contractWorkers, shiftSchedules) : null),
+    [selectedUserId, contractWorkers, shiftSchedules]
+  );
+
   const { report, loading } = useMonthlyAttendance(
     selectedUserId,
     selectedYear,
-    selectedMonth
+    selectedMonth,
+    workerShift?.shift ?? null,
+    workerShift?.rotationStartDate ?? null
   );
   
   const selectedUser = useMemo(
@@ -142,7 +151,12 @@ export default function OvertimeReportPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Resumen Mensual de {selectedUser.name}</CardTitle>
-                    <CardDescription>Período: {format(report.period.start, "MMMM yyyy", { locale: es })}</CardDescription>
+                    <CardDescription>
+                        Período: {format(report.period.start, "MMMM yyyy", { locale: es })}
+                        {workerShift
+                            ? ` · Turno: ${workerShift.shift.name} (${workerShift.shift.shiftType})`
+                            : " · Sin turno asignado (regla Lun–Vie)"}
+                    </CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                     <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">

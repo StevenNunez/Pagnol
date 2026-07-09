@@ -39,7 +39,9 @@ import {
   parse,
   max,
   min,
+  addDays,
 } from "date-fns";
+import { getWorkerShift, isWorkDay, isRestDay } from "@/modules/core/hooks/use-attendance";
 import { es } from "date-fns/locale";
 import {
   Table,
@@ -83,7 +85,7 @@ const WEEK_START_ON = 1; // Lunes
 const HOLIDAY_MD: string[] = ["01-01","05-01","05-21","06-29","07-16","08-15","09-18","09-19","10-12","10-31","11-01","12-08","12-25"];
 
 export default function AttendanceReportPage() {
-  const { users, attendanceLogs, can } = useAppState();
+  const { users, attendanceLogs, contractWorkers, shiftSchedules, can } = useAppState();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -104,12 +106,34 @@ export default function AttendanceReportPage() {
 
   const weekDays = useMemo(() => eachDayOfInterval(weekInterval), [weekInterval]);
 
+  // Turno real del trabajador: el semanal aplica SU ciclo y horario cuando existe;
+  // sin turno mantiene la regla de oficina (Lun–Vie, viernes corto, sábado = extra).
+  const workerShift = useMemo(
+    () => (selectedUserId ? getWorkerShift(selectedUserId, contractWorkers, shiftSchedules) : null),
+    [selectedUserId, contractWorkers, shiftSchedules]
+  );
+
   const calculateDailySummary = useCallback(
     (logs: AttendanceLog[], day: Date): DailySummary => {
       const isHoliday = HOLIDAY_MD.includes(format(day, "MM-dd"));
       const dayOfWeek = getDay(day);
       const isSaturday = dayOfWeek === 6;
       const isFriday = dayOfWeek === 5;
+
+      const shift = workerShift?.shift ?? null;
+      const anchor = workerShift?.rotationStartDate ?? null;
+      // Con turno: el ciclo manda. Sin turno: regla de oficina clásica.
+      const isScheduledWork = shift
+        ? isWorkDay(day, shift, anchor)
+        : (!isHoliday && !isSaturday);
+      const isRest = shift ? isRestDay(day, shift, anchor) : false;
+
+      const dayLabel = (() => {
+        const base = format(day, "EEEE", { locale: es });
+        if (shift && isRest) return `${base} (Descanso)`;
+        if (isHoliday) return `${base} (Feriado)`;
+        return base;
+      })();
 
       const entries = logs
         .filter((l: AttendanceLog) => l.timestamp)
@@ -123,26 +147,27 @@ export default function AttendanceReportPage() {
       if (entries.length === 0) {
         return {
           date: format(day, "dd/MM/yyyy"),
-          dayName: isHoliday
-            ? `${format(day, "EEEE", { locale: es })} (Feriado)`
-            : format(day, "EEEE", { locale: es }),
+          dayName: dayLabel,
           dayDate: day,
           entries: [],
           totalHours: 0,
           overtimeHours: "00:00",
           delayMinutes: 0,
-          isAbsent: true,
+          // Un día de descanso del ciclo sin marcas NO es ausencia.
+          isAbsent: isScheduledWork,
         };
       }
 
-      const startWorkTime = parse(WORK_SCHEDULE.weekdays.start, "HH:mm", day);
-      const endWorkTime = parse(
-        isFriday ? WORK_SCHEDULE.friday.end : WORK_SCHEDULE.weekdays.end,
+      const startWorkTime = parse(shift?.workStart ?? WORK_SCHEDULE.weekdays.start, "HH:mm", day);
+      let endWorkTime = parse(
+        shift ? shift.workEnd : (isFriday ? WORK_SCHEDULE.friday.end : WORK_SCHEDULE.weekdays.end),
         "HH:mm",
         day
       );
-      const lunchStartTime = parse(WORK_SCHEDULE.lunchBreak.start, "HH:mm", day);
-      const lunchEndTime = parse(WORK_SCHEDULE.lunchBreak.end, "HH:mm", day);
+      // Nocturno: la jornada termina al día siguiente.
+      if (shift?.isNightShift && endWorkTime <= startWorkTime) endWorkTime = addDays(endWorkTime, 1);
+      const lunchStartTime = parse(shift?.lunchStart ?? WORK_SCHEDULE.lunchBreak.start, "HH:mm", day);
+      const lunchEndTime = parse(shift?.lunchEnd ?? WORK_SCHEDULE.lunchBreak.end, "HH:mm", day);
 
       let totalMillis = 0;
       let delayMinutes = 0;
@@ -151,13 +176,13 @@ export default function AttendanceReportPage() {
       const effectiveStart = max([entries[0].dateObj, startWorkTime]);
       const lastOut = entries[entries.length - 1];
 
-      if (!isHoliday && !isSaturday && entries[0].dateObj > startWorkTime) {
+      if (isScheduledWork && entries[0].dateObj > startWorkTime) {
         delayMinutes = Math.round(
           (entries[0].dateObj.getTime() - startWorkTime.getTime()) / 60000
         );
       }
 
-      if (!isHoliday && !isSaturday && lastOut.dateObj > endWorkTime) {
+      if (isScheduledWork && lastOut.dateObj > endWorkTime) {
         overtimeMillis = Math.min(
           lastOut.dateObj.getTime() - endWorkTime.getTime(),
           2 * 60 * 60 * 1000
@@ -181,7 +206,8 @@ export default function AttendanceReportPage() {
       }
       totalMillis = Math.max(0, morningMillis) + Math.max(0, afternoonMillis);
 
-      if (isSaturday || isHoliday) {
+      // Día NO programado (descanso del ciclo, sábado o feriado): todo cuenta como extra.
+      if (!isScheduledWork) {
         totalMillis = 0;
         overtimeMillis = Math.max(0, lastOut.dateObj.getTime() - effectiveStart.getTime());
       }
@@ -196,9 +222,7 @@ export default function AttendanceReportPage() {
 
       return {
         date: format(day, "dd/MM/yyyy"),
-        dayName: isHoliday
-          ? `${format(day, "EEEE", { locale: es })} (Feriado)`
-          : format(day, "EEEE", { locale: es }),
+        dayName: dayLabel,
         dayDate: day,
         entries: entries.map((l: any) => ({
           ...l,
@@ -210,7 +234,7 @@ export default function AttendanceReportPage() {
         isAbsent: false,
       };
     },
-    []
+    [workerShift]
   );
 
   const weeklyReport = useMemo((): DailySummary[] => {
@@ -399,6 +423,9 @@ export default function AttendanceReportPage() {
               <CardTitle>Resumen Semanal de {selectedUser.name}</CardTitle>
               <CardDescription>
                 Total de horas trabajadas, atrasos y horas extras para la semana seleccionada.
+                {workerShift
+                  ? ` Turno: ${workerShift.shift.name} (${workerShift.shift.shiftType}).`
+                  : " Sin turno asignado (regla Lun–Vie)."}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">

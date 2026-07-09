@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
         const { email, password, name, role, tenantId: bodyTenantId, internalId, rut,
                 biometric_template, kyc_face_image, kyc_id_front, kyc_id_back,
-                enrolledByName } = await request.json();
+                enrolledByName, contractId, shiftScheduleId, rotationStartDate } = await request.json();
 
         if (!email) {
             return NextResponse.json({ error: 'Datos incompletos' }, { status: 400 });
@@ -101,7 +101,53 @@ export async function POST(request: Request) {
             }
         }
 
-        return NextResponse.json({ success: true, userId: newUser.id });
+        // Asignación a contrato al crear (Fase 2 Valar). Se valida que contrato y turno
+        // pertenezcan al tenant porque el service role salta RLS. No es fatal: el usuario
+        // ya existe; si falla se devuelve `warning` para que la UI lo muestre.
+        let warning: string | null = null;
+        if (contractId) {
+            const { data: contractRow } = await admin
+                .from('contracts')
+                .select('id')
+                .eq('id', contractId)
+                .eq('tenant_id', tenantId)
+                .maybeSingle();
+
+            if (!contractRow) {
+                warning = 'El contrato seleccionado no existe en esta empresa; el trabajador quedó sin contrato asignado.';
+            } else {
+                let shiftId: string | null = null;
+                if (shiftScheduleId) {
+                    const { data: shiftRow } = await admin
+                        .from('shift_schedules')
+                        .select('id')
+                        .eq('id', shiftScheduleId)
+                        .eq('tenant_id', tenantId)
+                        .maybeSingle();
+                    shiftId = shiftRow?.id ?? null;
+                }
+                const cwPayload: Record<string, any> = {
+                    tenant_id: tenantId,
+                    contract_id: contractId,
+                    user_id: newUser.id,
+                    shift_schedule_id: shiftId,
+                };
+                // Ancla del ciclo del trabajador (solo con turno); se omite si no viene
+                // para no romper el insert antes de aplicar la migración de la columna.
+                if (shiftId && typeof rotationStartDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rotationStartDate)) {
+                    cwPayload.rotation_start_date = rotationStartDate;
+                }
+                const { error: cwError } = await admin
+                    .from('contract_workers')
+                    .insert(cwPayload);
+                if (cwError) {
+                    console.error('[users/create] contract_workers insert error:', cwError.message);
+                    warning = `El usuario se creó pero no se pudo asignar al contrato: ${cwError.message}`;
+                }
+            }
+        }
+
+        return NextResponse.json({ success: true, userId: newUser.id, ...(warning ? { warning } : {}) });
     } catch (err: any) {
         console.error('[users/create]', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });

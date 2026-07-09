@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { QrScannerDialog } from "@/components/qr-scanner-dialog";
+import { ClientContractFilter, contractIdsOfClient, CC_ALL, CC_POOL } from "@/components/client-contract-filter";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { isRestDay } from "@/modules/core/hooks/use-attendance";
 import { ScanResultCard } from "@/components/attendance/scan-result-card";
@@ -53,7 +54,8 @@ export default function AttendancePage() {
   const [todayDate, setTodayDate] = useState(new Date());
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<WorkerStatus | 'all'>('all');
-  const [selectedContractId, setSelectedContractId] = useState<string>('all');
+  const [selectedClientId, setSelectedClientId] = useState<string>(CC_ALL);
+  const [selectedContractId, setSelectedContractId] = useState<string>(CC_ALL);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
@@ -63,15 +65,25 @@ export default function AttendancePage() {
     setToday(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
   }, []);
 
-  // Workers to show depending on contract filter
+  // Dotación visible según la cascada Cliente→Contrato: contrato puntual manda;
+  // POOL = sin contrato asignado; solo cliente = unión de sus contratos.
   const scopedUsers = useMemo((): User[] => {
     const relevantUsers = (users || []).filter((u: User) => u.role !== 'guardia' && u.role !== 'super-admin');
-    if (selectedContractId === 'all') return relevantUsers;
+    if (selectedContractId === CC_ALL && selectedClientId === CC_ALL) return relevantUsers;
+
+    const activeAssignments = contractWorkers.filter(cw => !cw.endDate);
+    if (selectedContractId === CC_POOL) {
+      const assignedIds = new Set(activeAssignments.map(cw => cw.userId));
+      return relevantUsers.filter(u => !assignedIds.has(u.id));
+    }
+    const allowedContracts = selectedContractId !== CC_ALL
+      ? new Set([selectedContractId])
+      : contractIdsOfClient(contracts, selectedClientId);
     const contractUserIds = new Set(
-      contractWorkers.filter(cw => cw.contractId === selectedContractId && !cw.endDate).map(cw => cw.userId)
+      activeAssignments.filter(cw => allowedContracts.has(cw.contractId)).map(cw => cw.userId)
     );
     return relevantUsers.filter(u => contractUserIds.has(u.id));
-  }, [users, contractWorkers, selectedContractId]);
+  }, [users, contractWorkers, contracts, selectedClientId, selectedContractId]);
 
   const workerRows = useMemo((): WorkerRow[] => {
     const todayLogs = (attendanceLogs || []).filter((l: AttendanceLog) => l.date === today);
@@ -82,7 +94,7 @@ export default function AttendancePage() {
       const shift = cw?.shiftScheduleId ? shiftSchedules.find(s => s.id === cw.shiftScheduleId) : null;
 
       // Rest day override
-      if (shift && isRestDay(todayDate, shift)) {
+      if (shift && isRestDay(todayDate, shift, cw?.rotationStartDate)) {
         return { user: u, status: 'rest_day', firstIn: null, lastOut: null, totalLogs: 0, shiftName: shift.name };
       }
 
@@ -174,32 +186,18 @@ export default function AttendancePage() {
         </Button>
       </div>
 
-      {/* Contract filter */}
+      {/* Filtro en cascada Cliente → Contrato (POOL = personal sin contrato asignado) */}
       {activeContracts.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => setSelectedContractId('all')}
-            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
-              selectedContractId === 'all'
-                ? 'bg-foreground text-background border-foreground'
-                : 'bg-transparent text-muted-foreground border-border hover:border-border'
-            }`}
-          >
-            Todos los contratos
-          </button>
-          {activeContracts.map(c => (
-            <button
-              key={c.id}
-              onClick={() => setSelectedContractId(c.id)}
-              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
-                selectedContractId === c.id
-                  ? 'bg-foreground text-background border-foreground'
-                  : 'bg-transparent text-muted-foreground border-border hover:border-border'
-              }`}
-            >
-              {c.name}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <ClientContractFilter
+            clientId={selectedClientId}
+            contractId={selectedContractId}
+            onClientChange={setSelectedClientId}
+            onContractChange={setSelectedContractId}
+            includePool
+            poolLabel="Sin contrato asignado"
+            triggerClassName="w-full sm:w-[220px] rounded-xl h-9 text-xs font-bold"
+          />
         </div>
       )}
 

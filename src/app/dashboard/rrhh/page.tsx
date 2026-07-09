@@ -7,13 +7,13 @@ import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAppState } from '@/modules/core/contexts/app-provider';
-import { Users, ClipboardList, FileWarning, ArrowRight, ShieldOff, AlertTriangle } from 'lucide-react';
+import { Users, ClipboardList, FileWarning, ArrowRight, ShieldOff, AlertTriangle, Briefcase, RotateCcw } from 'lucide-react';
 import { differenceInCalendarDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { LEAVE_TYPE_LABEL } from '@/modules/core/lib/hr-labels';
 
 export default function RrhhDashboard() {
-  const { users, leaveRequests, hrDocuments, can } = useAppState();
+  const { users, leaveRequests, hrDocuments, contracts, shiftSchedules, can } = useAppState();
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
@@ -46,6 +46,12 @@ export default function RrhhDashboard() {
         <KpiCard icon={<Users className="h-5 w-5" />} label="Empleados activos" value={String(activeEmployees.length)} href="/dashboard/rrhh/empleados" />
         <KpiCard icon={<ClipboardList className="h-5 w-5" />} label="Solicitudes pendientes" value={String(pendingRequests.length)} href="/dashboard/rrhh/solicitudes" tone={pendingRequests.length > 0 ? 'warning' : undefined} />
         <KpiCard icon={<FileWarning className="h-5 w-5" />} label="Documentos por vencer" value={String(expiringDocs.length)} href="/dashboard/rrhh/documentos" tone={expiringDocs.length > 0 ? 'warning' : undefined} />
+        {can('contracts:manage') && (
+          <KpiCard icon={<Briefcase className="h-5 w-5" />} label="Contratos activos" value={String((contracts || []).filter((c) => c.status === 'active').length)} href="/dashboard/rrhh/contratos" />
+        )}
+        {can('shifts:manage') && (
+          <KpiCard icon={<RotateCcw className="h-5 w-5" />} label="Turnos definidos" value={String((shiftSchedules || []).length)} href="/dashboard/rrhh/turnos" />
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

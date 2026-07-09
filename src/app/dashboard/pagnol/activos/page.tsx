@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import { QRWithPagnolLogo } from '@/components/qr-with-pagnol-logo';
 import { ContractStockBreakdown } from '@/components/contract-stock-breakdown';
+import { ClientContractFilter, contractIdsOfClient } from '@/components/client-contract-filter';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { generateStrategicReport } from '@/actions/ask-ferro';
 import ReactMarkdown from 'react-markdown';
@@ -156,6 +157,7 @@ export default function ActivosPage() {
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [selectedUseType, setSelectedUseType] = useState<string>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL'); // ALL | categoryId
+  const [selectedClient, setSelectedClient] = useState<string>('ALL'); // ALL | clientId (cascada Cliente→Contrato)
   const [selectedContract, setSelectedContract] = useState<string>('ALL'); // ALL | POOL | contractId
   const [segment, setSegment] = useState<'all' | 'assets' | 'consumables'>('all'); // segmento Activos/Consumibles
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -401,24 +403,25 @@ export default function ActivosPage() {
     [requests, returnRequests, users]
   );
 
-  // Contratos activos para el filtro "Contrato" (dimensión de existencias).
-  const activeContractsForFilter = useMemo(
-    () => (contracts || []).filter((c: any) => c.status === 'active').sort((a: any, b: any) => a.name.localeCompare(b.name)),
-    [contracts]
-  );
-
-  // Materiales con existencias (>0) en el contrato seleccionado (o pool central).
+  // Materiales con existencias (>0) según la cascada Cliente→Contrato:
+  // contrato puntual (o pool central) manda; si solo hay cliente, la unión de sus contratos.
   const materialIdsInContract = useMemo(() => {
-    if (selectedContract === 'ALL') return null;
+    if (selectedContract === 'ALL' && selectedClient === 'ALL') return null;
+    let allowed: (cid: string | null) => boolean;
+    if (selectedContract !== 'ALL') {
+      allowed = selectedContract === 'POOL'
+        ? (cid) => cid === null
+        : (cid) => cid === selectedContract;
+    } else {
+      const clientContracts = contractIdsOfClient(contracts || [], selectedClient);
+      allowed = (cid) => cid !== null && clientContracts.has(cid);
+    }
     const ids = new Set<string>();
     (materialStocks || []).forEach((s: any) => {
-      if (s.qty <= 0) return;
-      if (selectedContract === 'POOL' ? s.contractId === null : s.contractId === selectedContract) {
-        ids.add(s.materialId);
-      }
+      if (s.qty > 0 && allowed(s.contractId)) ids.add(s.materialId);
     });
     return ids;
-  }, [materialStocks, selectedContract]);
+  }, [materialStocks, selectedContract, selectedClient, contracts]);
 
   // Filtrado base (todos los filtros MENOS el segmento activos/consumibles).
   const baseFilteredAssets = useMemo(() => {
@@ -457,7 +460,7 @@ export default function ActivosPage() {
   useEffect(() => {
     setVisibleCount(24);
     setListPage(0);
-  }, [debouncedFilter, selectedStatus, selectedClass, selectedUseType, selectedCategory, showOverdueOnly, selectedContract, segment]);
+  }, [debouncedFilter, selectedStatus, selectedClass, selectedUseType, selectedCategory, showOverdueOnly, selectedClient, selectedContract, segment]);
 
   const openQrModal = (asset: Asset) => {
     setQrAsset(asset);
@@ -858,20 +861,19 @@ export default function ActivosPage() {
             </Select>
           </div>
 
-          <div className="flex flex-col space-y-2">
-            <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1">Contrato</label>
-            <Select value={selectedContract} onValueChange={setSelectedContract}>
-              <SelectTrigger className="bg-muted/50 border rounded-xl px-4 py-2 h-10 text-[10px] font-bold uppercase tracking-widest transition-all w-full sm:w-48"><SelectValue /></SelectTrigger>
-              <SelectContent className="rounded-xl shadow-2xl border-none">
-                <SelectItem value="ALL">TODOS LOS CONTRATOS</SelectItem>
-                <SelectItem value="POOL">POOL CENTRAL (S/CONTRATO)</SelectItem>
-                {activeContractsForFilter.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          <ClientContractFilter
+            clientId={selectedClient}
+            contractId={selectedContract}
+            onClientChange={setSelectedClient}
+            onContractChange={setSelectedContract}
+            includePool
+            poolLabel="Pool central (s/contrato)"
+            showLabels
+            triggerClassName="bg-muted/50 border rounded-xl px-4 py-2 h-10 text-[10px] font-bold uppercase tracking-widest transition-all w-full sm:w-48"
+          />
 
           <Button
-            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setSelectedCategory('ALL'); setSelectedContract('ALL'); setFilter(''); setSegment('all'); }}
+            onClick={() => { setSelectedStatus('ALL'); setSelectedClass('ALL'); setSelectedUseType('ALL'); setSelectedCategory('ALL'); setSelectedClient('ALL'); setSelectedContract('ALL'); setFilter(''); setSegment('all'); }}
             variant="ghost"
             className="h-10 px-4 text-[9px] font-black text-muted-foreground rounded-xl hover:bg-muted transition-all uppercase tracking-widest flex items-center gap-2"
           >

@@ -75,6 +75,9 @@ export async function addUser(data: any, { user, tenantId }: Context) {
             kyc_id_front: data.kyc_id_front || null,
             kyc_id_back: data.kyc_id_back || null,
             enrolledByName: user?.name || 'System',
+            contractId: data.contractId || null,
+            shiftScheduleId: data.shiftScheduleId || null,
+            rotationStartDate: data.rotationStartDate || null,
         }),
     });
 

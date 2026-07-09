@@ -47,6 +47,97 @@ Cambios en el árbol de trabajo, aún sin commit/push.
     la cadena `@genkit-ai`/`@opentelemetry` (transitivas, sin runtime expuesto) — evaluar aparte.
 
 ### Agregado
+- **RRHH — Turnos y Contratos en su propio módulo.** El rol `recursos-humanos` ya tenía
+  los permisos (`shifts:manage`, `contracts:manage`) pero la gestión vivía escondida bajo
+  Asistencia: podía pero no tenía cómo llegar. Ahora su sidebar RRHH incluye **Contratos**
+  y **Turnos** (rutas espejo `/dashboard/rrhh/contratos` y `/dashboard/rrhh/turnos` que
+  re-exportan las páginas de Asistencia — fuente única, cero duplicación, y se mantiene el
+  contexto del módulo RRHH), más dos tarjetas de acceso en el Panel RRHH ("Contratos
+  activos" y "Turnos definidos"), gated por permiso. Su flujo completo queda dentro del
+  módulo: crear turnos → crear contratos → asignar contrato+turno+fecha de subida por
+  empleado (pestaña Contrato/RRHH del panel de usuario).
+- **Turnos acorde a asistencia (4×4, 7×7, 14×14, …)** — el motor de ciclos existía pero
+  estaba DESCONECTADO de los reportes; ahora el sistema de turnos funciona de punta a punta:
+  - **Ancla de ciclo POR TRABAJADOR** (`contract_workers.rotation_start_date`, migración
+    `20260709000000` — APLICADA 2026-07-09; persistencia verificada end-to-end con
+    recarga): el turno define el patrón y cada trabajador
+    su "fecha de subida". Un solo turno "14×14" sirve para grupos desfasados (A sube cuando
+    B baja); null hereda la referencia del turno (retrocompatible). El campo aparece al
+    asignar turno rotativo en UserPanel, ficha de contrato y wizard de enrolamiento, y es
+    editable inline en las asignaciones existentes. Los inserts omiten la columna cuando
+    no aplica, así nada se rompe antes de aplicar la migración (solo no persiste el ancla).
+  - **Reportes conectados al turno real** (antes `getWorkerShift()` existía y NADIE lo
+    llamaba): Liquidación, Horas Extras y Reporte Semanal ahora resuelven el turno del
+    trabajador y calculan con SU ciclo — descanso del ciclo no es ausencia, trabajar en
+    descanso/sábado/feriado cuenta como extra, y el encabezado indica qué regla se aplicó
+    ("Turno: X (14x14)" o "Sin turno asignado (regla Lun–Vie)"). Sin turno todo se
+    comporta exactamente como antes.
+  - **Turno nocturno que cruza medianoche**: en el cálculo mensual las marcas se parean
+    por sesión (entrada→salida siguiente, máx 26 h) atribuida al día de la ENTRADA, y la
+    jornada termina al día siguiente (20:00→08:00). Colación solo descuenta en diurno.
+    Limitación conocida: el detalle del Reporte Semanal muestra la salida nocturna en el
+    día calendario en que ocurrió.
+  - **Presets nuevos 4×4 y 10×10** en Gestión de Turnos (además de 5×2/4×3/7×7/14×14/21×7/
+    personalizado).
+  - **`<ShiftCycleCalendar>`** (`src/components/shift-cycle-calendar.tsx`): mini-calendario
+    del mes con días trabaja/descanso pintados y navegación — en la tarjeta de cada turno
+    (reemplaza la tira lineal) y como vista previa al asignar turno con fecha de subida.
+  - **Bug latente corregido:** el mapper de `shift_schedules` ahora normaliza los `time`
+    de Postgres ("08:00:00" → "08:00"); los cálculos parsean "HH:mm" y habrían fallado
+    silenciosamente al conectar los turnos. También se corrigió otro `SelectItem value=""`
+    (crash Radix al abrir el dropdown de turno en la ficha de contrato).
+- **Configuración → Clientes y Contratos** (cierre de la iniciativa Valar: UI dedicada de
+  administración de la jerarquía Empresa → Cliente → Contrato). Página nueva
+  `/dashboard/configuracion/clientes` con entrada propia en el sidebar del módulo
+  Configuración (gated `module_settings:view` — solo administrador y soporte-pagnol):
+  - **CRUD de clientes:** crear/editar ficha completa (razón social, RUT, contacto,
+    correo, teléfono, notas) y estado Activo/Inactivo (inactivo desaparece de filtros y
+    formularios). Eliminar avisa que los contratos NO se borran (quedan sin cliente,
+    `ON DELETE SET NULL`) y sugiere marcar Inactivo como alternativa.
+  - **Contratos por cliente:** cada tarjeta lista sus contratos (código, vigencia,
+    dotación, estado) con edición inline y click-through a la ficha operacional de
+    Asistencia; botón "+ Contrato" crea uno con el cliente preseleccionado.
+  - **Sección "Contratos sin cliente":** junta los huérfanos (p. ej. pre-backfill) para
+    asignarles su mandante y que entren a los filtros por cliente.
+  - Verificado end-to-end en navegador: crear cliente → "+ Contrato" preselecciona →
+    eliminar con aviso; Asistencia → Contratos sigue funcionando.
+- **Filtro en cascada Cliente → Contrato** (Fase 3 del modelo Valar). Nuevo componente
+  compartido `<ClientContractFilter>` (`src/components/client-contract-filter.tsx`):
+  select de Cliente (activos) + select de Contrato acotado al cliente elegido (si el
+  contrato seleccionado deja de pertenecer, se resetea). El select de Cliente se oculta
+  solo cuando el tenant no tiene clientes. Semántica común: contrato puntual manda;
+  solo cliente = unión de sus contratos; `POOL` = "sin contrato" según la página.
+  Integrado en las tres superficies:
+  - **Activos (`pagnol/activos`):** reemplaza el select de Contrato del panel de filtros.
+    Filtrar por cliente muestra los materiales con existencias en cualquiera de sus
+    contratos (vía `material_stocks`); se mantiene la opción "Pool central".
+  - **Asistencia (`attendance`):** reemplaza los chips de contrato. Filtrar por cliente
+    acota la dotación (KPIs, cobertura y tabla) a los trabajadores asignados a sus
+    contratos; nueva opción **"Sin contrato asignado"** para encontrar al personal aún
+    sin `contract_workers` (complemento directo de la Fase 2).
+  - **Stock por Contrato (`reports/contract-stock`):** el filtro ahora escala la página
+    COMPLETA — tarjetas de valorización, matriz material×contrato, detalle y kardex —
+    en vez de solo detalle/kardex como antes: vista general, por cliente o por contrato.
+    Verificado en navegador: elegir un cliente pasó la valorización de $400,7M (general)
+    a los $850 de su único stock, y el select de contrato quedó acotado a los suyos.
+- **Contrato al enrolar/crear personal** (Fase 2 del modelo Valar). Antes asignar un
+  trabajador a su contrato exigía ir aparte a la ficha del contrato en Asistencia —
+  inviable con 130 trabajadores. Ahora la asignación vive donde se gestiona a la persona:
+  - **Wizard de enrolamiento** (`enrollment-wizard`): al registrar un trabajador NUEVO,
+    el paso "Datos" incluye selector de **Contrato/Faena de destino** (solo contratos
+    activos; opcional, default "pool general") + **Turno** (habilitado al elegir contrato).
+    Aplica igual al flujo desktop y al QR móvil (el valor viaja con el "Guardar y Finalizar").
+  - **API `/api/users/create`:** acepta `contractId` + `shiftScheduleId` y crea el
+    `contract_workers` tras el perfil. Valida que contrato y turno pertenezcan al tenant
+    (el service role salta RLS). No es fatal: si la asignación falla, el usuario queda
+    creado y la respuesta trae `warning`, que el wizard muestra como toast.
+  - **UserPanel → pestaña Contrato/RRHH:** nueva sección **"Contratos / Faenas asignadas"**
+    para usuarios EXISTENTES: lista las asignaciones vigentes (con cliente del contrato),
+    permite cambiar el turno inline, quitar la asignación (con confirmación) y asignar a
+    un contrato activo no asignado. Guardado instantáneo (mutaciones `addContractWorker` /
+    `updateContractWorker` / `removeContractWorker`), independiente del botón "Guardar
+    cambios" del formulario. Visible para quien ve la pestaña; editable con `users:edit`,
+    `hr_employees:edit` o `contracts:manage` (no en modo "Mi Perfil").
 - **Entidad Cliente — jerarquía Empresa → Cliente → Contratos** (Fase 1 del modelo Valar).
   Antes el cliente era un string suelto (`contracts.client_name`), imposible de filtrar o
   agrupar. Ahora es una entidad real:
@@ -98,6 +189,12 @@ Cambios en el árbol de trabajo, aún sin commit/push.
     persistencia queda validada al aplicar la migración.
 
 ### Cambiado
+- **Formulario de contrato extraído a componente compartido** `<ContractFormDialog>`
+  (`src/components/contract-form-dialog.tsx`): fuente única del diálogo crear/editar
+  contrato (con "+ Nuevo cliente" al vuelo y bloque subcontratista), usado por
+  Asistencia → Contratos y Configuración → Clientes y Contratos. De paso se corrigió un
+  bug latente: el select "Contrato padre" usaba `SelectItem value=""`, que Radix rechaza
+  con excepción al abrir el dropdown — ahora usa el centinela `"none"`.
 - **Activos — segmentación Activos/Consumibles + contador honesto** (`pagnol/activos`).
   La página lista TODOS los `materials` (fusión Bodega→Pagnol intencional), pero el contador
   "132 Activos" incluía 16 consumibles (stock que se agota, sin identidad individual). Ahora:
@@ -111,6 +208,14 @@ Cambios en el árbol de trabajo, aún sin commit/push.
   se aplica con 150 ms de retraso (sin lag en inventarios grandes).
 
 ### Corregido
+- **UserPanel — "Guardar cambios" descartaba la asignación de contrato pendiente**
+  (pestaña Contrato/RRHH). Si se elegía un contrato en el select "Asignar a contrato…"
+  y se apretaba el botón grande "Guardar cambios" (en vez del botón chico "Asignar"),
+  la ficha se guardaba, el panel cerraba con toast de éxito y la asignación se perdía
+  en silencio — el trabajador no aparecía en los filtros por contrato. Ahora "Guardar
+  cambios" también confirma la selección pendiente (crea el `contract_workers`) y el
+  toast lo dice explícitamente ("…asignado al contrato X"). Verificado en navegador
+  reproduciendo el flujo exacto + recarga completa: la asignación persiste.
 - **Activos — modal "Control de Mantenimiento" no guardaba** (`pagnol/activos`). Enviaba
   vía `handleSubmit(handleSaveAsset)` con el schema completo (exige name/categoría/clase),
   pero `openMaintenanceModal` solo resetea 2 campos → la validación fallaba en silencio y

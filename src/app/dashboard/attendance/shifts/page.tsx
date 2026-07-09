@@ -19,6 +19,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/modules/core/hooks/use-toast";
+import { ShiftCycleCalendar } from "@/components/shift-cycle-calendar";
 import { RotateCcw, Plus, Trash2, Pencil, Moon, Sun, Clock } from "lucide-react";
 import type { ShiftSchedule, ShiftType } from "@/modules/core/lib/data";
 import { format } from "date-fns";
@@ -26,7 +27,9 @@ import { format } from "date-fns";
 const SHIFT_PRESETS: Record<ShiftType, { daysOn: number; daysOff: number; label: string; color: string }> = {
   "5x2":   { daysOn: 5,  daysOff: 2,  label: "5×2 — Lun a Vie",    color: "bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-500/30" },
   "4x3":   { daysOn: 4,  daysOff: 3,  label: "4×3 — Rot. Corta",   color: "bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300 border-green-200 dark:border-green-500/30" },
+  "4x4":   { daysOn: 4,  daysOff: 4,  label: "4×4 — Rot. Simétrica", color: "bg-teal-100 dark:bg-teal-500/20 text-teal-800 dark:text-teal-300 border-teal-200 dark:border-teal-500/30" },
   "7x7":   { daysOn: 7,  daysOff: 7,  label: "7×7 — Semanal",      color: "bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300 border-orange-200 dark:border-orange-500/30" },
+  "10x10": { daysOn: 10, daysOff: 10, label: "10×10 — Decenal",     color: "bg-cyan-100 dark:bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 border-cyan-200 dark:border-cyan-500/30" },
   "14x14": { daysOn: 14, daysOff: 14, label: "14×14 — Quincenal",   color: "bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30" },
   "21x7":  { daysOn: 21, daysOff: 7,  label: "21×7 — Mensual ext.", color: "bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300 border-red-200 dark:border-red-500/30" },
   "custom": { daysOn: 0, daysOff: 0,  label: "Personalizado",       color: "bg-muted text-foreground border-border" },
@@ -34,7 +37,7 @@ const SHIFT_PRESETS: Record<ShiftType, { daysOn: number; daysOff: number; label:
 
 const shiftSchema = z.object({
   name: z.string().min(1, "Nombre requerido"),
-  shiftType: z.enum(["5x2", "4x3", "7x7", "14x14", "21x7", "custom"]),
+  shiftType: z.enum(["5x2", "4x3", "4x4", "7x7", "10x10", "14x14", "21x7", "custom"]),
   daysOn: z.coerce.number().min(1),
   daysOff: z.coerce.number().min(1),
   workStart: z.string().regex(/^\d{2}:\d{2}$/, "Formato HH:mm"),
@@ -207,16 +210,8 @@ export default function ShiftsPage() {
                     Referencia: <span className="font-mono">{shift.rotationReferenceDate}</span>
                   </div>
 
-                  {/* Cycle visualizer */}
-                  <div className="flex gap-0.5 flex-wrap">
-                    {Array.from({ length: Math.min(shift.daysOn + shift.daysOff, 28) }).map((_, i) => (
-                      <div
-                        key={i}
-                        className={`h-2 flex-1 min-w-[6px] rounded-sm ${i < shift.daysOn ? 'bg-green-500' : 'bg-muted'}`}
-                      />
-                    ))}
-                    {shift.daysOn + shift.daysOff > 28 && <span className="text-[9px] text-muted-foreground self-end">…</span>}
-                  </div>
+                  {/* Calendario real del ciclo (referencia del turno) */}
+                  <ShiftCycleCalendar shift={shift} className="pt-1" />
 
                   {canManage && (
                     <div className="flex gap-2 pt-1">

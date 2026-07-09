@@ -251,7 +251,7 @@ export interface AppStateContextType extends AppDataState {
   addContract: (data: Omit<Contract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>) => Promise<Contract>;
   updateContract: (id: string, data: Partial<Contract>) => Promise<void>;
   deleteContract: (id: string) => Promise<void>;
-  addContractWorker: (contractId: string, userId: string, shiftScheduleId: string | null, roleInContract?: string) => Promise<void>;
+  addContractWorker: (contractId: string, userId: string, shiftScheduleId: string | null, roleInContract: string | undefined, rotationStartDate: string | null) => Promise<void>;
   removeContractWorker: (contractWorkerId: string) => Promise<void>;
   updateContractWorker: (id: string, data: Partial<ContractWorker>) => Promise<void>;
 

@@ -17,10 +17,8 @@ import {
   ArrowDownRight,
   Wrench,
   Image as ImageIcon,
-  Loader2,
-  Zap
+  Loader2
 } from 'lucide-react';
-import { askPagnol } from '@/actions/ask-ferro';
 import type {
   Material,
   MaterialRequest,
@@ -61,53 +59,11 @@ export default function PagnolMainPage() {
   const { user: currentUser, can } = useAuth();
   const router = useRouter();
 
-  const [insight, setInsight] = useState<string>("Analizando inventario en tiempo real...");
   const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
-
-  // Compact AI context (~100 tokens)
-  const fullContextString = useMemo(() => {
-    const mats = materials || [];
-    const tls = mats.filter(m => m.usageType === 'Herramienta Menor' && !m.archived);
-    const classA = mats.filter(m => m.class === 'A');
-    const critical = mats.filter(m => m.stock <= 10 && m.stock > 0 && !m.archived);
-    const outOfStock = mats.filter(m => m.stock === 0 && !m.archived);
-    const pending = (requests || []).filter((r: any) => r.status === 'pending');
-    return [
-      `Inventario: ${mats.length} activos, ${tls.length} son herramientas menores.`,
-      `Clase A: ${classA.length} activos críticos.`,
-      `Stock crítico (≤10): ${critical.length > 0 ? critical.map(m => `${m.name} (${m.stock})`).join(', ') : 'ninguno'}.`,
-      `Sin stock: ${outOfStock.length > 0 ? outOfStock.map(m => m.name).join(', ') : 'ninguno'}.`,
-      `Solicitudes pendientes: ${pending.length}.`,
-      `Fecha: ${new Date().toLocaleDateString('es-CL')}.`,
-    ].join(' ');
-  }, [materials, requests]);
 
   useEffect(() => {
     refreshData();
   }, []);
-
-  const hasFetchedInsight = React.useRef(false);
-
-  const fetchInsight = useCallback(async (forced = false) => {
-    if ((hasFetchedInsight.current && !forced) || materials.length === 0) return;
-    hasFetchedInsight.current = true;
-    setInsight("Analizando inventario con IA...");
-    try {
-      const res = await askPagnol("Dame un resumen del estado del inventario y alertas importantes.", fullContextString);
-      if (res && res.ok && res.answer) {
-        setInsight(res.answer);
-      } else {
-        setInsight("No se pudo obtener el diagnóstico. Intenta de nuevo.");
-      }
-    } catch (err) {
-      console.error("Error calling askPagnol:", err);
-      setInsight("Error al contactar al asistente de IA.");
-    }
-  }, [materials.length, fullContextString]);
-
-  useEffect(() => {
-    fetchInsight();
-  }, [fetchInsight]);
 
   const formatRelativeTime = (timestamp: string) => {
     const now = new Date();
@@ -596,11 +552,11 @@ export default function PagnolMainPage() {
         ))}
       </div>
 
-      {/* ANALÍTICA + AI */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      {/* ANALÍTICA */}
+      <div className="grid grid-cols-1 gap-8">
 
         {/* CHART */}
-        <div className="xl:col-span-2 bg-card p-10 rounded-[3rem] shadow-sm border border-border flex flex-col group">
+        <div className="bg-card p-10 rounded-[3rem] shadow-sm border border-border flex flex-col group">
           <div className="flex items-center justify-between mb-12">
             <div>
               <h3 className="text-xl font-black text-foreground uppercase tracking-tighter">Tránsito Operativo</h3>
@@ -637,38 +593,6 @@ export default function PagnolMainPage() {
                 <Area type="monotone" dataKey="entradas" stroke="rgb(148,163,184)" strokeWidth={2} fill="transparent" />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* AI ENGINE */}
-        <div className="bg-pagnol-dark rounded-[3.5rem] p-10 text-white relative overflow-hidden flex flex-col shadow-2xl group border-t-8 border-t-pagnol-orange">
-          <div className="relative z-10 flex flex-col h-full">
-            <div className="flex items-center gap-4 mb-12">
-              <div className="p-4 bg-pagnol-orange text-white rounded-[1.5rem] shadow-2xl shadow-pagnol-orange/40 rotate-12 transition-transform duration-500">
-                <Zap size={24} fill="currentColor" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-black uppercase tracking-tighter">AI Diagnostic</h3>
-                <p className="text-[10px] font-black text-pagnol-orange uppercase tracking-[0.3em]">Core Engine</p>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto no-scrollbar">
-              <div className="bg-white/5 border border-white/5 p-8 rounded-[2.5rem] backdrop-blur-xl">
-                <p className="text-sm font-medium leading-relaxed italic text-white/80">
-                  "{insight}"
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-10 border-t border-white/10 mt-8">
-              <button
-                onClick={() => onNavigate('reports')}
-                className="w-full py-6 bg-pagnol-orange text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] hover:bg-white hover:text-pagnol-dark transition-all shadow-2xl shadow-pagnol-orange/20"
-              >
-                Auditoría Completa
-              </button>
-            </div>
           </div>
         </div>
 

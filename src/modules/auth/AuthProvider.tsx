@@ -418,7 +418,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       // Last-resort fallback: use Supabase directly
-      // (email will come from Supabase's SMTP, not hola@teolabs.app)
+      // (email will come from Supabase's SMTP, not contacto@pagnol.cl)
       const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
       const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: `${appUrl}/update-password`,

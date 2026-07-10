@@ -103,7 +103,7 @@ async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
   adminEmail: string;
   tenantName: string;
 }) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.pagnol.cl';
 
   if (!isEmailConfigured()) return;
 
@@ -142,7 +142,7 @@ async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
   </td></tr>
   <tr><td style="background:#f8fafc;border-radius:0 0 20px 20px;border-top:1px solid #e2e8f0;padding:20px 40px;text-align:center;">
     <p style="margin:0;font-size:10px;color:#cbd5e1;text-transform:uppercase;font-weight:800;letter-spacing:2px;">
-      © ${year} TeoLabs — hola@teolabs.app
+      © ${year} TeoLabs — contacto@pagnol.cl
     </p>
   </td></tr>
 </table></td></tr>

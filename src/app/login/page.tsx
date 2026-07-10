@@ -248,7 +248,7 @@ export default function LoginPage() {
                     </p>
 
                     <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest mt-4">
-                        Soporte Técnico Enterprise &bull; support@pagnol.app
+                        Soporte Técnico Enterprise &bull; contacto@pagnol.cl
                     </p>
                 </div>
             </div>

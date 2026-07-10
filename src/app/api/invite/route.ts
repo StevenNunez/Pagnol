@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
         const { email, role, token, tenantName, invitedByName } = await request.json();
 
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.pagnol.cl';
 
         if (!isEmailConfigured()) {
             console.error("Missing email configuration env variables.");
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
                 © ${new Date().getFullYear()} TeoLabs — Infraestructura de Gestión
               </p>
               <p style="margin:0;font-size:10px;color:#e2e8f0;">
-                hola@teolabs.app
+                contacto@pagnol.cl
               </p>
             </td>
           </tr>

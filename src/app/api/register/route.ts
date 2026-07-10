@@ -90,7 +90,7 @@ async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
   adminEmail: string;
   tenantName: string;
 }) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.pagnol.cl';
 
   if (!isEmailConfigured()) {
     console.warn('[Register API] Email de bienvenida omitido: variables EMAIL_* no configuradas.');
@@ -205,7 +205,7 @@ async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
                       <tr>
                         <td style="padding:6px 0;">
                           <p style="margin:0;font-size:13px;color:#0f172a;font-weight:700;">📧 Soporte por correo</p>
-                          <p style="margin:2px 0 0;font-size:12px;color:#64748b;">hola@teolabs.app — respondemos en menos de 24 hrs hábiles</p>
+                          <p style="margin:2px 0 0;font-size:12px;color:#64748b;">contacto@pagnol.cl — respondemos en menos de 24 hrs hábiles</p>
                         </td>
                       </tr>
                       <tr>
@@ -229,7 +229,7 @@ async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
                 © ${year} TeoLabs — Infraestructura de Gestión
               </p>
               <p style="margin:0;font-size:10px;color:#e2e8f0;">
-                hola@teolabs.app
+                contacto@pagnol.cl
               </p>
             </td>
           </tr>

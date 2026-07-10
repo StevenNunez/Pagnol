@@ -292,7 +292,7 @@ function UpdatePasswordInner() {
                             </form>
 
                             <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">
-                                Soporte Técnico &bull; hola@teolabs.app
+                                Soporte Técnico &bull; contacto@pagnol.cl
                             </p>
                         </>
                     )}

@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Correo requerido.' }, { status: 400 });
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.pagnol.cl';
     const redirectTo = `${appUrl}/update-password`;
 
     // ── Strategy 1: generate link + send via custom SMTP ─────────────────────
@@ -71,14 +71,14 @@ async function sendResetEmail({
   firstName: string;
   actionLink: string;
 }) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pagnol.teolabs.app';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.pagnol.cl';
   const year = new Date().getFullYear();
 
   await sendEmail({
     to: email,
     subject: 'Recupera tu acceso a Pagnol',
     headers: { Importance: 'high' },
-    text: `Hola ${firstName},\n\nHaz clic en el enlace para restablecer tu contraseña (válido por 1 hora):\n${actionLink}\n\nSi no solicitaste esto, ignora este correo.\n\n© ${year} TeoLabs — hola@teolabs.app`,
+    text: `Hola ${firstName},\n\nHaz clic en el enlace para restablecer tu contraseña (válido por 1 hora):\n${actionLink}\n\nSi no solicitaste esto, ignora este correo.\n\n© ${year} TeoLabs — contacto@pagnol.cl`,
     html: `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/></head>
@@ -129,7 +129,7 @@ async function sendResetEmail({
 
       <tr><td style="background:#f8fafc;border-radius:0 0 20px 20px;border-top:1px solid #e2e8f0;padding:24px 40px;text-align:center;">
         <p style="margin:0;font-size:10px;font-weight:800;letter-spacing:2px;color:#cbd5e1;text-transform:uppercase;">
-          © ${year} TeoLabs — hola@teolabs.app &bull; ${appUrl}
+          © ${year} TeoLabs — contacto@pagnol.cl &bull; ${appUrl}
         </p>
       </td></tr>
 

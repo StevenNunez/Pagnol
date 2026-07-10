@@ -151,7 +151,7 @@ export default function ResetPasswordPage() {
                             </div>
 
                             <p className="text-center text-[10px] uppercase font-bold text-slate-300 tracking-widest">
-                                Soporte Técnico Enterprise &bull; support@pagnol.app
+                                Soporte Técnico Enterprise &bull; contacto@pagnol.cl
                             </p>
                         </>
                     )}

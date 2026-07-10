@@ -189,8 +189,8 @@ export default function PricingPage() {
                     <p className="text-slate-400 font-medium">¿Tienes dudas sobre cuál elegir?</p>
                     <p className="text-slate-400 text-sm">
                         Escríbenos a{' '}
-                        <a href="mailto:hola@teolabs.app" className="text-primary font-bold hover:underline">
-                            hola@teolabs.app
+                        <a href="mailto:contacto@pagnol.cl" className="text-primary font-bold hover:underline">
+                            contacto@pagnol.cl
                         </a>
                     </p>
                 </div>

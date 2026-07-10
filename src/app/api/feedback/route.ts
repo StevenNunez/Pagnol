@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         if (dbError) throw dbError;
 
         // 2. Enviar alerta por email (no bloquea si falla)
-        const alertTo = process.env.FEEDBACK_ALERT_TO || 'hola@teolabs.app';
+        const alertTo = process.env.FEEDBACK_ALERT_TO || 'contacto@pagnol.cl';
 
         if (isEmailConfigured()) {
             const shortDesc = description.length > 80

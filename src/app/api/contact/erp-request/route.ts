@@ -101,7 +101,7 @@ export async function POST(request: Request) {
 </html>`;
 
         await sendEmail({
-            to: 'hola@teolabs.app',
+            to: 'contacto@pagnol.cl',
             replyTo: email,
             subject: `🔌 Solicitud integración ERP — ${company} (${erp})`,
             html,

@@ -188,7 +188,40 @@ Cambios en el árbol de trabajo, aún sin commit/push.
     la columna nueva). Verificado en navegador el render/comportamiento del toggle; la
     persistencia queda validada al aplicar la migración.
 
+### Eliminado
+- **"AI Diagnostic Core Engine" del dashboard Pagnol** (`dashboard/pagnol`). La tarjeta
+  disparaba una llamada a Gemini AUTOMÁTICAMENTE en cada visita al panel (gasto de tokens
+  sin que nadie lo pidiera). Se eliminó la tarjeta, el estado `insight`, el contexto y el
+  fetch al montar; el gráfico "Tránsito Operativo" ocupa ahora el ancho completo.
+  El asistente on-demand (`InventoryAssistant`, burbuja flotante) se mantiene intacto —
+  esa es la vía correcta: la IA responde cuando se le pregunta. Verificado en navegador.
+
+### Agregado
+- **SEO on-page completo para www.pagnol.cl** (ya en producción):
+  - `layout.tsx`: metadata rica — `metadataBase`, título con template, descripción y
+    keywords orientadas a búsqueda ("ERP minero", "soluciones mineras", "control de
+    inventario", "control de activos", "activos mineros", etc.), Open Graph `es_CL` +
+    Twitter card con imagen del dashboard, `robots` index/follow, canonical por ruta.
+  - **JSON-LD** (schema.org): `Organization` + `SoftwareApplication` con `featureList`
+    de los módulos — habilita resultados enriquecidos en Google.
+  - **`src/app/robots.ts`**: permite todo lo público, bloquea `/dashboard`, `/api/`,
+    `/enroll/`, `/invite`, `/auth/`, reset/update-password; referencia el sitemap.
+  - **`src/app/sitemap.ts`**: `/`, `/pricing`, `/demo`, `/register`, `/login`.
+  - Verificado con curl: title/description/keywords/canonical/OG renderizan, y
+    `/robots.txt` + `/sitemap.xml` responden. **Pendiente del usuario:** actualizar
+    `NEXT_PUBLIC_APP_URL=https://www.pagnol.cl` en Vercel y dar de alta el dominio en
+    Google Search Console + enviar el sitemap.
+
 ### Cambiado
+- **Identidad de correo unificada a `contacto@pagnol.cl`** (estamos en vivo con
+  www.pagnol.cl): remitente central (`EMAIL_FROM`, local actualizado — **falta Vercel**),
+  destino de alertas internas (`FEEDBACK_ALERT_TO` y fallbacks de feedback/erp-request),
+  correos de soporte visibles en login/registro/invitación/reset/pricing
+  (antes `hola@teolabs.app` / `support@pagnol.app`), `VAPID_SUBJECT` de web-push, y
+  fallbacks de URL `pagnol.teolabs.app` → `www.pagnol.cl` en las rutas de correo.
+  **Pendiente del usuario:** en Zoho habilitar envío como `contacto@pagnol.cl`
+  (alias/send-as) y SPF/DKIM del dominio pagnol.cl; en Vercel setear
+  `EMAIL_FROM`/`FEEDBACK_ALERT_TO`/`NEXT_PUBLIC_APP_URL`.
 - **Formulario de contrato extraído a componente compartido** `<ContractFormDialog>`
   (`src/components/contract-form-dialog.tsx`): fuente única del diálogo crear/editar
   contrato (con "+ Nuevo cliente" al vuelo y bloque subcontratista), usado por

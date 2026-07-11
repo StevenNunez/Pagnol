@@ -147,6 +147,7 @@ export interface AppStateContextType extends AppDataState {
   authorizePurchaseRequest: (requestId: string) => Promise<void>;
   updatePurchaseRequestStatus: (requestId: string, status: PurchaseRequest['status'], data: Partial<PurchaseRequest>) => Promise<void>;
   receivePurchaseRequest: (requestId: string, receivedQuantity: number, existingMaterialId?: string) => Promise<void>;
+  markClientRequestsSent: (requestIds: string[]) => Promise<void>;
   deletePurchaseRequest: (requestId: string) => Promise<void>;
   cancelPurchaseOrder: (orderId: string) => Promise<void>;
   archiveLot: (requestIds: string[]) => Promise<void>;

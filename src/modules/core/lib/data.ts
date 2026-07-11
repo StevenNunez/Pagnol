@@ -233,9 +233,14 @@ export interface Material {
 
   // Origen del activo. 'arrendado' = espejo de un equipo de arriendo (rental_assets),
   // creado al confirmar la OC; conserva el vínculo al contrato y al activo de arriendo.
-  ownership?: 'propio' | 'arrendado';
+  // 'cliente' = suministrado por el cliente del contrato (comodato — se devuelve al
+  // cierre); su stock vive en una fila SEPARADA del propio, nunca se mezclan.
+  // 'subcontrato' = reservado para material de subcontratistas (sin UI aún).
+  ownership?: 'propio' | 'arrendado' | 'cliente' | 'subcontrato';
   rentalContractId?: string | null;
   rentalAssetId?: string | null;
+  // Dueño del activo cuando ownership='cliente' (FK a clients).
+  clientId?: string | null;
 }
 
 // ISO 55001 - Mantenimiento
@@ -371,6 +376,14 @@ export interface PurchaseRequest {
   adcAuthorizedById?: string | null;
   // Correlaciona ítems enviados juntos desde el mismo carrito. NULL = solicitud suelta.
   batchId?: string | null;
+  // Destino de la solicitud: 'supplier' (compra normal, histórico) o 'client'
+  // (suministro del cliente del contrato — Valar↔Novandino). Con 'client', el
+  // flujo es solicitud → ADC autoriza → supervisor envía correo al cliente →
+  // recepción materializa el ítem como activo ownership='cliente'.
+  requestTarget?: 'supplier' | 'client';
+  clientId?: string | null;
+  clientName?: string | null;
+  sentToClientAt?: Date | string | null;
 }
 
 // Códigos de marcas de asistencia (estándar industria minera)
@@ -950,6 +963,12 @@ export interface WorkReport {
   structuredActivities: WorkReportActivity[];
   dailyOts: WorkReportDailyOt[];
   consolidatedOrderIds: string[];           // OT (work_orders) que este Diario consolida
+  // Copia congelada de las OT consolidadas, tomada al enviar a revisión
+  // (pending_review). Evita que una edición posterior de la OT altere
+  // retroactivamente un Diario ya firmado/aprobado. Se deriva en vivo de
+  // `workOrders` mientras está en borrador/observado, o si el Diario se envió
+  // a revisión antes de que existiera este campo (sin snapshot histórico).
+  consolidatedOrdersSnapshot?: WorkOrder[] | null;
   labor: WorkReportLaborItem[];
   equipment: WorkReportEquipmentItem[];
   interferences: WorkReportInterference[];
@@ -985,12 +1004,14 @@ export interface WorkOrderLaborItem {
   name: string;
   role: string;
   hours: number;
+  userId?: string;         // Ref. a profiles.id cuando se selecciona del catálogo de usuarios
 }
 
 export interface WorkOrderEquipmentItem {
   id: string;
   equipment: string;
   hours: number;
+  assetId?: string;        // Ref. a materials.id cuando se selecciona del catálogo de activos
 }
 
 export interface WorkOrderMaterialItem {
@@ -1005,6 +1026,7 @@ export interface WorkOrder {
   id: string;
   tenantId: string;
   otNumber: string;
+  otNumberSource: 'auto' | 'manual';  // 'auto' = correlativo del tenant (bloqueado); 'manual' = lo asigna el cliente
   client: string;
   contractNumber?: string | null;
   area?: string | null;
@@ -1051,6 +1073,10 @@ export interface WorkWeeklyReport {
   startDate: Date | string;
   endDate: Date | string;
   consolidatedReportIds: string[];
+  // Copia congelada de los Diarios consolidados, tomada al firmar como
+  // supervisor (status -> 'ready'). Evita que el Semanal cambie
+  // retroactivamente si alguien reabre/edita un Diario después de firmado.
+  consolidatedReportsSnapshot?: WorkReport[] | null;
   observations?: string | null;
   shiftHandover?: string | null;
   signatures: WorkReportSignature[];

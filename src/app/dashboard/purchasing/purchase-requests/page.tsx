@@ -100,8 +100,12 @@ export default function PurchaseRequestsManagementPage() {
   // Filtrado y Ordenamiento
   // Gate ADC: las pendientes SIN autorizar viven en la bandeja del ADC
   // (/dashboard/authorizations), no en la cola de Abastecimiento.
+  // Suministros del CLIENTE (requestTarget='client'): fuera de esta cola por
+  // completo — su ciclo es supervisor → ADC → correo al cliente → recepción en
+  // pañol; Abastecimiento no gestiona compra alguna para ellos.
   const authorizedRequests = useMemo(
-      () => (purchaseRequests || []).filter(r => !(r.status === 'pending' && !r.adcAuthorizedAt)),
+      () => (purchaseRequests || []).filter(r =>
+          r.requestTarget !== 'client' && !(r.status === 'pending' && !r.adcAuthorizedAt)),
       [purchaseRequests],
   );
 

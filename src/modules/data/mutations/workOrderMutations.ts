@@ -4,6 +4,7 @@ import type { WorkOrder } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
 import { enqueue, putMirror, deleteMirror, getMirror, removePendingFor } from '@/modules/offline/outbox';
 import { isOffline, isNetworkError } from '@/modules/offline/net';
+import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 
 const isUUID = (v: any) =>
   typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
@@ -22,6 +23,7 @@ function toRow(data: WorkOrderInput, ctx: Context): Record<string, any> {
   const row: Record<string, any> = { updated_by: ctx.user?.id || null, updated_at: new Date().toISOString() };
 
   if (data.otNumber !== undefined) row.ot_number = data.otNumber;
+  if (data.otNumberSource !== undefined) row.ot_number_source = data.otNumberSource;
   if (data.client !== undefined) row.client = data.client;
   if (data.contractNumber !== undefined) row.contract_number = data.contractNumber || null;
   if (data.area !== undefined) row.area = data.area || null;
@@ -54,10 +56,21 @@ export async function createWorkOrder(data: WorkOrderInput, ctx: Context): Promi
   const id = newId();
   const now = new Date().toISOString();
 
+  // Correlativo automático (RPC atómica, reutiliza el mismo mecanismo que el
+  // resto de los documentos del tenant). Requiere conexión: si se pide 'auto'
+  // sin conexión, el llamador (UI) ya debe haber forzado modo manual.
+  const otNumberSource = data.otNumberSource || 'manual';
+  let otNumber = data.otNumber || '';
+  if (otNumberSource === 'auto' && !otNumber) {
+    if (isOffline()) throw new Error('El correlativo automático requiere conexión. Usa el modo manual o intenta cuando vuelvas a estar en línea.');
+    otNumber = await nextInternalCode(tenantId, 'OT');
+  }
+
   const baseRow = {
     id,
     tenant_id: tenantId,
-    ot_number: data.otNumber || '',
+    ot_number: otNumber,
+    ot_number_source: otNumberSource,
     client: data.client || '',
     contract_number: data.contractNumber || null,
     area: data.area || null,
@@ -132,8 +145,13 @@ export async function updateWorkOrder(id: string, data: WorkOrderInput, ctx: Con
   }
 
   try {
-    const { error } = await supabase.from('work_orders').update(row).eq('id', id);
+    // RLS que no matchea ninguna fila NO lanza error (solo actualiza 0 filas) —
+    // .select() + verificar filas es la única forma de detectarlo.
+    const { data: updated, error } = await supabase.from('work_orders').update(row).eq('id', id).select('id');
     if (error) throw error;
+    if (!updated || updated.length === 0) {
+      throw new Error('No se pudo guardar la OT: sin permisos sobre este registro o ya no existe.');
+    }
   } catch (e) {
     if (isNetworkError(e) && user && tenantId) {
       await queueOffline();
@@ -160,6 +178,19 @@ export async function deleteWorkOrder(id: string, ctx: Context): Promise<void> {
   if (isOffline() && user && tenantId) {
     await queueOffline();
     return;
+  }
+
+  // Una OT consolidada en un Diario (aunque sea borrador) no se puede borrar sin
+  // antes desvincularla — evita que desaparezca en silencio del Diario (HH,
+  // fotos y columnas de la matriz se esfuman si el registro deja de existir).
+  const { data: referencing } = await supabase
+    .from('work_reports')
+    .select('internal_code, status')
+    .contains('consolidated_order_ids', [id])
+    .limit(1);
+  if (referencing && referencing.length > 0) {
+    const r = referencing[0] as { internal_code?: string; status?: string };
+    throw new Error(`Esta OT está consolidada en el Diario ${r.internal_code || ''} (${r.status || ''}). Quítala de ese Diario antes de eliminarla.`);
   }
 
   try {

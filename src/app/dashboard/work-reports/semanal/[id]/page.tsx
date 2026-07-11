@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, PenLine, Save } from 'lucide-react';
+import { ArrowLeft, FileText, PenLine, RotateCcw, Save } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { LoadingState } from '@/components/loading-state';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { supabase } from '@/modules/core/lib/supabase';
 import { consolidateWeekly } from '@/modules/core/lib/work-order-consolidation';
 import { WORK_REPORT_STATUS_LABEL } from '@/modules/core/lib/work-report-labels';
-import type { WorkReportSignature, WorkWeeklyReport } from '@/modules/core/lib/data';
+import type { WorkReport, WorkReportSignature, WorkWeeklyReport } from '@/modules/core/lib/data';
 
 function uid() {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -27,10 +27,17 @@ function uid() {
 }
 
 function dateOnly(value: any): string {
-  const s = typeof value === 'string' ? value : new Date(value).toISOString();
-  return s.slice(0, 10);
+  if (typeof value === 'string') return value.slice(0, 10);
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+// Evita el corrimiento de un día por zona horaria que produce
+// `new Date('YYYY-MM-DD').toLocaleDateString()` (se parsea como UTC).
 function fmtDate(value: any) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('es-CL');
   const d = new Date(value);
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-CL');
 }
@@ -46,15 +53,16 @@ export default function WeeklyReportDetailPage() {
     workReportSpecialties,
     users,
     updateWorkWeeklyReport,
+    deleteWorkWeeklyReport,
     can,
     notify,
     isLoading,
   } = useAppState();
 
-  const editable = can('work_reports:create');
   const wr = (workWeeklyReports || []).find((w) => w.id === params.id);
 
   const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super-admin';
   const savedSignature = user?.signature || null;
 
   const draftInit = React.useRef(false);
@@ -64,12 +72,6 @@ export default function WeeklyReportDetailPage() {
   const [signatureData, setSignatureData] = React.useState('');
   const [useSavedSignature, setUseSavedSignature] = React.useState(true);
 
-  const openSignatureDialog = (step: 'supervisor' | 'operations') => {
-    setUseSavedSignature(!!savedSignature);
-    setSignatureData(savedSignature || '');
-    setSignatureOpen(step);
-  };
-
   React.useEffect(() => {
     if (wr && !draftInit.current) {
       setDraft(JSON.parse(JSON.stringify(wr)));
@@ -77,12 +79,16 @@ export default function WeeklyReportDetailPage() {
     }
   }, [wr]);
 
-  // Diarios seleccionados + candidatos dentro del rango de fechas.
+  // Diarios seleccionados + candidatos dentro del rango de fechas. Una vez
+  // firmado (status !== 'draft') se usa la copia congelada
+  // (consolidatedReportsSnapshot) en vez de los Diarios en vivo, para que el
+  // Semanal ya firmado no cambie si alguien reabre/edita un Diario después.
   const selectedIds = draft?.consolidatedReportIds || [];
-  const selectedReports = React.useMemo(
-    () => (workReports || []).filter((r) => selectedIds.includes(r.id)),
-    [workReports, selectedIds],
-  );
+  const usingSnapshot = !!draft && draft.status !== 'draft' && !!draft.consolidatedReportsSnapshot?.length;
+  const selectedReports = React.useMemo(() => {
+    if (usingSnapshot) return draft!.consolidatedReportsSnapshot as WorkReport[];
+    return (workReports || []).filter((r) => selectedIds.includes(r.id));
+  }, [usingSnapshot, draft, workReports, selectedIds]);
   const consolidation = React.useMemo(
     () => consolidateWeekly(selectedReports, workOrders || []),
     [selectedReports, workOrders],
@@ -99,6 +105,24 @@ export default function WeeklyReportDetailPage() {
       .sort((a, b) => dateOnly(a.workDate).localeCompare(dateOnly(b.workDate)));
   }, [workReports, draft, selectedIds]);
 
+  // Limpieza de Semanal "fantasma": si el usuario crea uno y sale sin
+  // capturar nada, se borra solo al salir de la página (mismo patrón que OT
+  // y Diarios).
+  const draftRef = React.useRef(draft);
+  draftRef.current = draft;
+  React.useEffect(() => {
+    return () => {
+      const d = draftRef.current;
+      if (!d || d.status !== 'draft') return;
+      const pristine = !d.title?.trim() && !d.client?.trim() && !d.faena?.trim()
+        && !(d.consolidatedReportIds || []).length
+        && !d.observations?.trim() && !d.shiftHandover?.trim()
+        && !(d.signatures || []).length;
+      if (pristine) deleteWorkWeeklyReport(d.id).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!draft) {
     if (!isLoading && !wr) {
       return (
@@ -112,11 +136,65 @@ export default function WeeklyReportDetailPage() {
     return <LoadingState />;
   }
 
+  // El contenido solo es editable en borrador (o siempre para super-admin).
+  // Firmar como supervisor pasa el estado a 'ready' y, con eso, congela todo
+  // — evita que un documento con firma digital mute después de firmado.
+  const editable = isSuperAdmin || (draft.status === 'draft' && can('work_reports:edit'));
+  // Jefe de Operaciones firma DESPUÉS del supervisor (orden lógico: aprueba lo
+  // que el supervisor ya envió), y requiere su propio permiso — antes
+  // cualquiera con permiso de creación podía firmar como Jefe de Operaciones.
+  const canSignOperations = draft.status === 'ready' && (isSuperAdmin || can('work_reports:review_operations'));
+  const canReopen = draft.status === 'ready' && (isSuperAdmin || can('work_reports:edit'));
+
   const patchDraft = (patch: Partial<WorkWeeklyReport>) => setDraft((d) => (d ? { ...d, ...patch } : d));
 
   const toggleReport = (id: string) => {
     const ids = draft.consolidatedReportIds || [];
-    patchDraft({ consolidatedReportIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] });
+    const nextIds = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+    const nextReports = (workReports || []).filter((r) => nextIds.includes(r.id));
+    // Hereda la cabecera del primer Diario seleccionado — igual que el Diario
+    // hereda de la OT — para no volver a digitar cliente/faena/obra/contrato
+    // que el Diario ya trae.
+    const rep = nextReports[0];
+    const header: Partial<WorkWeeklyReport> = rep ? {
+      client: rep.client || draft.client,
+      faena: rep.faena || draft.faena,
+      obra: rep.obra || draft.obra,
+      contractNumber: rep.contractNumber || draft.contractNumber,
+      area: rep.area || draft.area,
+      specialty: rep.specialty || draft.specialty,
+      supervisorId: rep.supervisorId || draft.supervisorId,
+      supervisorName: rep.supervisorName || draft.supervisorName,
+    } : {};
+    patchDraft({ consolidatedReportIds: nextIds, ...header });
+  };
+
+  const getMissingForSignature = (): string[] => [
+    !draft.title?.trim() && 'Título',
+    !draft.faena?.trim() && 'Faena',
+    !(draft.consolidatedReportIds || []).length && 'Al menos un Diario consolidado',
+    dateOnly(draft.startDate) > dateOnly(draft.endDate) && 'Rango de fechas inválido (Desde posterior a Hasta)',
+  ].filter((x): x is string => !!x);
+
+  const openSignatureDialog = (step: 'supervisor' | 'operations') => {
+    if (step === 'supervisor') {
+      const missing = getMissingForSignature();
+      if (missing.length) { notify(`Faltan datos para firmar: ${missing.join(', ')}.`, 'destructive'); return; }
+    }
+    setUseSavedSignature(!!savedSignature);
+    setSignatureData(savedSignature || '');
+    setSignatureOpen(step);
+  };
+
+  const reopenDraft = async () => {
+    const next: WorkWeeklyReport = { ...draft, status: 'draft', signatures: [], consolidatedReportsSnapshot: null };
+    setDraft(next);
+    try {
+      await updateWorkWeeklyReport(draft.id, next);
+      notify('Reporte reabierto como borrador. Deberás volver a firmar.', 'default');
+    } catch (e: any) {
+      notify(e?.message || 'No se pudo reabrir el reporte.', 'destructive');
+    }
   };
 
   const save = async () => {
@@ -159,6 +237,10 @@ export default function WeeklyReportDetailPage() {
 
   const signStep = async (step: 'supervisor' | 'operations') => {
     if (!signatureData) { notify('La firma digital es obligatoria.', 'destructive'); return; }
+    if (step === 'operations' && !canSignOperations) {
+      notify('El supervisor debe firmar primero.', 'destructive');
+      return;
+    }
     const signature: WorkReportSignature = {
       id: uid(),
       step,
@@ -171,7 +253,16 @@ export default function WeeklyReportDetailPage() {
     };
     // Reemplaza cualquier firma previa del mismo paso (re-firma).
     const signatures = [...(draft.signatures || []).filter((s) => s.step !== step), signature];
-    const next: WorkWeeklyReport = { ...draft, signatures, status: step === 'supervisor' ? 'ready' : draft.status };
+    // Al firmar el supervisor se congela una copia de los Diarios
+    // consolidados (en ese momento `selectedReports` todavía es la lista en
+    // vivo, porque el estado sigue en 'draft' hasta esta misma actualización)
+    // — evita que el Semanal cambie si alguien reabre/edita un Diario después.
+    const next: WorkWeeklyReport = {
+      ...draft,
+      signatures,
+      status: step === 'supervisor' ? 'ready' : draft.status,
+      consolidatedReportsSnapshot: step === 'supervisor' ? selectedReports : draft.consolidatedReportsSnapshot,
+    };
     setDraft(next);
     try {
       await updateWorkWeeklyReport(draft.id, next);
@@ -194,6 +285,7 @@ export default function WeeklyReportDetailPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="rounded-xl" onClick={() => router.push('/dashboard/work-reports/semanal')}><ArrowLeft className="h-4 w-4 mr-2" /> Volver</Button>
           <Button variant="outline" className="rounded-xl" onClick={downloadPdf}><FileText className="h-4 w-4 mr-2" /> PDF</Button>
+          {canReopen && <Button variant="outline" className="rounded-xl" onClick={reopenDraft}><RotateCcw className="h-4 w-4 mr-2" /> Reabrir borrador</Button>}
           {editable && <Button className="rounded-xl" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-2" /> Guardar</Button>}
         </div>
       }
@@ -218,42 +310,61 @@ export default function WeeklyReportDetailPage() {
           <TextField label="Desde" type="date" value={dateOnly(draft.startDate)} onChange={(v) => patchDraft({ startDate: v })} disabled={!editable} />
           <TextField label="Hasta" type="date" value={dateOnly(draft.endDate)} onChange={(v) => patchDraft({ endDate: v })} disabled={!editable} />
           <Field label="Estado">
-            <Select value={draft.status} onValueChange={(v) => patchDraft({ status: v as WorkWeeklyReport['status'] })} disabled={!editable}>
-              <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="draft">Borrador</SelectItem>
-                <SelectItem value="ready">Listo</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="h-10 flex items-center">
+              <Badge className="rounded-xl" variant={draft.status === 'ready' ? 'default' : 'secondary'}>
+                {draft.status === 'ready' ? 'Listo (firmado)' : 'Borrador'}
+              </Badge>
+            </div>
           </Field>
         </div>
       </Section>
 
       <Section title="Reportes Diarios a consolidar">
-        <p className="text-[10px] text-muted-foreground mb-3">Se muestran los diarios dentro del rango de fechas. Marca los que entran en esta semana.</p>
-        {candidates.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No hay Reportes Diarios en el rango seleccionado.</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {candidates.map((r) => {
-              const selected = selectedIds.includes(r.id);
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  disabled={!editable}
-                  onClick={() => toggleReport(r.id)}
-                  className={`text-left rounded-xl border p-3 transition disabled:opacity-60 ${selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/40'}`}
-                >
+        {usingSnapshot ? (
+          <>
+            <p className="text-[10px] text-muted-foreground mb-3">Este Semanal ya fue firmado: los Diarios quedaron congelados en ese momento. Si alguien reabre y edita uno de estos Diarios después, este Semanal no cambia.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {selectedReports.map((r) => (
+                <div key={r.id} className="rounded-xl border p-3 bg-muted/20">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-sm truncate">{r.otNumber || 'Diario'} · {fmtDate(r.workDate)}</span>
-                    <Badge variant="outline" className="rounded-lg shrink-0">{WORK_REPORT_STATUS_LABEL[r.status] || r.status}</Badge>
+                    <Badge variant="outline" className="rounded-lg shrink-0">Congelado</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground truncate mt-0.5">{r.faena || r.area || 'Sin faena'}</p>
-                </button>
-              );
-            })}
-          </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-[10px] text-muted-foreground mb-3">Se muestran los diarios dentro del rango de fechas. Marca los que entran en esta semana. Solo se pueden consolidar Diarios ya enviados a revisión (no borradores).</p>
+            {candidates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No hay Reportes Diarios en el rango seleccionado.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {candidates.map((r) => {
+                  const selected = selectedIds.includes(r.id);
+                  const selectable = selected || (r.status !== 'draft' && r.status !== 'observed');
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      disabled={!editable || !selectable}
+                      title={!selectable ? 'Este Diario sigue en borrador — envíalo a revisión para poder consolidarlo.' : undefined}
+                      onClick={() => toggleReport(r.id)}
+                      className={`text-left rounded-xl border p-3 transition disabled:opacity-60 ${selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/40'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-sm truncate">{r.otNumber || 'Diario'} · {fmtDate(r.workDate)}</span>
+                        <Badge variant="outline" className="rounded-lg shrink-0">{WORK_REPORT_STATUS_LABEL[r.status] || r.status}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">{r.faena || r.area || 'Sin faena'}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </Section>
 
@@ -268,7 +379,7 @@ export default function WeeklyReportDetailPage() {
           <div className="overflow-x-auto rounded-xl border">
             <table className="w-full text-xs">
               <thead className="bg-muted/50 text-muted-foreground">
-                <tr><th className="text-left p-2">Fecha</th><th className="text-left p-2">OT principal</th><th className="text-right p-2">OT</th><th className="text-right p-2">Personal</th><th className="text-right p-2">HH</th><th className="text-left p-2">Estado</th></tr>
+                <tr><th className="text-left p-2">Fecha</th><th className="text-left p-2">OT principal</th><th className="text-right p-2">OT</th><th className="text-right p-2">Personal (día)</th><th className="text-right p-2">HH</th><th className="text-left p-2">Estado</th></tr>
               </thead>
               <tbody>
                 {consolidation.dias.map((d) => (
@@ -286,7 +397,7 @@ export default function WeeklyReportDetailPage() {
                 <tr className="border-t bg-muted/30 font-semibold">
                   <td className="p-2" colSpan={2}>Total semana</td>
                   <td className="p-2 text-right tabular-nums">{consolidation.otTotal}</td>
-                  <td className="p-2 text-right tabular-nums">{consolidation.workersMax}</td>
+                  <td className="p-2 text-right tabular-nums" title="Mayor dotación en un solo día, no la suma de la semana">máx. {consolidation.workersMax}</td>
                   <td className="p-2 text-right tabular-nums">{consolidation.hhTotal}</td>
                   <td className="p-2" />
                 </tr>
@@ -309,6 +420,10 @@ export default function WeeklyReportDetailPage() {
           {(['supervisor', 'operations'] as const).map((step) => {
             const sig = findSig(step);
             const label = step === 'supervisor' ? 'Supervisor responsable' : 'Jefe de operaciones';
+            // El supervisor firma para cerrar el borrador (requiere poder editar
+            // contenido); Jefe de Operaciones firma DESPUÉS, sobre el contenido
+            // ya congelado, y necesita su propio permiso de revisión.
+            const canSignThis = step === 'supervisor' ? editable : canSignOperations;
             return (
               <div key={step} className="rounded-[1.5rem] border p-4 space-y-3">
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</p>
@@ -321,9 +436,11 @@ export default function WeeklyReportDetailPage() {
                     <p className="text-xs text-muted-foreground">{new Date(sig.date).toLocaleString('es-CL')}</p>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Sin firmar.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {step === 'operations' && draft.status !== 'ready' ? 'Falta la firma del supervisor.' : 'Sin firmar.'}
+                  </p>
                 )}
-                {editable && (
+                {canSignThis && (
                   <Button variant="outline" className="rounded-xl w-full" onClick={() => openSignatureDialog(step)}>
                     <PenLine className="h-4 w-4 mr-2" /> {sig ? 'Re-firmar' : 'Firmar'}
                   </Button>
@@ -332,7 +449,7 @@ export default function WeeklyReportDetailPage() {
             );
           })}
         </div>
-        {findSig('supervisor') && <p className="text-[10px] text-muted-foreground mt-3">Al firmar el supervisor, el reporte queda marcado como <b>Listo</b>.</p>}
+        {findSig('supervisor') && <p className="text-[10px] text-muted-foreground mt-3">Al firmar el supervisor, el reporte queda <b>Listo</b> y su contenido se bloquea (usa &ldquo;Reabrir borrador&rdquo; para corregirlo).</p>}
       </Section>
 
       <Dialog open={!!signatureOpen} onOpenChange={(o) => { if (!o) setSignatureOpen(null); }}>

@@ -2,11 +2,12 @@
 
 import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Camera, FileText, ImagePlus, Plus, Save, Trash2, CloudOff } from 'lucide-react';
+import { ArrowLeft, Camera, FileText, ImagePlus, Plus, Save, Trash2, CloudOff, Hash } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { LoadingState } from '@/components/loading-state';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -54,6 +55,7 @@ export default function WorkOrderDetailPage() {
   const router = useRouter();
   const {
     workOrders,
+    workReports,
     workReportAreas,
     workReportSpecialties,
     workReportMilestones,
@@ -61,6 +63,7 @@ export default function WorkOrderDetailPage() {
     materials,
     users,
     updateWorkOrder,
+    deleteWorkOrder,
     uploadWorkReportPhoto,
     deleteWorkReportPhoto,
     addWorkReportArea,
@@ -75,7 +78,9 @@ export default function WorkOrderDetailPage() {
   // Listas por tipo del catálogo genérico (cliente/contrato/ubicación/turno/jornada).
   const catBy = (kind: string) => (workReportCatalogs || []).filter((c) => c.kind === kind);
 
-  // Catálogo de materiales (bodega) para autocompletar nombre + materialId + unidad.
+  // Catálogo de materiales (bodega) para autocompletar nombre + materialId + unidad,
+  // y también para "Equipos" (Activos = superficie única: la maquinaria vive
+  // en el mismo catálogo de materiales).
   const materialOptions = React.useMemo(
     () => (materials || [])
       .filter((m) => !m.archived)
@@ -84,9 +89,27 @@ export default function WorkOrderDetailPage() {
     [materials],
   );
 
-  const editable = can('work_reports:create');
+  // Catálogo de usuarios para autocompletar "Personal en obra" con userId
+  // (evita que "J. Pérez" y "Juan Perez" cuenten como dos personas al
+  // consolidar HH en el Diario).
+  const userOptions = React.useMemo(
+    () => (users || [])
+      .map((u) => ({ id: u.id, name: u.name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [users],
+  );
+
   const allWorkOrders = useOfflineCollection('work_orders', workOrders || []);
   const wo = allWorkOrders.find((w) => w.id === params.id);
+
+  // Si esta OT ya fue consolidada en un Diario que salió de borrador/observado
+  // (enviado a revisión, aprobado, etc.), queda bloqueada: editarla ahora no
+  // cambiaría el Diario (que usa una copia congelada) y generaría una
+  // discrepancia silenciosa entre la OT y el PDF ya firmado.
+  const lockingReport = (workReports || []).find(
+    (r) => (r.consolidatedOrderIds || []).includes(params.id) && r.status !== 'draft' && r.status !== 'observed',
+  );
+  const editable = can('work_reports:edit') && !lockingReport;
 
   const draftInit = React.useRef(false);
   const skipNextSave = React.useRef(false);
@@ -175,6 +198,26 @@ export default function WorkOrderDetailPage() {
       setDraft((d) => (d ? { ...d, photos: next } : d));
     }
   }, [wo, draft]);
+
+  // Limpieza de OT "fantasma": si el usuario crea una OT y sale sin escribir
+  // absolutamente nada (número, descripción, personal, equipos, materiales o
+  // fotos), se borra sola al salir de la página en vez de quedar para siempre
+  // como una tarjeta vacía en el listado (y en el selector de OT del Diario).
+  const draftRef = React.useRef(draft);
+  draftRef.current = draft;
+  const editableRef = React.useRef(editable);
+  editableRef.current = editable;
+  React.useEffect(() => {
+    return () => {
+      const d = draftRef.current;
+      if (!d || !editableRef.current) return;
+      const pristine = !d.otNumber?.trim() && !d.description?.trim()
+        && !(d.labor || []).length && !(d.equipment || []).length
+        && !(d.materials || []).length && !(d.photos || []).length;
+      if (pristine) deleteWorkOrder(d.id).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!draft) {
     if (!isLoading && !wo) {
@@ -290,7 +333,12 @@ export default function WorkOrderDetailPage() {
       }
       const photos = [...(draft.photos || []), ...uploaded];
       setDraft((d) => (d ? { ...d, photos } : d));
-      await updateWorkOrder(draft.id, { photos });
+      // Envía el borrador COMPLETO (no solo `photos`): si se enviara solo el
+      // campo de fotos, markSynced() marcaría el borrador local como
+      // "sincronizado" aunque hubiera otras ediciones (descripción, personal,
+      // etc.) que nunca llegaron al servidor — se perderían en silencio al
+      // recargar la página.
+      await updateWorkOrder(draft.id, { ...draft, photos });
       await markSynced();
       setPhotoDescription('');
       notify('Fotografías cargadas.', 'success');
@@ -330,7 +378,9 @@ export default function WorkOrderDetailPage() {
           userId: user?.id || '',
         });
       }
-      await updateWorkOrder(draft.id, { photos });
+      // Ver nota en handleFiles: se envía el borrador completo, no solo `photos`,
+      // para que markSynced() no descarte ediciones locales aún no sincronizadas.
+      await updateWorkOrder(draft.id, { ...draft, photos });
       await markSynced();
     } catch (e: any) {
       notify(e?.message || 'No se pudo eliminar la foto.', 'destructive');
@@ -382,9 +432,23 @@ export default function WorkOrderDetailPage() {
         </div>
       }
     >
+      {lockingReport && (
+        <div className="rounded-xl border border-warning bg-warning-subtle px-4 py-3 text-sm text-warning-subtle-foreground">
+          Esta OT fue consolidada en el Diario <b>{lockingReport.internalCode}</b>, que ya está en revisión o aprobado. Los datos de ese Diario quedaron congelados al enviarlo, así que esta OT no se puede editar.
+        </div>
+      )}
       <Section title="Información general">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <TextField label="Número OT" value={draft.otNumber} onChange={(v) => patchDraft({ otNumber: v })} disabled={!editable} />
+          <Field label="Número OT">
+            {draft.otNumberSource === 'auto' ? (
+              <div className="flex items-center gap-2">
+                <Input className="rounded-xl font-mono" value={draft.otNumber} disabled readOnly />
+                <Badge variant="outline" className="rounded-lg shrink-0 gap-1"><Hash className="h-3 w-3" /> Auto</Badge>
+              </div>
+            ) : (
+              <Input className="rounded-xl" value={draft.otNumber} disabled={!editable} onChange={(e) => patchDraft({ otNumber: e.target.value })} />
+            )}
+          </Field>
           <Field label="Cliente">
             <CatalogCombobox value={draft.client} options={catBy('client')} disabled={!editable} placeholder="Selecciona o crea…"
               onChange={(v) => patchDraft({ client: v })} onCreate={(n) => addWorkReportCatalog('client', n)} />
@@ -437,7 +501,17 @@ export default function WorkOrderDetailPage() {
         <div className="space-y-3">
           {(draft.labor || []).map((item, index) => (
             <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_110px_auto] gap-3 rounded-[1.5rem] border p-3">
-              <Input className="rounded-xl" placeholder="Nombre y apellidos" value={item.name} disabled={!editable} onChange={(e) => patchDraft({ labor: replaceAt(draft.labor, index, { ...item, name: e.target.value }) })} />
+              <CatalogCombobox
+                value={item.name}
+                options={userOptions}
+                disabled={!editable}
+                placeholder="Nombre y apellidos"
+                onCreate={async () => { /* permite trabajador libre (subcontratista) fuera del catálogo de usuarios */ }}
+                onChange={(name) => {
+                  const matched = (users || []).find((u) => u.name === name);
+                  patchDraft({ labor: replaceAt(draft.labor, index, { ...item, name, userId: matched?.id }) });
+                }}
+              />
               <Input className="rounded-xl" placeholder="Cargo" value={item.role} disabled={!editable} onChange={(e) => patchDraft({ labor: replaceAt(draft.labor, index, { ...item, role: e.target.value }) })} />
               <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="Horas" value={item.hours} disabled={!editable} onChange={(e) => patchDraft({ labor: replaceAt(draft.labor, index, { ...item, hours: Number(e.target.value) }) })} />
               <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => patchDraft({ labor: draft.labor.filter((x) => x.id !== item.id) })}><Trash2 className="h-4 w-4" /></Button>
@@ -451,7 +525,17 @@ export default function WorkOrderDetailPage() {
         <div className="space-y-3">
           {(draft.equipment || []).map((item, index) => (
             <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_110px_auto] gap-3 rounded-[1.5rem] border p-3">
-              <Input className="rounded-xl" placeholder="Equipo" value={item.equipment} disabled={!editable} onChange={(e) => patchDraft({ equipment: replaceAt(draft.equipment, index, { ...item, equipment: e.target.value }) })} />
+              <CatalogCombobox
+                value={item.equipment}
+                options={materialOptions}
+                disabled={!editable}
+                placeholder="Equipo (del catálogo de activos o libre)"
+                onCreate={async () => { /* permite equipo libre fuera del catálogo de activos */ }}
+                onChange={(name) => {
+                  const matched = (materials || []).find((m) => m.name === name);
+                  patchDraft({ equipment: replaceAt(draft.equipment, index, { ...item, equipment: name, assetId: matched?.id }) });
+                }}
+              />
               <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="Horas" value={item.hours} disabled={!editable} onChange={(e) => patchDraft({ equipment: replaceAt(draft.equipment, index, { ...item, hours: Number(e.target.value) }) })} />
               <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => patchDraft({ equipment: draft.equipment.filter((x) => x.id !== item.id) })}><Trash2 className="h-4 w-4" /></Button>
             </div>

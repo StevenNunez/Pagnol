@@ -102,15 +102,22 @@ export default function ContractStockReportPage() {
     }, [ledger, contractsMap]);
 
     // ── Valorización por contrato ─────────────────────────────────────────────
+    // Los activos DEL CLIENTE (ownership='cliente', comodato) no valorizan: no
+    // son inventario propio del tenant y sumarlos inflaría el valor real. Se
+    // cuentan aparte (clientQty) para que igual se vean en el desglose.
     const valuation = useMemo(() => {
-        const byContract = new Map<string | null, { qty: number; value: number; unpriced: number }>();
+        const byContract = new Map<string | null, { qty: number; value: number; unpriced: number; clientQty: number }>();
         let totalValue = 0;
+        let totalClientQty = 0;
         const unpricedMaterials = new Set<string>();
         for (const s of ledger) {
             const mat = materialsMap.get(s.materialId);
-            const entry = byContract.get(s.contractId) || { qty: 0, value: 0, unpriced: 0 };
+            const entry = byContract.get(s.contractId) || { qty: 0, value: 0, unpriced: 0, clientQty: 0 };
             entry.qty += Number(s.qty);
-            if (mat?.unitCost) {
+            if (mat?.ownership === 'cliente') {
+                entry.clientQty += Number(s.qty);
+                totalClientQty += Number(s.qty);
+            } else if (mat?.unitCost) {
                 const v = Number(s.qty) * mat.unitCost;
                 entry.value += v;
                 totalValue += v;
@@ -123,7 +130,7 @@ export default function ContractStockReportPage() {
         const rows = [...byContract.entries()]
             .map(([cid, e]) => ({ contractId: cid, label: contractLabel(cid), ...e }))
             .sort((a, b) => b.value - a.value || b.qty - a.qty);
-        return { rows, totalValue, unpricedCount: unpricedMaterials.size };
+        return { rows, totalValue, unpricedCount: unpricedMaterials.size, totalClientQty };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ledger, materialsMap, contractsMap]);
 
@@ -134,23 +141,28 @@ export default function ContractStockReportPage() {
         unit: string;
         byContract: Map<string | null, number>;
         total: number;
-        value: number | null; // null = sin costo unitario
+        value: number | null; // null = sin costo unitario, o material del cliente (no valoriza)
+        isClient: boolean;     // ownership='cliente' (comodato) — se excluye de la valorización
     }
     const matrixRows = useMemo(() => {
         const map = new Map<string, MatrixRow>();
         for (const s of ledger) {
             const mat = materialsMap.get(s.materialId);
+            // Los activos del cliente (comodato) no valorizan (value=null),
+            // igual que en las tarjetas de valorización — no son inventario propio.
+            const isClient = mat?.ownership === 'cliente';
             const row = map.get(s.materialId) || {
                 materialId: s.materialId,
                 name: mat?.name || "Material eliminado",
                 unit: mat?.unit || "und",
                 byContract: new Map<string | null, number>(),
                 total: 0,
-                value: mat?.unitCost ? 0 : null,
+                value: (mat?.unitCost && !isClient) ? 0 : null,
+                isClient,
             };
             row.byContract.set(s.contractId, (row.byContract.get(s.contractId) || 0) + Number(s.qty));
             row.total += Number(s.qty);
-            if (mat?.unitCost && row.value !== null) row.value += Number(s.qty) * mat.unitCost;
+            if (mat?.unitCost && !isClient && row.value !== null) row.value += Number(s.qty) * mat.unitCost;
             map.set(s.materialId, row);
         }
         let rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -165,6 +177,7 @@ export default function ContractStockReportPage() {
     const detailRows = useMemo(() => {
         let rows = ledger.map((s) => {
             const mat = materialsMap.get(s.materialId);
+            const isClient = mat?.ownership === 'cliente';
             return {
                 id: s.id,
                 name: mat?.name || "Material eliminado",
@@ -172,7 +185,10 @@ export default function ContractStockReportPage() {
                 contractId: s.contractId,
                 warehouseId: s.warehouseId,
                 qty: Number(s.qty),
-                value: mat?.unitCost ? Number(s.qty) * mat.unitCost : null,
+                // Los activos del cliente (comodato) no valorizan (value=null),
+                // consistente con la matriz y las tarjetas de valorización.
+                value: (mat?.unitCost && !isClient) ? Number(s.qty) * mat.unitCost : null,
+                isClient,
             };
         });
         // El filtro Cliente/Contrato ya viene aplicado en `ledger`.
@@ -225,10 +241,17 @@ export default function ContractStockReportPage() {
                 { header: "Unidades", key: "q", width: 14 },
                 { header: "Valorización (CLP)", key: "v", width: 20 },
                 { header: "Unidades sin costo", key: "u", width: 18 },
+                { header: "Unidades del cliente", key: "cli", width: 20 },
             ];
             wsVal.getRow(1).eachCell((c) => Object.assign(c, header));
-            for (const r of valuation.rows) wsVal.addRow({ c: r.label, q: r.qty, v: Math.round(r.value), u: r.unpriced });
-            wsVal.addRow({ c: "TOTAL", q: valuation.rows.reduce((a, r) => a + r.qty, 0), v: Math.round(valuation.totalValue) }).font = { bold: true };
+            for (const r of valuation.rows) wsVal.addRow({ c: r.label, q: r.qty, v: Math.round(r.value), u: r.unpriced, cli: r.clientQty });
+            wsVal.addRow({
+                c: "TOTAL",
+                q: valuation.rows.reduce((a, r) => a + r.qty, 0),
+                v: Math.round(valuation.totalValue),
+                cli: valuation.totalClientQty,
+            }).font = { bold: true };
+            // Nota: las unidades del cliente (comodato) se cuentan pero NO se valorizan.
 
             const wsMx = wb.addWorksheet("Matriz por contrato");
             const cols = [
@@ -242,7 +265,8 @@ export default function ContractStockReportPage() {
             wsMx.columns = cols;
             wsMx.getRow(1).eachCell((c) => Object.assign(c, header));
             for (const r of matrixRows) {
-                const row: Record<string, unknown> = { name: r.name, unit: r.unit, total: r.total, value: r.value === null ? "—" : Math.round(r.value) };
+                const valueCell = r.isClient ? "Del cliente" : (r.value === null ? "—" : Math.round(r.value));
+                const row: Record<string, unknown> = { name: r.isClient ? `${r.name} (del cliente)` : r.name, unit: r.unit, total: r.total, value: valueCell };
                 contractColumns.contracts.forEach((cid, i) => { row[`c${i}`] = r.byContract.get(cid) || 0; });
                 if (contractColumns.hasPool) row.pool = r.byContract.get(null) || 0;
                 wsMx.addRow(row);
@@ -339,9 +363,11 @@ export default function ContractStockReportPage() {
             header: "Valorización",
             headerClassName: "text-right",
             className: "text-right",
-            cell: (r) => r.value === null
-                ? <span className="text-xs text-muted-foreground">Sin costo unit.</span>
-                : <span className="font-semibold">{fmtCLP(r.value)}</span>,
+            cell: (r) => r.isClient
+                ? <span className="text-xs text-info-subtle-foreground font-semibold">Del cliente</span>
+                : r.value === null
+                    ? <span className="text-xs text-muted-foreground">Sin costo unit.</span>
+                    : <span className="font-semibold">{fmtCLP(r.value)}</span>,
         },
     ];
 
@@ -351,7 +377,10 @@ export default function ContractStockReportPage() {
             header: "Material",
             cell: (r) => (
                 <div>
-                    <p className="font-semibold">{r.name}</p>
+                    <p className="font-semibold">
+                        {r.name}
+                        {r.isClient && <span className="ml-2 badge-info text-[9px] font-black uppercase tracking-widest">Del cliente</span>}
+                    </p>
                     <p className="text-xs text-muted-foreground">{r.unit}</p>
                 </div>
             ),
@@ -382,9 +411,11 @@ export default function ContractStockReportPage() {
             header: "Valorización",
             headerClassName: "text-right",
             className: "text-right",
-            cell: (r) => r.value === null
-                ? <span className="text-xs text-muted-foreground">Sin costo unit.</span>
-                : <span className="font-semibold">{fmtCLP(r.value)}</span>,
+            cell: (r) => r.isClient
+                ? <span className="text-xs text-info-subtle-foreground font-semibold">Del cliente</span>
+                : r.value === null
+                    ? <span className="text-xs text-muted-foreground">Sin costo unit.</span>
+                    : <span className="font-semibold">{fmtCLP(r.value)}</span>,
         },
     ];
 
@@ -514,6 +545,11 @@ export default function ContractStockReportPage() {
                                 {valuation.unpricedCount} material(es) sin costo unitario no se valorizan
                             </p>
                         )}
+                        {valuation.totalClientQty > 0 && (
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                                {fmtQty(valuation.totalClientQty)} unidad(es) del cliente (comodato) — excluidas de la valorización
+                            </p>
+                        )}
                     </CardContent>
                 </Card>
                 {valuation.rows.map((r) => (
@@ -529,6 +565,7 @@ export default function ContractStockReportPage() {
                             <p className="text-[10px] text-muted-foreground mt-1">
                                 {fmtQty(r.qty)} unidad(es)
                                 {valuation.totalValue > 0 && r.value > 0 && ` · ${Math.round((r.value / valuation.totalValue) * 100)}% del total`}
+                                {r.clientQty > 0 && ` · ${fmtQty(r.clientQty)} del cliente`}
                                 {r.contractId === null && " · sin asignar a contrato"}
                             </p>
                         </CardContent>

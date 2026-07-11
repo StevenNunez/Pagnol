@@ -253,6 +253,7 @@ export async function addMaterial(data: any, { user, tenantId }: Context) {
             ownership: materialData.ownership || 'propio',
             rental_contract_id: materialData.rentalContractId || null,
             rental_asset_id: materialData.rentalAssetId || null,
+            client_id: materialData.clientId || null,
             tenant_id: tenantId,
         })
         .select()

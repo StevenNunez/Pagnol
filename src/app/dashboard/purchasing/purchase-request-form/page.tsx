@@ -14,13 +14,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { EmptyState } from "@/components/empty-state";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import {
   Send, Loader2, Plus, Trash2, ShoppingCart, ChevronsUpDown, Search, AlertCircle, Package,
-  ChevronDown, Clock, CheckCircle2, Truck, PackageCheck, X as XIcon,
+  ChevronDown, Clock, CheckCircle2, Truck, PackageCheck, X as XIcon, Building2, Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Material, Contract, ContractWorker } from "@/modules/core/lib/data";
+import type { Material, Contract, ContractWorker, PurchaseRequest, Client } from "@/modules/core/lib/data";
+import { supabase } from "@/modules/core/lib/supabase";
+import { generateClientSupplyPDF } from "@/lib/pdf-generator";
 import { PurchaseMaterialCombobox } from "@/components/supervisor-purchases/purchase-material-combobox";
 import { PurchaseHistoryCard } from "@/components/supervisor-purchases/purchase-history-card";
 import {
@@ -40,7 +43,7 @@ interface CartItem {
 }
 
 export default function PurchaseRequestFormPage() {
-  const { purchaseRequests, materials, addPurchaseRequest, materialCategories, contracts, contractWorkers, can } = useAppState();
+  const { purchaseRequests, materials, addPurchaseRequest, markClientRequestsSent, materialCategories, contracts, contractWorkers, clients, currentTenant, can } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
@@ -49,6 +52,9 @@ export default function PurchaseRequestFormPage() {
   const [commonArea, setCommonArea] = useState("");
   const [commonJustification, setCommonJustification] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Destino de la solicitud: compra a proveedor (histórico) o suministro del
+  // cliente del contrato (el cliente proporciona el material — caso Novandino).
+  const [target, setTarget] = useState<'supplier' | 'client'>('supplier');
 
   const activeContracts = useMemo(
     () => ((contracts || []) as Contract[]).filter((c) => c.status === "active").sort((a, b) => a.name.localeCompare(b.name)),
@@ -69,6 +75,11 @@ export default function PurchaseRequestFormPage() {
   useEffect(() => {
     if (isFieldWorkerSingleContract && !contractId) setContractId(myAssignedContracts[0].id);
   }, [isFieldWorkerSingleContract, myAssignedContracts, contractId]);
+
+  // Cliente del contrato seleccionado (para solicitudes de suministro).
+  const clientMap = useMemo(() => new Map(((clients || []) as Client[]).map((c) => [c.id, c])), [clients]);
+  const selectedContract = contractId ? contractMap.get(contractId) : undefined;
+  const contractClient = selectedContract?.clientId ? clientMap.get(selectedContract.clientId) : undefined;
 
   // --- Ítem en edición ---
   const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
@@ -120,7 +131,8 @@ export default function PurchaseRequestFormPage() {
     const acc = { inProgress: 0, approved: 0, ordered: 0, received: 0, rejected: 0 };
     myRequests.forEach(r => {
       const stage = resolvePurchaseStage(r);
-      if (stage === 'waiting_adc' || stage === 'in_review') acc.inProgress++;
+      // 'to_send' (suministro autorizado, por enviar al cliente) cuenta como en trámite.
+      if (stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send') acc.inProgress++;
       else acc[stage]++;
     });
     return acc;
@@ -205,6 +217,10 @@ export default function PurchaseRequestFormPage() {
       toast({ variant: "destructive", title: "Faltan datos generales", description: "Debes seleccionar el contrato y la justificación." });
       return;
     }
+    if (target === 'client' && !contractClient) {
+      toast({ variant: "destructive", title: "El contrato no tiene cliente", description: "Asocia un cliente al contrato en Configuración → Clientes antes de solicitar un suministro." });
+      return;
+    }
 
     setIsSubmitting(true);
     // Un solo batchId para todo el carrito → el historial las agrupa como un pedido.
@@ -223,13 +239,23 @@ export default function PurchaseRequestFormPage() {
         justification: commonJustification,
         supervisorId: authUser.id,
         batchId,
+        ...(target === 'client' ? {
+          requestTarget: 'client' as const,
+          clientId: contractClient!.id,
+          clientName: contractClient!.name,
+        } : {}),
       })));
 
       const failedIdx = new Set(results.map((r, i) => r.status === 'rejected' ? i : -1).filter(i => i >= 0));
       const succeeded = cart.length - failedIdx.size;
 
       if (failedIdx.size === 0) {
-        toast({ title: "Solicitud enviada", description: `${succeeded} ítem(s) enviados a revisión.` });
+        toast({
+          title: "Solicitud enviada",
+          description: target === 'client'
+            ? `${succeeded} ítem(s) enviados a autorización del ADC. Tras la autorización podrás enviarla por correo a ${contractClient?.name}.`
+            : `${succeeded} ítem(s) enviados a revisión.`,
+        });
         setCart([]);
         setContractId(isFieldWorkerSingleContract ? myAssignedContracts[0].id : "");
         setCommonArea("");
@@ -253,6 +279,77 @@ export default function PurchaseRequestFormPage() {
     }
   };
 
+  // ── Envío del suministro al cliente (post-autorización ADC) ────────────────
+  const [sendingItems, setSendingItems] = useState<PurchaseRequest[] | null>(null);
+  const [sendTo, setSendTo] = useState('');
+  const [sendMessage, setSendMessage] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  const openSendToClient = (items: PurchaseRequest[]) => {
+    const client = items[0]?.clientId ? clientMap.get(items[0].clientId) : undefined;
+    setSendTo(client?.contactEmail || '');
+    setSendMessage('');
+    setSendingItems(items);
+  };
+
+  const handleSendToClient = async () => {
+    if (!sendingItems?.length) return;
+    const anchor = sendingItems[0];
+    const client = anchor.clientId ? clientMap.get(anchor.clientId) : undefined;
+    if (!client) { toast({ variant: 'destructive', title: 'Cliente no encontrado', description: 'La solicitud no tiene un cliente válido asociado.' }); return; }
+    if (!sendTo.trim()) { toast({ variant: 'destructive', title: 'Falta el correo', description: 'Indica al menos un destinatario.' }); return; }
+
+    setIsSendingEmail(true);
+    try {
+      const { blob, filename } = await generateClientSupplyPDF(
+        sendingItems,
+        client,
+        { name: currentTenant?.name, rut: currentTenant?.rut, address: currentTenant?.address, logoUrl: currentTenant?.logoUrl },
+        authUser?.name,
+      );
+      const pdfBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Sesión no disponible. Vuelve a iniciar sesión.');
+      const code = anchor.internalCode || anchor.id.slice(0, 8).toUpperCase();
+      const res = await fetch('/api/purchasing/send-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          to: sendTo.split(/[,;]/).map((s) => s.trim()).filter(Boolean),
+          subject: `Solicitud de suministro ${code} · ${currentTenant?.name || ''}`.trim(),
+          message: sendMessage.trim() || undefined,
+          pdfBase64,
+          filename,
+          orderCode: code,
+          docLabel: 'Solicitud de suministro',
+          companyName: currentTenant?.name,
+          companyLogoUrl: currentTenant?.logoUrl,
+          senderName: authUser?.name,
+          senderEmail: authUser?.email,
+          senderPhone: authUser?.phone,
+          senderRole: authUser?.cargo,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+
+      // Correo afuera → recién ahora se marcan como enviadas (ordered).
+      await markClientRequestsSent(sendingItems.map((r) => r.id));
+      toast({ title: 'Solicitud enviada al cliente', description: `Se envió a ${sendTo}. Quedó en espera de la entrega de ${client.name}.` });
+      setSendingItems(null);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'No se pudo enviar', description: e?.message || 'Error desconocido.' });
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   const KPI_ITEMS = [
     { key: 'in_progress' as HistoryFilter, label: 'En trámite', value: kpis.inProgress, icon: Clock, iconCls: 'bg-info-subtle text-info' },
     { key: 'approved' as HistoryFilter, label: 'Aprobadas', value: kpis.approved, icon: CheckCircle2, iconCls: kpis.approved > 0 ? 'bg-success-subtle text-success-subtle-foreground' : 'bg-muted text-muted-foreground' },
@@ -272,13 +369,49 @@ export default function PurchaseRequestFormPage() {
           <div className="bg-card rounded-[2rem] border shadow-sm p-8 space-y-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-2xl bg-primary/10 text-primary shrink-0">
-                <ShoppingCart size={20} />
+                {target === 'client' ? <Building2 size={20} /> : <ShoppingCart size={20} />}
               </div>
               <div>
-                <h3 className="text-lg font-black uppercase tracking-tight">Nueva Compra</h3>
-                <p className="text-xs text-muted-foreground font-medium">Agrega múltiples ítems y envíalos en un solo pedido.</p>
+                <h3 className="text-lg font-black uppercase tracking-tight">{target === 'client' ? 'Suministro del Cliente' : 'Nueva Compra'}</h3>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {target === 'client'
+                    ? 'El cliente del contrato proporciona los materiales. Ingresan como activos del cliente.'
+                    : 'Agrega múltiples ítems y envíalos en un solo pedido.'}
+                </p>
               </div>
             </div>
+
+            {/* Destino de la solicitud */}
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-muted/50 border">
+              {([['supplier', 'Comprar a proveedor', ShoppingCart], ['client', 'Solicitar al cliente', Building2]] as const).map(([value, label, Icon]) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setTarget(value)}
+                  className={cn(
+                    'flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all',
+                    target === value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Icon size={14} /> {label}
+                </button>
+              ))}
+            </div>
+
+            {target === 'client' && contractId && (
+              contractClient ? (
+                <div className="flex items-center gap-2 p-3 rounded-xl border border-info/30 bg-info-subtle text-info-subtle-foreground text-xs font-medium">
+                  <Building2 className="h-4 w-4 shrink-0" />
+                  <span>Se solicitará a <b>{contractClient.name}</b>{contractClient.contactEmail ? ` (${contractClient.contactEmail})` : ' — sin correo de contacto registrado'}.</span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 p-3 rounded-xl border border-warning/30 bg-warning-subtle text-warning-subtle-foreground text-xs font-medium">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>El contrato seleccionado no tiene un cliente asociado. Asócialo en Configuración → Clientes para poder solicitar suministros.</span>
+                </div>
+              )
+            )}
 
             <div className="space-y-4 p-5 border rounded-2xl bg-muted/30">
               <div className="space-y-2">
@@ -458,9 +591,11 @@ export default function PurchaseRequestFormPage() {
               <Button
                 className="w-full h-12 rounded-xl text-sm font-black uppercase tracking-widest shadow-lg shadow-primary/10 gap-2"
                 onClick={handleSubmitAll}
-                disabled={isSubmitting || cart.length === 0 || !contractId || !commonJustification}
+                disabled={isSubmitting || cart.length === 0 || !contractId || !commonJustification || (target === 'client' && !contractClient)}
               >
-                {isSubmitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando…</> : <><Send className="h-4 w-4" /> Enviar solicitud de compra</>}
+                {isSubmitting
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando…</>
+                  : <><Send className="h-4 w-4" /> {target === 'client' ? 'Enviar solicitud de suministro' : 'Enviar solicitud de compra'}</>}
               </Button>
             </div>
           </div>
@@ -518,7 +653,7 @@ export default function PurchaseRequestFormPage() {
             <>
               <div className="space-y-4">
                 {filteredHistory.slice(0, visible).map((group) => (
-                  <PurchaseHistoryCard key={groupKey(group[0])} items={group} />
+                  <PurchaseHistoryCard key={groupKey(group[0])} items={group} onSendToClient={openSendToClient} />
                 ))}
               </div>
               {filteredHistory.length > visible && (
@@ -532,6 +667,48 @@ export default function PurchaseRequestFormPage() {
           )}
         </div>
       </div>
+
+      {/* Diálogo: enviar solicitud de suministro al cliente (PDF + correo) */}
+      <Dialog open={!!sendingItems} onOpenChange={(o) => { if (!o && !isSendingEmail) setSendingItems(null); }}>
+        <DialogContent className="rounded-[1.5rem] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5 text-primary" /> Enviar al cliente
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Se enviará la <b>Solicitud de Suministro {sendingItems?.[0]?.internalCode || ''}</b> ({sendingItems?.length || 0} ítem{(sendingItems?.length || 0) > 1 ? 's' : ''}) en PDF a <b>{sendingItems?.[0]?.clientName || 'el cliente'}</b>.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Destinatario(s) <span className="text-destructive">*</span></Label>
+              <Input
+                value={sendTo}
+                onChange={(e) => setSendTo(e.target.value)}
+                placeholder="correo@cliente.cl (separa varios con coma)"
+                className="h-11 rounded-xl"
+                disabled={isSendingEmail}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Mensaje (opcional)</Label>
+              <Textarea
+                value={sendMessage}
+                onChange={(e) => setSendMessage(e.target.value)}
+                placeholder="Estimados, adjuntamos solicitud de suministro para la faena…"
+                className="resize-none h-20 rounded-xl"
+                disabled={isSendingEmail}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="rounded-xl" disabled={isSendingEmail} onClick={() => setSendingItems(null)}>Cancelar</Button>
+            <Button className="rounded-xl gap-2" disabled={isSendingEmail || !sendTo.trim()} onClick={handleSendToClient}>
+              {isSendingEmail ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando…</> : <><Send className="h-4 w-4" /> Enviar</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }

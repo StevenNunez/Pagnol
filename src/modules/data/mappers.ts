@@ -45,6 +45,7 @@ export const mappers = {
         ownership: item.ownership || 'propio',
         rentalContractId: item.rental_contract_id || null,
         rentalAssetId: item.rental_asset_id || null,
+        clientId: item.client_id || null,
     }),
     profiles: (item: any): User => ({
         id: item.id,
@@ -353,6 +354,7 @@ export const mappers = {
         structuredActivities: item.structured_activities || [],
         dailyOts: item.daily_ots || [],
         consolidatedOrderIds: item.consolidated_order_ids || [],
+        consolidatedOrdersSnapshot: item.consolidated_orders_snapshot || null,
         // Coerción de formato legacy: `hours` antes era número escalar; ahora es
         // un objeto {otId: horas}. Normaliza para que la UI/PDF no rompan.
         labor: (item.labor || []).map((l: any) => ({
@@ -386,6 +388,7 @@ export const mappers = {
         id: item.id,
         tenantId: item.tenant_id,
         otNumber: item.ot_number || '',
+        otNumberSource: item.ot_number_source || 'manual',
         client: item.client || '',
         contractNumber: item.contract_number || null,
         area: item.area || null,
@@ -426,6 +429,7 @@ export const mappers = {
         startDate: item.start_date,
         endDate: item.end_date,
         consolidatedReportIds: item.consolidated_report_ids || [],
+        consolidatedReportsSnapshot: item.consolidated_reports_snapshot || null,
         observations: item.observations || null,
         shiftHandover: item.shift_handover || null,
         signatures: item.signatures || [],
@@ -527,7 +531,11 @@ export const mappers = {
         rejectionDate: item.rejection_date ? new Date(item.rejection_date) : undefined,
         adcAuthorizedAt: item.adc_authorized_at || null,
         adcAuthorizedById: item.adc_authorized_by || null,
-        batchId: item.batch_id || null
+        batchId: item.batch_id || null,
+        requestTarget: item.request_target || 'supplier',
+        clientId: item.client_id || null,
+        clientName: item.client_name || null,
+        sentToClientAt: item.sent_to_client_at || null,
     }),
     return_requests: (item: any): ReturnRequest => ({
         id: item.id,

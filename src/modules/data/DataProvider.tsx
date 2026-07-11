@@ -497,6 +497,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         authorizePurchaseRequest: bindContext(purchaseRequestMutations.authorizePurchaseRequest),
         updatePurchaseRequestStatus: bindContext(purchaseRequestMutations.updatePurchaseRequestStatus),
         receivePurchaseRequest: bindContext(purchaseRequestMutations.receivePurchaseRequest),
+        markClientRequestsSent: bindContext(purchaseRequestMutations.markClientRequestsSent),
         deletePurchaseRequest: bindContext(purchaseRequestMutations.deletePurchaseRequest),
         cancelPurchaseOrder: bindContext(purchaseRequestMutations.cancelPurchaseOrder),
         archiveLot: bindContext(purchaseRequestMutations.archiveLot),

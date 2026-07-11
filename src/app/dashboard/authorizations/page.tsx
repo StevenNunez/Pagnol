@@ -56,12 +56,20 @@ export default function AuthorizationsPage() {
       .filter((r: any) => r.status === 'pending' && !r.adcAuthorizedAt)
       .map((r: any) => ({
         id: r.id,
-        code: r.id,
+        code: r.internalCode || r.id,
         requesterName: r.requesterName || userMap.get(r.supervisorId),
         contractName: r.contractName,
         date: r.createdAt,
         justification: r.justification,
-        lines: [{ label: r.materialName, qty: r.quantity, meta: r.unit }],
+        lines: [{
+          label: r.materialName,
+          qty: r.quantity,
+          // Deja explícito cuando el destino es el CLIENTE del contrato (el
+          // cliente proporciona el material) — el ADC autoriza sabiendo qué firma.
+          meta: r.requestTarget === 'client'
+            ? `${r.unit} · Suministro del cliente ${r.clientName || ''}`.trim()
+            : r.unit,
+        }],
       })),
   [purchaseRequests, userMap]);
 

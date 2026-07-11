@@ -194,7 +194,7 @@ export async function transitionWorkReport(
 
   const { data: current, error: readError } = await supabase
     .from('work_reports')
-    .select('status, signatures, audit_log')
+    .select('status, signatures, audit_log, consolidated_order_ids')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
     .single();
@@ -230,6 +230,20 @@ export async function transitionWorkReport(
     row.final_approved_at = null;
   }
   if (details.sentTo) row.sent_to = details.sentTo;
+
+  // Congela las OT consolidadas al (re)enviar a revisión: desde este punto el
+  // Diario ya no debe cambiar si alguien edita la OT origen después (evita que
+  // un documento firmado/aprobado se altere retroactivamente).
+  if (toStatus === 'pending_review') {
+    const orderIds: string[] = current.consolidated_order_ids || [];
+    if (orderIds.length) {
+      const { data: orderRows } = await supabase
+        .from('work_orders')
+        .select('*')
+        .in('id', orderIds);
+      row.consolidated_orders_snapshot = (orderRows || []).map((r) => mappers.work_orders(r));
+    }
+  }
 
   const { error } = await supabase
     .from('work_reports')
@@ -334,14 +348,36 @@ export async function uploadWorkReportPhoto(
 
 export async function deleteWorkReport(id: string, ctx: Context): Promise<void> {
   if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
+  const isSuperAdmin = ctx.user.role === 'super-admin';
 
   const { data: current, error: readError } = await supabase
     .from('work_reports')
-    .select('photos')
+    .select('photos, status')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
     .single();
   if (readError) throw readError;
+
+  // Un Diario que ya salió de borrador/observado pasó por revisión y puede
+  // tener firmas (Jefe de Operaciones / ADC) — protegido de borrado accidental.
+  // Solo super-admin puede saltarse esto (mismo criterio que las transiciones
+  // de estado en transitionWorkReport).
+  if (!isSuperAdmin && current.status !== 'draft' && current.status !== 'observed') {
+    throw new Error('Este informe ya fue enviado a revisión (o está aprobado) y no se puede eliminar — protege el historial de firmas/aprobaciones. Contacta a soporte si de verdad necesitas borrarlo.');
+  }
+
+  // Un Diario consolidado en un Reporte Semanal no se puede borrar sin antes
+  // desvincularlo — evita que desaparezca en silencio del Semanal (mismo
+  // patrón que el guard de OT→Diario en workOrderMutations.deleteWorkOrder).
+  const { data: referencing } = await supabase
+    .from('work_weekly_reports')
+    .select('title, status')
+    .contains('consolidated_report_ids', [id])
+    .limit(1);
+  if (referencing && referencing.length > 0) {
+    const r = referencing[0] as { title?: string; status?: string };
+    throw new Error(`Este Diario está consolidado en el Reporte Semanal "${r.title || ''}" (${r.status || ''}). Quítalo de ahí antes de eliminarlo.`);
+  }
 
   const photoPaths = ((current?.photos || []) as WorkReportPhoto[])
     .map((p) => p.path)

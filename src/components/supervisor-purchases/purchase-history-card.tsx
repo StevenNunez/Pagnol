@@ -1,10 +1,11 @@
 "use client";
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Clock, MapPin, AlertTriangle } from 'lucide-react';
+import { Clock, MapPin, AlertTriangle, Building2, Mail } from 'lucide-react';
 import type { PurchaseRequest } from '@/modules/core/lib/data';
-import { resolvePurchaseStage, STAGE_META, PurchaseStage } from './purchase-pipeline';
+import { resolvePurchaseStage, isClientSupply, STAGE_META, CLIENT_STAGE_HINT, PurchaseStage } from './purchase-pipeline';
 import { PurchaseStageBadge } from './purchase-stage-badge';
 
 const formatDate = (date: any): string => {
@@ -14,6 +15,7 @@ const formatDate = (date: any): string => {
 };
 
 function ItemDetail({ req, stage }: { req: PurchaseRequest; stage: PurchaseStage }) {
+    const clientHint = isClientSupply(req) ? CLIENT_STAGE_HINT[stage] : undefined;
     return (
         <div className="space-y-1.5">
             {stage === 'rejected' && req.rejectionReason && (
@@ -24,30 +26,63 @@ function ItemDetail({ req, stage }: { req: PurchaseRequest; stage: PurchaseStage
             {stage === 'received' && (
                 <p className="text-[10px] font-medium text-muted-foreground">
                     Recibido el {formatDate(req.receivedAt)}
+                    {isClientSupply(req) && <span> — ingresó como activo del cliente</span>}
                     {typeof req.originalQuantity === 'number' && req.originalQuantity !== req.quantity && (
                         <span className="text-warning"> — recepción parcial (se solicitaron {req.originalQuantity} originalmente)</span>
                     )}
                 </p>
             )}
-            {(stage === 'waiting_adc' || stage === 'in_review' || stage === 'approved' || stage === 'ordered') && (
-                <p className="text-[10px] font-medium text-muted-foreground italic">{STAGE_META[stage].hint}</p>
+            {(stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send' || stage === 'approved' || stage === 'ordered') && (
+                <p className="text-[10px] font-medium text-muted-foreground italic">{clientHint || STAGE_META[stage].hint}</p>
             )}
         </div>
     );
 }
 
+/** Badge de destino para solicitudes de suministro del cliente. */
+function ClientBadge({ req }: { req: PurchaseRequest }) {
+    if (!isClientSupply(req)) return null;
+    return (
+        <Badge variant="outline" className="text-[9px] h-5 px-1.5 font-black uppercase tracking-widest gap-1 border-info/40 text-info-subtle-foreground bg-info-subtle">
+            <Building2 className="h-3 w-3" /> Cliente{req.clientName ? `: ${req.clientName}` : ''}
+        </Badge>
+    );
+}
+
+/** Botón de envío al cliente: visible cuando el grupo tiene ítems autorizados
+ * por el ADC aún sin enviar (etapa 'to_send'). El envío lo hace la página
+ * dueña (genera PDF + correo + marca enviado) vía `onSendToClient`. */
+function SendToClientButton({ items, onSendToClient }: { items: PurchaseRequest[]; onSendToClient?: (items: PurchaseRequest[]) => void }) {
+    if (!onSendToClient) return null;
+    const toSend = items.filter((r) => isClientSupply(r) && resolvePurchaseStage(r) === 'to_send');
+    if (!toSend.length) return null;
+    return (
+        <Button size="sm" className="rounded-xl gap-2 w-full" onClick={() => onSendToClient(toSend)}>
+            <Mail className="h-3.5 w-3.5" /> Enviar al cliente ({toSend.length} ítem{toSend.length > 1 ? 's' : ''})
+        </Button>
+    );
+}
+
+interface CardProps {
+    items: PurchaseRequest[];
+    onSendToClient?: (items: PurchaseRequest[]) => void;
+}
+
 /** Una solicitud suelta (sin batch, o grupo de un solo ítem). */
-function SingleCard({ req }: { req: PurchaseRequest }) {
+function SingleCard({ items, onSendToClient }: CardProps) {
+    const req = items[0];
     const stage = resolvePurchaseStage(req);
     return (
         <div className={cn(
             'bg-card rounded-[1.5rem] border shadow-sm p-6 space-y-4 transition-all hover:shadow-lg',
             stage === 'waiting_adc' && 'border-l-4 border-l-warning',
+            stage === 'to_send' && 'border-l-4 border-l-info',
         )}>
             <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 space-y-1">
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">{req.internalCode || `REF ${req.id.slice(0, 8).toUpperCase()}`}</p>
-                    <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mt-1">{req.contractName || '—'}</p>
+                    <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{req.contractName || '—'}</p>
+                    <ClientBadge req={req} />
                 </div>
                 <div className="flex flex-col items-end gap-1.5 shrink-0">
                     <PurchaseStageBadge stage={stage} />
@@ -78,6 +113,7 @@ function SingleCard({ req }: { req: PurchaseRequest }) {
             )}
 
             <ItemDetail req={req} stage={stage} />
+            <SendToClientButton items={items} onSendToClient={onSendToClient} />
         </div>
     );
 }
@@ -85,16 +121,17 @@ function SingleCard({ req }: { req: PurchaseRequest }) {
 /** Pedido con varios ítems que se enviaron juntos (mismo batchId). Cada ítem
  * conserva su propia etapa — Abastecimiento puede aprobar/rechazar por ítem,
  * así que un solo badge de grupo mentiría si divergen. */
-function GroupCard({ items }: { items: PurchaseRequest[] }) {
+function GroupCard({ items, onSendToClient }: CardProps) {
     const anchor = items[0];
     return (
         <div className="bg-card rounded-[1.5rem] border shadow-sm p-6 space-y-4 transition-all hover:shadow-lg">
             <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 space-y-1">
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">
                         {anchor.internalCode || `REF ${anchor.id.slice(0, 8).toUpperCase()}`} <span className="text-muted-foreground normal-case font-medium">+ {items.length - 1} ítem{items.length - 1 > 1 ? 's' : ''} más</span>
                     </p>
-                    <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mt-1">{anchor.contractName || '—'}</p>
+                    <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{anchor.contractName || '—'}</p>
+                    <ClientBadge req={anchor} />
                 </div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap flex items-center gap-1 shrink-0">
                     <Clock className="h-3 w-3" /> {formatDate(anchor.createdAt)}
@@ -130,11 +167,12 @@ function GroupCard({ items }: { items: PurchaseRequest[] }) {
             {anchor.justification && (
                 <p className="text-xs text-muted-foreground font-medium italic border-l-2 border-border pl-3">{anchor.justification}</p>
             )}
+            <SendToClientButton items={items} onSendToClient={onSendToClient} />
         </div>
     );
 }
 
-export function PurchaseHistoryCard({ items }: { items: PurchaseRequest[] }) {
-    if (items.length === 1) return <SingleCard req={items[0]} />;
-    return <GroupCard items={items} />;
+export function PurchaseHistoryCard({ items, onSendToClient }: CardProps) {
+    if (items.length === 1) return <SingleCard items={items} onSendToClient={onSendToClient} />;
+    return <GroupCard items={items} onSendToClient={onSendToClient} />;
 }

@@ -81,6 +81,14 @@ function cloneReport(report: WorkReport): WorkReport {
   return JSON.parse(JSON.stringify(report));
 }
 
+// Formatea una fecha `YYYY-MM-DD` sin el corrimiento de un día por zona
+// horaria que produce `new Date('YYYY-MM-DD').toLocaleDateString()`.
+function fmtDateOnly(value: any) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  if (!m) return '';
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('es-CL');
+}
+
 export default function WorkReportDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -143,6 +151,7 @@ export default function WorkReportDetailPage() {
   const [useSavedSignature, setUseSavedSignature] = React.useState(true);
   const [reviewNotes, setReviewNotes] = React.useState('');
   const [missingFields, setMissingFields] = React.useState<string[] | null>(null);
+  const [showAllOts, setShowAllOts] = React.useState(false);
   const savedSignature = user?.signature || null;
 
   const openSignatureDialog = (step: 'supervisor' | 'operations' | 'final') => {
@@ -179,13 +188,17 @@ export default function WorkReportDetailPage() {
   const editable = !!draft && (isSuperAdmin || ((draft.status === 'draft' || draft.status === 'observed') && can('work_reports:edit')));
   const isAwaitingApproval = !!draft && (draft.status === 'pending_review' || draft.status === 'operations_approved');
   // OT (work_orders) que este Diario consolida. Si hay alguna, el reporte deriva
-  // personal/equipos/materiales/matriz HH desde ellas (modo cascada).
-  const consolidatedOrders = React.useMemo(
-    () => (draft?.consolidatedOrderIds || [])
+  // personal/equipos/materiales/matriz HH desde ellas (modo cascada). Una vez
+  // enviado a revisión queda una copia congelada (consolidatedOrdersSnapshot):
+  // se usa esa copia en vez de las OT en vivo para que un Diario firmado/
+  // aprobado no cambie si alguien edita la OT origen después.
+  const usingSnapshot = !!draft && draft.status !== 'draft' && draft.status !== 'observed' && !!draft.consolidatedOrdersSnapshot?.length;
+  const consolidatedOrders = React.useMemo(() => {
+    if (usingSnapshot) return draft!.consolidatedOrdersSnapshot as WorkOrder[];
+    return (draft?.consolidatedOrderIds || [])
       .map((oid) => (workOrders || []).find((o) => o.id === oid))
-      .filter((o): o is WorkOrder => !!o),
-    [draft?.consolidatedOrderIds, workOrders],
-  );
+      .filter((o): o is WorkOrder => !!o);
+  }, [usingSnapshot, draft, workOrders]);
   const consolidating = consolidatedOrders.length > 0;
   const consolidation = React.useMemo(
     () => (consolidating ? consolidateWorkOrders(consolidatedOrders) : null),
@@ -246,6 +259,31 @@ export default function WorkReportDetailPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Limpieza de Diario "fantasma": si el usuario crea un Reporte Diario y sale
+  // sin capturar nada (ni OT consolidada, ni cabecera, ni actividades/personal
+  // manual, ni fotos), se borra solo al salir de la página en vez de quedar
+  // para siempre como una fila vacía en el listado (contamina "Creados hoy" y
+  // el promedio de avance).
+  const draftRef = React.useRef(draft);
+  draftRef.current = draft;
+  const editableRef = React.useRef(editable);
+  editableRef.current = editable;
+  React.useEffect(() => {
+    return () => {
+      const d = draftRef.current;
+      if (!d || !editableRef.current) return;
+      const pristine = !d.client?.trim() && !d.faena?.trim() && !d.area?.trim()
+        && !(d.consolidatedOrderIds || []).length
+        && !(d.dailyOts || []).some((o) => o.otNumber?.trim())
+        && !d.activities?.trim() && !(d.structuredActivities || []).length
+        && !(d.labor || []).some((l) => l.name?.trim())
+        && !(d.equipment || []).length && !(d.materials || []).length
+        && !(d.photos || []).length;
+      if (pristine) deleteWorkReport(d.id).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!draft) {
     if (isLoading) return <LoadingState />;
     return (
@@ -282,7 +320,14 @@ export default function WorkReportDetailPage() {
       supervisorId: rep.supervisorId || draft.supervisorId,
       supervisorName: rep.supervisorName || draft.supervisorName,
     } : {};
-    patchDraft({ consolidatedOrderIds: nextIds, dailyOts: nextDailyOts, ...header });
+    // Sugiere el % de avance como el promedio de las OT seleccionadas (en vez
+    // de dejarlo 100% manual, desconectado del avance real que cada OT ya
+    // reporta). Sigue siendo un campo editable: el supervisor puede corregirlo
+    // a mano después si hace falta.
+    const progress: Partial<WorkReport> = nextOrders.length
+      ? { progressPercent: Math.round(nextOrders.reduce((s, o) => s + (Number(o.executedPercent) || 0), 0) / nextOrders.length) }
+      : {};
+    patchDraft({ consolidatedOrderIds: nextIds, dailyOts: nextDailyOts, ...header, ...progress });
   };
 
   const updateArray = <T extends { id: string }>(key: 'labor' | 'equipment' | 'interferences' | 'materials' | 'nextDayPlan' | 'photos' | 'dailyOts' | 'structuredActivities', items: T[]) => {
@@ -602,40 +647,76 @@ export default function WorkReportDetailPage() {
           {/* Fuente principal del Diario: las OT del día. Al seleccionarlas se
               hereda la cabecera y se consolidan personal/equipos/materiales/HH/fotos. */}
           <Section title="OT / Reportes de Trabajo del día">
-            <p className="text-[10px] text-muted-foreground mb-3">El reporte diario se construye desde las OT. Selecciona las del día: el personal, equipos, materiales, la matriz de horas y las fotografías se consolidan automáticamente, y la información general se hereda de ellas.</p>
-            {(workOrders || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay Órdenes de Trabajo creadas. Crea OT en <button type="button" className="text-primary underline" onClick={() => router.push('/dashboard/work-reports/ot')}>OT / Reportes de Trabajo</button>.</p>
+            {usingSnapshot ? (
+              <>
+                <p className="text-[10px] text-muted-foreground mb-3">Este Diario ya fue enviado a revisión: las OT quedaron congeladas en ese momento. Si alguien edita una de estas OT después, este Diario no cambia.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {consolidatedOrders.map((o) => (
+                    <div key={o.id} className="rounded-xl border p-3 bg-muted/20">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-sm truncate">{o.otNumber || '(sin N°)'}</span>
+                        <Badge variant="outline" className="rounded-lg shrink-0">Congelada</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">{o.description || 'Sin descripción'}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {[...(workOrders || [])]
-                  .sort((a, b) => (a.otNumber || '').localeCompare(b.otNumber || ''))
-                  .map((o) => {
-                    const selected = (draft.consolidatedOrderIds || []).includes(o.id);
-                    const hh = (o.labor || []).reduce((a, l) => a + (Number(l.hours) || 0), 0);
-                    return (
-                      <button
-                        key={o.id}
-                        type="button"
-                        disabled={!editable}
-                        onClick={() => toggleConsolidatedOrder(o)}
-                        className={`text-left rounded-xl border p-3 transition disabled:opacity-60 ${selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/40'}`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-sm truncate">{o.otNumber || '(sin N°)'}</span>
-                          <Badge variant="outline" className="rounded-lg shrink-0">{o.status === 'ready' ? 'Lista' : 'Borrador'}</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{o.description || 'Sin descripción'}</p>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground mt-1">
-                          {o.area && <span>Área: {o.area}</span>}
-                          {o.specialty && <span>Esp.: {o.specialty}</span>}
-                          <span>HH: {Math.round(hh * 100) / 100}</span>
-                          <span>{(o.labor || []).length} pers.</span>
-                          <span>{(o.photos || []).length} fotos</span>
-                        </div>
+              <>
+                <p className="text-[10px] text-muted-foreground mb-3">El reporte diario se construye desde las OT. Selecciona las del día: el personal, equipos, materiales, la matriz de horas y las fotografías se consolidan automáticamente, y la información general se hereda de ellas. Solo se pueden consolidar OT en estado <b>Lista</b>.</p>
+                {(workOrders || []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay Órdenes de Trabajo creadas. Crea OT en <button type="button" className="text-primary underline" onClick={() => router.push('/dashboard/work-reports/ot')}>OT / Reportes de Trabajo</button>.</p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                        {showAllOts ? 'Todas las OT' : `OT del ${fmtDateOnly(draft.workDate)}`}
+                      </span>
+                      <button type="button" className="text-xs text-primary underline" onClick={() => setShowAllOts((v) => !v)}>
+                        {showAllOts ? 'Mostrar solo las del día' : 'Mostrar todas'}
                       </button>
-                    );
-                  })}
-              </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {[...(workOrders || [])]
+                        .filter((o) => {
+                          const selected = (draft.consolidatedOrderIds || []).includes(o.id);
+                          if (selected || showAllOts) return true;
+                          return String(o.workDate).slice(0, 10) === String(draft.workDate).slice(0, 10);
+                        })
+                        .sort((a, b) => (a.otNumber || '').localeCompare(b.otNumber || ''))
+                        .map((o) => {
+                          const selected = (draft.consolidatedOrderIds || []).includes(o.id);
+                          const selectable = selected || o.status === 'ready';
+                          const hh = (o.labor || []).reduce((a, l) => a + (Number(l.hours) || 0), 0);
+                          return (
+                            <button
+                              key={o.id}
+                              type="button"
+                              disabled={!editable || !selectable}
+                              title={!selectable ? 'Marca la OT como "Lista" para poder consolidarla.' : undefined}
+                              onClick={() => toggleConsolidatedOrder(o)}
+                              className={`text-left rounded-xl border p-3 transition disabled:opacity-60 ${selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/40'}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-sm truncate">{o.otNumber || '(sin N°)'}</span>
+                                <Badge variant="outline" className="rounded-lg shrink-0">{o.status === 'ready' ? 'Lista' : 'Borrador'}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">{o.description || 'Sin descripción'}</p>
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground mt-1">
+                                {o.area && <span>Área: {o.area}</span>}
+                                {o.specialty && <span>Esp.: {o.specialty}</span>}
+                                <span>HH: {Math.round(hh * 100) / 100}</span>
+                                <span>{(o.labor || []).length} pers.</span>
+                                <span>{(o.photos || []).length} fotos</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </>
+                )}
+              </>
             )}
           </Section>
 

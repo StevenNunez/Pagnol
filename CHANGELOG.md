@@ -18,6 +18,233 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Suministros del cliente (activos del cliente, caso Valar↔Novandino)
+Cuando el tenant no tiene o no consigue un material, el CLIENTE del contrato lo
+proporciona. Nueva iniciativa completa (Fases 0–4). Migración pendiente de
+aplicar: `supabase/migrations/20260713000000_client_supply_requests.sql`.
+
+- **Modelo**: `purchase_requests.request_target` (`'supplier'` histórico |
+  `'client'`) + `client_id`/`client_name`/`sent_to_client_at`;
+  `materials.client_id` y `ownership` extendido a
+  `'propio' | 'arrendado' | 'cliente' | 'subcontrato'` (el último reservado,
+  sin UI — deja listo el caso subcontratos). Se reutiliza el pipeline de
+  compra completo (correlativo, gate ADC, batch, estados, recepción) en vez de
+  duplicar una entidad nueva.
+- **Solicitud del supervisor**: el formulario de compra ahora tiene selector
+  de destino "Comprar a proveedor / Solicitar al cliente". El cliente se
+  deriva SOLO del contrato seleccionado (`contracts.client_id`); si el
+  contrato no tiene cliente, se avisa y se bloquea el envío. Correlativo
+  propio `SCL` (configurable en Configuración → Correlativos).
+- **Flujo**: solicitud → gate ADC (igual que compra; la bandeja del ADC marca
+  "Suministro del cliente X" en cada línea) → el SUPERVISOR la envía por
+  correo al cliente (decisión confirmada: Abastecimiento/admin no se meten)
+  con PDF "Solicitud de Suministro" (`generateClientSupplyPDF`, reutiliza la
+  ruta `purchasing/send-order` y prellena `clients.contact_email`) → queda
+  `ordered` + `sent_to_client_at` → recepción en pañol.
+- **Recepción = activo del cliente (integridad clave)**: los ítems recibidos
+  NUNCA se mezclan con el stock propio — se materializan en una fila espejo
+  `ownership='cliente'` + `client_id` (patrón de los arrendados), porque al
+  cierre del contrato hay que restituirlos y esa cuenta es imposible con
+  contadores compartidos. La recepción parcial conserva el destino cliente y
+  su saldo queda `ordered` (no vuelve a la cola de compra). Kardex anota
+  "Suministro del cliente X — solicitud SCL-0001".
+- **Abastecimiento fuera del ciclo**: las solicitudes al cliente se excluyen
+  de la cola de Abastecimiento (`purchasing/purchase-requests`, reusada por
+  el hub) y en `pagnol/solicitudes-compra` no tienen botón "Gestionar" (solo
+  "Recibir" cuando llegan); nunca alcanzan `approved`, así que lotes/RFQ/OC
+  no las ven.
+- **Visibilidad**: badge "Del cliente" en las tarjetas de Activos; el
+  historial del supervisor muestra badge "Cliente: X", etapa nueva "Por
+  enviar al cliente" y botón de envío; la valorización de Stock por Contrato
+  EXCLUYE los activos del cliente (comodato — no inflan el inventario
+  propio) contándolos aparte; Ingreso Manual de Stock permite crear material
+  "Del cliente" con su dueño.
+- **Stock por Contrato — consistencia total del comodato**: la matriz y el
+  detalle por pañol (pantalla + Excel) ahora también EXCLUYEN de la
+  valorización los activos del cliente (antes un material del cliente CON
+  costo unitario se valorizaba en la matriz, contradiciendo las tarjetas de
+  arriba). Se marcan "Del cliente" en vez de mostrar monto. El Excel de
+  Valorización suma una columna "Unidades del cliente" y la matriz distingue
+  "Del cliente" de "Sin costo unit.".
+- **Guard de migración**: crear una solicitud al cliente sin la migración
+  aplicada falla con error explícito (antes el insert tolerante habría
+  descartado `request_target` en silencio, convirtiéndola en compra normal).
+- Pendiente futuro (dato listo, sin flujo): restitución al cliente al cierre
+  del contrato y el caso subcontratos.
+
+### Cambiado — Rediseño de `work-reports` → Centro Operativo (cierre del módulo)
+La página principal del módulo (`/dashboard/work-reports`) era un "Panel
+Ejecutivo" de BI (costo de materiales en CLP, herramientas sin devolver, stock
+crítico) — datos de Pañol/Bodega que ya tienen su propia página, y sin ninguna
+acción operativa real. Rediseñada como Centro Operativo del ciclo OT → Diario
+→ Semanal:
+
+- **Sacados los widgets de Pañol/Bodega** (herramientas sin devolver, stock
+  crítico, consumo/costo de materiales, top materiales) — fuera de alcance del
+  módulo, ya cubiertos en `bodega/`. Se eliminó la dependencia de
+  `materials`/`requests`/`returnRequests`/`computeActiveToolLoans`.
+- **Agregado — "Requiere tu acción"**: sección personalizada por identidad +
+  permiso (no gated a `view_all`, visible a quien tenga algo pendiente): OT
+  propias atrasadas, Diarios propios observados, Diarios esperando tu firma
+  (Operaciones vía `work_reports:review_operations` / ADC vía
+  `work_reports:final_approve`), Semanales esperando tu firma. Antes la
+  página no distinguía "algo está pendiente" de "te toca a ti actuar".
+  La tabla "Diarios por aprobar" ahora marca "Te toca a ti" cuando aplica.
+- **Agregado — accesos rápidos** (OT / Diarios / Semanales / Catálogos) en el
+  toolbar: antes la única forma de llegar a las sub-páginas era el sidebar.
+- **Agregado — Pipeline del módulo**: OT (sueltas vs. consolidadas vs.
+  listas) → Diarios por estado → Semanales por estado, en una sola vista.
+- **Corregido — "OT incompletas" era ruido**: contaba cualquier OT bajo 100%
+  (hasta una recién creada al 0%), inflando la alerta. Redefinido como
+  "OT atrasadas" (`workDate` anterior a hoy y avance < 100%) — la definición
+  real de "esto quedó pendiente", separada de "OT en curso hoy" (normal).
+- **Corregido — mismo bug de zona horaria** del filtro de período y del
+  agrupador de HH por día (`new Date('YYYY-MM-DD')` parseaba UTC); ahora todas
+  las comparaciones de fecha son por texto (`YYYY-MM-DD` directo) o via
+  parseo local explícito.
+- **Cambiado — la medición de HH/HM ya no está gated a gerencia**
+  (`work_reports:view_all`): el gráfico de tendencia ahora muestra HH y HM
+  juntos, se agregó "HH por área" (reemplaza el gráfico de costo por área que
+  era de bodega), y todo queda visible a cualquiera con acceso al módulo —
+  supervisor incluido, tal como se pidió ("medir todo lo que tenemos en el
+  módulo").
+- **Cambiado — "Pulso operativo · hoy"** (OT de hoy, OT atrasadas, OT listas
+  para consolidar, Diarios en borrador/observados, Semanales en borrador) es
+  independiente del selector de período — siempre refleja "ahora", no un
+  rango histórico.
+- Renombrado "Panel Ejecutivo" → "Centro Operativo" en el título y el sidebar.
+
+### Corregido / Cambiado — Reportes Semanales (`work-reports/semanal`)
+Auditoría completa del módulo Semanal (listado + detalle). Migración pendiente
+de aplicar: `supabase/migrations/20260712000000_weekly_reports_hardening.sql`.
+
+- **🔴 Cualquiera con permiso de crear podía firmar como "Jefe de Operaciones"**
+  — la firma de operaciones ahora exige `work_reports:review_operations`
+  (o super-admin) y solo se puede firmar después de que el supervisor firmó
+  (mismo orden lógico que el resto de la cascada).
+- **🔴 Firmar no bloqueaba nada — el contenido seguía 100% editable después**,
+  incluyendo un `<Select>` manual de Estado que devolvía "Listo" a "Borrador"
+  sin re-firmar. Se eliminó ese Select: firmar como supervisor ahora congela
+  el contenido (header, rango de fechas, Diarios consolidados) y toma una
+  copia congelada de los Diarios (`consolidated_reports_snapshot`, mismo
+  patrón que el snapshot OT→Diario). Se agregó un botón explícito "Reabrir
+  borrador" (limpia firmas y snapshot, vuelve a `draft`) como único camino de
+  vuelta a edición.
+- **🔴 Se podía firmar un Semanal vacío** (sin título, sin Diarios, con rango
+  de fechas invertido) — se agregó validación previa a la firma del
+  supervisor.
+- **🔴 `updateWorkWeeklyReport` sin guard `.select()`** (RLS que no matchea
+  filas no lanza error) y sin filtro explícito por `tenant_id` en
+  update/delete — corregido, mismo patrón que `workOrderMutations`.
+- **🔴 Se podía borrar un Semanal firmado/"Listo" con un `confirm()` nativo**,
+  sin ninguna protección. `deleteWorkWeeklyReport` ahora lo bloquea salvo para
+  super-admin (decisión confirmada: sin excepción para
+  administrador/soporte-pagnol); el botón de borrar del listado se oculta
+  para esos casos. `confirm()` reemplazado por `AlertDialog`.
+- **Cambiado — el selector de Diarios ya no permite consolidar borradores**
+  (mismo criterio que "OT debe estar Lista" para el Diario): solo Diarios
+  enviados a revisión o más allá son seleccionables; los ya seleccionados
+  se pueden seguir desmarcando.
+- **Corregido — fecha corrida un día** en listado, detalle y tabla de
+  consolidación (mismo bug de parseo UTC ya corregido en OT/Diarios).
+- **Corregido — permiso de edición**: `work_reports:edit` en vez de
+  `work_reports:create` para el contenido del detalle.
+- **Agregado — listado con estado de carga** (antes mostraba "Sin reportes"
+  mientras cargaba) y con guard de borrado por estado.
+- **Cambiado — la cabecera se hereda del primer Diario consolidado**
+  (cliente/faena/obra/contrato/área/especialidad/supervisor), en vez de
+  digitarse dos veces.
+- **Corregido — la columna "Personal" del resumen semanal** confundía el
+  máximo diario con un total; se relabeló ("Personal (día)" / "máx. N" en el
+  pie) para que no se lea como suma.
+- La ruta de PDF (`work-weekly-reports/[id]/pdf`) ahora también usa el
+  snapshot congelado del Semanal cuando existe.
+
+### Corregido / Cambiado — Reportes Diarios (`work-reports/reportesdiarios` + `work-reports/[id]`)
+Auditoría del listado de Diarios y su relación con el Reporte Semanal.
+
+- **🔴 KPI "HH acumuladas" / "HM acumuladas" mentían para todo Diario en modo
+  cascada** (el flujo actual): leían `r.labor`/`r.equipment` directo de la
+  fila, campos que la cascada nunca escribe (los datos viven en las OT
+  consolidadas). Ahora reusan `dailyEffectiveTotals` (el mismo helper correcto
+  que ya usaba el módulo Semanal), al que además se le agregó `hm` y respeto
+  por `consolidatedOrdersSnapshot` cuando el Diario ya está congelado.
+- **🔴 Columna "OT" del listado mostraba "-"** para casi todo Diario en cascada
+  (el campo legacy `otNumber` nunca se llena desde `dailyOts`). Ahora muestra
+  la(s) OT reales consolidadas.
+- **🔴 Borrar un Diario no revisaba si un Reporte Semanal ya lo consolidó**
+  (mismo patrón que el fix de OT→Diario de la sesión anterior) — `deleteWorkReport`
+  ahora lo bloquea si algún `work_weekly_reports.consolidated_report_ids` lo
+  referencia.
+- **🔴 Se podía borrar un Diario `final_approved`/`archived`** (con firmas de
+  aprobación) con un solo clic. `deleteWorkReport` ahora lo bloquea salvo para
+  `super-admin`; el botón de borrar del listado se oculta para esos informes.
+- **Cambiado — se evitan los Diarios "fantasma"**: si el usuario crea un
+  Reporte Diario y sale sin capturar nada, se borra solo al salir de la página
+  (mismo patrón aplicado a OT la sesión anterior).
+- **Agregado — buscador + filtro de período** (Todo / Esta semana / Este mes)
+  en el listado; antes no había forma de acotar la tabla.
+- **Corregido — fecha corrida un día** en la columna "Fecha" del listado
+  (mismo bug de parseo UTC ya corregido en OT).
+- **Cambiado — "% Avance" se sugiere** como el promedio de las OT consolidadas
+  al seleccionarlas (antes 100% manual, desconectado del avance real de cada
+  OT); sigue siendo editable a mano.
+
+### Corregido / Cambiado — OT / Reportes de Trabajo (`work-reports/ot`)
+Auditoría completa del módulo OT (listado + detalle) y su consumo en el Diario
+(`work-reports/[id]`). Migración pendiente de aplicar:
+`supabase/migrations/20260711000000_work_orders_hardening.sql`.
+
+- **🔴 Integridad — snapshot de OT al enviar el Diario a revisión.** El Diario
+  derivaba personal/equipos/materiales/HH/fotos de las OT **en vivo**: editar una
+  OT después de que el Diario que la consolida fue firmado/aprobado cambiaba
+  retroactivamente ese documento. `transitionWorkReport` ahora congela una copia
+  (`work_reports.consolidated_orders_snapshot`) al pasar a `pending_review`
+  (incluye reenvíos tras observación); la UI y ambas rutas de PDF
+  (`work-reports/[id]/pdf`, `work-weekly-reports/[id]/pdf`) usan esa copia en
+  vez de las OT en vivo una vez que el Diario salió de `draft`/`observed`.
+- **🔴 Integridad — borrar una OT consolidada la hacía desaparecer en silencio**
+  del Diario (HH, fotos y columnas de la matriz se esfumaban). `deleteWorkOrder`
+  ahora bloquea el borrado si la OT está referenciada por algún `work_report`.
+- **🔴 Integridad — pérdida silenciosa de ediciones al subir/borrar fotos.**
+  `handleFiles`/`removePhoto` en la OT enviaban solo `{ photos }` al servidor y
+  luego marcaban el borrador local como sincronizado; cualquier otra edición
+  (descripción, personal, etc.) sin guardar se perdía sin aviso. Ahora envían el
+  borrador completo.
+- **🔴 Integridad — `updateWorkOrder` no detectaba updates de 0 filas por RLS**
+  (Supabase no lanza error; ver gotcha documentado en `CLAUDE.md`). Se agregó
+  `.select()` + verificación de filas devueltas.
+- **Corregido — fecha corrida un día** en las tarjetas del listado (`fmtDate`
+  parseaba `YYYY-MM-DD` como UTC; en Chile mostraba el día anterior).
+- **Corregido — permisos inconsistentes**: eliminar OT ahora exige
+  `work_reports:delete` (antes `work_reports:create`); editar una OT exige
+  `work_reports:edit` (antes `work_reports:create`, distinto del resto del
+  módulo). Se agregó `work_reports:delete` a los roles `supervisor`,
+  `jefe-terreno` y `director-faena` en `ROLES_DEFAULT` — ya tenían `create`,
+  así que sin este ajuste habrían perdido la capacidad de borrar sus propias OT
+  (no aplica a tenants con overrides de rol ya guardados en la tabla `roles`).
+- **Cambiado — el estado "Lista" ahora bloquea, no es decorativo**: solo se
+  pueden consolidar en un Diario las OT en estado `ready`. Una OT consolidada en
+  un Diario que ya salió de borrador queda bloqueada para edición (banner
+  explicativo en la OT).
+- **Cambiado — se evitan las OT "fantasma"**: si el usuario crea una OT y sale
+  sin escribir nada, se borra sola al salir de la página en vez de quedar como
+  tarjeta vacía para siempre.
+- **Cambiado — el selector de OT del Diario filtra por fecha** del Diario por
+  defecto (con opción "Mostrar todas"), en vez de listar el historial completo.
+- **Agregado — N° de OT con dos modos**: correlativo automático del tenant (RPC
+  `next_internal_code`, mismo mecanismo que el resto de los documentos —
+  configurable en Configuración → Correlativos, tipo `OT`) o manual (lo asigna
+  el cliente, como antes). El modo se fija al crear la OT y queda registrado en
+  `ot_number_source`.
+- **Agregado — "Personal" y "Equipos" ahora son combobox contra catálogo**
+  (usuarios del tenant / activos Pagnol) con fallback a texto libre, en vez de
+  solo texto libre. Guardan `userId`/`assetId` cuando se selecciona del
+  catálogo; la consolidación del Diario agrupa por ese ID cuando existe (evita
+  que "J. Pérez" y "Juan Perez" cuenten como dos personas distintas en la
+  matriz de HH).
+- Reemplazados los `window.confirm()` nativos del listado por `Dialog`/`AlertDialog`.
+
 ### Cambiado — Panel Supervisor (`dashboard/supervisor`), cierre del módulo
 - **Rediseño del hub** para que hable el mismo idioma que sus 3 páginas hijas
   (`supervisor/request`, `purchasing/purchase-request-form`, `supervisor/return-request`),

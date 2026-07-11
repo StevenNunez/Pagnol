@@ -956,6 +956,11 @@ export default function ActivosPage() {
                         <Package size={10} /> Arrendado
                       </span>
                     )}
+                    {asset.ownership === 'cliente' && (
+                      <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-warning-subtle text-warning-subtle-foreground text-[8px] font-black uppercase tracking-widest">
+                        <Package size={10} /> Del cliente
+                      </span>
+                    )}
                   </div>
                   <h4 className="font-black text-base sm:text-lg tracking-tight mb-4 leading-tight group-hover:text-primary transition-colors min-h-[3rem] line-clamp-2 uppercase">
                     {asset.name}

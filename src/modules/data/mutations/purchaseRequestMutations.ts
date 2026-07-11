@@ -15,8 +15,12 @@ import type { MutationContext as Context } from './context';
  * intenta con el payload completo y, si Postgres/PostgREST responde "no
  * existe esa columna", la quita y reintenta. Así una solicitud de compra
  * sigue funcionando aunque el usuario no haya corrido la migración todavía.
+ *
+ * `required` = columnas que NO pueden descartarse en silencio: si falta una
+ * de esas, degradar cambiaría el SIGNIFICADO de la fila (p.ej. una solicitud
+ * al cliente sin `request_target` se convertiría en una compra normal).
  */
-async function insertPurchaseRequestRow(payload: Record<string, any>) {
+async function insertPurchaseRequestRow(payload: Record<string, any>, required: string[] = []) {
   const attempt = { ...payload };
   const maxRetries = Object.keys(attempt).length;
   for (let i = 0; i <= maxRetries; i++) {
@@ -24,6 +28,9 @@ async function insertPurchaseRequestRow(payload: Record<string, any>) {
     if (!error) return row;
     const missingColumn = /Could not find the '([^']+)' column/.exec(error.message || '')?.[1];
     if (missingColumn && missingColumn in attempt) {
+      if (required.includes(missingColumn)) {
+        throw new Error(`Falta la columna '${missingColumn}' en la base de datos — aplica la migración pendiente (20260713000000_client_supply_requests).`);
+      }
       delete attempt[missingColumn];
       continue;
     }
@@ -39,7 +46,13 @@ export async function addPurchaseRequest(
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
-  const requestId = await nextInternalCode(tenantId, 'PRQ');
+  // 'client' = suministro del cliente del contrato (correlativo propio SCL);
+  // 'supplier' = compra normal (histórico, PRQ).
+  const isClientSupply = data.requestTarget === 'client';
+  if (isClientSupply && !data.clientId) {
+    throw new Error('El contrato seleccionado no tiene un cliente asociado — asócialo en Configuración → Clientes antes de solicitar un suministro.');
+  }
+  const requestId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'PRQ');
 
   // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
   const preAuthorized = userCan(user, 'purchase_requests:authorize');
@@ -65,11 +78,42 @@ export async function addPurchaseRequest(
     adc_authorized_at: preAuthorized ? now : null,
     adc_authorized_by: preAuthorized ? user.id : null,
     ...(data.batchId ? { batch_id: data.batchId } : {}),
+    ...(isClientSupply ? {
+      request_target: 'client',
+      client_id: data.clientId,
+      client_name: data.clientName || null,
+    } : {}),
     created_at: now
-  });
+  }, isClientSupply ? ['request_target', 'client_id'] : []);
 
   // Push al ADC solo si quedó pendiente de autorización.
   if (!preAuthorized) notifyAuthorizers('purchase', { tenantId, code: requestId, requesterName: user.name });
+}
+
+/**
+ * Marca solicitudes de suministro (target='client') como enviadas al cliente.
+ * Se llama después de que el correo con el PDF salió efectivamente: pasa las
+ * filas a 'ordered' (en camino, esperando entrega del cliente) y registra
+ * sent_to_client_at. Solo aplica sobre solicitudes ya autorizadas por el ADC.
+ */
+export async function markClientRequestsSent(requestIds: string[], context: Context) {
+  const { user, tenantId } = context;
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  if (!requestIds.length) return;
+
+  const now = new Date().toISOString();
+  const { data: updated, error } = await supabase
+    .from('purchase_requests')
+    .update({ status: 'ordered', sent_to_client_at: now, ordered_at: now })
+    .in('id', requestIds)
+    .eq('tenant_id', tenantId)
+    .eq('request_target', 'client')
+    .not('adc_authorized_at', 'is', null)
+    .select('id');
+  if (error) throw error;
+  if (!updated || updated.length !== requestIds.length) {
+    throw new Error('Algunas solicitudes no se pudieron marcar como enviadas (¿faltaba la autorización del ADC?). Recarga la página.');
+  }
 }
 
 /**
@@ -147,10 +191,33 @@ export async function receivePurchaseRequest(
 
   const requestedQuantity = request.quantity;
   const now = new Date().toISOString();
+  // Suministro del cliente: los ítems NO se mezclan con el stock propio — se
+  // materializan en una fila espejo ownership='cliente' + client_id (patrón de
+  // los arrendados), porque al cierre del contrato hay que devolverlos y esa
+  // cuenta es imposible si comparten contador con los activos propios.
+  const isClientSupply = request.request_target === 'client';
 
   // Handle stock and material logic
   let materialId = existingMaterialId;
-  const { data: existingMat } = await supabase.from('materials').select('*').eq('id', materialId || '').single();
+  let existingMat: any = null;
+  if (isClientSupply) {
+    // Ignora el material elegido en la UI salvo que ya sea la fila espejo de
+    // este mismo cliente; si no, busca (o crea abajo) el espejo correcto.
+    const { data: mirror } = await supabase
+      .from('materials')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('ownership', 'cliente')
+      .eq('client_id', request.client_id)
+      .ilike('name', request.material_name)
+      .limit(1)
+      .maybeSingle();
+    existingMat = mirror;
+    materialId = mirror?.id;
+  } else if (materialId) {
+    const { data } = await supabase.from('materials').select('*').eq('id', materialId).single();
+    existingMat = data;
+  }
 
   if (!existingMat) {
     // Create new material if it doesn't exist
@@ -163,6 +230,7 @@ export async function receivePurchaseRequest(
       category: request.category,
       tenant_id: tenantId,
       archived: false,
+      ...(isClientSupply ? { ownership: 'cliente', client_id: request.client_id } : {}),
     }).select().single();
     if (newMatErr) throw newMatErr;
     materialId = newMat.id;
@@ -175,13 +243,15 @@ export async function receivePurchaseRequest(
     const remainingQuantity = requestedQuantity - receivedQuantity;
     await supabase.from('purchase_requests').update({
       quantity: remainingQuantity,
-      status: 'approved',
+      // El saldo de un suministro del cliente sigue "enviado, esperando
+      // entrega" (ordered); el de una compra vuelve a gestión (approved).
+      status: isClientSupply ? 'ordered' : 'approved',
       lot_id: null,
       notes: `Recepción parcial de ${receivedQuantity}. Pendientes: ${remainingQuantity}. ${request.notes || ''}`.trim(),
     }).eq('id', requestId);
 
     // Create a new received request for history
-    const newPrqId = await nextInternalCode(tenantId, 'PRQ');
+    const newPrqId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'PRQ');
     await insertPurchaseRequestRow({
       internal_code: newPrqId,
       material_name: request.material_name,
@@ -193,8 +263,14 @@ export async function receivePurchaseRequest(
       tenant_id: tenantId,
       requester_name: request.requester_name,
       unit: request.unit,
-      category: request.category
-    });
+      category: request.category,
+      ...(isClientSupply ? {
+        request_target: 'client',
+        client_id: request.client_id,
+        client_name: request.client_name,
+        sent_to_client_at: request.sent_to_client_at,
+      } : {}),
+    }, isClientSupply ? ['request_target', 'client_id'] : []);
   } else {
     await supabase.from('purchase_requests').update({
       status: 'received',
@@ -222,7 +298,9 @@ export async function receivePurchaseRequest(
     new_stock: ((existingMat?.stock || 0) + receivedQuantity),
     type: 'request-delivery',
     date: now,
-    justification: `Recepción de OC para solicitud ${requestId}`,
+    justification: isClientSupply
+      ? `Suministro del cliente ${request.client_name || ''} — solicitud ${request.internal_code || requestId}`.trim()
+      : `Recepción de OC para solicitud ${requestId}`,
     user_id: user.id,
     user_name: user.name,
     related_request_id: requestId,

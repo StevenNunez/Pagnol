@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Unit, MaterialCategory, Material } from "@/modules/core/lib/data";
+import type { Unit, MaterialCategory, Material, Client } from "@/modules/core/lib/data";
 
 
 const FormSchema = z.discriminatedUnion("isNewMaterial", [
@@ -36,13 +36,18 @@ const FormSchema = z.discriminatedUnion("isNewMaterial", [
     categoryId: z.string({ required_error: "La categoría es requerida." }),
     quantity: z.coerce.number().min(1, "La cantidad debe ser al menos 1."),
     justification: z.string().min(5, "La justificación es requerida (mín. 5 caracteres)."),
+    // Propiedad del material: propio (default) o del cliente (comodato).
+    // ownership='cliente' exige clientId — se valida en onSubmit (un .refine
+    // aquí rompería la unión discriminada de Zod).
+    ownership: z.enum(["propio", "cliente"]).default("propio"),
+    clientId: z.string().optional(),
   }),
 ]);
 
 type FormData = z.infer<typeof FormSchema>;
 
 export default function ManualStockEntryPage() {
-  const { materials, addManualStockEntry, addMaterial, materialCategories, units } = useAppState();
+  const { materials, addManualStockEntry, addMaterial, materialCategories, units, clients } = useAppState();
   const { toast } = useToast();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [unitPopoverOpen, setUnitPopoverOpen] = useState(false);
@@ -72,16 +77,21 @@ export default function ManualStockEntryPage() {
                 toast({ variant: 'destructive', title: 'Error', description: 'Completa todos los campos requeridos para el nuevo material.'});
                 return;
             }
+            if (data.ownership === 'cliente' && !data.clientId) {
+                toast({ variant: 'destructive', title: 'Falta el cliente', description: 'Selecciona el cliente dueño del material.'});
+                return;
+            }
             const category = (materialCategories || []).find(c => c.id === data.categoryId);
-            
+
             await addMaterial({
                 name: data.name,
                 stock: data.quantity,
                 unit: data.unit,
-                categoryId: data.categoryId, 
+                categoryId: data.categoryId,
                 category: category?.name || 'Desconocida',
                 supplierId: null,
                 justification: data.justification,
+                ...(data.ownership === 'cliente' ? { ownership: 'cliente', clientId: data.clientId } : {}),
             });
             toast({ title: "Éxito", description: "El nuevo material ha sido creado y el stock inicial registrado." });
         } else {
@@ -125,7 +135,7 @@ export default function ManualStockEntryPage() {
                     onCheckedChange={(checked) => {
                         setIsNewMaterial(checked);
                         if (checked) {
-                            reset({ isNewMaterial: true, name: '', unit: '', categoryId: '', quantity: 0, justification: '' });
+                            reset({ isNewMaterial: true, name: '', unit: '', categoryId: '', quantity: 0, justification: '', ownership: 'propio', clientId: undefined });
                         } else {
                             reset({ isNewMaterial: false, materialId: '', quantity: 0, justification: '' });
                         }
@@ -226,6 +236,49 @@ export default function ManualStockEntryPage() {
                              {(errors as any).categoryId && <p className="text-xs text-destructive">{(errors as any).categoryId.message}</p>}
                         </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>Propiedad</Label>
+                            <Controller
+                                name="ownership"
+                                control={control}
+                                render={({ field }) => (
+                                    <Select onValueChange={field.onChange} value={field.value || 'propio'}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="propio">Propio (de la empresa)</SelectItem>
+                                            <SelectItem value="cliente">Del cliente (comodato)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            />
+                        </div>
+                        {watch('ownership' as any) === 'cliente' && (
+                            <div className="space-y-2">
+                                <Label>Cliente dueño</Label>
+                                <Controller
+                                    name={'clientId' as any}
+                                    control={control}
+                                    render={({ field }) => (
+                                        <Select onValueChange={field.onChange} value={field.value || ''}>
+                                            <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                                            <SelectContent>
+                                                {((clients || []) as Client[]).filter(c => c.status === 'active').map((c) => (
+                                                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                />
+                                {(errors as any).clientId && <p className="text-xs text-destructive">{(errors as any).clientId.message}</p>}
+                            </div>
+                        )}
+                    </div>
+                    {watch('ownership' as any) === 'cliente' && (
+                        <p className="text-xs text-muted-foreground -mt-2">
+                            El material quedará marcado como <b>activo del cliente</b> (fila separada del stock propio, para su restitución al cierre del contrato) y no se incluirá en la valorización del inventario.
+                        </p>
+                    )}
                 </>
             ) : (
                 <div className="space-y-2">

@@ -1,7 +1,7 @@
 
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import type { PurchaseOrder as PurchaseOrderType, Supplier } from '@/modules/core/lib/data';
+import type { PurchaseOrder as PurchaseOrderType, PurchaseRequest, Client, Supplier } from '@/modules/core/lib/data';
 
 declare module 'jspdf' {
   interface jsPDF {
@@ -179,9 +179,152 @@ export async function generatePurchaseOrderPDF(order: PurchaseOrderType, supplie
 
   const safeFilename = `Solicitud_Cotizacion_${String(orderIndex).padStart(3, '0')}_${orderDate.toISOString().split('T')[0]}.pdf`;
   const pdfBlob = doc.output('blob');
-  
+
   return {
       blob: pdfBlob,
       filename: safeFilename
   };
+}
+
+/**
+ * PDF "Solicitud de Suministro" al CLIENTE del contrato (caso Valar↔Novandino):
+ * documento formal que el supervisor envía por correo cuando el cliente es
+ * quien proporciona los materiales. Mismo estilo que la solicitud de
+ * cotización, pero identifica al cliente (no a un proveedor) y al contrato.
+ */
+export async function generateClientSupplyPDF(
+  requests: PurchaseRequest[],
+  client: Client,
+  tenant: { name?: string; rut?: string; address?: string; logoUrl?: string } | null,
+  requesterName?: string,
+) {
+  if (!requests.length) throw new Error('No hay ítems para el documento.');
+
+  const COLORS = {
+    primary: '#c2410c',
+    secondary: '#7f8c8d',
+    text: '#34495e',
+    lightGray: '#ecf0f1',
+    white: '#ffffff',
+  };
+  const LINE_HEIGHT = 7;
+
+  const logoBase64 = await getBase64FromUrl(tenant?.logoUrl || '/logo.png');
+  const anchor = requests[0];
+  const docCode = anchor.internalCode || anchor.id.slice(0, 8).toUpperCase();
+  const docDate = getDate(anchor.createdAt || new Date());
+
+  const doc = new jsPDF();
+  const pageHeight = doc.internal.pageSize.height || doc.internal.pageSize.getHeight();
+  const pageWidth = doc.internal.pageSize.width || doc.internal.pageSize.getWidth();
+  const margin = 15;
+  let y = margin;
+
+  doc.addImage(logoBase64, 'PNG', margin, y, 20, 20);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(COLORS.primary);
+  doc.text('SOLICITUD DE SUMINISTRO', pageWidth / 2, y + 12, { align: 'center' });
+  y += 25;
+
+  doc.setDrawColor(COLORS.lightGray);
+  doc.setLineWidth(0.2);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += LINE_HEIGHT;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(COLORS.text);
+  doc.text(tenant?.name || 'Pagnol', margin, y);
+  doc.setFont('helvetica', 'normal');
+  if (tenant?.rut) doc.text(`RUT: ${tenant.rut}`, margin, y + LINE_HEIGHT - 2);
+  if (tenant?.address) doc.text(tenant.address, margin, y + (LINE_HEIGHT * 2) - 4);
+
+  (doc as any).autoTable({
+    body: [
+      [{ content: 'SOLICITUD N°:', styles: { fontStyle: 'bold', halign: 'right' } }, { content: docCode, styles: { halign: 'left' } }],
+      [{ content: 'FECHA:', styles: { fontStyle: 'bold', halign: 'right' } }, { content: docDate.toLocaleDateString('es-CL'), styles: { halign: 'left' } }],
+    ],
+    startY: y - (LINE_HEIGHT - 2),
+    theme: 'plain',
+    tableWidth: 'wrap',
+    styles: { fontSize: 9, cellPadding: { right: 0, left: 1 } },
+    margin: { left: pageWidth - margin - 60 },
+    columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 'auto' } },
+  });
+
+  y += LINE_HEIGHT * 2;
+  doc.line(margin, y, pageWidth - margin, y);
+  y += LINE_HEIGHT;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('CLIENTE:', margin, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(client.name, margin + 25, y);
+  if (anchor.contractName) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('CONTRATO:', pageWidth / 2, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(anchor.contractName, pageWidth / 2 + 25, y);
+  }
+  y += LINE_HEIGHT;
+  if (client.rut) doc.text(`RUT: ${client.rut}`, margin + 25, y);
+  if (requesterName) doc.text(`Solicita: ${requesterName}`, pageWidth / 2 + 25, y);
+  y += LINE_HEIGHT;
+
+  if (anchor.justification) {
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(COLORS.secondary);
+    const lines = doc.splitTextToSize(`Justificación: ${anchor.justification}`, pageWidth - margin * 2);
+    doc.text(lines, margin, y);
+    doc.setTextColor(COLORS.text);
+    doc.setFont('helvetica', 'normal');
+    y += lines.length * 5 + 2;
+  }
+
+  doc.setLineWidth(0.5);
+  doc.setDrawColor(COLORS.secondary);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += LINE_HEIGHT;
+
+  (doc as any).autoTable({
+    head: [['Ítem', 'Material', 'Unidad', 'Cantidad']],
+    body: requests.map((r, i) => [
+      i + 1,
+      r.materialName || 'Sin nombre',
+      r.unit || '—',
+      (r.quantity || 0).toLocaleString('es-CL'),
+    ]),
+    startY: y,
+    theme: 'grid',
+    headStyles: { fillColor: COLORS.primary, textColor: COLORS.white, fontStyle: 'bold', halign: 'center' },
+    styles: { fontSize: 9, cellPadding: 2, lineColor: [200, 200, 200], lineWidth: 0.1 },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 15 },
+      2: { halign: 'center', cellWidth: 20 },
+      3: { halign: 'right', cellWidth: 25 },
+    },
+    didDrawPage: function (data: any) {
+      const pageCount = (doc.internal as any).getNumberOfPages();
+      doc.setFontSize(8);
+      doc.setTextColor(COLORS.secondary);
+      doc.text(`Página ${data.pageNumber} de ${pageCount}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+      doc.text(`Documento generado el ${new Date().toLocaleString('es-CL')}`, margin, pageHeight - 10);
+    },
+  });
+
+  const afterTableY = (doc as any).lastAutoTable?.finalY || y;
+  if (afterTableY < pageHeight - 40) {
+    doc.setFontSize(8);
+    doc.setTextColor(COLORS.secondary);
+    doc.text(
+      'Los materiales suministrados por el cliente ingresan como activos del cliente (comodato) y serán restituidos al cierre del contrato.',
+      margin,
+      afterTableY + 10,
+      { maxWidth: pageWidth - margin * 2 },
+    );
+  }
+
+  const safeFilename = `Solicitud_Suministro_${sanitizeFileName(docCode)}_${docDate.toISOString().split('T')[0]}.pdf`;
+  return { blob: doc.output('blob'), filename: safeFilename };
 }

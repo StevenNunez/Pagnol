@@ -36,6 +36,7 @@ import {
   User as UserIcon,
   ChevronsUpDown,
   ShoppingCart,
+  Building2,
 } from "lucide-react";
 import {
   Select,
@@ -133,6 +134,12 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
             </p>
           </div>
 
+          {request.requestTarget === 'client' ? (
+            <div className="flex items-start gap-2 p-3 rounded-xl border border-info/30 bg-info-subtle text-info-subtle-foreground text-xs font-medium">
+              <Building2 className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>Suministro de <b>{request.clientName || 'el cliente'}</b>: ingresará como <b>activo del cliente</b> (fila separada del stock propio, para su restitución al cierre del contrato). La asignación manual de material no aplica.</span>
+            </div>
+          ) : (
           <div className="space-y-2">
             <Label>Asignar a Material Existente (Opcional)</Label>
             <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
@@ -174,6 +181,7 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
               Si este material ya existe (ej. es un duplicado), selecciónalo aquí para sumar el stock en lugar de crear uno nuevo.
             </p>
           </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancelar</Button>
@@ -425,6 +433,11 @@ export default function AdminPurchaseRequestsPage() {
                           <TableRow key={req.id} className="hover:bg-muted/50">
                             <TableCell className="font-medium whitespace-pre-wrap break-words">
                               {String(req.materialName ?? "")}
+                              {req.requestTarget === 'client' && (
+                                <Badge variant="outline" className="ml-2 gap-1 border-info/40 bg-info-subtle text-info-subtle-foreground text-[9px] font-black uppercase tracking-widest align-middle">
+                                  <Building2 className="h-3 w-3" /> Cliente{req.clientName ? `: ${req.clientName}` : ''}
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
@@ -446,7 +459,15 @@ export default function AdminPurchaseRequestsPage() {
                             </TableCell>
                             <TableCell>{getStatusBadge(req.status)}</TableCell>
                             <TableCell className="text-right">
-                              {req.status === "pending" && (
+                              {/* Suministros del cliente: Abastecimiento NO gestiona — el
+                                  flujo es ADC autoriza → el supervisor envía el correo.
+                                  Aquí solo se registra la recepción cuando llega. */}
+                              {req.status === "pending" && req.requestTarget === 'client' && (
+                                <span className="text-xs text-muted-foreground">
+                                  {req.adcAuthorizedAt ? 'El supervisor debe enviarla al cliente' : 'Esperando autorización ADC'}
+                                </span>
+                              )}
+                              {req.status === "pending" && req.requestTarget !== 'client' && (
                                 <Button
                                   size="sm"
                                   variant="outline"

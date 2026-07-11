@@ -23,6 +23,7 @@ function toRow(data: WeeklyInput, ctx: Context): Record<string, any> {
   if (data.startDate !== undefined) row.start_date = data.startDate;
   if (data.endDate !== undefined) row.end_date = data.endDate;
   if (data.consolidatedReportIds !== undefined) row.consolidated_report_ids = data.consolidatedReportIds;
+  if (data.consolidatedReportsSnapshot !== undefined) row.consolidated_reports_snapshot = data.consolidatedReportsSnapshot;
   if (data.observations !== undefined) row.observations = data.observations || null;
   if (data.shiftHandover !== undefined) row.shift_handover = data.shiftHandover || null;
   if (data.signatures !== undefined) row.signatures = data.signatures;
@@ -69,12 +70,46 @@ export async function createWorkWeeklyReport(data: WeeklyInput, ctx: Context): P
 }
 
 export async function updateWorkWeeklyReport(id: string, data: WeeklyInput, ctx: Context): Promise<void> {
+  if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
   const row = toRow(data, ctx);
-  const { error } = await supabase.from('work_weekly_reports').update(row).eq('id', id);
+  // RLS que no matchea ninguna fila NO lanza error (solo actualiza 0 filas) —
+  // .select() + verificar filas es la única forma de detectarlo.
+  const { data: updated, error } = await supabase
+    .from('work_weekly_reports')
+    .update(row)
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .select('id');
   if (error) throw error;
+  if (!updated || updated.length === 0) {
+    throw new Error('No se pudo guardar el reporte semanal: sin permisos sobre este registro o ya no existe.');
+  }
 }
 
-export async function deleteWorkWeeklyReport(id: string, _ctx: Context): Promise<void> {
-  const { error } = await supabase.from('work_weekly_reports').delete().eq('id', id);
+export async function deleteWorkWeeklyReport(id: string, ctx: Context): Promise<void> {
+  if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
+  const isSuperAdmin = ctx.user.role === 'super-admin';
+
+  const { data: current, error: readError } = await supabase
+    .from('work_weekly_reports')
+    .select('status')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  if (readError) throw readError;
+
+  // Un Semanal 'ready' ya fue firmado por el supervisor (y puede tener la
+  // aprobación de Jefe de Operaciones) — protegido de borrado accidental,
+  // igual que un Diario fuera de borrador/observado. Solo super-admin puede
+  // saltarse esto.
+  if (!isSuperAdmin && current.status !== 'draft') {
+    throw new Error('Este reporte semanal ya fue firmado y no se puede eliminar — protege el historial de firmas. Contacta a soporte si de verdad necesitas borrarlo.');
+  }
+
+  const { error } = await supabase
+    .from('work_weekly_reports')
+    .delete()
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId);
   if (error) throw error;
 }

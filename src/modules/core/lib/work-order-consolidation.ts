@@ -31,7 +31,10 @@ export function consolidateWorkOrders(orders: WorkOrder[]): Consolidation {
   const personMap = new Map<string, ConsolidatedPerson>();
   for (const o of orders) {
     for (const l of o.labor || []) {
-      const key = (l.name || '').trim().toLowerCase() || l.id;
+      // Prioriza userId (seleccionado del catálogo) sobre el nombre en texto
+      // libre: evita que "J. Pérez" y "Juan Perez" se cuenten como personas
+      // distintas en la matriz consolidada.
+      const key = l.userId || (l.name || '').trim().toLowerCase() || l.id;
       let p = personMap.get(key);
       if (!p) {
         p = { nombre: l.name || '', cargo: l.role || '', horas: {}, total: 0 };
@@ -55,16 +58,19 @@ export function consolidateWorkOrders(orders: WorkOrder[]): Consolidation {
     avance: Number(o.executedPercent) || 0,
   }));
 
-  // Equipos consolidados por nombre.
-  const equipMap = new Map<string, number>();
+  // Equipos consolidados por assetId (si viene del catálogo) o por nombre.
+  const equipMap = new Map<string, { equipo: string; horas: number }>();
   for (const o of orders) {
     for (const e of o.equipment || []) {
-      const key = (e.equipment || '').trim();
-      if (!key) continue;
-      equipMap.set(key, round((equipMap.get(key) || 0) + (Number(e.hours) || 0)));
+      const name = (e.equipment || '').trim();
+      if (!name) continue;
+      const key = e.assetId || name;
+      const entry = equipMap.get(key);
+      if (entry) entry.horas = round(entry.horas + (Number(e.hours) || 0));
+      else equipMap.set(key, { equipo: name, horas: round(Number(e.hours) || 0) });
     }
   }
-  const equipos = [...equipMap.entries()].map(([equipo, horas]) => ({ equipo, horas }));
+  const equipos = [...equipMap.values()];
 
   // Materiales consolidados por nombre + unidad.
   const matMap = new Map<string, ConsolidatedMaterial>();
@@ -121,17 +127,26 @@ export interface WeeklyConsolidation {
   workersMax: number;    // mayor dotación en un día
 }
 
-// effectiveTotals: HH/dotación/OT de un diario, considerando si consolida OT.
+// effectiveTotals: HH/HM/dotación/OT de un diario, considerando si consolida OT.
+// Si el diario ya salió de borrador/observado y tiene una copia congelada
+// (consolidatedOrdersSnapshot, ver transitionWorkReport), se usa esa copia en
+// vez de las OT en vivo — mismo criterio que la UI y los PDF.
 export function dailyEffectiveTotals(report: WorkReport, allOrders: WorkOrder[]) {
   const orderIds = report.consolidatedOrderIds || [];
   if (orderIds.length) {
-    const orders = allOrders.filter((o) => orderIds.includes(o.id));
+    const useSnapshot = report.status !== 'draft' && report.status !== 'observed' && !!report.consolidatedOrdersSnapshot?.length;
+    const orders = useSnapshot
+      ? (report.consolidatedOrdersSnapshot as WorkOrder[])
+      : allOrders.filter((o) => orderIds.includes(o.id));
     const cons = consolidateWorkOrders(orders);
-    return { hh: cons.hhTotal, workers: cons.personal.length, otCount: cons.ots.length };
+    const hm = round(cons.equipos.reduce((a, e) => a + (Number(e.horas) || 0), 0));
+    return { hh: cons.hhTotal, hm, workers: cons.personal.length, otCount: cons.ots.length };
   }
   const labor = report.labor || [];
+  const equipment = report.equipment || [];
   return {
     hh: round(labor.reduce((a, l) => a + laborHoursManual(l), 0)),
+    hm: round(equipment.reduce((a, e) => a + (Number(e.hours) || 0), 0)),
     workers: labor.length,
     otCount: (report.dailyOts || []).length,
   };

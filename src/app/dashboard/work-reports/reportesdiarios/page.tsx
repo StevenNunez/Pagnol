@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { format, isToday } from 'date-fns';
+import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { BarChart3, CheckCircle2, ClipboardList, Clock, FileText, Plus, Trash2, Users, Wrench } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
@@ -10,13 +10,17 @@ import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppState } from '@/modules/core/contexts/app-provider';
+import { useAuth } from '@/modules/auth/useAuth';
 import type { WorkReport } from '@/modules/core/lib/data';
 import { WORK_REPORT_STATUS_LABEL as STATUS_LABEL } from '@/modules/core/lib/work-report-labels';
+import { dailyEffectiveTotals } from '@/modules/core/lib/work-order-consolidation';
 
 const STATUS_BADGE: Record<WorkReport['status'], string> = {
   draft: 'bg-muted text-muted-foreground',
@@ -27,30 +31,66 @@ const STATUS_BADGE: Record<WorkReport['status'], string> = {
   archived: 'bg-muted text-muted-foreground',
 };
 
+// Evita el corrimiento de un día por zona horaria que produce
+// `new Date('YYYY-MM-DD')` (se parsea como UTC medianoche).
+function parseDateOnly(value: any): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function fmtDate(d: Date | string) {
+  const date = parseDateOnly(d) || new Date(d as any);
+  if (isNaN(date.getTime())) return '-';
+  return format(date, 'dd MMM yyyy', { locale: es });
+}
+
 export default function ReportesDiariosPage() {
   const router = useRouter();
-  const { workReports, createWorkReport, deleteWorkReport, can, isLoading, notify } = useAppState();
+  const { workReports, workOrders, createWorkReport, deleteWorkReport, can, isLoading, notify } = useAppState();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super-admin';
   const reports = workReports || [];
   const [toDelete, setToDelete] = React.useState<WorkReport | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  const [query, setQuery] = React.useState('');
+  const [period, setPeriod] = React.useState<'all' | 'week' | 'month'>('all');
 
   const stats = useMemo(() => {
     const today = reports.filter((r) => isToday(new Date(r.createdAt as any))).length;
     const pending = reports.filter((r) => r.status === 'pending_review').length;
     const observed = reports.filter((r) => r.status === 'observed').length;
     const finished = reports.filter((r) => r.status === 'final_approved').length;
-    const hh = reports.reduce((s, r) => s + (r.labor || []).reduce((a, l) => {
-      // Solo horas trabajadas. Personal = nombre/cargo/horas (rediseño en cascada);
-      // los campos legacy colación/documentación/traslados/horas extra ya no cuentan.
-      const horas = l.hours && typeof l.hours === 'object'
-        ? Object.values(l.hours).reduce((x, y) => x + (Number(y) || 0), 0)
-        : (Number(l.hours) || 0);
-      return a + horas;
-    }, 0), 0);
-    const hm = reports.reduce((s, r) => s + (r.equipment || []).reduce((a, e) => a + Number(e.hours || 0), 0), 0);
+    // Reusa el mismo cálculo que el módulo Semanal (dailyEffectiveTotals): si el
+    // Diario consolida OT, las HH/HM salen de ahí (congeladas si ya se envió a
+    // revisión) — leer `r.labor`/`r.equipment` directo de la fila da ~0 para
+    // cualquier Diario en modo cascada, que es el flujo actual del módulo.
+    let hh = 0;
+    let hm = 0;
+    for (const r of reports) {
+      const t = dailyEffectiveTotals(r, workOrders || []);
+      hh += t.hh;
+      hm += t.hm;
+    }
     const avg = reports.length ? Math.round(reports.reduce((s, r) => s + Number(r.progressPercent || 0), 0) / reports.length) : 0;
-    return { today, pending, observed, finished, hh, hm, avg };
-  }, [reports]);
+    return { today, pending, observed, finished, hh: Math.round(hh * 100) / 100, hm: Math.round(hm * 100) / 100, avg };
+  }, [reports, workOrders]);
+
+  const filteredReports = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return reports.filter((r) => {
+      if (period !== 'all') {
+        const d = parseDateOnly(r.workDate);
+        if (!d) return false;
+        if (period === 'week' && !isThisWeek(d, { weekStartsOn: 1 })) return false;
+        if (period === 'month' && !isThisMonth(d)) return false;
+      }
+      if (!q) return true;
+      const otNums = (r.dailyOts || []).map((o) => o.otNumber).join(' ');
+      return [r.internalCode, r.otNumber, otNums, r.supervisorName, r.faena, r.area, r.client]
+        .some((v) => (v || '').toLowerCase().includes(q));
+    });
+  }, [reports, query, period]);
 
   const handleNew = async () => {
     try {
@@ -78,7 +118,21 @@ export default function ReportesDiariosPage() {
 
   const columns: DataTableColumn<WorkReport>[] = [
     { key: 'code', header: 'Codigo', cell: (r) => <span className="font-bold">{r.internalCode}</span> },
-    { key: 'ot', header: 'OT', cell: (r) => r.otNumber || '-' },
+    {
+      key: 'ot',
+      header: 'OT',
+      cell: (r) => {
+        // Modo cascada: la cabecera legacy `otNumber` casi nunca se llena — las
+        // OT reales del día viven en `dailyOts`.
+        const nums = (r.dailyOts || []).map((o) => o.otNumber).filter((n): n is string => !!n?.trim());
+        if (nums.length === 0) return r.otNumber || '-';
+        return (
+          <span title={nums.join(', ')}>
+            {nums[0]}{nums.length > 1 && <span className="text-muted-foreground"> +{nums.length - 1}</span>}
+          </span>
+        );
+      },
+    },
     { key: 'site', header: 'Faena / Area', cell: (r) => <span>{r.faena || '-'} / {r.area || '-'}</span> },
     { key: 'supervisor', header: 'Supervisor', cell: (r) => r.supervisorName || '-' },
     { key: 'date', header: 'Fecha', cell: (r) => fmtDate(r.workDate) },
@@ -90,14 +144,20 @@ export default function ReportesDiariosPage() {
     },
     {
       key: 'actions', header: '', headerClassName: 'text-right', className: 'text-right',
-      cell: (r) => can('work_reports:delete') ? (
-        <Button
-          variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10"
-          onClick={(e) => { e.stopPropagation(); setToDelete(r); }}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      ) : null,
+      cell: (r) => {
+        // Un Diario ya enviado a revisión (o más allá) queda protegido de
+        // borrado accidental — puede tener firmas de aprobación. Solo
+        // super-admin puede saltarse esto (mismo criterio que el servidor).
+        const canDeleteThis = can('work_reports:delete') && (isSuperAdmin || r.status === 'draft' || r.status === 'observed');
+        return canDeleteThis ? (
+          <Button
+            variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10"
+            onClick={(e) => { e.stopPropagation(); setToDelete(r); }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : null;
+      },
     },
   ];
 
@@ -106,7 +166,16 @@ export default function ReportesDiariosPage() {
       title="Reportes Diarios"
       description="Informe diario de terreno (consolida las OT del día), fotografías, recursos y aprobaciones."
       toolbar={
-        <div className="w-full flex justify-end">
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto sm:items-center sm:justify-end">
+          <Input className="rounded-xl sm:w-56" placeholder="Buscar código, OT, supervisor…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Select value={period} onValueChange={(v) => setPeriod(v as typeof period)}>
+            <SelectTrigger className="rounded-xl sm:w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todo el historial</SelectItem>
+              <SelectItem value="week">Esta semana</SelectItem>
+              <SelectItem value="month">Este mes</SelectItem>
+            </SelectContent>
+          </Select>
           {can('work_reports:create') && (
             <Button onClick={handleNew} className="rounded-[1.5rem] shadow-lg shadow-primary/10">
               <Plus className="h-4 w-4 mr-2" />
@@ -128,14 +197,14 @@ export default function ReportesDiariosPage() {
 
       <DataTable
         columns={columns}
-        data={reports}
+        data={filteredReports}
         rowKey={(r) => r.id}
         isLoading={isLoading}
         onRowClick={(r) => router.push(`/dashboard/work-reports/${r.id}`)}
         empty={{
           icon: <ClipboardList size={22} />,
-          title: 'Sin informes de terreno',
-          description: 'Crea el primer reporte desde celular o computador.',
+          title: reports.length ? 'Sin resultados' : 'Sin informes de terreno',
+          description: reports.length ? 'Prueba con otro término o período.' : 'Crea el primer reporte desde celular o computador.',
         }}
       />
 
@@ -169,10 +238,4 @@ function Kpi({ icon, label, value }: { icon: React.ReactNode; label: string; val
       </CardContent>
     </Card>
   );
-}
-
-function fmtDate(d: Date | string) {
-  const date = new Date(d as any);
-  if (isNaN(date.getTime())) return '-';
-  return format(date, 'dd MMM yyyy', { locale: es });
 }

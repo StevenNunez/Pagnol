@@ -44,23 +44,40 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const weekly = mappers.work_weekly_reports(row);
 
     // Diarios consolidados + OT que esos diarios referencian (para derivar HH).
+    // Si el Semanal ya se firmó, usa la copia congelada en ese momento
+    // (consolidatedReportsSnapshot) en vez de los Diarios en vivo — el PDF de
+    // un Semanal ya firmado no debe cambiar si alguien reabre un Diario después.
     let reports: WorkReport[] = [];
     let orders: WorkOrder[] = [];
-    if (weekly.consolidatedReportIds?.length) {
+    if (weekly.consolidatedReportsSnapshot?.length) {
+      reports = weekly.consolidatedReportsSnapshot;
+    } else if (weekly.consolidatedReportIds?.length) {
       const { data: reportRows } = await ctx.admin
         .from('work_reports')
         .select('*')
         .in('id', weekly.consolidatedReportIds);
       reports = (reportRows || []).map((r) => mappers.work_reports(r));
-
-      const orderIds = [...new Set(reports.flatMap((r) => r.consolidatedOrderIds || []))];
-      if (orderIds.length) {
+    }
+    if (reports.length) {
+      // Cada diario ya congeló su propia copia de OT al enviarse a revisión
+      // (consolidatedOrdersSnapshot); solo se van a buscar en vivo las OT de
+      // los diarios que todavía no tienen snapshot (borrador/observado).
+      const snapshotOrders = reports.flatMap((r) => r.consolidatedOrdersSnapshot || []);
+      const liveOrderIds = [...new Set(
+        reports
+          .filter((r) => !r.consolidatedOrdersSnapshot?.length)
+          .flatMap((r) => r.consolidatedOrderIds || []),
+      )];
+      let liveOrders: WorkOrder[] = [];
+      if (liveOrderIds.length) {
         const { data: orderRows } = await ctx.admin
           .from('work_orders')
           .select('*')
-          .in('id', orderIds);
-        orders = (orderRows || []).map((r) => mappers.work_orders(r));
+          .in('id', liveOrderIds);
+        liveOrders = (orderRows || []).map((r) => mappers.work_orders(r));
       }
+      const seen = new Set<string>();
+      orders = [...snapshotOrders, ...liveOrders].filter((o) => (seen.has(o.id) ? false : (seen.add(o.id), true)));
     }
 
     const datos = await construirDatosSemanal(weekly, reports, orders, tenantName);

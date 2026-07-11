@@ -38,8 +38,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const report = mappers.work_reports(row);
 
     // Modo cascada: si el Diario consolida OT, cargarlas para derivar el PDF.
+    // Si ya se congeló un snapshot (enviado a revisión), usa esa copia — el PDF
+    // de un Diario aprobado no debe cambiar si alguien edita la OT después.
     let orders = undefined;
-    if (report.consolidatedOrderIds?.length) {
+    if (report.consolidatedOrdersSnapshot?.length) {
+      orders = report.consolidatedOrdersSnapshot;
+    } else if (report.consolidatedOrderIds?.length) {
       const { data: orderRows } = await ctx.admin
         .from('work_orders')
         .select('*')

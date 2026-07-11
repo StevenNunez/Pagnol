@@ -340,6 +340,9 @@ export type PurchaseRequestStatus = "pending" | "approved" | "rejected" | "recei
 
 export interface PurchaseRequest {
   id: string;
+  // Código legible (ej. "PAG-PRQ-0007"); `id` es el uuid real de la fila.
+  // undefined en filas creadas antes de la migración 20260710010000.
+  internalCode?: string;
   materialName: string;
   quantity: number;
   originalQuantity?: number | null;
@@ -366,6 +369,8 @@ export interface PurchaseRequest {
   // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
   adcAuthorizedAt?: Date | string | null;
   adcAuthorizedById?: string | null;
+  // Correlaciona ítems enviados juntos desde el mismo carrito. NULL = solicitud suelta.
+  batchId?: string | null;
 }
 
 // Códigos de marcas de asistencia (estándar industria minera)

@@ -9,6 +9,29 @@ import { addToLedger } from './stockLedger';
 
 import type { MutationContext as Context } from './context';
 
+/**
+ * Inserta en purchase_requests tolerando columnas de migraciones aún no
+ * aplicadas (internal_code/requester_name/batch_id — ver 20260710010000):
+ * intenta con el payload completo y, si Postgres/PostgREST responde "no
+ * existe esa columna", la quita y reintenta. Así una solicitud de compra
+ * sigue funcionando aunque el usuario no haya corrido la migración todavía.
+ */
+async function insertPurchaseRequestRow(payload: Record<string, any>) {
+  const attempt = { ...payload };
+  const maxRetries = Object.keys(attempt).length;
+  for (let i = 0; i <= maxRetries; i++) {
+    const { data: row, error } = await supabase.from('purchase_requests').insert(attempt).select().single();
+    if (!error) return row;
+    const missingColumn = /Could not find the '([^']+)' column/.exec(error.message || '')?.[1];
+    if (missingColumn && missingColumn in attempt) {
+      delete attempt[missingColumn];
+      continue;
+    }
+    throw error;
+  }
+  throw new Error('No se pudo insertar la solicitud de compra.');
+}
+
 export async function addPurchaseRequest(
   data: Partial<Omit<PurchaseRequest, 'id' | 'status' | 'createdAt' | 'tenantId'>>,
   context: Context
@@ -22,9 +45,9 @@ export async function addPurchaseRequest(
   const preAuthorized = userCan(user, 'purchase_requests:authorize');
   const now = new Date().toISOString();
 
-  const { error } = await supabase.from('purchase_requests').insert({
-    id: requestId,
-    internal_code: requestId,
+  // `id` lo genera Postgres (uuid) — requestId es el código legible que va en
+  // `internal_code`, igual que en material_requests/return_requests.
+  await insertPurchaseRequestRow({
     material_name: data.materialName,
     quantity: data.quantity,
     unit: data.unit,
@@ -37,13 +60,13 @@ export async function addPurchaseRequest(
     notes: data.notes,
     status: 'pending',
     tenant_id: tenantId,
+    internal_code: requestId,
     requester_name: user.name,
     adc_authorized_at: preAuthorized ? now : null,
     adc_authorized_by: preAuthorized ? user.id : null,
+    ...(data.batchId ? { batch_id: data.batchId } : {}),
     created_at: now
   });
-
-  if (error) throw error;
 
   // Push al ADC solo si quedó pendiente de autorización.
   if (!preAuthorized) notifyAuthorizers('purchase', { tenantId, code: requestId, requesterName: user.name });
@@ -159,15 +182,14 @@ export async function receivePurchaseRequest(
 
     // Create a new received request for history
     const newPrqId = await nextInternalCode(tenantId, 'PRQ');
-    await supabase.from('purchase_requests').insert({
-      id: newPrqId,
+    await insertPurchaseRequestRow({
       internal_code: newPrqId,
       material_name: request.material_name,
       quantity: receivedQuantity,
       original_quantity: requestedQuantity,
       status: 'received',
       received_at: now,
-      notes: `Parte de la solicitud original ${requestId}.`,
+      notes: `Parte de la solicitud original ${request.internal_code || requestId}.`,
       tenant_id: tenantId,
       requester_name: request.requester_name,
       unit: request.unit,

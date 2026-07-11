@@ -2,75 +2,79 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/empty-state";
 
 import {
-  Package,
-  ShoppingCart,
-  RotateCcw,
-  Clock,
-  AlertTriangle,
-  Plus,
-  PackageCheck,
-  ArrowRight,
-  ArrowUpRight,
-  ArrowDownLeft,
-  FileText,
-  SearchX,
-  KeyRound,
+  Package, ShoppingCart, RotateCcw, Clock, Plus, PackageCheck,
+  ArrowUpRight, ArrowDownLeft, SearchX, KeyRound,
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
-import type {
-  MaterialRequest,
-  PurchaseRequest,
-  ReturnRequest,
-  RentalRequest,
-  Material,
-} from "@/modules/core/lib/data";
+import type { MaterialRequest, PurchaseRequest, ReturnRequest, RentalRequest, Material } from "@/modules/core/lib/data";
 import { cn } from "@/lib/utils";
+import { CompatibleMaterialRequest, requestItems, ReturnStatusBadge, ConditionBadge } from "@/components/pagnol-requests/request-shared";
+import { resolveSupervisorStage } from "@/components/supervisor-requests/request-pipeline";
+import { StageBadge } from "@/components/supervisor-requests/stage-badge";
+import { resolvePurchaseStage, groupKey, PurchaseStage } from "@/components/supervisor-purchases/purchase-pipeline";
+import { PurchaseStageBadge } from "@/components/supervisor-purchases/purchase-stage-badge";
+import { computeReturnBalanceItems } from "@/components/supervisor-returns/return-balance";
 
 // ====================== TIPOS ======================
-type ActivityItem = {
-  id: string;
-  originalId: string;
-  type: "request" | "purchase" | "return" | "rental";
-  title: string;
-  subtitle: string;
-  time: Date;
-  status: string;
-  delivered?: boolean;
+type ActivityEntry =
+  | { kind: "request"; time: Date; req: CompatibleMaterialRequest }
+  | { kind: "purchase"; time: Date; items: PurchaseRequest[] }
+  | { kind: "return"; time: Date; ret: ReturnRequest }
+  | { kind: "rental"; time: Date; rental: RentalRequest };
+
+type ActivityKind = ActivityEntry["kind"];
+
+// Un pedido de compra multi-ítem no tiene un único estado real (cada ítem
+// avanza por su cuenta) — se representa por el ítem MENOS avanzado del grupo,
+// para no anunciar "Recibida" mientras falte llegar uno solo.
+const PURCHASE_STAGE_PRIORITY: PurchaseStage[] = ["waiting_adc", "in_review", "approved", "ordered", "rejected", "received"];
+function representativePurchaseStage(items: PurchaseRequest[]): PurchaseStage {
+  const stages = items.map(resolvePurchaseStage);
+  for (const s of PURCHASE_STAGE_PRIORITY) if (stages.includes(s)) return s;
+  return stages[0];
+}
+
+const RENTAL_STATUS_META: Record<string, { label: string; cls: string }> = {
+  pending: { label: "Pendiente", cls: "badge-warning" },
+  quoting: { label: "En cotización", cls: "badge-info" },
+  approved: { label: "Aprobado", cls: "badge-info" },
+  fulfilled: { label: "Arriendo creado", cls: "badge-success" },
+  rejected: { label: "Rechazado", cls: "bg-destructive/10 text-destructive border-destructive/30" },
 };
 
-// Mapas estáticos de acento (tokens semánticos → dark-mode safe; nunca clases dinámicas).
-const ACCENT: Record<string, { border: string; iconBg: string; icon: string }> = {
-  warning: { border: "border-l-warning", iconBg: "bg-warning-subtle", icon: "text-warning-subtle-foreground" },
-  info: { border: "border-l-info", iconBg: "bg-info-subtle", icon: "text-info-subtle-foreground" },
-  primary: { border: "border-l-primary", iconBg: "bg-primary/10", icon: "text-primary" },
-  success: { border: "border-l-success", iconBg: "bg-success-subtle", icon: "text-success-subtle-foreground" },
-  destructive: { border: "border-l-destructive", iconBg: "bg-destructive/10", icon: "text-destructive" },
+// Mapa estático de acento por tipo de actividad (tokens semánticos, dark-mode safe).
+const TYPE_ACCENT: Record<ActivityKind, { iconBg: string; icon: string; icon_cmp: React.ElementType; label: string; href: string }> = {
+  request: { iconBg: "bg-primary/10", icon: "text-primary", icon_cmp: Package, label: "Pañol", href: "/dashboard/supervisor/request" },
+  purchase: { iconBg: "bg-info-subtle", icon: "text-info-subtle-foreground", icon_cmp: ShoppingCart, label: "Compra", href: "/dashboard/purchasing/purchase-request-form" },
+  return: { iconBg: "bg-success-subtle", icon: "text-success-subtle-foreground", icon_cmp: RotateCcw, label: "Devolución", href: "/dashboard/supervisor/return-request" },
+  rental: { iconBg: "bg-warning-subtle", icon: "text-warning-subtle-foreground", icon_cmp: KeyRound, label: "Arriendo", href: "/dashboard/supervisor/rental-request" },
 };
+
+const FEED_FILTERS: { key: "all" | ActivityKind; label: string }[] = [
+  { key: "all", label: "Todo" },
+  { key: "request", label: "Pañol" },
+  { key: "purchase", label: "Compras" },
+  { key: "rental", label: "Arriendos" },
+  { key: "return", label: "Devol." },
+];
 
 export default function SupervisorHubPage() {
   const { requests, purchaseRequests, returnRequests, rentalRequests, materials } = useAppState();
   const { user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState<"all" | ActivityKind>("all");
 
   const toDate = (d: any): Date => new Date(d);
 
@@ -79,162 +83,126 @@ export default function SupervisorHubPage() {
     return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches";
   };
 
-  const smartItemName = (items: any[], materials: Material[]) => {
-    if (!items || items.length !== 1) return null;
-    const mat = materials.find((m) => m.id === items[0].materialId);
-    return mat?.name || null;
-  };
+  const materialMap = useMemo(() => new Map((materials || []).map((m: Material) => [m.id, m])), [materials]);
 
-  // ================= MÉTRICAS =================
-  const metrics = useMemo(() => {
-    if (!user) return { pending: 0, delivery: 0, returns: 0, rentals: 0, lowStock: 0 };
+  const myMaterialRequests = useMemo(
+    () => ((requests || []) as CompatibleMaterialRequest[]).filter((r) => r.supervisorId === user?.id),
+    [requests, user]
+  );
+  const myPurchaseRequests = useMemo(
+    () => ((purchaseRequests || []) as PurchaseRequest[]).filter((r) => r.supervisorId === user?.id),
+    [purchaseRequests, user]
+  );
+  const myReturnRequests = useMemo(
+    () => ((returnRequests || []) as ReturnRequest[]).filter((r) => r.supervisorId === user?.id),
+    [returnRequests, user]
+  );
+  const myRentalRequests = useMemo(
+    () => ((rentalRequests || []) as RentalRequest[]).filter((r) => r.supervisorId === user?.id),
+    [rentalRequests, user]
+  );
 
-    const reqs = (requests || []) as MaterialRequest[];
-    const pr = (purchaseRequests || []) as PurchaseRequest[];
-    const ret = (returnRequests || []) as ReturnRequest[];
-    const rr = (rentalRequests || []) as RentalRequest[];
-    const mats = (materials || []) as Material[];
+  // Saldo REAL de devolución (mismo cálculo de supervisor/return-request):
+  // cuántos (material, contrato) tienen tomado > devuelto. Reemplaza al viejo
+  // "Devoluciones: N" que contaba la cola del pañolero (nada accionable para
+  // el supervisor) por lo que sí lo es: qué le falta devolver a ÉL.
+  const returnBalanceItems = useMemo(
+    () => (user ? computeReturnBalanceItems(user.id, requests, returnRequests, materialMap) : []),
+    [user, requests, returnRequests, materialMap]
+  );
 
-    const pending =
-      reqs.filter((r) => r.supervisorId === user.id && r.status === "pending").length +
-      pr.filter((r) => r.supervisorId === user.id && r.status === "pending").length;
-
-    const delivery = reqs.filter(
-      (r) => r.supervisorId === user.id && r.status === "approved" && !r.deliveryDate
-    ).length;
-
-    const returns = ret.filter((r) => r.supervisorId === user.id && r.status === "pending").length;
-
-    const rentals = rr.filter(
-      (r) => r.supervisorId === user.id && (r.status === "pending" || r.status === "quoting")
-    ).length;
-
-    const lowStock = mats.filter((m) => !m.archived && m.stock <= 10).length;
-
-    return { pending, delivery, returns, rentals, lowStock };
-  }, [requests, purchaseRequests, returnRequests, rentalRequests, materials, user]);
-
-  // ================= ACTIVIDAD UNIFICADA =================
-  const allActivity = useMemo(() => {
-    if (!user) return [];
-    const list: ActivityItem[] = [];
-    const mats = materials || [];
-
-    (requests || []).forEach((r: MaterialRequest) => {
-      if (r.supervisorId !== user.id) return;
-      const smartName = smartItemName(r.items || [], mats);
-      const title = smartName
-        ? `Solicitud: ${smartName}`
-        : r.items?.length
-        ? `${r.items.length} ítems solicitados`
-        : "Solicitud de material";
-      list.push({
-        id: `req-${r.id}`, originalId: r.id, type: "request", title,
-        subtitle: `Destino: ${r.area || "Faena"}`, time: toDate(r.createdAt),
-        status: r.status, delivered: !!r.deliveryDate,
-      });
+  // ================= KPIs (honestos y clickeables — cada uno navega a su página) =================
+  const kpis = useMemo(() => {
+    let materialInProgress = 0;
+    let materialReady = 0;
+    myMaterialRequests.forEach((r) => {
+      const stage = resolveSupervisorStage(r);
+      if (stage === "waiting_adc" || stage === "queued") materialInProgress++;
+      else if (stage === "ready_pickup") materialReady++;
     });
 
-    (purchaseRequests || []).forEach((r: PurchaseRequest) => {
-      if (r.supervisorId !== user.id) return;
-      list.push({
-        id: `pur-${r.id}`, originalId: r.id, type: "purchase",
-        title: r.materialName || "Solicitud de compra",
-        subtitle: `Cantidad: ${r.quantity} ${r.unit}`, time: toDate(r.createdAt), status: r.status,
-      });
+    let purchaseInProgress = 0;
+    myPurchaseRequests.forEach((r) => {
+      const stage = resolvePurchaseStage(r);
+      if (stage === "waiting_adc" || stage === "in_review") purchaseInProgress++;
     });
 
-    (returnRequests || []).forEach((r: ReturnRequest) => {
-      if (r.supervisorId !== user.id) return;
-      const count = (r as any).items?.length ?? 1;
-      list.push({
-        id: `ret-${r.id}`, originalId: r.id, type: "return",
-        title: count === 1 ? "Devolución de material" : `Devolución (${count} ítems)`,
-        subtitle: `${count} ítem(s) devueltos`, time: toDate(r.createdAt), status: r.status,
-      });
-    });
+    const rentalsActive = myRentalRequests.filter((r) => r.status === "pending" || r.status === "quoting").length;
 
-    (rentalRequests || []).forEach((r: RentalRequest) => {
-      if (r.supervisorId !== user.id) return;
-      list.push({
-        id: `rent-${r.id}`, originalId: r.id, type: "rental",
-        title: `Arriendo: ${r.equipmentName}`,
-        subtitle: `${r.contractName || "Faena"} · ×${r.quantity}`,
-        time: toDate(r.createdAt), status: r.status,
-      });
-    });
+    return { materialInProgress, materialReady, purchaseInProgress, rentalsActive, returnPending: returnBalanceItems.length };
+  }, [myMaterialRequests, myPurchaseRequests, myRentalRequests, returnBalanceItems]);
 
-    return list.sort((a, b) => b.time.getTime() - a.time.getTime());
-  }, [requests, purchaseRequests, returnRequests, rentalRequests, materials, user]);
-
-  const filteredActivity = useMemo(() => {
-    if (activeTab === "all") return allActivity.slice(0, 25);
-    return allActivity.filter((a) => a.type === activeTab).slice(0, 25);
-  }, [activeTab, allActivity]);
-
-  // ================= CONFIGURADORES (tokenizados) =================
-  const getStatusConfig = (status: string, delivered = false) => {
-    if (delivered) return { label: "Entregado", className: "badge-success" };
-    const statusMap: Record<string, string> = {
-      pending: "Pendiente", approved: "Aprobado", rejected: "Rechazado", completed: "Completado",
-      ordered: "Ordenado", received: "Recibido", batched: "En Lote",
-      quoting: "En cotización", fulfilled: "Arriendo creado",
-    };
-    const classMap: Record<string, string> = {
-      pending: "badge-warning", approved: "badge-info", rejected: "bg-destructive/10 text-destructive border-destructive/30",
-      completed: "badge-success", ordered: "badge-info", received: "badge-success",
-      batched: "bg-muted text-muted-foreground", quoting: "badge-info", fulfilled: "badge-success",
-    };
-    return { label: statusMap[status] || status, className: classMap[status] || "bg-muted text-muted-foreground" };
-  };
-
-  const getTypeConfig = (t: string) => {
-    switch (t) {
-      case "request": return { icon: Package, accent: "primary", label: "Pañol" };
-      case "purchase": return { icon: ShoppingCart, accent: "info", label: "Compra" };
-      case "return": return { icon: RotateCcw, accent: "success", label: "Devolución" };
-      case "rental": return { icon: KeyRound, accent: "warning", label: "Arriendo" };
-      default: return { icon: FileText, accent: "primary", label: "Otro" };
-    }
-  };
-
-  const metricCards = [
-    { label: "Pendientes", value: metrics.pending, icon: Clock, accent: "warning" },
-    { label: "Por Recibir", value: metrics.delivery, icon: PackageCheck, accent: "info" },
-    { label: "Arriendos", value: metrics.rentals, icon: KeyRound, accent: "primary" },
-    { label: "Devoluciones", value: metrics.returns, icon: RotateCcw, accent: "success" },
-    { label: "Stock Crítico", value: metrics.lowStock, icon: AlertTriangle, accent: "destructive" },
+  const KPI_ITEMS = [
+    { label: "Pañol en trámite", value: kpis.materialInProgress, icon: Clock, iconCls: "bg-info-subtle text-info", href: "/dashboard/supervisor/request" },
+    { label: "Listas para retiro", value: kpis.materialReady, icon: PackageCheck, iconCls: kpis.materialReady > 0 ? "bg-success-subtle text-success-subtle-foreground" : "bg-muted text-muted-foreground", href: "/dashboard/supervisor/request" },
+    { label: "Compras en trámite", value: kpis.purchaseInProgress, icon: ShoppingCart, iconCls: "bg-info-subtle text-info", href: "/dashboard/purchasing/purchase-request-form" },
+    { label: "Por devolver", value: kpis.returnPending, icon: RotateCcw, iconCls: kpis.returnPending > 0 ? "bg-warning-subtle text-warning" : "bg-muted text-muted-foreground", href: "/dashboard/supervisor/return-request" },
+    { label: "Arriendos en curso", value: kpis.rentalsActive, icon: KeyRound, iconCls: "bg-primary/10 text-primary", href: "/dashboard/supervisor/rental-request" },
   ];
 
-  return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-12">
-      <PageHeader
-        title={`${getGreeting()}, ${user?.name.split(" ")[0] ?? "Supervisor"}`}
-        description="Panel de control operativo del supervisor."
-      />
+  // ================= ACTIVIDAD UNIFICADA (con la etapa REAL de cada tipo) =================
+  const allActivity = useMemo<ActivityEntry[]>(() => {
+    if (!user) return [];
+    const list: ActivityEntry[] = [];
 
-      {/* MÉTRICAS */}
+    myMaterialRequests.forEach((r) => list.push({ kind: "request", time: toDate(r.createdAt), req: r }));
+
+    // Un mismo carrito de compra (batchId) es UN pedido, no N filas sueltas.
+    const purchaseGroups = new Map<string, PurchaseRequest[]>();
+    myPurchaseRequests.forEach((r) => {
+      const key = groupKey(r);
+      const arr = purchaseGroups.get(key) || [];
+      arr.push(r);
+      purchaseGroups.set(key, arr);
+    });
+    purchaseGroups.forEach((items) => {
+      const time = new Date(Math.max(...items.map((i) => new Date(i.createdAt as any).getTime())));
+      list.push({ kind: "purchase", time, items });
+    });
+
+    myReturnRequests.forEach((r) => list.push({ kind: "return", time: toDate(r.createdAt), ret: r }));
+    myRentalRequests.forEach((r) => list.push({ kind: "rental", time: toDate(r.createdAt), rental: r }));
+
+    return list.sort((a, b) => b.time.getTime() - a.time.getTime());
+  }, [myMaterialRequests, myPurchaseRequests, myReturnRequests, myRentalRequests, user]);
+
+  const filteredActivity = useMemo(() => {
+    const list = activeTab === "all" ? allActivity : allActivity.filter((a) => a.kind === activeTab);
+    return list.slice(0, 25);
+  }, [activeTab, allActivity]);
+
+  const requestTitle = (req: CompatibleMaterialRequest) => {
+    const items = requestItems(req);
+    if (items.length === 1) {
+      const mat = materialMap.get(items[0].materialId);
+      return mat ? mat.name : "Solicitud de material";
+    }
+    return items.length > 0 ? `${items.length} ítems solicitados` : "Solicitud de material";
+  };
+
+  return (
+    <PageShell
+      title={`${getGreeting()}, ${user?.name.split(" ")[0] ?? "Supervisor"}`}
+      description="Panel de control operativo del supervisor."
+      className="pb-12"
+    >
+      {/* KPIs — cada uno navega directo a la página donde se resuelve */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {metricCards.map((m) => {
-          const a = ACCENT[m.accent];
-          return (
-            <Card key={m.label} className={cn("border-l-4 rounded-[1.5rem] shadow-sm hover:shadow-md transition", a.border)}>
-              <CardContent className="p-4 flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground truncate">{m.label}</p>
-                  <h3 className="text-3xl font-black text-foreground">{m.value}</h3>
-                </div>
-                <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0", a.iconBg)}>
-                  <m.icon className={cn("h-6 w-6", a.icon)} />
-                </div>
-              </CardContent>
+        {KPI_ITEMS.map((k) => (
+          <Link key={k.label} href={k.href} className="block h-full">
+            <Card className="p-5 rounded-[1.5rem] border-none shadow-sm hover:shadow-lg transition-all h-full">
+              <div className={cn("p-2.5 rounded-xl w-fit shadow-sm mb-4", k.iconCls)}>
+                <k.icon size={16} />
+              </div>
+              <p className="text-2xl font-black font-outfit text-foreground">{k.value}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">{k.label}</p>
             </Card>
-          );
-        })}
+          </Link>
+        ))}
       </div>
 
       {/* ACCIONES RÁPIDAS */}
-      <div>
+      <div className="mt-8">
         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Acciones rápidas</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <QuickAction href="/dashboard/supervisor/request" icon={Package} title="Solicitar al Pañol" desc="Material disponible" accent="primary" arrow={ArrowUpRight} />
@@ -245,68 +213,42 @@ export default function SupervisorHubPage() {
       </div>
 
       {/* HISTORIAL */}
-      <Card className="rounded-[1.5rem] shadow-sm">
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div>
-              <CardTitle className="text-xl">Historial de Actividad</CardTitle>
-              <CardDescription>Tus solicitudes, compras, arriendos y devoluciones recientes.</CardDescription>
-            </div>
-            <Link href="/dashboard/supervisor/request">
-              <Button size="sm" variant="outline">Ver historial completo <ArrowRight className="ml-2 h-4 w-4" /></Button>
-            </Link>
+      <Card className="rounded-[2rem] shadow-sm border mt-8 p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h3 className="text-lg font-black uppercase tracking-tight">Historial de Actividad</h3>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Tus solicitudes, compras, arriendos y devoluciones recientes.</p>
           </div>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4 grid grid-cols-3 sm:grid-cols-5 sm:flex">
-              <TabsTrigger value="all">Todo</TabsTrigger>
-              <TabsTrigger value="request" className="gap-2"><Package className="h-4 w-4" /> Pañol</TabsTrigger>
-              <TabsTrigger value="purchase" className="gap-2"><ShoppingCart className="h-4 w-4" /> Compras</TabsTrigger>
-              <TabsTrigger value="rental" className="gap-2"><KeyRound className="h-4 w-4" /> Arriendos</TabsTrigger>
-              <TabsTrigger value="return" className="gap-2"><RotateCcw className="h-4 w-4" /> Devol.</TabsTrigger>
-            </TabsList>
+        </div>
 
-            <TabsContent value={activeTab}>
-              {filteredActivity.length > 0 ? (
-                <ScrollArea className="h-[400px] pr-3">
-                  <div className="space-y-3">
-                    {filteredActivity.map((act) => {
-                      const t = getTypeConfig(act.type);
-                      const s = getStatusConfig(act.status, act.delivered);
-                      const a = ACCENT[t.accent];
-                      const Icon = t.icon;
-                      return (
-                        <div key={act.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-xl bg-card hover:bg-muted/40 transition">
-                          <div className="flex gap-4">
-                            <div className={cn("p-2 rounded-2xl shrink-0", a.iconBg)}>
-                              <Icon className={cn("h-5 w-5", a.icon)} />
-                            </div>
-                            <div>
-                              <div className="flex gap-2 items-center flex-wrap">
-                                <span className="font-semibold text-sm">{act.title}</span>
-                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground">{t.label}</Badge>
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                {act.subtitle} • <span className="capitalize">{formatDistanceToNow(act.time, { addSuffix: true, locale: es })}</span>
-                              </p>
-                            </div>
-                          </div>
-                          <Badge variant="outline" className={cn("whitespace-nowrap mt-2 sm:mt-0", s.className)}>{s.label}</Badge>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
-                  <SearchX className="h-12 w-12 mb-3 opacity-20" />
-                  <p>No hay movimientos en esta categoría.</p>
-                </div>
+        <div className="flex items-center gap-1 bg-muted/50 border rounded-xl p-1 w-fit max-w-full overflow-x-auto no-scrollbar mb-6">
+          {FEED_FILTERS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={cn(
+                "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                activeTab === key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               )}
-            </TabsContent>
-          </Tabs>
-        </CardContent>
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {filteredActivity.length > 0 ? (
+          <div className="space-y-3">
+            {filteredActivity.map((act) => (
+              <ActivityRow key={activityKey(act)} entry={act} materialMap={materialMap} requestTitle={requestTitle} />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={<SearchX size={24} />}
+            title="Sin movimientos"
+            description="No hay movimientos en esta categoría todavía."
+          />
+        )}
       </Card>
 
       {/* BOTÓN FLOTANTE */}
@@ -315,7 +257,81 @@ export default function SupervisorHubPage() {
           <Plus className="h-7 w-7" />
         </Button>
       </Link>
-    </div>
+    </PageShell>
+  );
+}
+
+function activityKey(a: ActivityEntry): string {
+  if (a.kind === "request") return `req-${a.req.id}`;
+  if (a.kind === "purchase") return `pur-${groupKey(a.items[0])}`;
+  if (a.kind === "return") return `ret-${a.ret.id}`;
+  return `rent-${a.rental.id}`;
+}
+
+// ============ FILA DE ACTIVIDAD (etapa real por tipo, clickeable) ============
+function ActivityRow({ entry, materialMap, requestTitle }: {
+  entry: ActivityEntry;
+  materialMap: Map<string, Material>;
+  requestTitle: (req: CompatibleMaterialRequest) => string;
+}) {
+  const accent = TYPE_ACCENT[entry.kind];
+  const Icon = accent.icon_cmp;
+
+  let title = "";
+  let subtitle = "";
+  let time: Date;
+  let badge: React.ReactNode;
+
+  if (entry.kind === "request") {
+    title = requestTitle(entry.req);
+    subtitle = entry.req.contractName || entry.req.area || "Faena";
+    time = entry.time;
+    badge = <StageBadge stage={resolveSupervisorStage(entry.req)} />;
+  } else if (entry.kind === "purchase") {
+    const first = entry.items[0];
+    title = entry.items.length === 1 ? first.materialName : `Pedido de compra (${entry.items.length} ítems)`;
+    subtitle = first.contractName || "—";
+    time = entry.time;
+    badge = <PurchaseStageBadge stage={representativePurchaseStage(entry.items)} />;
+  } else if (entry.kind === "return") {
+    title = `Devolución: ${entry.ret.materialName}`;
+    subtitle = `${entry.ret.quantity} ${entry.ret.unit} · ${entry.ret.contractName || "Pool central"}`;
+    time = entry.time;
+    badge = (
+      <div className="flex flex-col items-end gap-1.5">
+        <ReturnStatusBadge status={entry.ret.status} />
+        <ConditionBadge condition={entry.ret.returnCondition} />
+      </div>
+    );
+  } else {
+    const rental = entry.rental;
+    const meta = RENTAL_STATUS_META[rental.status] || { label: rental.status, cls: "bg-muted text-muted-foreground" };
+    title = `Arriendo: ${rental.equipmentName}${rental.items?.length > 1 ? ` (+${rental.items.length - 1} más)` : ""}`;
+    subtitle = `${rental.contractName || "Faena"} · ×${rental.quantity}`;
+    time = entry.time;
+    badge = <Badge className={cn("border-none text-[9px] font-black uppercase tracking-widest", meta.cls)}>{meta.label}</Badge>;
+  }
+
+  return (
+    <Link href={accent.href} className="block">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-[1.25rem] bg-card border hover:shadow-lg hover:border-primary/20 transition-all">
+        <div className="flex gap-4 min-w-0">
+          <div className={cn("p-2.5 rounded-2xl shrink-0", accent.iconBg)}>
+            <Icon className={cn("h-5 w-5", accent.icon)} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex gap-2 items-center flex-wrap">
+              <span className="font-bold text-sm truncate">{title}</span>
+              <Badge variant="outline" className="text-[9px] h-5 px-1.5 text-muted-foreground font-black uppercase tracking-widest shrink-0">{accent.label}</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground font-medium truncate">
+              {subtitle} · <span className="capitalize">{formatDistanceToNow(time, { addSuffix: true, locale: es })}</span>
+            </p>
+          </div>
+        </div>
+        <div className="shrink-0">{badge}</div>
+      </div>
+    </Link>
   );
 }
 

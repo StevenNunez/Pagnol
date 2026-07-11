@@ -18,6 +18,269 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado — Panel Supervisor (`dashboard/supervisor`), cierre del módulo
+- **Rediseño del hub** para que hable el mismo idioma que sus 3 páginas hijas
+  (`supervisor/request`, `purchasing/purchase-request-form`, `supervisor/return-request`),
+  reusando 100% la lógica de pipeline ya construida — sin mutaciones ni migraciones nuevas:
+  - **KPIs honestos y clickeables** (antes 5 tarjetas decorativas, ninguna navegaba): "Pañol
+    en trámite" y "Listas para retiro" (`resolveSupervisorStage`), "Compras en trámite"
+    (`resolvePurchaseStage`), **"Por devolver"** (`computeReturnBalanceItems` — reemplaza al
+    viejo "Devoluciones: N" que contaba la cola del PAÑOLERO, cero acción para el supervisor,
+    por el saldo real que SÍ le corresponde a él), "Arriendos en curso". Cada tarjeta es un
+    `<Link>` a su página. Se eliminó "Stock Crítico" (umbral `stock<=10` falso — mismo
+    defecto ya corregido dos veces esta semana en Reportes y Panel Principal — y no es
+    información del supervisor).
+  - **Feed de actividad con la etapa REAL de cada tipo**: `<StageBadge>`, `<PurchaseStageBadge>`,
+    `<ReturnStatusBadge>`+`<ConditionBadge>` en vez del `status` crudo de la BD ("Aprobado"
+    a secas, sin distinguir "lista para retiro" de "ya entregada"). Cada fila es clickeable
+    y navega a su página. Las compras multi-ítem del mismo carrito (`batchId`) se agrupan
+    en una sola fila ("Pedido de compra (N ítems)") con la etapa del ítem MENOS avanzado
+    del grupo (no anuncia "Recibida" si falta llegar uno solo).
+  - `Tabs` de shadcn → chips de segmento (firma Pagnol), tarjetas KPI con el mismo estilo
+    unificado de la serie (ícono arriba, número grande, clickeable).
+  - Verificado en navegador con datos reales de las 3 sesiones anteriores: los 4 tipos de
+    actividad aparecen con su etapa correcta, KPIs cuadran con los datos, clicks en KPI y
+    en fila navegan a la página correcta (`waitForNavigation` confirmado).
+
+### 🔴 Corregido — bug preexistente que rompía TODAS las solicitudes de compra
+- **`purchase_requests` — crear una Solicitud de Compra estaba 100% roto** contra el
+  proyecto Supabase actual, desde antes de esta sesión (no relacionado con el rediseño;
+  descubierto al verificar el envío real en el navegador). Dos problemas independientes:
+  1. **`id` es `uuid` en la tabla real**, pero el código intentaba insertar el código
+     legible de `nextInternalCode()` (ej. `"PAG-PRQ-0007"`) como valor de `id` →
+     `invalid input syntax for type uuid`. **Toda** solicitud de compra fallaba al enviarse.
+  2. El insert también escribía `internal_code` y `requester_name`, columnas que
+     **no existen** en la tabla (`Could not find the 'requester_name' column...`).
+  - **Fix de código:** `id` ahora lo genera Postgres (uuid real); el código legible se
+    guarda en la nueva columna `internal_code` (mismo patrón que `material_requests`/
+    `return_requests`). Nuevo helper `insertPurchaseRequestRow()` en
+    `purchaseRequestMutations.ts` reintenta sin `internal_code`/`requester_name`/`batch_id`
+    si Postgres reporta que la columna no existe — **una solicitud de compra ya funciona
+    incluso ANTES de aplicar la migración** (usa el fallback `REF <8 primeros del uuid>`
+    en la UI hasta que se aplique).
+  - **Migración `20260710010000_purchase_requests_batch.sql` — APLICADA por el usuario**
+    (agrega `internal_code`, `requester_name`, `batch_id`). Las solicitudes ya muestran el
+    código real `PRQ-XXXX` y el agrupado por `batch_id` queda activo de punta a punta.
+  - Verificado end-to-end en navegador: solicitud real enviada con la cuenta demo, apareció
+    al instante vía Realtime, sobrevivió a recargar la página, etapa "En revisión" correcta.
+
+### 🔴 Corregido — bug preexistente que rompía TODAS las devoluciones (integridad de stock)
+- **`return_requests` — registrar una devolución estaba 100% roto**, descubierto igual que
+  el de compras: al verificar el envío real en el navegador para el rediseño de
+  `supervisor/return-request`. Dos causas apiladas, la primera ocultando a la segunda:
+  1. **`addReturnRequest` nunca revisaba el `error` del insert** (`await supabase...insert()`
+     sin chequear `error`) — el gotcha de RLS/insert silencioso del proyecto en su forma más
+     pura. El toast decía "Éxito" con cero filas guardadas; el material quedaba en el limbo.
+  2. **Al corregir (1) y volver a intentar, salió a la luz un segundo bug**: la columna
+     `return_requests.items` es `NOT NULL` pero el insert nunca la poblaba (columna heredada
+     de un diseño multi-ítem anterior — no existe en el tipo `ReturnRequest` de TypeScript).
+     Sin (1), este error se tragaba en silencio igual que el anterior.
+  - **Fix:** el insert ahora chequea `error` (throw con el mensaje real) y puebla
+    `items: [{ materialId, quantity }]`. Verificado end-to-end en navegador: devolución real
+    enviada (3 de 7 pares), apareció al instante en el historial con código `MDS-RET-0003`,
+    sin perder datos.
+- **Sobre-devolución posible: podías devolver más de lo retirado, o devolver la misma
+  cantidad dos veces** mientras la primera esperaba revisión del pañolero. La página nunca
+  restaba lo ya devuelto (pendiente o completado) del saldo. Fix en dos capas:
+  - **Cliente** (`computeReturnBalanceItems` en `return-balance.ts`): saldo = tomado
+    (aprobado, con custodia real vía la misma fórmula de `computeToolHolderMap`) − ya
+    devuelto (pendiente + completado, rechazado no cuenta), agrupado por (material,
+    **contrato** — no solo material, para no mezclar contratos distintos en un mismo saldo).
+  - **Servidor** (`computeReturnBalances` en la mutación): recalcula el mismo saldo desde
+    cero e independientemente ANTES de insertar — nunca confía solo en lo que mandó el
+    cliente. `addReturnRequest` cambió de firma: cada ítem ahora lleva su propio
+    `contractId`/`contractName` (antes un solo contrato compartido para todo el carrito,
+    lo que forzaba a mezclar y caer al pool central si había más de uno).
+  - Verificado end-to-end: solicitud de 7 pares de guantes creada y aprobada, saldo mostrado
+    correctamente (7, sin filtro de fecha que lo escondiera), devolución parcial de 3
+    enviada, saldo bajó a 4 de inmediato vía Realtime — la fila ya no permite reclamar de
+    nuevo lo ya declarado.
+
+### Cambiado — Devolución de Materiales (`supervisor/return-request`)
+- **Rediseño completo con la misma vara que el resto del módulo supervisor.** Nuevos
+  `src/components/supervisor-returns/` (`return-balance.ts`, `return-history-card.tsx`),
+  reutiliza `ReturnStatusBadge`/`ConditionBadge` ya construidos para la bandeja del pañol:
+  - **Sin filtro de fecha por defecto** (antes partía en "hoy" y mostraba el engañoso "Sin
+    materiales para devolver" si retiraste ayer). Ahora se muestra TODO el saldo pendiente,
+    sin importar cuándo se retiró — un material es fungible, la fecha no debería esconderlo.
+  - **Historial con pipeline** (Por revisar / Completada / Rechazada) + KPIs clickeables +
+    chips de filtro + buscador — antes no existía ningún historial: el supervisor enviaba
+    la devolución y quedaba completamente ciego a su estado, sin código visible, sin saber
+    si el pañolero la recibió OK o con falla.
+  - Cada fila de saldo muestra el contrato de reingreso explícito (antes: si las solicitudes
+    de origen mezclaban contratos, reingresaba al pool central en silencio sin avisar).
+  - Cantidad a devolver clampeada en línea (ya no permite escribir más del saldo y recién
+    reclamar al enviar). Toast con el error real del servidor (incluye el saldo exacto si
+    se intenta devolver de más).
+  - Firma Pagnol: `PageShell`, tarjetas con micro-labels y tokens semánticos — dejó de ser
+    `<Card>`/`<Table>` genérico de shadcn con `fade-in` muerto (sin `animate-in`).
+
+### Cambiado (2/2) — Solicitud de Compra (`purchasing/purchase-request-form`, compartida
+por `supervisor/purchase-request-form` vía re-export)
+- **Rediseño completo con la misma vara que `supervisor/request`.** Página partida en
+  `src/components/supervisor-purchases/` (`purchase-pipeline.ts`, `purchase-stage-badge`,
+  `purchase-material-combobox`, `purchase-history-card`):
+  - **Pipeline honesto**: Esperando ADC → En revisión → Aprobada → Ordenada → Recibida →
+    Rechazada (antes `status` aplanaba "esperando ADC" y "en revisión de Abastecimiento"
+    en un solo "Pendiente"). Hints por etapa; recepción parcial muestra "se solicitaron
+    N originalmente"; rechazo muestra el motivo (`rejectionReason`, antes oculto).
+  - **Ítems de un mismo carrito ahora se agrupan como un pedido** (`batchId`, ver arriba):
+    antes 5 ítems enviados juntos quedaban como 5 filas sin nada que las uniera; ahora
+    `PurchaseHistoryCard` los muestra en una tarjeta "REF-XXXX + 4 ítems más", cada ítem
+    con su propia etapa (Abastecimiento aprueba/rechaza por ítem, así que un badge único
+    de grupo mentiría si divergen).
+  - **Fix cmdk (mismo bug que en supervisor/request, aquí peor):** el combobox de material
+    ni siquiera pasaba `value` a `CommandItem` (usaba el texto renderizado); con las 7
+    "Bomba Sumergible..." homónimas de la demo colisionaba igual. Fix: `value` = nombre+id.
+    Se conservó el soporte de texto libre ("Usar nombre: X" para material fuera de catálogo).
+  - **Envío robusto:** `Promise.allSettled` en vez de `Promise.all` — si 2 de 5 ítems
+    fallan, el toast reporta cuántos entraron y cuáles no, y el carrito se queda SOLO con
+    los que fallaron (los que sí entraron no se reintentan — evita duplicarlos).
+  - **KPIs clickeables + chips de filtro + buscador** (código/material/contrato) — antes un
+    `<Select>` genérico pending/approved/rejected sin código de solicitud visible.
+  - **Badges con paletas crudas eliminadas** (`bg-yellow-100`, `bg-green-100`, `bg-red-100`,
+    `bg-blue-100`, `bg-cyan-100`, `bg-purple-100` — 6 colores pastel ilegibles en dark
+    mode) → tokens semánticos. Historial de `<Table>` a tarjetas, `PageShell`, micro-labels
+    — dejó de ser la página con el salto visual más marcado del módulo.
+  - Verificado end-to-end en navegador: envío real de un ítem con texto libre (material
+    fuera de catálogo), etapa correcta, KPI actualizado, sobrevive a recarga de página.
+
+### Corregido
+- **Buscador de material/beneficiario perdía la selección con nombres duplicados**
+  (`supervisor/request`, y el mismo patrón en cualquier combobox cmdk del proyecto).
+  `CommandItem` usaba `value={m.name}` — con materiales homónimos (ej. 7 "Bomba Sumergible
+  Grundfos SP 5-18" en la demo) cmdk no podía distinguir el resaltado por teclado ni la
+  resolución interna de "ítem actual" entre instancias. Ahora `value` combina nombre + id
+  (`MaterialCombobox`, `BeneficiaryCombobox` en `src/components/supervisor-requests/`);
+  el buscador sigue filtrando por nombre (aparece primero en la cadena) y cada ítem queda
+  inequívoco. Verificado en navegador: las 7 bombas homónimas se resaltan y seleccionan
+  individualmente sin colisión.
+- **Errores de envío de solicitud mostraban un mensaje genérico** que ocultaba la causa real
+  (stock insuficiente, destinatario faltante, etc.). El toast ahora muestra `error.message`.
+
+### Cambiado
+- **`supervisor/request` — el supervisor no podía ver dónde estaba su propio pedido.**
+  El campo `status` (pending/approved/rejected) esconde dos preguntas clave: ¿a quién le
+  toca moverlo? y ¿ya puedo ir a buscarlo? Nuevo pipeline honesto en
+  `src/components/supervisor-requests/` (`request-pipeline.ts` + `StageBadge` +
+  `RequestHistoryCard`), derivado de campos que ya existían pero la página no leía
+  (`adcAuthorizedAt`, `deliveryDate`, `receivedByUserName`):
+  - **Esperando ADC** (pendiente, sin autorización) → **En cola del pañol** (autorizada,
+    el pañolero debe aprobarla) → **Lista para retiro** (aprobada, con "esperando hace N
+    días" cuando corresponde) → **Entregada** (con quién la retiró) → **Rechazada**.
+  - **KPIs clickeables** arriba del historial (En trámite / Listas para retiro / Entregadas
+    / Rechazadas) + chips de filtro + buscador por código/material/contrato — antes solo
+    había un `<Select>` genérico pending/approved/rejected sin código de solicitud visible.
+  - Verificado end-to-end: solicitud real enviada en el navegador, tarjeta renderizada al
+    instante vía Realtime con código (`MDS-TX-0012`), badge "En cola del pañol" y el hint
+    correcto — sin recargar la página.
+  - **Rediseño a la firma visual Pagnol** (era la única página del módulo con el look
+    genérico de shadcn: `border-l-4`, `Card` chicas, badges con paletas crudas
+    `bg-amber-100`/`bg-emerald-100`/`bg-red-100` ilegibles en dark mode). Ahora usa
+    `PageShell`, micro-labels `font-black uppercase tracking-widest`, radios de marca,
+    tokens semánticos en todo (`badge-success`/`-warning`/`-info`), chips de segmento
+    estilo Activos/Solicitudes.
+  - **Transparencia contrato/pool en el selector de material**: el helper "Disponible"
+    ahora avisa cuando el contrato elegido no tiene stock propio ("saldrá del pool central
+    u otro contrato") — la validación de cantidad se mantiene contra el stock global
+    porque `consumeFromLedger` cascada entre contratos, así que un tope más estricto
+    habría bloqueado pedidos válidos.
+
+### Eliminado
+- **Pestaña "Análisis IA" del Centro de Reportes** (a pedido del usuario: el asistente
+  on-demand cubre esa necesidad). Se eliminó `ai-tab.tsx` y el tipo `AI_INSIGHTS`.
+
+### Seguridad
+- **Gate ADC reforzado en el servidor.** `updateMaterialRequestStatus` (aprobación en el
+  pañol) ahora RECHAZA solicitudes sin `adc_authorized_at` — antes solo la UI de la bandeja
+  lo filtraba, pero el inbox del Panel Principal mostraba TODAS las pendientes y podía
+  descontar stock de una solicitud que el ADC nunca autorizó. El inbox del panel ahora
+  también filtra por `adcAuthorizedAt`.
+
+### Corregido
+- **Aceptar una devolución desde la bandeja mandaba TODO a mantenimiento.** La página llamaba
+  `updateReturnRequestStatus(id, 'completed')` SIN el parámetro de condición; la mutación
+  interpretaba "condición ≠ OK" y dejaba el material `En Mantenimiento` (con `return_condition`
+  en null). Ahora un diálogo obliga a declarar la condición (En buen estado / Con falla / Roto)
+  y la pasa a la mutación — un ítem OK vuelve a estar Disponible.
+- **Botones de aprobación se mostraban con el permiso equivocado.** Usaban el genérico
+  `material_requests:approve` mientras el servidor exige `approve_class_a/b/c` → un usuario
+  veía "Aprobar" y al confirmar recibía error. Ahora `canApproveClass()` refleja la jerarquía
+  real del servidor (A cubre B/C, B cubre C).
+
+### Cambiado
+- **Bandeja de Solicitudes (`pagnol/solicitudes`) — rediseño a la firma visual Pagnol.**
+  Era la única página del módulo con el look genérico de shadcn (herencia de las viejas
+  páginas de Bodega): tabs grises anidadas, tarjetas `border-l-4`, sin KPIs. Ahora sigue el
+  estándar (partida en `src/components/pagnol-requests/`): fila de KPIs clickeables (retiros
+  por aprobar, devoluciones por revisar, sin retirar +3 días, esperando ADC), chips de
+  segmento y de estado estilo Activos, tarjetas con micro-labels y tokens semánticos. Además:
+  - **Retiros ahora tiene buscador** (por código, persona, material o contrato) y muestra el
+    `internalCode`; históricos con paginación ("mostrar más").
+  - **Sección "Esperando al ADC"** (solo lectura, enlaza a `/authorizations`): antes las
+    solicitudes atascadas en el ADC eran invisibles en toda la bandeja.
+  - **Devoluciones completadas muestran condición y evidencia** (`returnCondition`,
+    `evidenceUrl`), antes ocultas.
+  - Se quitó el `refreshData()` masivo tras cada aprobación (Realtime ya refresca).
+  Verificado en navegador (retiros, devoluciones, completadas con condición/recepción).
+
+### Cambiado
+- **Panel principal Pagnol (`dashboard/pagnol`) — rediseño con datos reales** (auditoría
+  2026-07-10, misma vara que Reportes):
+  - **KPI "Tránsito Externo" reemplazado por "En Terreno".** El viejo sumaba `material.inUse`
+    (se escribe como `in_use` en snake_case — corrección a la nota previa: SÍ se actualiza en
+    aprobación/devolución, no estaba "muerto"), pero contaba cantidades y podía desalinearse.
+    "En Terreno" ahora cuenta retornables realmente en poder de alguien vía
+    `computeToolHolderMap` (consistente con Activos y Reportes; en demo: 3).
+  - **Fin del refetch masivo:** se eliminó el `refreshData()` al montar, que recargaba las
+    30+ colecciones del tenant en cada visita al panel (Realtime ya mantiene los datos
+    frescos). También tras aprobar (Realtime actualiza la colección).
+  - **Inbox de aprobación completo:** ahora muestra **cantidades por ítem**, justificación,
+    contrato y código interno, y tiene botón **Rechazar** (antes solo se podía aprobar a
+    ciegas, sin cantidades). Copy honesto: "requieren tu aprobación" en vez de "firma
+    digital/biométrica requerida" (el botón nunca pidió firma).
+  - **Copy y métricas honestas:** fuera "Sistema Online"/"Integridad de Red: 100%"
+    (estáticos), "Óptimo" fijo (ahora Óptimo/Estable/Crítico según el % real), badges
+    decorativos ("AMIS Ready", "Efectivo", "ISO 55001 Aligned"); anillo de salud = %
+    real de disponibles sin archivados; "unidades" → "ítems".
+  - **Stock crítico unificado** con el umbral `minStock` real (tercer umbral distinto
+    eliminado) + botón **Reponer** con prefill; barra proporcional al umbral real.
+  - Bug corregido: `useMemo` de transacciones sin `users` en deps (nombres "Desconocido"
+    stale); actividad reciente ahora muestra el custodio real y etapas `STAGE_META`
+    (distingue Entregada de Aprobada); banner de mantenimientos vencidos clickeable;
+    gráfico 7 días en una sola pasada. Verificado en navegador (demo).
+- **Centro de Reportes (`pagnol/reports`) — rediseño completo con datos honestos**
+  (auditoría 2026-07-10; página de 1.073 líneas partida en `src/components/pagnol-reports/`).
+  Correcciones de VERDAD de datos:
+  - **Posesión unificada con Activos:** ahora usa `computeToolHolderMap` (custodio real =
+    quien recibió / beneficiario dirigido, no el supervisor que aprobó). Reportes y Activos
+    ya no se contradicen.
+  - **Fin de la "verificación biométrica" falsa:** el escudo verde salía con solo aprobar;
+    la columna "Garantía Judicial" se reemplazó por etapas reales (Pendiente/Aprobada/
+    Entregada/Rechazada/Devuelto) + check de confirmación.
+  - **`Progress value={75}` hardcodeado eliminado** — la Operatividad ahora es el % real
+    de activos Disponibles (en demo pasó de un 28% falso a 86% real).
+  - **Stock crítico por `minStock` real** (fallback 5 SOLO para consumibles/repuestos;
+    un Activo Fijo con stock 1 ya no aparece "crítico").
+  - **Score de responsabilidad solo con ítems retornables** — los consumibles ya no
+    castigan el score (nadie devuelve cemento); si no hay prestables, no se muestra score.
+  - "En Uso" solo aplica a retornables en poder de alguien.
+  Funcionalidad nueva:
+  - **Auditoría:** rango de fechas (presets 7d/30d/mes + desde/hasta), filtro por operación,
+    búsqueda por persona/código, paginación (50/pág) y **export Excel**.
+  - **Mantenimiento accionable:** Vencidos y Próximos 15 días por `nextMaintenanceDate`
+    + enlace al módulo de Mantenimiento.
+  - **Botón "Reponer" ahora funciona:** navega al formulario de solicitud de compra con el
+    material precargado (`purchase-request-form` acepta `?materialId=`).
+  - **Trazabilidad:** búsqueda case-insensitive con debounce y selector cuando hay varias
+    coincidencias; muestra foto del activo y quién lo tiene.
+  - **Personal:** buscador, orden por activos a cargo, paginación, fecha "desde" de cada
+    tenencia.
+  - Impresión útil: CSS scoped que imprime solo el reporte con encabezado (título/fecha/autor).
+  - Detalles: colores del donut SEMÁNTICOS (verde=Disponible, rojo=Agotado...), eje CLP
+    compacto ($48M), tooltips theme-aware, `EmptyState` compartido, enlace cruzado a
+    Stock por Contrato. Verificado en navegador (7 capturas, tenant demo).
+
 ### Seguridad
 - **Endurecimiento pre-lanzamiento (P0 de la auditoría) — verificado end-to-end:**
   - **`/api/invite` ya no es un relay de correo abierto.** Antes cualquiera podía POSTear

@@ -501,6 +501,7 @@ export const mappers = {
     }),
     purchase_requests: (item: any): PurchaseRequest => ({
         id: item.id,
+        internalCode: item.internal_code || undefined,
         materialName: item.material_name,
         quantity: item.quantity,
         originalQuantity: item.original_quantity,
@@ -525,7 +526,8 @@ export const mappers = {
         rejectionReason: item.rejection_reason,
         rejectionDate: item.rejection_date ? new Date(item.rejection_date) : undefined,
         adcAuthorizedAt: item.adc_authorized_at || null,
-        adcAuthorizedById: item.adc_authorized_by || null
+        adcAuthorizedById: item.adc_authorized_by || null,
+        batchId: item.batch_id || null
     }),
     return_requests: (item: any): ReturnRequest => ({
         id: item.id,

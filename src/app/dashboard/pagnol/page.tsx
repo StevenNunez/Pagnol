@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import {
@@ -17,58 +17,31 @@ import {
   ArrowDownRight,
   Wrench,
   Image as ImageIcon,
-  Loader2
+  Loader2,
+  ShoppingCart,
+  X,
 } from 'lucide-react';
-import type {
-  Material,
-  MaterialRequest,
-  ReturnRequest,
-  User,
-  Tool
-} from '@/modules/core/lib/data';
+import type { MaterialRequest } from '@/modules/core/lib/data';
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-
-type DisplayTransaction = {
-  id: string;
-  assetIds: string[];
-  type: 'WITHDRAWAL' | 'RETURN';
-  site: string;
-  employeeId: string;
-  timestamp: string;
-  description: string;
-  status: string;
-  needsApproval?: boolean;
-  isApproved?: boolean;
-  maxClass?: 'A' | 'B' | 'C';
-  employeeName?: string;
-};
+import { useReportData } from '@/components/pagnol-reports/use-report-data';
+import { STAGE_META, criticalThreshold, formatCompactCLP, isReturnable } from '@/components/pagnol-reports/report-utils';
 
 export default function PagnolMainPage() {
-  const {
-    materials,
-    tools,
-    requests,
-    returnRequests,
-    users,
-    updateMaterialRequestStatus,
-    notify,
-    refreshData,
-  } = useAppState();
+  const { requests, updateMaterialRequestStatus, notify } = useAppState();
   const { user: currentUser, can } = useAuth();
   const router = useRouter();
 
-  const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
+  // Fuente única de datos (la misma de Reportes y Activos): transacciones con
+  // custodio real, posesión vía computeToolHolderMap, stock crítico por minStock.
+  const data = useReportData();
+  const { activeMaterials, materialsMap, transactions, holderMap, criticalStock, totalValue, operabilityPct, maintenance } = data;
 
-  useEffect(() => {
-    refreshData();
-  }, []);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
-  const formatRelativeTime = (timestamp: string) => {
-    const now = new Date();
-    const txDate = new Date(timestamp);
-    const diffInSeconds = Math.floor((now.getTime() - txDate.getTime()) / 1000);
+  const formatRelativeTime = (timestamp: Date) => {
+    const diffInSeconds = Math.floor((Date.now() - timestamp.getTime()) / 1000);
     if (diffInSeconds < 60) return 'Hace unos segundos';
     const mins = Math.floor(diffInSeconds / 60);
     if (mins < 60) return `Hace ${mins}m`;
@@ -79,149 +52,81 @@ export default function PagnolMainPage() {
     return `Hace ${days} días`;
   };
 
-  const getTxMaxClass = (tx: MaterialRequest): 'A' | 'B' | 'C' => {
-    return tx.highestClass || 'C';
-  };
-
-  const allTransactions: DisplayTransaction[] = useMemo(() => {
-    if (!requests && !returnRequests) return [];
-    const withdrawalTxs = (requests || []).map((r: MaterialRequest) => ({
-      id: r.id,
-      assetIds: (r.items && Array.isArray(r.items)
-        ? r.items
-        : (r as any).materialId ? [{ materialId: (r as any).materialId, quantity: 1 }] : []
-      ).map((i: any) => i.materialId),
-      type: 'WITHDRAWAL' as const,
-      site: r.area,
-      employeeId: r.supervisorId,
-      timestamp: r.createdAt ? new Date(r.createdAt as any).toISOString() : new Date().toISOString(),
-      description: r.notes || '',
-      status: r.status,
-      needsApproval: r.status === 'pending',
-      isApproved: r.status === 'approved',
-      maxClass: getTxMaxClass(r),
-      panoleroId: r.approverId || '',
-      employeeName: r.userName || (users || []).find(u => u.id === r.supervisorId)?.name || 'Desconocido',
-    }));
-    const returnTxs = (returnRequests || []).map((r: ReturnRequest) => ({
-      id: r.id,
-      assetIds: [r.materialId],
-      type: 'RETURN' as const,
-      site: '',
-      employeeId: r.supervisorId,
-      timestamp: r.createdAt ? new Date(r.createdAt as any).toISOString() : new Date().toISOString(),
-      description: r.notes || '',
-      status: r.status,
-      isApproved: r.status === 'completed',
-      panoleroId: r.handlerId || '',
-      employeeName: (users || []).find(u => u.id === r.supervisorId)?.name || 'Desconocido',
-    }));
-    return [...withdrawalTxs, ...returnTxs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [requests, returnRequests]);
-
-  const actionableTransactions = useMemo(() => {
+  // Inbox de aprobación: solicitudes pendientes que ESTE usuario puede resolver,
+  // directamente desde la colección (con cantidades, notas y contrato).
+  const actionableRequests = useMemo(() => {
     if (!currentUser) return [];
-    return allTransactions.filter(tx => {
-      if (tx.type !== 'WITHDRAWAL' || !tx.needsApproval) return false;
-      if (tx.maxClass === 'A' && can('material_requests:approve_class_a')) return true;
-      if (tx.maxClass === 'B' && can('material_requests:approve_class_b')) return true;
-      if (tx.maxClass === 'C' && can('material_requests:approve_class_c')) return true;
-      return false;
-    });
-  }, [allTransactions, can, currentUser]);
-
-  const isOverdue = (date: Date | string | undefined) => {
-    if (!date) return false;
-    return new Date(date as string) < new Date();
-  };
+    return ((requests || []) as MaterialRequest[]).filter(r => {
+      if (r.status !== 'pending') return false;
+      // Gate ADC: solo las ya autorizadas por el Administrador de Contrato
+      // llegan al pañol para aprobación (mismo criterio que la bandeja).
+      if (!r.adcAuthorizedAt) return false;
+      const cls = r.highestClass || 'C';
+      if (cls === 'A') return can('material_requests:approve_class_a');
+      if (cls === 'B') return can('material_requests:approve_class_b');
+      return can('material_requests:approve_class_c');
+    }).sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
+  }, [requests, can, currentUser]);
 
   const stats = useMemo(() => {
-    // Solo materials: las herramientas ya son activos (usage_type 'Herramienta
-    // Menor') tras la migración tools→materials; contar `tools` duplicaría.
-    const mats = materials || [];
-    const totalAssets = mats.length;
-    const available = mats.filter(a => a.stock > 0 && !a.archived).length;
-    const inUse = mats.reduce((acc, m) => acc + (m.inUse || 0), 0);
-    const maint = mats.filter(m => m.status === 'En Mantenimiento').length;
-    const healthScore = totalAssets > 0 ? Math.round((available / totalAssets) * 100) : 100;
-    const alertCount = actionableTransactions.length;
-    const totalValue = mats.reduce((acc, item) => acc + (item.unitCost || 0) * (item.stock || 0), 0);
-    const withSchedule = mats.filter(m => m.nextMaintenanceDate);
-    const overdueCount = withSchedule.filter(m => isOverdue(m.nextMaintenanceDate)).length;
-    const maintenanceCompliance = withSchedule.length > 0
-      ? Math.round(((withSchedule.length - overdueCount) / withSchedule.length) * 100)
+    const available = activeMaterials.filter(a => (a.stock ?? 0) > 0).length;
+    // En terreno REAL: SOLO retornables en poder de alguien (mismo criterio que
+    // la pestaña Personal de Reportes) — los consumibles entregados no "vuelven".
+    let inField = 0;
+    holderMap.forEach((_h, materialId) => {
+      if (isReturnable(materialsMap.get(materialId))) inField++;
+    });
+    const planned = activeMaterials.filter(m => m.requiresMaintenance === true && m.nextMaintenanceDate);
+    const overdueCount = maintenance.overdue.length;
+    const maintenanceCompliance = planned.length > 0
+      ? Math.round(((planned.length - overdueCount) / planned.length) * 100)
       : 100;
-    const criticalRisk = mats.filter(m =>
-      m.class === 'A' && (isOverdue(m.nextMaintenanceDate) || m.conditionScore === 'Crítico' || m.conditionScore === 'Obsoleto')
-    ).length;
-    return { total: totalAssets, available, inUse, maint, healthScore, alertCount, totalValue, maintenanceCompliance, criticalRisk, overdueCount };
-  }, [materials, actionableTransactions]);
+    return { available, inField, maintenanceCompliance, overdueCount, alertCount: actionableRequests.length };
+  }, [activeMaterials, holderMap, materialsMap, maintenance.overdue.length, actionableRequests.length]);
 
-  const formatCLPM = (amount: number) => `CLP$ ${(amount / 1000000).toFixed(1)}M`;
+  const recentWithdrawals = useMemo(() => transactions.filter(t => t.type === 'WITHDRAWAL').slice(0, 4), [transactions]);
+  const recentReturns = useMemo(() => transactions.filter(t => t.type === 'RETURN').slice(0, 4), [transactions]);
 
-  const getAssetName = (assetId: string): string => {
-    const mat = (materials || []).find(m => m.id === assetId);
-    if (mat) return mat.name;
-    const tool = (tools || []).find(t => t.id === assetId);
-    if (tool) return tool.name;
-    return 'Activo desconocido';
-  };
-
-  const getStatusConfig = (status: string) => {
-    switch (status) {
-      case 'pending':    return { label: 'Pendiente',  cls: 'bg-warning-subtle text-warning' };
-      case 'approved':   return { label: 'Aprobado',   cls: 'bg-success-subtle text-success' };
-      case 'completed':  return { label: 'Completado', cls: 'bg-info-subtle text-info' };
-      case 'rejected':   return { label: 'Rechazado',  cls: 'bg-destructive/10 text-destructive' };
-      default:           return { label: status,       cls: 'bg-muted text-muted-foreground' };
-    }
-  };
-
-  const recentWithdrawals = allTransactions.filter(t => t.type === 'WITHDRAWAL').slice(0, 4);
-  const recentReturns = allTransactions.filter(t => t.type === 'RETURN').slice(0, 4);
-
-  // Stock crítico (heredado del hub de Bodega): materiales activos con 10 o menos unidades.
-  const lowStockMaterials = useMemo(() => {
-    return (materials || [])
-      .filter(m => !m.archived && m.stock <= 10)
-      .sort((a, b) => a.stock - b.stock)
-      .slice(0, 5);
-  }, [materials]);
-
-  // Real activity data — last 7 days from actual transactions
+  // Actividad de los últimos 7 días en una sola pasada.
   const flowData = useMemo(() => {
     const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-    return Array.from({ length: 7 }, (_, i) => {
-      const day = new Date();
-      day.setDate(day.getDate() - (6 - i));
-      day.setHours(0, 0, 0, 0);
-      const nextDay = new Date(day);
-      nextDay.setDate(day.getDate() + 1);
-      return {
-        name: DAY_NAMES[day.getDay()],
-        salidas: allTransactions.filter(tx => tx.type === 'WITHDRAWAL' && new Date(tx.timestamp) >= day && new Date(tx.timestamp) < nextDay).length,
-        entradas: allTransactions.filter(tx => tx.type === 'RETURN' && new Date(tx.timestamp) >= day && new Date(tx.timestamp) < nextDay).length,
-      };
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 6);
+    const buckets = Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      return { name: DAY_NAMES[day.getDay()], salidas: 0, entradas: 0 };
     });
-  }, [allTransactions]);
+    transactions.forEach(tx => {
+      const idx = Math.floor((tx.timestamp.getTime() - start.getTime()) / 86400000);
+      if (idx < 0 || idx > 6) return;
+      if (tx.type === 'WITHDRAWAL') buckets[idx].salidas++;
+      else buckets[idx].entradas++;
+    });
+    return buckets;
+  }, [transactions]);
 
-  const handleApprove = async (txId: string) => {
-    if (approvingIds.has(txId)) return;
-    setApprovingIds(prev => new Set(prev).add(txId));
+  // El Realtime actualiza la colección solo — sin refreshData() masivo.
+  const handleResolve = async (requestId: string, status: 'approved' | 'rejected') => {
+    if (processingIds.has(requestId)) return;
+    setProcessingIds(prev => new Set(prev).add(requestId));
     try {
-      await updateMaterialRequestStatus(txId, 'approved');
-      notify('Solicitud autorizada exitosamente.', 'success');
-      await refreshData();
+      await updateMaterialRequestStatus(requestId, status);
+      notify(status === 'approved' ? 'Solicitud autorizada exitosamente.' : 'Solicitud rechazada.', 'success');
     } catch (e: any) {
       console.error(e);
-      notify(e.message || 'Error al autorizar la solicitud.', 'destructive');
-      setApprovingIds(prev => { const s = new Set(prev); s.delete(txId); return s; });
+      notify(e.message || 'Error al resolver la solicitud.', 'destructive');
+    } finally {
+      setProcessingIds(prev => { const s = new Set(prev); s.delete(requestId); return s; });
     }
   };
 
   const onNavigate = (path: string) => {
     router.push(`/dashboard/pagnol/${path}`);
   };
+
+  const healthLabel = operabilityPct >= 80 ? 'Óptimo' : operabilityPct >= 50 ? 'Estable' : 'Crítico';
 
   if (!currentUser) {
     return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
@@ -236,29 +141,25 @@ export default function PagnolMainPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="w-2 h-2 rounded-full bg-pagnol-orange animate-pulse"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Pagnol ASSET MANAGEMENT</span>
-            <span className="text-[8px] font-black uppercase tracking-widest bg-info text-info-foreground px-2 py-0.5 rounded-lg">ISO 55001 Aligned</span>
-            {stats.criticalRisk > 0 && (
-              <span className="text-[8px] font-black uppercase tracking-widest bg-destructive text-destructive-foreground px-2 py-0.5 rounded-lg animate-pulse">
-                {stats.criticalRisk} Activo{stats.criticalRisk > 1 ? 's' : ''} Clase A en Riesgo
-              </span>
+            {maintenance.overdue.length > 0 && (
+              <button
+                onClick={() => onNavigate('reports')}
+                className="text-[8px] font-black uppercase tracking-widest bg-destructive text-destructive-foreground px-2 py-0.5 rounded-lg animate-pulse"
+              >
+                {maintenance.overdue.length} Mantenimiento{maintenance.overdue.length > 1 ? 's' : ''} Vencido{maintenance.overdue.length > 1 ? 's' : ''}
+              </button>
             )}
           </div>
           <h1 className="text-4xl font-black tracking-tighter text-foreground">Control de Activos</h1>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex flex-col items-end mr-2">
-            <span className="text-[10px] font-black text-muted-foreground uppercase">Estado Operativo</span>
-            <span className="text-xs font-black text-success uppercase">Sistema Online</span>
-          </div>
-          {can('material_requests:create') && (
-            <button
-              onClick={() => onNavigate('movimientos')}
-              className="bg-foreground border-b-4 border-foreground/80 active:border-b-0 active:translate-y-1 hover:bg-foreground/90 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest text-background transition-all shadow-xl flex items-center gap-2 whitespace-nowrap"
-            >
-              <PlusCircle size={14} /> Nuevo Despacho
-            </button>
-          )}
-        </div>
+        {can('material_requests:create') && (
+          <button
+            onClick={() => onNavigate('movimientos')}
+            className="bg-foreground border-b-4 border-foreground/80 active:border-b-0 active:translate-y-1 hover:bg-foreground/90 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest text-background transition-all shadow-xl flex items-center gap-2 whitespace-nowrap w-fit"
+          >
+            <PlusCircle size={14} /> Nuevo Despacho
+          </button>
+        )}
       </div>
 
       {/* MONITOR ESTRATÉGICO */}
@@ -272,40 +173,33 @@ export default function PagnolMainPage() {
           <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border-t border-white/10 ${stats.alertCount > 0 ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-white/60'}`}>
             <ShieldAlert size={14} className={stats.alertCount > 0 ? 'animate-pulse' : ''} />
             <span className="text-[9px] font-black uppercase tracking-[0.2em]">
-              {stats.alertCount > 0 ? 'Protocolo de Seguridad Activado' : 'Integridad de Red: 100%'}
+              {stats.alertCount > 0 ? 'Aprobaciones Pendientes' : 'Sin aprobaciones pendientes'}
             </span>
           </div>
 
           <div className="space-y-2">
             <h2 className="text-4xl sm:text-6xl font-black tracking-tighter leading-tight font-outfit">
               {stats.alertCount > 0 ? (
-                <span className="text-red-500">Bloqueo de<br />Autorización</span>
+                <span className="text-red-500">Autorización<br />Requerida</span>
               ) : (
                 <span>Bienvenido,<br />{currentUser?.name?.split(' ')[0] || 'Usuario'}</span>
               )}
             </h2>
             <p className="text-white/40 text-sm sm:text-base max-w-xl font-medium leading-relaxed">
               {stats.alertCount > 0
-                ? `Se han detectado ${stats.alertCount} solicitudes que exceden el límite de clase automática. Se requiere verificación biométrica o firma digital para liberar.`
-                : `El inventario se encuentra balanceado. Hay ${stats.available} unidades listas para despacho inmediato en este momento.`
+                ? `Hay ${stats.alertCount} solicitud${stats.alertCount > 1 ? 'es' : ''} de despacho esperando tu aprobación según su clase de criticidad.`
+                : `El inventario se encuentra balanceado. Hay ${stats.available} ítems con stock listos para despacho.`
               }
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-4 pt-4 justify-center lg:justify-start">
-            {stats.alertCount > 0 ? (
+            {stats.alertCount > 0 && (
               <button
                 onClick={() => document.getElementById('critical-alerts')?.scrollIntoView({ behavior: 'smooth' })}
                 className="bg-red-600 hover:bg-red-700 px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-2xl shadow-red-900/20 flex items-center justify-center gap-2 group whitespace-nowrap"
               >
-                Revisar Alertas <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
-              </button>
-            ) : (
-              <button
-                onClick={() => onNavigate('movimientos')}
-                className="bg-pagnol-orange hover:bg-pagnol-orange/90 px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-2xl shadow-pagnol-orange/20 flex items-center justify-center gap-2 group whitespace-nowrap"
-              >
-                Registrar Movimiento <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                Revisar Solicitudes <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
               </button>
             )}
             <button
@@ -324,23 +218,24 @@ export default function PagnolMainPage() {
               <circle
                 cx="80" cy="80" r="72" stroke="currentColor" strokeWidth="12" fill="transparent"
                 strokeDasharray={452.3}
-                strokeDashoffset={452.3 - (452.3 * stats.healthScore) / 100}
-                className={`${stats.healthScore < 50 ? 'text-red-500' : 'text-pagnol-orange'} transition-all duration-1000 ease-out`}
+                strokeDashoffset={452.3 - (452.3 * operabilityPct) / 100}
+                className={`${operabilityPct < 50 ? 'text-red-500' : 'text-pagnol-orange'} transition-all duration-1000 ease-out`}
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center group-hover:scale-110 transition-transform">
-              <span className="text-4xl font-black font-outfit">{stats.healthScore}%</span>
-              <span className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mt-1">Óptimo</span>
+              <span className="text-4xl font-black font-outfit">{operabilityPct}%</span>
+              <span className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mt-1">{healthLabel}</span>
             </div>
           </div>
+          <p className="text-[8px] font-black text-white/30 uppercase tracking-[0.2em]">Activos disponibles</p>
         </div>
       </div>
 
       {/* KPI DASHBOARD */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
         {[
-          { label: 'Unidades Disponibles', value: stats.available, trend: 'Efectivo', icon: Box, iconCls: 'bg-info-subtle text-info' },
-          { label: 'Tránsito Externo', value: stats.inUse, trend: 'En Faena', icon: TrendingUp, iconCls: 'bg-orange-500/10 text-orange-500' },
+          { label: 'Ítems con Stock', value: stats.available, trend: `de ${activeMaterials.length} activos`, icon: Box, iconCls: 'bg-info-subtle text-info' },
+          { label: 'En Terreno', value: stats.inField, trend: 'Retornables prestados', icon: TrendingUp, iconCls: 'bg-orange-500/10 text-orange-500' },
           {
             label: 'Cumplimiento Mantenimiento',
             value: `${stats.maintenanceCompliance}%`,
@@ -348,7 +243,7 @@ export default function PagnolMainPage() {
             icon: Wrench,
             iconCls: stats.maintenanceCompliance < 80 ? 'bg-destructive/10 text-destructive' : stats.maintenanceCompliance < 95 ? 'bg-warning-subtle text-warning' : 'bg-success-subtle text-success',
           },
-          { label: 'Valorización Inventario', value: formatCLPM(stats.totalValue), trend: 'AMIS Ready', icon: Target, iconCls: 'bg-success-subtle text-success' },
+          { label: 'Valorización Inventario', value: formatCompactCLP(totalValue), trend: 'Costo × stock', icon: Target, iconCls: 'bg-success-subtle text-success' },
         ].map((m, i) => (
           <Card key={i} className="p-8 rounded-[2rem] border-none shadow-sm hover:shadow-2xl transition-all duration-500 group relative overflow-hidden bg-card">
             <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:scale-110 transition-transform duration-700">
@@ -370,8 +265,8 @@ export default function PagnolMainPage() {
         ))}
       </div>
 
-      {/* STOCK CRÍTICO (heredado de Bodega) */}
-      {lowStockMaterials.length > 0 && (
+      {/* STOCK CRÍTICO — umbral real por material (minStock) */}
+      {criticalStock.length > 0 && (
         <div className="bg-card p-10 rounded-[3rem] shadow-sm border border-border">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
@@ -380,40 +275,49 @@ export default function PagnolMainPage() {
               </div>
               <div>
                 <h3 className="text-xl font-black text-foreground uppercase tracking-tighter">Stock Crítico</h3>
-                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">Materiales con 10 o menos unidades</p>
+                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">Bajo su umbral mínimo (minStock)</p>
               </div>
             </div>
             <button
-              onClick={() => onNavigate('activos')}
+              onClick={() => onNavigate('reports')}
               className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
             >
-              Ver Inventario <ArrowRight size={14} />
+              Ver Reporte <ArrowRight size={14} />
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-            {lowStockMaterials.map((m) => (
-              <div key={m.id} className="p-5 bg-muted/30 rounded-[1.5rem] border border-transparent hover:border-border hover:bg-card hover:shadow-lg transition-all duration-300 space-y-3">
-                <div className="space-y-1">
-                  <p className="text-xs font-black text-foreground uppercase tracking-tight leading-tight truncate" title={m.name}>{m.name}</p>
-                  <p className="text-[9px] font-bold text-muted-foreground uppercase truncate">{m.category}</p>
+            {criticalStock.slice(0, 5).map((m) => {
+              const threshold = criticalThreshold(m);
+              return (
+                <div key={m.id} className="p-5 bg-muted/30 rounded-[1.5rem] border border-transparent hover:border-border hover:bg-card hover:shadow-lg transition-all duration-300 space-y-3 flex flex-col">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-foreground uppercase tracking-tight leading-tight truncate" title={m.name}>{m.name}</p>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase truncate">{m.category}</p>
+                  </div>
+                  <div className="flex items-end justify-between gap-2">
+                    <span className={`text-2xl font-black font-outfit ${(m.stock ?? 0) === 0 ? 'text-destructive' : 'text-warning'}`}>{m.stock ?? 0}</span>
+                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">de {threshold} mín.</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${(m.stock ?? 0) === 0 ? 'bg-destructive' : 'bg-warning'}`}
+                      style={{ width: `${Math.min(((m.stock ?? 0) / Math.max(threshold, 1)) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => router.push(`/dashboard/purchasing/purchase-request-form?materialId=${m.id}`)}
+                    className="mt-auto pt-1 text-[9px] font-black uppercase tracking-widest text-destructive hover:text-destructive/80 transition-colors flex items-center gap-1.5"
+                  >
+                    <ShoppingCart size={11} /> Reponer
+                  </button>
                 </div>
-                <div className="flex items-end justify-between gap-2">
-                  <span className={`text-2xl font-black font-outfit ${m.stock === 0 ? 'text-destructive' : 'text-warning'}`}>{m.stock}</span>
-                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">{m.unit}</span>
-                </div>
-                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${m.stock === 0 ? 'bg-destructive' : 'bg-warning'}`}
-                    style={{ width: `${Math.min((m.stock / 20) * 100, 100)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* ALERTAS CRÍTICAS */}
+      {/* APROBACIONES PENDIENTES */}
       {stats.alertCount > 0 && (
         <div id="critical-alerts" className="p-8 sm:p-12 rounded-[3.5rem] bg-card border-2 border-red-500/20 dark:border-red-900/30 shadow-[0_40px_80px_-20px_rgba(239,68,68,0.08)] scroll-mt-10">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-12">
@@ -424,72 +328,96 @@ export default function PagnolMainPage() {
                 </div>
                 Autorizaciones Pendientes
               </h3>
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-12">Firma Digital Requerida para Despacho Clase A/B</p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-12">Solicitudes que requieren tu aprobación según su clase</p>
             </div>
             <Badge className="bg-destructive text-destructive-foreground text-[10px] font-black px-6 py-3 rounded-2xl animate-pulse uppercase tracking-widest shadow-xl shadow-red-500/30">Acción Requerida</Badge>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            {actionableTransactions.map((tx, i) => (
-              <div key={i} className="bg-muted/30 border border-border rounded-[3rem] shadow-sm flex flex-col group hover:bg-card hover:shadow-2xl transition-all duration-500 overflow-hidden border-b-8 border-b-destructive">
-                <div className="p-8 border-b border-dashed border-border flex items-center justify-between bg-card">
-                  <div className="flex items-center gap-5">
-                    <div className={`p-4 rounded-2xl shadow-xl transition-all group-hover:rotate-6 ${tx.maxClass === 'A' ? 'bg-pagnol-dark text-red-500' : 'bg-pagnol-dark text-blue-500'}`}>
-                      <Lock size={20} />
+            {actionableRequests.map((req) => {
+              const cls = req.highestClass || 'C';
+              const isProcessing = processingIds.has(req.id);
+              return (
+                <div key={req.id} className="bg-muted/30 border border-border rounded-[3rem] shadow-sm flex flex-col group hover:bg-card hover:shadow-2xl transition-all duration-500 overflow-hidden border-b-8 border-b-destructive">
+                  <div className="p-8 border-b border-dashed border-border flex items-center justify-between bg-card gap-3">
+                    <div className="flex items-center gap-5 min-w-0">
+                      <div className={`p-4 rounded-2xl shadow-xl transition-all group-hover:rotate-6 shrink-0 ${cls === 'A' ? 'bg-pagnol-dark text-red-500' : cls === 'B' ? 'bg-pagnol-dark text-blue-500' : 'bg-pagnol-dark text-white/70'}`}>
+                        <Lock size={20} />
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${cls === 'A' ? 'text-destructive' : cls === 'B' ? 'text-info' : 'text-muted-foreground'}`}>
+                          DESPACHO CLASE {cls}
+                        </p>
+                        <p className="text-sm font-black text-foreground uppercase truncate">{req.userName || 'Solicitante'}</p>
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-tighter truncate">{req.internalCode || `REF: ${req.id.slice(0, 8).toUpperCase()}`}</p>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className={`text-[10px] font-black uppercase tracking-widest ${tx.maxClass === 'A' ? 'text-destructive' : 'text-info'}`}>
-                        DESPACHO {tx.maxClass === 'A' ? 'CLASE A' : 'CLASE B'}
-                      </p>
-                      <p className="text-sm font-black text-foreground uppercase">{tx.employeeName}</p>
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-tighter">REF: {tx.id}</p>
+                    <div className="text-right shrink-0">
+                      <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{formatRelativeTime(new Date(req.createdAt as any))}</p>
+                      <div className="mt-2 space-y-1">
+                        <Badge variant="secondary" className="text-[8px] font-black uppercase tracking-widest">{req.area}</Badge>
+                        {req.contractName && (
+                          <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest">{req.contractName}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{formatRelativeTime(tx.timestamp)}</p>
-                    <div className="mt-2">
-                      <Badge variant="secondary" className="text-[8px] font-black uppercase tracking-widest">{tx.site}</Badge>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="p-10 flex-1 space-y-6">
-                  <div className="space-y-4">
-                    {tx.assetIds.map(aid => {
-                      const asset = materials.find(a => a.id === aid);
-                      return (
-                        <div key={aid} className="flex items-center gap-5 p-5 bg-background rounded-[2rem] border border-border hover:border-pagnol-orange transition-all duration-300">
-                          <div className="w-16 h-16 rounded-2xl overflow-hidden border border-border bg-muted shrink-0">
-                            {asset?.photos && asset.photos.length > 0 ? (
-                              <Image src={asset.photos[0]} width={80} height={80} className="w-full h-full object-cover" alt={asset.name} />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center opacity-20"><ImageIcon size={24} /></div>
-                            )}
+                  <div className="p-10 flex-1 space-y-6">
+                    <div className="space-y-4">
+                      {(req.items || []).map(item => {
+                        const asset = materialsMap.get(item.materialId);
+                        return (
+                          <div key={item.materialId} className="flex items-center gap-5 p-5 bg-background rounded-[2rem] border border-border hover:border-pagnol-orange transition-all duration-300">
+                            <div className="w-16 h-16 rounded-2xl overflow-hidden border border-border bg-muted shrink-0">
+                              {asset?.photos && asset.photos.length > 0 ? (
+                                <Image src={asset.photos[0]} width={80} height={80} className="w-full h-full object-cover" alt={asset.name} />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center opacity-20"><ImageIcon size={24} /></div>
+                              )}
+                            </div>
+                            <div className="flex-1 space-y-1 min-w-0">
+                              <p className="text-sm font-black text-foreground uppercase leading-none truncate">{asset?.name || 'Activo desconocido'}</p>
+                              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">SN: {asset?.serialNumber || 'N/A'}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xl font-black font-outfit text-pagnol-orange leading-none">{item.quantity}</p>
+                              <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest mt-1">{asset?.unit || 'unid.'}</p>
+                            </div>
                           </div>
-                          <div className="flex-1 space-y-1">
-                            <p className="text-sm font-black text-foreground uppercase leading-none">{asset?.name}</p>
-                            <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">SN: {asset?.serialNumber || 'N/A'}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+                    {req.notes && (
+                      <div className="p-5 bg-muted rounded-2xl border border-dashed">
+                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Justificación</p>
+                        <p className="text-xs font-medium text-foreground leading-relaxed">{req.notes}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-10 pt-0 mt-auto flex gap-4">
+                    <button
+                      onClick={() => handleResolve(req.id, 'rejected')}
+                      disabled={isProcessing}
+                      className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 border border-destructive/30 text-destructive hover:bg-destructive/10 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
+                    >
+                      <X size={16} /> Rechazar
+                    </button>
+                    <button
+                      onClick={() => handleResolve(req.id, 'approved')}
+                      disabled={isProcessing}
+                      className={`flex-1 py-6 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-3 border-b-4 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100 ${cls === 'A' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 border-red-800 shadow-red-500/20' : 'bg-info text-info-foreground hover:bg-info/90 border-blue-800 shadow-blue-500/20'}`}
+                    >
+                      {isProcessing
+                        ? <><Loader2 size={18} className="animate-spin" /> Procesando...</>
+                        : <>Autorizar Despacho <ArrowRight size={18} /></>
+                      }
+                    </button>
                   </div>
                 </div>
-
-                <div className="p-10 pt-0 mt-auto">
-                  <button
-                    onClick={() => handleApprove(tx.id)}
-                    disabled={approvingIds.has(tx.id)}
-                    className={`w-full py-6 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-3 border-b-4 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100 ${tx.maxClass === 'A' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 border-red-800 shadow-red-500/20' : 'bg-info text-info-foreground hover:bg-info/90 border-blue-800 shadow-blue-500/20'}`}
-                  >
-                    {approvingIds.has(tx.id)
-                      ? <><Loader2 size={18} className="animate-spin" /> Autorizando...</>
-                      : <>Autorizar Liberación <ArrowRight size={18} /></>
-                    }
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -497,8 +425,8 @@ export default function PagnolMainPage() {
       {/* ACTIVIDAD RECIENTE */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         {[
-          { title: 'Salidas', type: 'WITHDRAWAL', iconCls: 'bg-orange-500/10 text-orange-500', numCls: 'text-orange-500', icon: ArrowUpRight, data: recentWithdrawals },
-          { title: 'Retornos', type: 'RETURN', iconCls: 'bg-success-subtle text-success', numCls: 'text-success', icon: ArrowDownRight, data: recentReturns },
+          { title: 'Salidas', iconCls: 'bg-orange-500/10 text-orange-500', numCls: 'text-orange-500', icon: ArrowUpRight, data: recentWithdrawals },
+          { title: 'Retornos', iconCls: 'bg-success-subtle text-success', numCls: 'text-success', icon: ArrowDownRight, data: recentReturns },
         ].map((col, idx) => (
           <div key={idx} className="bg-card p-10 rounded-[3rem] shadow-sm border border-border flex flex-col group">
             <div className="flex items-center justify-between mb-10">
@@ -510,13 +438,13 @@ export default function PagnolMainPage() {
               </div>
             </div>
             <div className="space-y-4 flex-1">
-              {col.data.length > 0 ? col.data.map((tx, i) => {
-                const statusCfg = getStatusConfig(tx.status);
+              {col.data.length > 0 ? col.data.map((tx) => {
+                const stage = STAGE_META[tx.stage];
                 const primaryAsset = tx.assetIds.length === 1
-                  ? getAssetName(tx.assetIds[0])
+                  ? (materialsMap.get(tx.assetIds[0])?.name || 'Activo desconocido')
                   : `${tx.assetIds.length} activos`;
                 return (
-                  <div key={i} className="flex items-start justify-between p-6 bg-muted/30 rounded-[2rem] border border-transparent hover:border-border hover:bg-card hover:shadow-xl transition-all duration-300 gap-4">
+                  <div key={tx.id} className="flex items-start justify-between p-6 bg-muted/30 rounded-[2rem] border border-transparent hover:border-border hover:bg-card hover:shadow-xl transition-all duration-300 gap-4">
                     <div className="flex items-start gap-4 min-w-0">
                       <div className={`w-10 h-10 bg-card rounded-xl flex items-center justify-center shadow-sm border border-border shrink-0 ${col.numCls}`}>
                         <col.icon size={16} />
@@ -525,7 +453,7 @@ export default function PagnolMainPage() {
                         <p className="text-xs font-black text-foreground uppercase tracking-tight leading-none truncate" title={primaryAsset}>
                           {primaryAsset}
                         </p>
-                        <p className="text-[9px] text-muted-foreground font-bold uppercase truncate">{tx.employeeName}</p>
+                        <p className="text-[9px] text-muted-foreground font-bold uppercase truncate">{tx.holderName}</p>
                         {tx.site && (
                           <p className="text-[9px] text-muted-foreground font-medium uppercase tracking-wider truncate">{tx.site}</p>
                         )}
@@ -535,8 +463,8 @@ export default function PagnolMainPage() {
                       <span className="text-[8px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">
                         {formatRelativeTime(tx.timestamp)}
                       </span>
-                      <Badge className={`border-none text-[8px] font-black uppercase tracking-widest ${statusCfg.cls}`}>
-                        {statusCfg.label}
+                      <Badge className={`border-none text-[8px] font-black uppercase tracking-widest ${stage.cls}`}>
+                        {stage.label}
                       </Badge>
                     </div>
                   </div>
@@ -553,49 +481,44 @@ export default function PagnolMainPage() {
       </div>
 
       {/* ANALÍTICA */}
-      <div className="grid grid-cols-1 gap-8">
-
-        {/* CHART */}
-        <div className="bg-card p-10 rounded-[3rem] shadow-sm border border-border flex flex-col group">
-          <div className="flex items-center justify-between mb-12">
-            <div>
-              <h3 className="text-xl font-black text-foreground uppercase tracking-tighter">Tránsito Operativo</h3>
-              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">Últimos 7 días</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-pagnol-orange"></span>
-                <span className="text-[8px] font-black text-muted-foreground uppercase">Salidas</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-muted-foreground/30"></span>
-                <span className="text-[8px] font-black text-muted-foreground uppercase">Entradas</span>
-              </div>
-            </div>
+      <div className="bg-card p-10 rounded-[3rem] shadow-sm border border-border flex flex-col group">
+        <div className="flex items-center justify-between mb-12">
+          <div>
+            <h3 className="text-xl font-black text-foreground uppercase tracking-tighter">Tránsito Operativo</h3>
+            <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">Últimos 7 días</p>
           </div>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={flowData}>
-                <defs>
-                  <linearGradient id="colorSalida" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.15)" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(100,116,139)', fontSize: 10, fontWeight: 900 }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(100,116,139)', fontSize: 10 }} allowDecimals={false} />
-                <RechartsTooltip
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)', background: 'var(--card)' }}
-                  labelStyle={{ color: 'var(--foreground)', fontWeight: 900, fontSize: 10, textTransform: 'uppercase' }}
-                />
-                <Area type="monotone" dataKey="salidas" stroke="#f97316" strokeWidth={4} fillOpacity={1} fill="url(#colorSalida)" />
-                <Area type="monotone" dataKey="entradas" stroke="rgb(148,163,184)" strokeWidth={2} fill="transparent" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-pagnol-orange"></span>
+              <span className="text-[8px] font-black text-muted-foreground uppercase">Salidas</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-muted-foreground/30"></span>
+              <span className="text-[8px] font-black text-muted-foreground uppercase">Entradas</span>
+            </div>
           </div>
         </div>
-
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={flowData}>
+              <defs>
+                <linearGradient id="colorSalida" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.15)" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(100,116,139)', fontSize: 10, fontWeight: 900 }} dy={10} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(100,116,139)', fontSize: 10 }} allowDecimals={false} />
+              <RechartsTooltip
+                contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)', background: 'var(--card)' }}
+                labelStyle={{ color: 'var(--foreground)', fontWeight: 900, fontSize: 10, textTransform: 'uppercase' }}
+              />
+              <Area type="monotone" dataKey="salidas" stroke="#f97316" strokeWidth={4} fillOpacity={1} fill="url(#colorSalida)" isAnimationActive={false} />
+              <Area type="monotone" dataKey="entradas" stroke="rgb(148,163,184)" strokeWidth={2} fill="transparent" isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );

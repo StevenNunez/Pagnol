@@ -1,57 +1,29 @@
-
 "use client";
 
-import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { PageHeader } from "@/components/page-header";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { PageShell } from "@/components/page-shell";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState } from "@/components/empty-state";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import {
-  Send,
-  Loader2,
-  ChevronsUpDown,
-  Check,
-  Clock,
-  Package,
-  X,
-  Plus,
-  Trash2,
-  AlertCircle,
-  ShoppingCart,
-  Search
+  Send, Loader2, Package, Trash2, AlertCircle, Search, ShoppingCart,
+  ChevronDown, Clock, PackageCheck, CheckCircle2, X as XIcon,
 } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator
-} from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import type { Material, Contract, ContractWorker, User } from "@/modules/core/lib/data";
+import { requestItems, CompatibleMaterialRequest } from "@/components/pagnol-requests/request-shared";
+import { MaterialCombobox } from "@/components/supervisor-requests/material-combobox";
+import { BeneficiaryCombobox } from "@/components/supervisor-requests/beneficiary-combobox";
+import { RequestHistoryCard } from "@/components/supervisor-requests/request-history-card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Material, MaterialRequest, Contract, ContractWorker, User } from "@/modules/core/lib/data";
+  resolveSupervisorStage, matchesHistoryFilter, HISTORY_FILTERS, HistoryFilter,
+} from "@/components/supervisor-requests/request-pipeline";
 
 type DeliveryMode = 'self' | 'directed' | 'open';
 
@@ -64,56 +36,37 @@ interface CartItem {
   category: string;
 }
 
-// Extend the MaterialRequest type to include old format for compatibility
-type CompatibleMaterialRequest = MaterialRequest & {
-  materialId?: string;
-  quantity?: number;
-  items?: { materialId: string; quantity: number }[];
-};
+const PAGE_SIZE = 10;
 
 export default function SupervisorRequestPage() {
   const { materials, addMaterialRequest, requests, contracts, contractWorkers, materialStocks, users, can } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
-  // State for the new multi-item request form
   const [cart, setCart] = useState<CartItem[]>([]);
   const [contractId, setContractId] = useState("");
   const [area, setArea] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ¿Quién retira? 'self' = yo mismo | 'directed' = un trabajador específico | 'open' = retiro abierto
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('self');
   const [beneficiaryId, setBeneficiaryId] = useState<string | null>(null);
-  const [beneficiaryPopoverOpen, setBeneficiaryPopoverOpen] = useState(false);
 
-  // State for the temporary item being added
   const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
   const [currentQuantity, setCurrentQuantity] = useState<number | string>("");
-  const [popoverOpen, setPopoverOpen] = useState(false);
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
-  const [page, setPage] = useState(1);
-  const itemsPerPage = 5;
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
+  const [search, setSearch] = useState("");
+  const [visible, setVisible] = useState(PAGE_SIZE);
 
   // --- Memos & Helpers ---
 
   const materialMap = useMemo(() => new Map((materials || []).map((m: Material) => [m.id, m])), [materials]);
 
-  // Trabajadores elegibles como destinatario de la solicitud (todos menos el propio solicitante).
-  const beneficiaryOptions = useMemo(
-    () => ((users || []) as User[])
-      .filter((u) => u.id !== authUser?.id)
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    [users, authUser?.id]
-  );
   const selectedBeneficiary = useMemo(
-    () => (beneficiaryId ? beneficiaryOptions.find((u) => u.id === beneficiaryId) || null : null),
-    [beneficiaryId, beneficiaryOptions]
+    () => (beneficiaryId ? (users || []).find((u: User) => u.id === beneficiaryId) || null : null),
+    [beneficiaryId, users]
   );
 
-  // Solo contratos activos para asociar la solicitud a una obra/contrato específico.
   const activeContracts = useMemo(
     () => ((contracts || []) as Contract[])
       .filter((c) => c.status === "active")
@@ -125,10 +78,8 @@ export default function SupervisorRequestPage() {
     [contracts]
   );
 
-  // Oficina/altos mandos eligen cualquier contrato; personal de terreno solo el suyo asignado.
   const canSelectAnyContract = can("material_requests:select_any_contract");
 
-  // Contratos (activos) a los que el usuario está asignado vía contract_workers.
   const myAssignedContracts = useMemo(() => {
     if (!authUser) return [] as Contract[];
     const myContractIds = new Set(
@@ -139,21 +90,18 @@ export default function SupervisorRequestPage() {
     return activeContracts.filter((c) => myContractIds.has(c.id));
   }, [contractWorkers, authUser, activeContracts]);
 
-  // Lista efectiva que puede elegir el usuario actual.
   const selectableContracts = canSelectAnyContract ? activeContracts : myAssignedContracts;
-
-  // Personal de terreno con un único contrato → autocarga, sin selector.
   const isFieldWorkerSingleContract = !canSelectAnyContract && myAssignedContracts.length === 1;
 
-  // Autoselecciona el contrato cuando el trabajador de terreno tiene solo uno.
   useEffect(() => {
     if (isFieldWorkerSingleContract && !contractId) {
       setContractId(myAssignedContracts[0].id);
     }
   }, [isFieldWorkerSingleContract, myAssignedContracts, contractId]);
 
-  // Existencias del contrato seleccionado (y del pool central) por material,
-  // para mostrar de dónde saldría el stock al solicitar.
+  // Existencias del contrato seleccionado (y del pool central) por material —
+  // informativo: el descuento real puede seguir viniendo en cascada desde
+  // otros contratos si el propio no alcanza (ver stockLedger.ts).
   const contractAvailability = useMemo(() => {
     const acc = new Map<string, { contract: number; pool: number }>();
     (materialStocks || []).forEach((s) => {
@@ -166,7 +114,6 @@ export default function SupervisorRequestPage() {
     return acc;
   }, [materialStocks, contractId]);
 
-  // Group materials by category for better UX in the Command component
   const groupedMaterials = useMemo(() => {
     const groups: Record<string, Material[]> = {};
     (materials || []).forEach((m) => {
@@ -175,59 +122,53 @@ export default function SupervisorRequestPage() {
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(m);
     });
-    // Sort items within groups
     Object.keys(groups).forEach(key => {
-        groups[key].sort((a, b) => a.name.localeCompare(b.name));
+      groups[key].sort((a, b) => a.name.localeCompare(b.name));
     });
     return groups;
   }, [materials]);
 
-  const myRequests = useMemo(() => 
+  const myRequests = useMemo(() =>
     ((requests || []) as CompatibleMaterialRequest[])
       .filter((r) => r.supervisorId === authUser?.id)
-      .sort((a, b) => {
-         const dateA = new Date(a.createdAt || 0).getTime();
-         const dateB = new Date(b.createdAt || 0).getTime();
-         return dateB - dateA;
-      }), 
-  [requests, authUser]);
-
-  const filteredRequests = useMemo(() => {
-    if (statusFilter === "all") return myRequests;
-    return myRequests.filter((r) => r.status === statusFilter);
-  }, [myRequests, statusFilter]);
-
-  const paginatedRequests = filteredRequests.slice(
-    (page - 1) * itemsPerPage,
-    page * itemsPerPage
+      .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()),
+    [requests, authUser]
   );
-  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
 
-  const formatDate = (date: Date | string | null | undefined): string => {
-    if (!date) return "N/A";
-    const jsDate = new Date(date as any);
-    return jsDate.toLocaleDateString("es-CL", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit"
+  // KPIs sobre el pipeline real (todo el historial, no solo lo filtrado).
+  const kpis = useMemo(() => {
+    const acc = { inProgress: 0, readyPickup: 0, delivered: 0, rejected: 0 };
+    myRequests.forEach(r => {
+      const stage = resolveSupervisorStage(r);
+      if (stage === 'waiting_adc' || stage === 'queued') acc.inProgress++;
+      else if (stage === 'ready_pickup') acc.readyPickup++;
+      else if (stage === 'delivered') acc.delivered++;
+      else if (stage === 'rejected') acc.rejected++;
     });
-  };
+    return acc;
+  }, [myRequests]);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200"><Clock className="mr-1 h-3 w-3" /> Pendiente</Badge>;
-      case "approved":
-        return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100"><Check className="mr-1 h-3 w-3" /> Aprobado</Badge>;
-      case "rejected":
-        return <Badge variant="destructive" className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100"><X className="mr-1 h-3 w-3" /> Rechazado</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  const filteredHistory = useMemo(() => {
+    let list = myRequests.filter(r => matchesHistoryFilter(resolveSupervisorStage(r), historyFilter));
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter(r =>
+        (r.internalCode || '').toLowerCase().includes(q)
+        || (r.area || '').toLowerCase().includes(q)
+        || (r.contractName || contractMap.get(r.contractId || '')?.name || '').toLowerCase().includes(q)
+        || requestItems(r).some(it => (materialMap.get(it.materialId)?.name || '').toLowerCase().includes(q))
+      );
     }
-  };
+    return list;
+  }, [myRequests, historyFilter, search, materialMap, contractMap]);
+
+  const setHistoryFilterReset = (f: HistoryFilter) => { setHistoryFilter(f); setVisible(PAGE_SIZE); };
 
   // --- Handlers ---
+
+  const handleSelectMaterial = useCallback((material: Material) => {
+    setCurrentMaterialId(material.id);
+  }, []);
 
   const handleAddItemToCart = useCallback(() => {
     if (!currentMaterialId || !currentQuantity) {
@@ -247,27 +188,24 @@ export default function SupervisorRequestPage() {
       return;
     }
 
-    // Check if exists to update or add
     setCart(prev => {
-        const exists = prev.find(item => item.materialId === currentMaterialId);
-        if (exists) {
-            toast({ title: "Actualizado", description: "Se actualizó la cantidad del material en la lista." });
-            return prev.map(item => item.materialId === currentMaterialId ? { ...item, quantity } : item);
-        }
-        return [...prev, {
-            materialId: material.id,
-            materialName: material.name,
-            quantity,
-            unit: material.unit,
-            stock: material.stock,
-            category: material.category || "General"
-        }];
+      const exists = prev.find(item => item.materialId === currentMaterialId);
+      if (exists) {
+        toast({ title: "Actualizado", description: "Se actualizó la cantidad del material en la lista." });
+        return prev.map(item => item.materialId === currentMaterialId ? { ...item, quantity } : item);
+      }
+      return [...prev, {
+        materialId: material.id,
+        materialName: material.name,
+        quantity,
+        unit: material.unit,
+        stock: material.stock,
+        category: material.category || "General"
+      }];
     });
 
-    // Reset fields
     setCurrentMaterialId(null);
     setCurrentQuantity("");
-    setPopoverOpen(false);
   }, [currentMaterialId, currentQuantity, materialMap, toast]);
 
   const handleRemoveItemFromCart = (materialId: string) => {
@@ -275,20 +213,18 @@ export default function SupervisorRequestPage() {
   };
 
   const handleUpdateCartQuantity = (materialId: string, newQty: string) => {
-      const qty = Number(newQty);
-      if (isNaN(qty) || qty < 0) return;
-      
-      setCart(prev => prev.map(item => {
-          if (item.materialId === materialId) {
-              // Validar stock inline
-              if (qty > item.stock) {
-                  toast({ variant: "destructive", title: "Stock límite", description: `Máximo ${item.stock} unidades.` });
-                  return { ...item, quantity: item.stock };
-              }
-              return { ...item, quantity: qty };
-          }
-          return item;
-      }));
+    const qty = Number(newQty);
+    if (isNaN(qty) || qty < 0) return;
+    setCart(prev => prev.map(item => {
+      if (item.materialId === materialId) {
+        if (qty > item.stock) {
+          toast({ variant: "destructive", title: "Stock límite", description: `Máximo ${item.stock} unidades.` });
+          return { ...item, quantity: item.stock };
+        }
+        return { ...item, quantity: qty };
+      }
+      return item;
+    }));
   };
 
   const handleRequestSubmit = async (e: React.FormEvent) => {
@@ -319,437 +255,349 @@ export default function SupervisorRequestPage() {
         beneficiaryId: deliveryMode === 'directed' ? beneficiaryId : null,
         beneficiaryName: deliveryMode === 'directed' ? (selectedBeneficiary?.name || null) : null,
       });
-      toast({ title: "Solicitud Enviada", description: "El administrador revisará tu pedido." });
+      toast({ title: "Solicitud enviada", description: "Sigue su avance en el historial de esta página." });
       setCart([]);
-      setContractId("");
+      setContractId(isFieldWorkerSingleContract ? myAssignedContracts[0].id : "");
       setArea("");
       setDeliveryMode('self');
       setBeneficiaryId(null);
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "No se pudo procesar la solicitud." });
+    } catch (error: any) {
+      // Mostrar el mensaje real de la mutación (stock insuficiente, destinatario
+      // faltante, etc.) en vez de un genérico que oculta qué corregir.
+      toast({ variant: "destructive", title: "No se pudo enviar la solicitud", description: error?.message || "Error inesperado." });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Helper para el material seleccionado actual
   const currentSelectedMaterial = currentMaterialId ? materialMap.get(currentMaterialId) : null;
-  const hasMaterials = Object.keys(groupedMaterials).length > 0;
+  const currentAvailability = currentMaterialId ? contractAvailability.get(currentMaterialId) : undefined;
+  const noStockInContract = !!contractId && !!currentSelectedMaterial && (currentAvailability?.contract || 0) === 0 && currentSelectedMaterial.stock > 0;
+
+  const KPI_ITEMS = [
+    { key: 'in_progress' as HistoryFilter, label: 'En trámite', value: kpis.inProgress, icon: Clock, iconCls: 'bg-info-subtle text-info' },
+    { key: 'ready_pickup' as HistoryFilter, label: 'Listas para retiro', value: kpis.readyPickup, icon: PackageCheck, iconCls: kpis.readyPickup > 0 ? 'bg-success-subtle text-success-subtle-foreground' : 'bg-muted text-muted-foreground' },
+    { key: 'delivered' as HistoryFilter, label: 'Entregadas', value: kpis.delivered, icon: CheckCircle2, iconCls: 'bg-muted text-muted-foreground' },
+    { key: 'rejected' as HistoryFilter, label: 'Rechazadas', value: kpis.rejected, icon: XIcon, iconCls: kpis.rejected > 0 ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground' },
+  ];
 
   return (
-    <div className="flex flex-col gap-8 pb-10 fade-in">
-      <PageHeader
-        title="Solicitud de Materiales"
-        description="Genera pedidos de material al pañol central para tu faena."
-      />
-
+    <PageShell
+      title="Solicitud de Materiales"
+      description="Genera pedidos de material al pañol central para tu faena."
+    >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* COLUMNA IZQUIERDA: FORMULARIO (5/12) */}
+
+        {/* COLUMNA IZQUIERDA: FORMULARIO */}
         <div className="lg:col-span-5 space-y-6">
-          <Card className="border-l-4 border-l-primary shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <ShoppingCart className="h-5 w-5 text-primary" /> Nueva Solicitud
-              </CardTitle>
-              <CardDescription>Agrega los ítems que necesitas.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleRequestSubmit} className="space-y-6">
-                
-                {/* Selector de Materiales */}
-                <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
-                  <div className="space-y-2">
-                    <Label className="text-xs font-semibold uppercase text-muted-foreground">1. Seleccionar Material</Label>
-                    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" role="combobox" className="w-full justify-between h-10" disabled={isSubmitting}>
-                          <span className="truncate">
-                            {currentSelectedMaterial ? currentSelectedMaterial.name : "Buscar material..."}
-                          </span>
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[320px] p-0" align="start">
-                        <Command>
-                          <CommandInput placeholder="Buscar por nombre..." />
-                          <CommandList>
-                            <CommandEmpty>
-                              {!hasMaterials
-                                ? "Sin materiales en pañol. Contacta al administrador."
-                                : "Material no encontrado."}
-                            </CommandEmpty>
-                            {Object.entries(groupedMaterials).map(([category, items]) => (
-                                <CommandGroup key={category} heading={category}>
-                                    {items.map(m => (
-                                        <CommandItem
-                                            key={m.id}
-                                            value={m.name}
-                                            disabled={m.stock <= 0}
-                                            onSelect={() => {
-                                                setCurrentMaterialId(m.id);
-                                                setPopoverOpen(false);
-                                                // Auto-focus quantity logic could go here
-                                            }}
-                                        >
-                                            <div className="flex justify-between w-full items-center">
-                                                <span className={cn(m.stock <= 0 && "text-muted-foreground line-through")}>{m.name}</span>
-                                                <div className="flex items-center gap-2">
-                                                    {contractId && (() => {
-                                                        const avail = contractAvailability.get(m.id);
-                                                        const inContract = avail?.contract || 0;
-                                                        const inPool = avail?.pool || 0;
-                                                        return (
-                                                            <Badge variant="outline" className={cn("text-[9px] font-bold", inContract > 0 ? "text-primary border-primary/30" : "text-muted-foreground")}>
-                                                                {inContract} contrato{inPool > 0 ? ` · ${inPool} pool` : ''}
-                                                            </Badge>
-                                                        );
-                                                    })()}
-                                                    <span className={cn("text-xs", m.stock < 10 ? "text-red-500 font-bold" : "text-muted-foreground")}>
-                                                        {m.stock} {m.unit}
-                                                    </span>
-                                                    {currentMaterialId === m.id && <Check className="h-4 w-4 text-primary" />}
-                                                </div>
-                                            </div>
-                                        </CommandItem>
-                                    ))}
-                                </CommandGroup>
-                            ))}
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+          <div className="bg-card rounded-[2rem] border shadow-sm p-8 space-y-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary shrink-0">
+                <ShoppingCart size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black uppercase tracking-tight">Nueva Solicitud</h3>
+                <p className="text-xs text-muted-foreground font-medium">Agrega los ítems que necesitas.</p>
+              </div>
+            </div>
 
-                  <div className="flex gap-3 items-end">
-                    <div className="space-y-2 flex-grow">
-                      <Label htmlFor="quantity" className="text-xs font-semibold uppercase text-muted-foreground">2. Cantidad</Label>
-                      <div className="relative">
-                        <Input 
-                            id="quantity" 
-                            type="number" 
-                            placeholder="0" 
-                            value={currentQuantity} 
-                            onChange={e => setCurrentQuantity(e.target.value)} 
-                            disabled={!currentMaterialId || isSubmitting}
-                            className="pr-10"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleAddItemToCart();
-                                }
-                            }}
-                        />
-                        <span className="absolute right-3 top-2.5 text-xs text-muted-foreground">
-                            {currentSelectedMaterial?.unit || 'ud'}
-                        </span>
-                      </div>
-                    </div>
-                    <Button 
-                        type="button" 
-                        onClick={handleAddItemToCart}
-                        disabled={!currentMaterialId || !currentQuantity || isSubmitting}
-                        className="bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                    >
-                        <Plus className="h-4 w-4 mr-1" /> Agregar
-                    </Button>
-                  </div>
-                  
-                  {/* Stock Helper Text */}
-                  {currentSelectedMaterial && (
-                      <div className="flex items-center gap-2 text-xs">
-                          <span className="text-muted-foreground">Disponible:</span>
-                          <span className={cn("font-medium", currentSelectedMaterial.stock < 10 ? "text-red-600" : "text-emerald-600")}>
-                              {currentSelectedMaterial.stock} {currentSelectedMaterial.unit}
-                          </span>
-                          {Number(currentQuantity) > currentSelectedMaterial.stock && (
-                              <span className="text-red-500 font-bold ml-auto flex items-center gap-1">
-                                  <AlertCircle className="h-3 w-3" /> Excede stock
-                              </span>
-                          )}
-                      </div>
-                  )}
-                </div>
+            <form onSubmit={handleRequestSubmit} className="space-y-6">
 
-                {/* Lista del Carrito */}
+              <div className="space-y-4 p-5 border rounded-2xl bg-muted/30">
                 <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                        <Label>Resumen del Pedido</Label>
-                        <span className="text-xs text-muted-foreground">{cart.length} ítems</span>
-                    </div>
-                    
-                    <ScrollArea className="h-[200px] w-full rounded-md border bg-card p-1">
-                        {cart.length > 0 ? (
-                            <div className="space-y-1">
-                                {cart.map(item => (
-                                    <div key={item.materialId} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 group transition-colors border border-transparent hover:border-muted">
-                                        <div className="flex-1 min-w-0 mr-3">
-                                            <p className="text-sm font-medium truncate">{item.materialName}</p>
-                                            <p className="text-[10px] text-muted-foreground truncate">{item.category}</p>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Input 
-                                                type="number" 
-                                                value={item.quantity} 
-                                                onChange={(e) => handleUpdateCartQuantity(item.materialId, e.target.value)}
-                                                className="h-7 w-16 text-right text-xs px-1"
-                                            />
-                                            <span className="text-xs text-muted-foreground w-6">{item.unit}</span>
-                                            <Button 
-                                                type="button" 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-7 w-7 text-muted-foreground hover:text-destructive" 
-                                                onClick={() => handleRemoveItemFromCart(item.materialId)}
-                                            >
-                                                <Trash2 className="h-3.5 w-3.5"/>
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground space-y-2 opacity-50">
-                                <Package className="h-8 w-8" />
-                                <p className="text-xs">Tu lista está vacía</p>
-                            </div>
-                        )}
-                    </ScrollArea>
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">1. Seleccionar material</Label>
+                  <MaterialCombobox
+                    groupedMaterials={groupedMaterials}
+                    selectedId={currentMaterialId}
+                    onSelect={handleSelectMaterial}
+                    availability={contractAvailability}
+                    hasContractSelected={!!contractId}
+                    disabled={isSubmitting}
+                  />
                 </div>
 
-                <div className="space-y-3 pt-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="contract">Contrato / Faena <span className="text-destructive">*</span></Label>
-                    {isFieldWorkerSingleContract ? (
-                      // Personal de terreno: su contrato viene fijado, no se elige.
-                      <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/40 text-sm">
-                        <Package className="h-4 w-4 text-primary shrink-0" />
-                        <span className="font-medium truncate">
-                          {myAssignedContracts[0].name}
-                          {myAssignedContracts[0].code ? ` (${myAssignedContracts[0].code})` : ""}
-                        </span>
-                        <Badge variant="secondary" className="ml-auto text-[10px] shrink-0">Tu contrato</Badge>
-                      </div>
-                    ) : selectableContracts.length === 0 ? (
-                      // Sin contratos disponibles: no puede continuar.
-                      <div className="flex items-start gap-2 p-3 rounded-md border border-warning/30 bg-warning-subtle text-warning-subtle-foreground text-xs">
-                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                        <span>
-                          {canSelectAnyContract
-                            ? "No hay contratos activos. Crea uno en el módulo de contratos antes de solicitar materiales."
-                            : "No tienes un contrato asignado. Contacta a tu administrador para que te vincule a una obra antes de solicitar materiales."}
-                        </span>
-                      </div>
-                    ) : (
-                      <Select value={contractId} onValueChange={setContractId} disabled={isSubmitting}>
-                        <SelectTrigger id="contract">
-                          <SelectValue placeholder="Selecciona el contrato..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectableContracts.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.name}{c.code ? ` (${c.code})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                    {canSelectAnyContract && (
-                      <p className="text-[10px] text-muted-foreground">
-                        Como perfil administrativo puedes solicitar para cualquier contrato activo.
-                      </p>
-                    )}
-                  </div>
-                  {/* ¿Quién retira? — separa solicitante de receptor (caso APR → EPPs) */}
-                  <div className="space-y-2">
-                    <Label>¿Quién retira? <span className="text-destructive">*</span></Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {([
-                        { value: 'self', label: 'Yo mismo' },
-                        { value: 'directed', label: 'Otro trabajador' },
-                        { value: 'open', label: 'Retiro abierto' },
-                      ] as { value: DeliveryMode; label: string }[]).map((opt) => (
-                        <Button
-                          key={opt.value}
-                          type="button"
-                          variant={deliveryMode === opt.value ? 'default' : 'outline'}
-                          size="sm"
-                          className="text-xs"
-                          disabled={isSubmitting}
-                          onClick={() => {
-                            setDeliveryMode(opt.value);
-                            if (opt.value !== 'directed') setBeneficiaryId(null);
-                          }}
-                        >
-                          {opt.label}
-                        </Button>
-                      ))}
+                <div className="flex gap-3 items-end">
+                  <div className="space-y-2 flex-grow">
+                    <Label htmlFor="quantity" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">2. Cantidad</Label>
+                    <div className="relative">
+                      <Input
+                        id="quantity"
+                        type="number"
+                        placeholder="0"
+                        value={currentQuantity}
+                        onChange={e => setCurrentQuantity(e.target.value)}
+                        disabled={!currentMaterialId || isSubmitting}
+                        className="pr-12 h-12 rounded-xl"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleAddItemToCart(); }
+                        }}
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground uppercase">
+                        {currentSelectedMaterial?.unit || 'ud'}
+                      </span>
                     </div>
-                    {deliveryMode === 'directed' && (
-                      <Popover open={beneficiaryPopoverOpen} onOpenChange={setBeneficiaryPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" role="combobox" className="w-full justify-between h-10" disabled={isSubmitting}>
-                            <span className="truncate">
-                              {selectedBeneficiary ? selectedBeneficiary.name : "Selecciona al trabajador que retira..."}
-                            </span>
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Buscar trabajador..." />
-                            <CommandList>
-                              <CommandEmpty>No se encontró el trabajador.</CommandEmpty>
-                              <CommandGroup>
-                                {beneficiaryOptions.map((u) => (
-                                  <CommandItem
-                                    key={u.id}
-                                    value={u.name}
-                                    onSelect={() => {
-                                      setBeneficiaryId(u.id);
-                                      setBeneficiaryPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Check className={cn("mr-2 h-4 w-4", beneficiaryId === u.id ? "opacity-100" : "opacity-0")} />
-                                    {u.name}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    )}
-                    <p className="text-[10px] text-muted-foreground">
-                      {deliveryMode === 'self' && "Retirarás el pedido tú mismo en el pañol (verificación biométrica)."}
-                      {deliveryMode === 'directed' && "El pedido quedará dirigido: solo ese trabajador podrá retirarlo, verificado por biometría."}
-                      {deliveryMode === 'open' && "Cualquier trabajador podrá retirarlo; quien retire quedará registrado al momento de la entrega."}
-                    </p>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="area">Detalle / Ubicación <span className="text-muted-foreground font-normal">(opcional)</span></Label>
-                    <Input
-                      id="area"
-                      placeholder="Ej: Torre A, Piso 3"
-                      value={area}
-                      onChange={(e) => setArea(e.target.value)}
-                      disabled={isSubmitting}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full h-11 text-base shadow-md" disabled={isSubmitting || cart.length === 0 || !contractId}>
-                    {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : <><Send className="mr-2 h-4 w-4" /> Enviar Solicitud</>}
+                  <Button
+                    type="button"
+                    onClick={handleAddItemToCart}
+                    disabled={!currentMaterialId || !currentQuantity || isSubmitting}
+                    className="h-12 rounded-xl px-5 gap-1.5"
+                    variant="secondary"
+                  >
+                    <Package className="h-4 w-4" /> Agregar
                   </Button>
                 </div>
 
-              </form>
-            </CardContent>
-          </Card>
+                {currentSelectedMaterial && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground font-medium">Disponible:</span>
+                      <span className={cn("font-bold", currentSelectedMaterial.stock < 10 ? "text-destructive" : "text-success")}>
+                        {currentSelectedMaterial.stock} {currentSelectedMaterial.unit}
+                      </span>
+                      {Number(currentQuantity) > currentSelectedMaterial.stock && (
+                        <span className="text-destructive font-black ml-auto flex items-center gap-1 text-[10px] uppercase tracking-widest">
+                          <AlertCircle className="h-3 w-3" /> Excede stock
+                        </span>
+                      )}
+                    </div>
+                    {noStockInContract && (
+                      <p className="text-[10px] font-bold text-warning uppercase tracking-wide flex items-center gap-1.5">
+                        <AlertCircle className="h-3 w-3 shrink-0" /> Sin stock propio en este contrato — saldrá del pool central u otro contrato.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Carrito */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Resumen del pedido</Label>
+                  <span className="text-xs text-muted-foreground font-bold">{cart.length} ítems</span>
+                </div>
+
+                <div className="h-[200px] w-full rounded-2xl border bg-card p-2 overflow-y-auto">
+                  {cart.length > 0 ? (
+                    <div className="space-y-1">
+                      {cart.map(item => (
+                        <div key={item.materialId} className="flex items-center justify-between p-3 rounded-xl hover:bg-muted/50 group transition-colors border border-transparent hover:border-border">
+                          <div className="flex-1 min-w-0 mr-3">
+                            <p className="text-sm font-bold truncate">{item.materialName}</p>
+                            <p className="text-[10px] text-muted-foreground font-medium truncate uppercase tracking-wide">{item.category}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) => handleUpdateCartQuantity(item.materialId, e.target.value)}
+                              className="h-8 w-16 text-right text-xs px-2 rounded-lg"
+                            />
+                            <span className="text-xs text-muted-foreground w-6 font-bold">{item.unit}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive rounded-lg"
+                              onClick={() => handleRemoveItemFromCart(item.materialId)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-muted-foreground space-y-2 opacity-50">
+                      <Package className="h-8 w-8" />
+                      <p className="text-xs font-medium">Tu lista está vacía</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                    Contrato / Faena <span className="text-destructive">*</span>
+                  </Label>
+                  {isFieldWorkerSingleContract ? (
+                    <div className="flex items-center gap-2 h-12 px-4 rounded-xl border bg-muted/40 text-sm">
+                      <Package className="h-4 w-4 text-primary shrink-0" />
+                      <span className="font-bold truncate">
+                        {myAssignedContracts[0].name}{myAssignedContracts[0].code ? ` (${myAssignedContracts[0].code})` : ""}
+                      </span>
+                      <Badge variant="secondary" className="ml-auto text-[9px] shrink-0 font-black uppercase tracking-widest">Tu contrato</Badge>
+                    </div>
+                  ) : selectableContracts.length === 0 ? (
+                    <div className="flex items-start gap-2 p-4 rounded-xl border border-warning/30 bg-warning-subtle text-warning-subtle-foreground text-xs font-medium">
+                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>
+                        {canSelectAnyContract
+                          ? "No hay contratos activos. Crea uno en el módulo de contratos antes de solicitar materiales."
+                          : "No tienes un contrato asignado. Contacta a tu administrador para que te vincule a una obra antes de solicitar materiales."}
+                      </span>
+                    </div>
+                  ) : (
+                    <Select value={contractId} onValueChange={setContractId} disabled={isSubmitting}>
+                      <SelectTrigger className="h-12 rounded-xl">
+                        <SelectValue placeholder="Selecciona el contrato…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectableContracts.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {canSelectAnyContract && (
+                    <p className="text-[10px] text-muted-foreground font-medium">
+                      Como perfil administrativo puedes solicitar para cualquier contrato activo.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                    ¿Quién retira? <span className="text-destructive">*</span>
+                  </Label>
+                  <div className="flex items-center gap-1 bg-muted/50 border rounded-xl p-1">
+                    {([
+                      { value: 'self', label: 'Yo mismo' },
+                      { value: 'directed', label: 'Otro trabajador' },
+                      { value: 'open', label: 'Retiro abierto' },
+                    ] as { value: DeliveryMode; label: string }[]).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() => {
+                          setDeliveryMode(opt.value);
+                          if (opt.value !== 'directed') setBeneficiaryId(null);
+                        }}
+                        className={cn(
+                          "flex-1 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                          deliveryMode === opt.value ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {deliveryMode === 'directed' && (
+                    <BeneficiaryCombobox
+                      users={(users || []) as User[]}
+                      excludeUserId={authUser?.id}
+                      selectedId={beneficiaryId}
+                      onSelect={(u) => setBeneficiaryId(u.id)}
+                      disabled={isSubmitting}
+                    />
+                  )}
+                  <p className="text-[10px] text-muted-foreground font-medium">
+                    {deliveryMode === 'self' && "Retirarás el pedido tú mismo en el pañol (verificación biométrica)."}
+                    {deliveryMode === 'directed' && "El pedido quedará dirigido: solo ese trabajador podrá retirarlo, verificado por biometría."}
+                    {deliveryMode === 'open' && "Cualquier trabajador podrá retirarlo; quien retire quedará registrado al momento de la entrega."}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="area" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                    Detalle / Ubicación <span className="text-muted-foreground font-normal normal-case tracking-normal">(opcional)</span>
+                  </Label>
+                  <Input
+                    id="area"
+                    placeholder="Ej: Torre A, Piso 3"
+                    value={area}
+                    onChange={(e) => setArea(e.target.value)}
+                    disabled={isSubmitting}
+                    className="h-12 rounded-xl"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full h-12 rounded-xl text-sm font-black uppercase tracking-widest shadow-lg shadow-primary/10 gap-2"
+                  disabled={isSubmitting || cart.length === 0 || !contractId}
+                >
+                  {isSubmitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando…</> : <><Send className="h-4 w-4" /> Enviar solicitud</>}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
 
-        {/* COLUMNA DERECHA: HISTORIAL (7/12) */}
-        <div className="lg:col-span-7">
-          <Card className="h-full border-none shadow-none bg-transparent">
-            <CardHeader className="px-0 pt-0">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div>
-                    <CardTitle>Historial</CardTitle>
-                    <CardDescription>Tus solicitudes recientes.</CardDescription>
+        {/* COLUMNA DERECHA: HISTORIAL */}
+        <div className="lg:col-span-7 space-y-5">
+          {/* KPIs */}
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            {KPI_ITEMS.map((k) => (
+              <button key={k.key} onClick={() => setHistoryFilterReset(k.key)} className="text-left">
+                <Card className="p-5 rounded-[1.5rem] border-none shadow-sm hover:shadow-lg transition-all h-full">
+                  <div className={cn("p-2.5 rounded-xl w-fit shadow-sm mb-4", k.iconCls)}>
+                    <k.icon size={16} />
                   </div>
-                  <Select 
-                    value={statusFilter} 
-                    onValueChange={(v) => { setStatusFilter(v as any); setPage(1); }}
-                  >
-                    <SelectTrigger className="w-[160px] bg-background">
-                      <SelectValue placeholder="Filtrar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todas</SelectItem>
-                      <SelectItem value="pending">Pendientes</SelectItem>
-                      <SelectItem value="approved">Aprobadas</SelectItem>
-                      <SelectItem value="rejected">Rechazadas</SelectItem>
-                    </SelectContent>
-                  </Select>
-              </div>
-            </CardHeader>
-            <CardContent className="px-0">
-                <div className="space-y-4">
-                    {paginatedRequests.length > 0 ? (
-                        paginatedRequests.map((req) => (
-                            <Card key={req.id} className="overflow-hidden border-l-4 border-l-transparent hover:border-l-primary/50 transition-all">
-                                <div className="p-4 flex flex-col sm:flex-row gap-4">
-                                    {/* Info Principal */}
-                                    <div className="flex-1 space-y-2">
-                                        <div className="flex items-center gap-2">
-                                            {getStatusBadge(req.status)}
-                                            <span className="text-xs text-muted-foreground flex items-center">
-                                                <Clock className="h-3 w-3 mr-1" /> {formatDate(req.createdAt)}
-                                            </span>
-                                        </div>
-                                        <div className="text-sm space-y-0.5">
-                                            <div>
-                                                <span className="font-semibold text-muted-foreground">Contrato:</span> {req.contractName || contractMap.get(req.contractId || "")?.name || "—"}
-                                            </div>
-                                            {req.deliveryMode === 'directed' && req.beneficiaryName && (
-                                                <div className="text-xs text-muted-foreground">
-                                                    <span className="font-semibold">Retira:</span> {req.beneficiaryName}
-                                                </div>
-                                            )}
-                                            {req.deliveryMode === 'open' && (
-                                                <div className="text-xs text-muted-foreground">
-                                                    <span className="font-semibold">Retiro:</span> Abierto (cualquier trabajador)
-                                                </div>
-                                            )}
-                                            {req.area && (
-                                                <div className="text-xs text-muted-foreground">
-                                                    <span className="font-semibold">Detalle:</span> {req.area}
-                                                </div>
-                                            )}
-                                        </div>
-                                        
-                                        {/* Lista de Ítems */}
-                                        <div className="mt-3 bg-muted/30 rounded-md p-2 text-sm space-y-1">
-                                            {req.items && req.items.length > 0 ? (
-                                                req.items.map((item, idx) => {
-                                                    const mat = materialMap.get(item.materialId);
-                                                    return (
-                                                        <div key={idx} className="flex justify-between items-center border-b border-muted/50 last:border-0 pb-1 last:pb-0">
-                                                            <span>{mat?.name || "Material desconocido"}</span>
-                                                            <span className="font-mono font-medium text-xs">{item.quantity} {mat?.unit || 'u'}</span>
-                                                        </div>
-                                                    )
-                                                })
-                                            ) : (
-                                                <div className="flex justify-between items-center">
-                                                    <span>{materialMap.get(req.materialId || '')?.name}</span>
-                                                    <span className="font-mono font-medium">{req.quantity}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </Card>
-                        ))
-                    ) : (
-                        <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed">
-                            <Search className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
-                            <p className="text-muted-foreground">No se encontraron solicitudes.</p>
-                        </div>
-                    )}
+                  <p className="text-2xl font-black font-outfit text-foreground">{k.value}</p>
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">{k.label}</p>
+                </Card>
+              </button>
+            ))}
+          </div>
 
-                    {/* Paginación */}
-                    {totalPages > 1 && (
-                        <div className="flex justify-center gap-2 mt-4">
-                            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Anterior</Button>
-                            <span className="text-sm flex items-center px-2 text-muted-foreground">Página {page} de {totalPages}</span>
-                            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Siguiente</Button>
-                        </div>
-                    )}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-1 bg-muted/50 border rounded-xl p-1 w-fit max-w-full">
+              {HISTORY_FILTERS.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setHistoryFilterReset(key)}
+                  className={cn(
+                    "px-3.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                    historyFilter === key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="relative w-full max-w-xs">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
+              <Input
+                value={search}
+                onChange={e => { setSearch(e.target.value); setVisible(PAGE_SIZE); }}
+                placeholder="Buscar código o material…"
+                className="h-10 rounded-xl pl-10 text-xs bg-card"
+              />
+            </div>
+          </div>
+
+          {filteredHistory.length === 0 ? (
+            <EmptyState
+              icon={<Search size={24} />}
+              title={search ? 'Sin resultados' : 'No se encontraron solicitudes'}
+              description={search ? `No se encontró "${search}".` : 'Tus solicitudes aparecerán aquí una vez enviadas.'}
+            />
+          ) : (
+            <>
+              <div className="space-y-4">
+                {filteredHistory.slice(0, visible).map((req) => (
+                  <RequestHistoryCard
+                    key={req.id}
+                    req={req}
+                    materialMap={materialMap}
+                    contractName={req.contractName || contractMap.get(req.contractId || '')?.name}
+                  />
+                ))}
+              </div>
+              {filteredHistory.length > visible && (
+                <div className="flex justify-center pt-2">
+                  <Button variant="outline" onClick={() => setVisible(v => v + PAGE_SIZE)} className="rounded-[1.5rem] px-8 h-11 text-xs font-black uppercase tracking-widest gap-2">
+                    Mostrar más ({filteredHistory.length - visible}) <ChevronDown size={16} />
+                  </Button>
                 </div>
-            </CardContent>
-          </Card>
+              )}
+            </>
+          )}
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

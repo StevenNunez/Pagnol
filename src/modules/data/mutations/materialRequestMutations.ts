@@ -213,6 +213,13 @@ export async function updateMaterialRequestStatus(
   const now = new Date().toISOString();
 
   if (status === 'approved') {
+    // Gate ADC: una solicitud no puede aprobarse en el pañol si el Administrador
+    // de Contrato no la autorizó primero (o el creador no venía pre-autorizado).
+    // El filtro de la UI ya lo respeta; esto lo refuerza en el servidor.
+    if (!request.adc_authorized_at) {
+      throw new Error('Esta solicitud aún no ha sido autorizada por el ADC. No puede aprobarse en el pañol.');
+    }
+
     const userRole = user.role as UserRole;
     const requiredPermissionsForRole = ROLES[userRole]?.permissions || [];
     const highestClass = request.highest_class || 'C';
@@ -314,18 +321,84 @@ export async function deliverApprovedMaterialRequest(
   if (error) throw error;
 }
 
+// Custodio real de una solicitud aprobada: quien recibió (biometría/QR) >
+// beneficiario dirigido > solicitante. Misma fórmula que computeToolHolderMap
+// (tool-loans.ts) — para que "cuánto tengo pendiente de devolver" nunca
+// contradiga "quién tiene este activo" en Activos/Reportes.
+function holderOfRequest(r: { receivedByUserId?: string | null; deliveryMode?: string | null; beneficiaryId?: string | null; supervisorId: string }): string {
+  return r.receivedByUserId || (r.deliveryMode === 'directed' ? r.beneficiaryId ?? null : null) || r.supervisorId;
+}
+
+const balanceKey = (materialId: string, contractId?: string | null) => `${materialId}::${contractId ?? 'pool'}`;
+
+/**
+ * Saldo pendiente de devolución de un usuario por (material, contrato):
+ * suma de ítems tomados en solicitudes aprobadas donde es custodio, menos lo
+ * que ya devolvió (pendiente o completado — rechazado no cuenta, no se
+ * concretó). Se recalcula en el servidor SIEMPRE antes de insertar: la UI
+ * puede mostrar un saldo optimista, pero nunca es la única barrera.
+ */
+async function computeReturnBalances(tenantId: string, userId: string): Promise<Map<string, number>> {
+  const { data: approvedReqs, error: reqErr } = await supabase
+    .from('material_requests')
+    .select('items, contract_id, delivery_mode, beneficiary_id, received_by_user_id, supervisor_id')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'approved');
+  if (reqErr) throw reqErr;
+
+  const taken = new Map<string, number>();
+  (approvedReqs || []).forEach((r: any) => {
+    if (holderOfRequest({
+      receivedByUserId: r.received_by_user_id,
+      deliveryMode: r.delivery_mode,
+      beneficiaryId: r.beneficiary_id,
+      supervisorId: r.supervisor_id,
+    }) !== userId) return;
+    (r.items || []).forEach((item: any) => {
+      const key = balanceKey(item.materialId, r.contract_id);
+      taken.set(key, (taken.get(key) || 0) + (item.quantity || 0));
+    });
+  });
+
+  const { data: existingReturns, error: retErr } = await supabase
+    .from('return_requests')
+    .select('material_id, contract_id, quantity, status')
+    .eq('tenant_id', tenantId)
+    .eq('supervisor_id', userId)
+    .neq('status', 'rejected');
+  if (retErr) throw retErr;
+
+  const balances = new Map<string, number>(taken);
+  (existingReturns || []).forEach((r: any) => {
+    const key = balanceKey(r.material_id, r.contract_id);
+    balances.set(key, (balances.get(key) || 0) - (r.quantity || 0));
+  });
+  return balances;
+}
+
 export async function addReturnRequest(
-  items: { materialId: string; quantity: number; materialName: string; unit: string }[],
+  items: { materialId: string; quantity: number; materialName: string; unit: string; contractId?: string | null; contractName?: string | null }[],
   notes: string,
-  contract: { contractId?: string | null; contractName?: string | null } | undefined,
   { user, tenantId }: Context
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
+  if (items.length === 0) throw new Error("Debes indicar al menos un ítem a devolver.");
 
+  // Saldo pendiente REAL, recalculado en el servidor — bloquea la sobre-devolución
+  // (devolver más de lo retirado, o devolver dos veces lo mismo) aunque la UI
+  // se haya quedado con datos viejos.
+  const balances = await computeReturnBalances(tenantId, user.id);
+  for (const item of items) {
+    const outstanding = balances.get(balanceKey(item.materialId, item.contractId)) || 0;
+    if (item.quantity > outstanding) {
+      throw new Error(`No puedes devolver ${item.quantity} ${item.unit} de ${item.materialName}: tu saldo pendiente es ${Math.max(outstanding, 0)}.`);
+    }
+  }
+
+  const now = new Date().toISOString();
   for (const item of items) {
     const requestId = await nextInternalCode(tenantId, 'RET');
-
-    await supabase.from('return_requests').insert({
+    const { error } = await supabase.from('return_requests').insert({
       internal_code: requestId,
       supervisor_id: user.id,
       supervisor_name: user.name,
@@ -335,11 +408,19 @@ export async function addReturnRequest(
       unit: item.unit,
       status: 'pending',
       notes: notes || '',
-      contract_id: contract?.contractId || null,
-      contract_name: contract?.contractName || null,
+      contract_id: item.contractId || null,
+      contract_name: item.contractName || null,
       tenant_id: tenantId,
-      created_at: new Date().toISOString()
+      created_at: now,
+      // `items` es NOT NULL en la tabla pero no existe en el tipo ReturnRequest
+      // (columna heredada de un diseño multi-ítem anterior). Sin esto, TODO
+      // insert de devolución fallaba en silencio (ver fix del error ignorado
+      // más arriba) — nunca se había detectado porque nadie miraba el error.
+      items: [{ materialId: item.materialId, quantity: item.quantity }],
     });
+    // Antes esto no se revisaba: un insert fallido (RLS, red, constraint) dejaba
+    // "Éxito" en la UI con cero filas guardadas — el material quedaba en el limbo.
+    if (error) throw new Error(`Error al registrar devolución de ${item.materialName}: ${error.message}`);
   }
 }
 

@@ -160,8 +160,9 @@ export interface AppStateContextType extends AppDataState {
   authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
   deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null) => Promise<void>;
-  // `contract` es obligatorio (aunque sea undefined) para que bindContext inyecte el contexto en el slot correcto.
-  addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string }[], notes: string, contract: { contractId?: string | null; contractName?: string | null } | undefined) => Promise<void>;
+  // Cada ítem lleva su propio contrato de reingreso (un mismo material puede
+  // tener saldo pendiente en más de un contrato a la vez).
+  addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string; contractId?: string | null; contractName?: string | null }[], notes: string) => Promise<void>;
   addAndCompleteReturnRequest: (data: { items: { materialId: string; quantity: number; materialName: string; unit: string; condition: 'OK' | 'CON FALLA' | 'ROTO' }[]; notes: string; workerId: string; workerName: string; evidenceUrl?: string; contractId?: string | null; contractName?: string | null; warehouseId?: string | null; }) => Promise<void>;
   updateReturnRequestStatus: (requestId: string, status: 'completed' | 'rejected', additionalData?: { condition: 'OK' | 'CON FALLA' | 'ROTO', evidenceUrl?: string }) => Promise<void>;
   deleteMaterialRequest: (requestId: string) => Promise<void>;

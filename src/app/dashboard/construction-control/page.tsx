@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { PageHeader } from '@/components/page-header';
+import { PageShell } from '@/components/page-shell';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -101,15 +101,10 @@ export default function ConstructionControlHubPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <PageHeader
-        title="Control de Obra"
-        description="Panel de seguimiento del avance físico del proyecto."
-      />
-
+    <PageShell title="Control de Obra" description="Panel de seguimiento del avance físico del proyecto.">
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="col-span-2 lg:col-span-1 rounded-[1.5rem] border-none shadow-lg bg-slate-100 dark:bg-slate-800/70">
+        <Card className="col-span-2 lg:col-span-1 rounded-[1.5rem] border-none shadow-lg bg-card">
           <CardContent className="p-6">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Avance General</p>
             <p className="text-4xl font-black text-primary">{stats.overallProgress.toFixed(1)}%</p>
@@ -117,9 +112,9 @@ export default function ConstructionControlHubPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-[1.5rem] border-none shadow-lg bg-slate-100 dark:bg-slate-800/70">
+        <Card className="rounded-[1.5rem] border-none shadow-lg bg-card">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 rounded-2xl bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">
+            <div className="p-3 rounded-2xl bg-info-subtle text-info-subtle-foreground shrink-0">
               <HardHat size={22} />
             </div>
             <div>
@@ -129,9 +124,9 @@ export default function ConstructionControlHubPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-[1.5rem] border-none shadow-lg bg-slate-100 dark:bg-slate-800/70">
+        <Card className="rounded-[1.5rem] border-none shadow-lg bg-card">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 rounded-2xl bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+            <div className="p-3 rounded-2xl bg-warning-subtle text-warning-subtle-foreground shrink-0">
               <Clock size={22} />
             </div>
             <div>
@@ -141,9 +136,9 @@ export default function ConstructionControlHubPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-[1.5rem] border-none shadow-lg bg-slate-100 dark:bg-slate-800/70">
+        <Card className="rounded-[1.5rem] border-none shadow-lg bg-card">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 rounded-2xl bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400 shrink-0">
+            <div className="p-3 rounded-2xl bg-success-subtle text-success-subtle-foreground shrink-0">
               <CheckCircle2 size={22} />
             </div>
             <div>
@@ -158,7 +153,7 @@ export default function ConstructionControlHubPage() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
         {/* Avance por Fase — col 3 */}
-        <Card className="lg:col-span-3 rounded-[1.5rem] border-none shadow-lg bg-slate-100 dark:bg-slate-800/70">
+        <Card className="lg:col-span-3 rounded-[1.5rem] border-none shadow-lg bg-card">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-tight">
               <TrendingUp className="h-4 w-4 text-primary" /> Avance por Fase
@@ -172,7 +167,7 @@ export default function ConstructionControlHubPage() {
                 <div key={phase.id} className="space-y-1.5">
                   <div className="flex justify-between items-center gap-2">
                     <p className="text-sm font-semibold truncate">{phase.name}</p>
-                    <span className={`text-xs font-bold font-mono shrink-0 ${phase.progress >= 100 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                    <span className={`text-xs font-bold font-mono shrink-0 ${phase.progress >= 100 ? 'text-success' : 'text-muted-foreground'}`}>
                       {phase.progress.toFixed(1)}%
                     </span>
                   </div>
@@ -193,28 +188,28 @@ export default function ConstructionControlHubPage() {
         <div className="lg:col-span-2 flex flex-col gap-6">
 
           {/* Pendientes de Revisión */}
-          <Card className="flex-1 rounded-[1.5rem] border-none shadow-lg bg-slate-100 dark:bg-slate-800/70">
+          <Card className="flex-1 rounded-[1.5rem] border-none shadow-lg bg-card">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-tight">
-                  <ListChecks className="h-4 w-4 text-amber-500" /> Pendientes
+                  <ListChecks className="h-4 w-4 text-warning" /> Pendientes
                 </CardTitle>
                 {stats.pending > 0 && (
-                  <Badge className="bg-amber-500 text-white text-[10px]">{stats.pending}</Badge>
+                  <Badge className="bg-warning text-warning-foreground text-[10px]">{stats.pending}</Badge>
                 )}
               </div>
             </CardHeader>
             <CardContent>
               {stats.pendingItems.length === 0 ? (
-                <div className="flex items-center gap-2 py-3 text-green-600">
+                <div className="flex items-center gap-2 py-3 text-success">
                   <CheckCircle2 size={16} />
-                  <p className="text-xs font-semibold">Sin protocolos pendientes</p>
+                  <p className="text-xs font-semibold">Sin partidas pendientes</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {stats.pendingItems.map(item => (
                     <div key={item.id} className="flex items-center gap-2 py-2 border-b last:border-0">
-                      <Clock size={13} className="text-amber-500 shrink-0" />
+                      <Clock size={13} className="text-warning shrink-0" />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold truncate">{item.name}</p>
                         <p className="text-[10px] text-muted-foreground font-mono">{item.path}</p>
@@ -223,7 +218,7 @@ export default function ConstructionControlHubPage() {
                   ))}
                   {can('construction_control:review_protocols') && (
                     <Link href="/dashboard/construction-control/revisar-protocolos" className="block pt-1">
-                      <Button variant="outline" size="sm" className="w-full gap-2 text-xs border-amber-200 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20">
+                      <Button variant="outline" size="sm" className="w-full gap-2 text-xs border-warning/30 text-warning hover:bg-warning-subtle">
                         <CheckSquare size={13} /> Revisar ahora
                         <ArrowRight size={13} className="ml-auto" />
                       </Button>
@@ -236,16 +231,16 @@ export default function ConstructionControlHubPage() {
 
           {/* Rechazadas */}
           {stats.rejected > 0 && (
-            <Card className="rounded-[1.5rem] border-none shadow-lg bg-red-50 dark:bg-red-900/20">
+            <Card className="rounded-[1.5rem] border-none shadow-lg bg-destructive/10">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-tight text-red-600 dark:text-red-400">
+                <CardTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-tight text-destructive">
                   <XCircle className="h-4 w-4" /> Rechazadas ({stats.rejected})
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {stats.rejectedItems.map(item => (
                   <div key={item.id} className="flex items-center gap-2">
-                    <XCircle size={12} className="text-red-500 shrink-0" />
+                    <XCircle size={12} className="text-destructive shrink-0" />
                     <div className="min-w-0">
                       <p className="text-xs font-semibold truncate">{item.name}</p>
                       <p className="text-[10px] text-muted-foreground font-mono">{item.path}</p>
@@ -253,7 +248,7 @@ export default function ConstructionControlHubPage() {
                   </div>
                 ))}
                 <Link href="/dashboard/construction-control/wbs" className="block pt-1">
-                  <Button variant="outline" size="sm" className="w-full gap-2 text-xs border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <Button variant="outline" size="sm" className="w-full gap-2 text-xs border-destructive/30 text-destructive hover:bg-destructive/10">
                     Corregir en EDT <ArrowRight size={13} className="ml-auto" />
                   </Button>
                 </Link>
@@ -264,7 +259,7 @@ export default function ConstructionControlHubPage() {
       </div>
 
       {/* Actividad Reciente */}
-      <Card className="rounded-[1.5rem] border-none shadow-lg bg-slate-100 dark:bg-slate-800/70">
+      <Card className="rounded-[1.5rem] border-none shadow-lg bg-card">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-tight">
@@ -325,12 +320,12 @@ export default function ConstructionControlHubPage() {
         </Link>
         {can('construction_control:review_protocols') && (
           <Link href="/dashboard/construction-control/revisar-protocolos">
-            <Button variant="outline" className="gap-2 rounded-xl border-amber-200 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20">
-              <CheckSquare size={15} /> Revisar EDT
+            <Button variant="outline" className="gap-2 rounded-xl border-warning/30 text-warning hover:bg-warning-subtle">
+              <CheckSquare size={15} /> Aprobar Partidas
             </Button>
           </Link>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

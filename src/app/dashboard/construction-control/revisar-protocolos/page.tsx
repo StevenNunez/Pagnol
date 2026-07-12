@@ -2,7 +2,9 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
-import { PageHeader } from '@/components/page-header';
+import { PageShell } from '@/components/page-shell';
+import { EmptyState } from '@/components/empty-state';
+import { LoadingState } from '@/components/loading-state';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -92,12 +94,10 @@ export default function RevisarProtocolosPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Revisar Protocolos de Calidad"
-        description="Bandeja de entrada para la revisión y aprobación de partidas finalizadas."
-      />
-      
+    <PageShell
+      title="Aprobar Partidas de Obra"
+      description="Bandeja de aprobación final de partidas marcadas como 100% completadas."
+    >
       <Card>
         <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -110,9 +110,7 @@ export default function RevisarProtocolosPage() {
         <CardContent>
             <ScrollArea className="h-[calc(80vh-16rem)] border rounded-lg">
                 {isLoading ? (
-                    <div className="flex items-center justify-center h-full">
-                        <Loader2 className="h-8 w-8 animate-spin"/>
-                    </div>
+                    <LoadingState fullHeight label="Cargando partidas..." />
                 ) : itemsForReview.length > 0 ? (
                     <div className="p-4 space-y-3">
                         {itemsForReview.map(item => (
@@ -174,7 +172,7 @@ export default function RevisarProtocolosPage() {
                                         
                                         <AlertDialog>
                                             <AlertDialogTrigger asChild>
-                                                 <Button size="sm" className="w-full sm:w-auto bg-green-600 hover:bg-green-700">
+                                                 <Button size="sm" className="w-full sm:w-auto bg-success hover:bg-success/90 text-success-foreground">
                                                     <ThumbsUp className="mr-2 h-4 w-4"/> Aprobar
                                                 </Button>
                                             </AlertDialogTrigger>
@@ -187,7 +185,7 @@ export default function RevisarProtocolosPage() {
                                                 </AlertDialogHeader>
                                                 <AlertDialogFooter>
                                                     <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => handleAction(item.id, 'approve')} className="bg-green-600 hover:bg-green-700">
+                                                    <AlertDialogAction onClick={() => handleAction(item.id, 'approve')} className="bg-success hover:bg-success/90 text-success-foreground">
                                                         Sí, Aprobar y Cerrar
                                                     </AlertDialogAction>
                                                 </AlertDialogFooter>
@@ -200,15 +198,16 @@ export default function RevisarProtocolosPage() {
                         ))}
                     </div>
                 ) : (
-                    <div className="flex flex-col items-center justify-center text-center h-80 text-muted-foreground">
-                        <Inbox className="h-16 w-16 mb-4 text-green-500/50"/>
-                        <h3 className="text-xl font-semibold">¡Bandeja Limpia!</h3>
-                        <p className="mt-1">No hay partidas pendientes de revisión.</p>
-                    </div>
+                    <EmptyState
+                        icon={<Inbox size={24} />}
+                        title="¡Bandeja limpia!"
+                        description="No hay partidas pendientes de revisión."
+                        className="h-80 justify-center border-none"
+                    />
                 )}
             </ScrollArea>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

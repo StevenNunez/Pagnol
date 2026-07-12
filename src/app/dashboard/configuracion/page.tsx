@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useAppState } from "@/modules/core/contexts/app-provider";
+import { useAuth } from "@/modules/auth/useAuth";
 import { PageShell } from "@/components/page-shell";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,7 +13,11 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { supabase } from "@/modules/core/lib/supabase";
 import { getInitials } from "@/modules/core/lib/sequence-utils";
-import { Building2, Hash, ImageIcon, Loader2, Save, Trash2, UploadCloud, Lock, Plus, X } from "lucide-react";
+import { generateApiToken, type GeneratedApiToken } from "@/modules/core/lib/api-tokens-client";
+import {
+  Building2, Hash, ImageIcon, Loader2, Save, Trash2, UploadCloud, Lock, Plus, X,
+  KeyRound, Copy, Check, AlertTriangle, Bot,
+} from "lucide-react";
 
 const MICRO_LABEL = "text-[10px] font-black uppercase tracking-widest text-muted-foreground";
 
@@ -38,10 +43,75 @@ const DOCUMENT_TYPES: { type: string; label: string; semanticDefault?: string }[
 
 const sanitizePrefix = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
+interface ApiTokenRow {
+  id: string;
+  name: string;
+  token_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
 export default function ConfiguracionPage() {
   const { currentTenant, updateTenant, can } = useAppState();
+  const { user } = useAuth();
   const { toast } = useToast();
   const canManage = can("module_settings:view");
+
+  // ── Tokens de API (MCP externo) ──────────────────────────────────────────
+  const [tokens, setTokens] = useState<ApiTokenRow[]>([]);
+  const [loadingTokens, setLoadingTokens] = useState(true);
+  const [newTokenName, setNewTokenName] = useState("");
+  const [creatingToken, setCreatingToken] = useState(false);
+  const [revealedToken, setRevealedToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const loadTokens = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("api_tokens")
+      .select("id, name, token_prefix, created_at, last_used_at, revoked_at")
+      .order("created_at", { ascending: false });
+    if (!error) setTokens(data ?? []);
+    setLoadingTokens(false);
+  }, []);
+
+  useEffect(() => { loadTokens(); }, [loadTokens]);
+
+  const handleGenerateToken = async () => {
+    if (!currentTenant?.id || !user?.id) return;
+    setCreatingToken(true);
+    try {
+      const { raw, prefix, hash } = await generateApiToken();
+      const { error } = await supabase.from("api_tokens").insert({
+        tenant_id: currentTenant.id,
+        owner_id: user.id,
+        name: newTokenName.trim() || "Token MCP",
+        token_hash: hash,
+        token_prefix: prefix,
+      });
+      if (error) throw error;
+      setRevealedToken(raw);
+      setNewTokenName("");
+      await loadTokens();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error al generar token", description: err?.message || "Intenta nuevamente." });
+    } finally {
+      setCreatingToken(false);
+    }
+  };
+
+  const handleRevokeToken = async (id: string) => {
+    const { data, error } = await supabase
+      .from("api_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", id).select();
+    if (error || !data?.length) {
+      toast({ variant: "destructive", title: "No se pudo revocar", description: error?.message || "Sin permiso o el token ya no existe." });
+      return;
+    }
+    toast({ title: "Token revocado" });
+    loadTokens();
+  };
+
+  const mcpUrl = typeof window !== "undefined" ? `${window.location.origin}/api/mcp` : "/api/mcp";
 
   // ── Estado del formulario (espejo editable del tenant) ──────────────────────
   const [name, setName] = useState("");
@@ -357,6 +427,95 @@ export default function ConfiguracionPage() {
           </Card>
         </div>
       </div>
+
+      {/* ── Integraciones: tokens MCP para Pagnol AI ─────────────────────── */}
+      <Card className="rounded-[1.5rem]">
+        <CardHeader>
+          <CardTitle className="text-lg font-bold flex items-center gap-2">
+            <Bot className="h-5 w-5 text-primary" /> Integraciones — Pagnol AI (MCP)
+          </CardTitle>
+          <CardDescription>
+            Genera un token para conectar clientes externos (Claude Desktop, Claude Code, etc.) a
+            los datos de tu tenant mediante el protocolo MCP. Cada token opera con los mismos
+            permisos del usuario que lo generó — nunca da más acceso que el que ya tienes en la app.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+            <Label className={MICRO_LABEL}>Endpoint MCP</Label>
+            <code className="block text-xs font-mono text-foreground break-all">{mcpUrl}</code>
+            <p className="text-[11px] text-muted-foreground">
+              Configúralo como servidor MCP remoto (HTTP) con header{" "}
+              <code className="font-mono">Authorization: Bearer &lt;tu-token&gt;</code>.
+            </p>
+          </div>
+
+          {revealedToken && (
+            <div className="rounded-xl border border-warning bg-warning-subtle p-4 space-y-2">
+              <div className="flex items-center gap-2 text-warning-subtle-foreground font-bold text-xs uppercase tracking-wider">
+                <AlertTriangle className="h-4 w-4" /> Cópialo ahora — no se volverá a mostrar
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs font-mono bg-card border rounded-lg px-3 py-2 break-all">{revealedToken}</code>
+                <Button
+                  type="button" size="icon" variant="outline" className="shrink-0 rounded-lg"
+                  onClick={() => {
+                    navigator.clipboard.writeText(revealedToken);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                >
+                  {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Input
+              value={newTokenName}
+              onChange={(e) => setNewTokenName(e.target.value)}
+              placeholder="Nombre del token (ej: Claude Desktop de Juan)"
+              className="rounded-xl"
+              maxLength={60}
+            />
+            <Button onClick={handleGenerateToken} disabled={creatingToken} className="shrink-0 rounded-xl gap-2">
+              {creatingToken ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Generar
+            </Button>
+          </div>
+
+          {loadingTokens ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : tokens.length === 0 ? (
+            <EmptyState icon={<KeyRound size={20} />} title="Sin tokens" description="Genera uno para conectar un cliente MCP externo." />
+          ) : (
+            <div className="rounded-xl border divide-y">
+              {tokens.map((t) => (
+                <div key={t.id} className="p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
+                    <p className="text-[11px] font-mono text-muted-foreground">
+                      {t.token_prefix}••• · creado {new Date(t.created_at).toLocaleDateString("es-CL")}
+                      {t.last_used_at ? ` · usado ${new Date(t.last_used_at).toLocaleDateString("es-CL")}` : " · nunca usado"}
+                    </p>
+                  </div>
+                  {t.revoked_at ? (
+                    <Badge variant="secondary" className="rounded-lg shrink-0">Revocado</Badge>
+                  ) : (
+                    <Button
+                      type="button" variant="ghost" size="icon"
+                      className="shrink-0 text-destructive hover:text-destructive rounded-lg"
+                      onClick={() => handleRevokeToken(t.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </PageShell>
   );
 }

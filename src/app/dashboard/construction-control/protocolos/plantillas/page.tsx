@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { PageHeader } from '@/components/page-header';
+import { PageShell } from '@/components/page-shell';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import {
   AlertCircle, Plus, BookOpen, Trash2, ChevronDown, ChevronRight,
@@ -68,7 +68,7 @@ export default function PlantillasPage() {
         responsibilities: responsibilities.filter(r => r.role.trim()),
         items: cleanItems,
       });
-      toast({ title: 'Plantilla creada', className: 'border-green-500' });
+      toast({ title: 'Plantilla creada', className: 'border-success' });
       setShowForm(false);
       resetForm();
     } catch (e: any) {
@@ -81,7 +81,7 @@ export default function PlantillasPage() {
   const handleDelete = async (template: ProtocolTemplate) => {
     try {
       await deleteProtocolTemplate(template.id);
-      toast({ title: 'Plantilla eliminada', className: 'border-green-500' });
+      toast({ title: 'Plantilla eliminada', className: 'border-success' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Error', description: e.message });
     }
@@ -98,20 +98,19 @@ export default function PlantillasPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <PageHeader
-        title="Plantillas de Protocolos"
-        description="Define las plantillas base para los protocolos de inicio y entrega de actividades."
-      />
-
-      <div className="flex justify-end">
-        <Button className="gap-2 rounded-xl" onClick={() => setShowForm(true)}>
-          <Plus size={15} /> Nueva Plantilla
-        </Button>
-      </div>
-
+    <PageShell
+      title="Plantillas de Protocolos"
+      description="Define las plantillas base para los protocolos de inicio y entrega de actividades."
+      toolbar={
+        <div className="flex justify-end w-full">
+          <Button className="gap-2 rounded-xl" onClick={() => setShowForm(true)}>
+            <Plus size={15} /> Nueva Plantilla
+          </Button>
+        </div>
+      }
+    >
       {protocolTemplates.length === 0 ? (
-        <Card className="rounded-[1.5rem] border-none shadow-lg bg-slate-50">
+        <Card className="rounded-[1.5rem] border-none shadow-lg bg-card">
           <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
             <BookOpen size={40} className="text-muted-foreground/40" />
             <div>
@@ -123,7 +122,7 @@ export default function PlantillasPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {protocolTemplates.map(tmpl => (
-            <Card key={tmpl.id} className="rounded-[1.5rem] border-none shadow-md bg-slate-50 dark:bg-slate-800/50">
+            <Card key={tmpl.id} className="rounded-[1.5rem] border-none shadow-md bg-card">
               <CardContent className="p-5">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -153,7 +152,7 @@ export default function PlantillasPage() {
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/60 hover:text-destructive hover:bg-destructive/10 rounded-xl">
                           <Trash2 size={14} />
                         </Button>
                       </AlertDialogTrigger>
@@ -166,7 +165,7 @@ export default function PlantillasPage() {
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
-                          <AlertDialogAction className="rounded-xl bg-red-600 hover:bg-red-700" onClick={() => handleDelete(tmpl)}>
+                          <AlertDialogAction className="rounded-xl bg-destructive hover:bg-destructive/90" onClick={() => handleDelete(tmpl)}>
                             Eliminar
                           </AlertDialogAction>
                         </AlertDialogFooter>
@@ -289,7 +288,7 @@ export default function PlantillasPage() {
                     onChange={e => setNormativa(ns => ns.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
                   />
                   {normativa.length > 1 && (
-                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-red-400 hover:text-red-600 rounded-xl"
+                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive/60 hover:text-destructive rounded-xl"
                       onClick={() => setNormativa(ns => ns.filter((_, j) => j !== i))}>
                       <X size={14} />
                     </Button>
@@ -324,7 +323,7 @@ export default function PlantillasPage() {
                     onChange={e => setResponsibilities(rs => rs.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
                   />
                   {responsibilities.length > 1 && (
-                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-red-400 hover:text-red-600 rounded-xl"
+                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive/60 hover:text-destructive rounded-xl"
                       onClick={() => setResponsibilities(rs => rs.filter((_, j) => j !== i))}>
                       <X size={14} />
                     </Button>
@@ -354,7 +353,7 @@ export default function PlantillasPage() {
                     onChange={e => setItems(it => it.map((x, j) => j === i ? e.target.value : x))}
                   />
                   {items.length > 1 && (
-                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-red-400 hover:text-red-600 rounded-xl"
+                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive/60 hover:text-destructive rounded-xl"
                       onClick={() => setItems(it => it.filter((_, j) => j !== i))}>
                       <X size={14} />
                     </Button>
@@ -375,6 +374,6 @@ export default function PlantillasPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

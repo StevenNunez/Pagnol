@@ -2,12 +2,13 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { PageHeader } from '@/components/page-header';
+import { PageShell } from '@/components/page-shell';
+import { EmptyState } from '@/components/empty-state';
+import { LoadingState } from '@/components/loading-state';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertCircle,
-  Loader2,
   ChevronDown,
   ChevronRight,
   History,
@@ -15,6 +16,7 @@ import {
   Send,
   Search,
   UserCheck,
+  Loader2,
 } from 'lucide-react';
 import {
   Card,
@@ -122,7 +124,7 @@ const WorkItemNode = ({
         </div>
         <span className={cn(
             "text-xs font-mono rounded px-2 py-1",
-            progress >= 100 ? "bg-green-100 text-green-700 font-bold" : "bg-muted/80"
+            progress >= 100 ? "bg-success-subtle text-success-subtle-foreground font-bold" : "bg-muted/80"
         )}>
           {progress.toFixed(2)}%
         </span>
@@ -166,11 +168,12 @@ const WorkItemTree = ({ workItems, onSelect, selectedId }: { workItems: WorkItem
 
 export default function ConstructionWBSPage() {
   const { can } = useAuth();
-  const { workItems, isLoading, progressLogs, submitForQualityReview, updateWorkItem, users } = useAppState();
+  const { workItems, isLoading, progressLogs, submitForQualityReview, updateWorkItem, users, seedExampleWorkItems } = useAppState();
   const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isSubmittingProtocol, setIsSubmittingProtocol] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
   const { toast } = useToast();
 
   const filteredItems = useMemo(() => {
@@ -255,12 +258,24 @@ export default function ConstructionWBSPage() {
       toast({
         title: 'Contratista Asignado',
         description: `El contrato "${selectedItem.name}" fue asignado a ${assignedUser?.name ?? 'nuevo usuario'}.`,
-        className: 'border-green-500',
+        className: 'border-success',
       });
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'No se pudo reasignar.' });
     } finally {
       setIsAssigning(false);
+    }
+  };
+
+  const handleSeedExample = async () => {
+    setIsSeeding(true);
+    try {
+      await seedExampleWorkItems();
+      toast({ title: 'Estructura de ejemplo cargada', description: 'Puedes editarla o eliminarla libremente.' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'No se pudo cargar el ejemplo.' });
+    } finally {
+      setIsSeeding(false);
     }
   };
 
@@ -271,12 +286,10 @@ export default function ConstructionWBSPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Partidas de Obra (EDT)"
-        description="Gestiona la estructura de desglose del trabajo y registra el avance físico."
-      />
-
+    <PageShell
+      title="Partidas de Obra (EDT)"
+      description="Gestiona la estructura de desglose del trabajo y registra el avance físico."
+    >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Columna Izquierda: Estructura y Creación */}
         <div className="lg:col-span-1 space-y-6">
@@ -295,9 +308,7 @@ export default function ConstructionWBSPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="flex items-center justify-center h-64">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
+                <LoadingState label="Cargando estructura..." />
               ) : (workItems || []).length > 0 ? (
                 <WorkItemTree
                     workItems={filteredItems || []}
@@ -305,9 +316,19 @@ export default function ConstructionWBSPage() {
                     selectedId={selectedItem?.id || null}
                 />
               ) : (
-                <p className="text-muted-foreground text-center py-10">
-                  No hay estructura de obra definida.
-                </p>
+                <EmptyState
+                  icon={<FolderTree size={22} />}
+                  title="Sin estructura de obra"
+                  description={can('construction_control:edit_structure')
+                    ? 'Crea tu primer contrato/partida con el formulario de abajo, o carga una estructura de ejemplo para explorar el módulo.'
+                    : 'Aún no se ha definido la estructura de desglose de la obra.'}
+                  action={can('construction_control:edit_structure') && (
+                    <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={handleSeedExample} disabled={isSeeding}>
+                      {isSeeding ? <Loader2 size={14} className="animate-spin" /> : <FolderTree size={14} />}
+                      Cargar Estructura de Ejemplo
+                    </Button>
+                  )}
+                />
               )}
             </CardContent>
           </Card>
@@ -466,6 +487,6 @@ export default function ConstructionWBSPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

@@ -15,7 +15,6 @@ import {
     UserRole,
     Tenant,
     SubscriptionPlan,
-    WorkItem,
     ProgressLog,
     PaymentState,
     DailyTalk,
@@ -52,7 +51,6 @@ import * as workReportCatalogMutations from './mutations/workReportCatalogMutati
 import * as workOrderMutations from './mutations/workOrderMutations';
 import * as workWeeklyReportMutations from './mutations/workWeeklyReportMutations';
 import * as hrMutations from './mutations/hrMutations';
-import { WORK_ITEMS_SEED } from '@/lib/work-items-seed';
 
 const initialState: AppDataState = {
     isLoading: true,
@@ -267,47 +265,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
 
     const subscriptionPlansData = PLANS; // Local constants as base
 
-
-    // Seed data effect
-    useEffect(() => {
-        const seedWorkItems = async () => {
-            const seedFlag = `seeded_workitems_${tenantId}`;
-            if (tenantId && user && workItemsData.length === 0 && can('construction_control:edit_structure') && !sessionStorage.getItem(seedFlag)) {
-                // Set flag BEFORE starting to avoid race conditions with quick re-renders
-                sessionStorage.setItem(seedFlag, 'true');
-
-                try {
-                    const dataToInsert = WORK_ITEMS_SEED.map((item: any) => ({
-                        id: item.id,
-                        project_id: item.projectId || '1',
-                        name: item.name,
-                        type: item.type,
-                        parent_id: item.parentId || null,
-                        path: item.path,
-                        unit: item.unit,
-                        quantity: item.quantity,
-                        unit_price: item.unitPrice,
-                        created_by: user.id,
-                        tenant_id: tenantId,
-                        progress: 0,
-                        status: 'in-progress'
-                    }));
-
-                    // Use upsert to handle conflicts (409) gracefully if items already exist
-                    const { error } = await supabase.from('work_items').upsert(dataToInsert, { onConflict: 'id' });
-                    if (error) throw error;
-
-                } catch (error: any) {
-                    console.warn("Work items seed skipped or failed:", error?.message || error);
-                    // DON'T remove flag — keep it set to prevent infinite retry loop
-                }
-            }
-        };
-
-        if (tenantId && user) {
-            seedWorkItems();
-        }
-    }, [tenantId, workItemsData.length, can, user]);
+    // Nota: la siembra de EDT de ejemplo ya NO es automática (colisionaba entre
+    // tenants — ids globales fijos '1'..'39' hacían que solo el primer tenant
+    // sembrado tuviera datos). Ahora es opt-in: botón "Cargar estructura de
+    // ejemplo" en el estado vacío del EDT → genericMutations.seedExampleWorkItems
+    // (ids prefijados por tenant, sin colisión posible).
 
     // Las categorías por defecto ahora las siembra un trigger de Postgres en el
     // INSERT de tenants (migración 20260612000006). Ya no se siembran desde el cliente.
@@ -362,15 +324,14 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             return data; // In Supabase Supabase handles dates as strings or native Date objects if using a library, but here we expect strings
         };
 
-        let processedWorkItems = processData(workItemsData);
-        if (tenantId && processedWorkItems.length === 0) {
-            processedWorkItems = WORK_ITEMS_SEED.map(item => ({
-                ...item,
-                tenantId: tenantId,
-                status: 'in-progress',
-                progress: 0,
-            } as WorkItem));
-        }
+        // NOTA: antes, si `workItemsData` estaba vacío, el estado se rellenaba en
+        // memoria con WORK_ITEMS_SEED — el EDT mostraba una estructura de
+        // ejemplo como si fuera real aunque nunca se hubiese guardado en la BD
+        // (y de hecho el INSERT real estaba roto para tenants nuevos, ver
+        // hardening 20260716000000). Ahora `workItems` refleja siempre la BD;
+        // la estructura de ejemplo se carga de forma explícita (opt-in) desde
+        // el botón del estado vacío del EDT.
+        const processedWorkItems = processData(workItemsData);
 
         const rolesToUse = dynamicRolesData && Object.keys(dynamicRolesData).length > 0 ? dynamicRolesData : ROLES_DEFAULT;
         const plansToUse = subscriptionPlansData && Object.keys(subscriptionPlansData).length > 0 ? subscriptionPlansData : PLANS;
@@ -568,6 +529,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         addWorkItem: bindContext(genericMutations.addWorkItem),
         updateWorkItem: bindContext(genericMutations.updateWorkItem),
         deleteWorkItem: bindContext(genericMutations.deleteWorkItem),
+        seedExampleWorkItems: bindContext(genericMutations.seedExampleWorkItems),
         addWorkItemProgress: bindContext(genericMutations.addWorkItemProgress),
         submitForQualityReview: bindContext(genericMutations.submitForQualityReview),
         approveWorkItem: bindContext(genericMutations.approveWorkItem),

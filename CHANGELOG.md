@@ -18,6 +18,170 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Corregido — Control de Obra: crear Contrato/Partida estaba 100% roto + siembra colisionaba entre tenants
+Auditoría completa del módulo (2026-07-12). Hallazgo más grave: **crear un
+Contrato/Partida nunca funcionó en producción** — `work_items.id` es `TEXT
+PRIMARY KEY` sin `DEFAULT` y el código nunca generaba un id, así que el INSERT
+siempre fallaba (`23502 null value in column "id"`, verificado contra la BD
+viva). Además, el estado en memoria **fabricaba** la estructura de ejemplo
+(`WORK_ITEMS_SEED`) cada vez que `workItems` estaba vacío — un tenant veía
+"39 tareas" aunque nunca se hubiese guardado nada real, ocultando por completo
+que la creación estaba rota.
+
+- **Migración `20260716000000_construction_control_hardening.sql`** (**APLICADA**
+  por el usuario): `DEFAULT gen_random_uuid()::text` en `work_items.id`; FK
+  `parent_id → work_items.id ON DELETE RESTRICT` (antes sin integridad
+  referencial); `CHECK` en `type`/`status` limitando a los valores reales del
+  dominio `WorkItem` (el Gantt llegaba a escribir `type='milestone'`, inexistente).
+- **Siembra ahora es opt-in, no automática**: se eliminaron las DOS
+  fabricaciones (el `INSERT` con ids globales fijos `'1'..'39'` en
+  `DataProvider.tsx`, que colisionaba entre tenants — solo el primer tenant
+  sembrado tenía datos reales — y la fabricación en memoria del mismo seed).
+  Nueva mutación `seedExampleWorkItems` con ids prefijados por tenant (sin
+  colisión posible), disparada por un botón "Cargar Estructura de Ejemplo" en
+  el `EmptyState` honesto del EDT. **Verificado end-to-end en navegador**:
+  clic real → filas persistidas de verdad en la BD con ids
+  `<tenant>_<n>` y jerarquía correcta.
+- `deleteWorkItem` ahora verifica sub-partidas y registros de avance antes de
+  borrar (antes: sin guard, sin permiso gateado en el Gantt; el error crudo de
+  Postgres por la FK ya bloqueaba el caso con avances, pero con un mensaje
+  ilegible).
+- **Gantt**: ya no permite arrastrar la barra de progreso (escribía `progress`
+  directo, rompiendo el invariante avance-por-registros); se quitó el botón
+  "Nueva Tarea" (feature fantasma que solo mostraba "Acción Desactivada"); el
+  modal de edición ya no permite cambiar tipo/padre (riesgo de corromper
+  `path`), solo fechas/responsable/color; borrado gateado por permiso.
+- **SPI/Curva S honestos**: antes cualquier partida sin fecha planificada se
+  trataba como si venciera "hoy", mostrando "Atrasado, SPI 0.00" con datos
+  inventados. Ahora solo se calculan sobre partidas con fechas reales; sin
+  ellas se muestra un `EmptyState` explicando qué falta.
+- **Dark mode del Gantt reparado de raíz**: las 7 clases CSS hardcodeadas
+  (`._3_pmuJ`, etc.) para adaptar `gantt-task-react` a dark **ya no existían
+  en el bundle instalado** — verificado inspeccionando el DOM real, 0
+  coincidencias. Reescrito con clases verificadas contra el render actual +
+  selectores por `tag` (`text`, `line`) inmunes a futuros cambios de versión.
+- **Un solo lenguaje para "aprobar partidas"**: existían dos sistemas de
+  calidad con nombres cruzados ("Mis Protocolos"/"Revisar Protocolos de
+  Calidad" operando sobre `WorkItem.status`, separado de la entidad real
+  `Protocol` con checklist y firmas). Renombradas a "Mis Partidas
+  Enviadas"/"Aprobar Partidas de Obra" (sidebar y título coherentes) para dejar
+  "Protocolos de Calidad" como el único nombre de la entidad real.
+- **Fuga de acceso en el detalle de protocolo**: la lista ya ocultaba
+  borradores ajenos a quien no revisa, pero `protocolos/[id]` no tenía ningún
+  chequeo — se podía editar/firmar el borrador de otra persona entrando por
+  URL directa. Agregado el mismo filtro de ownership.
+- Eliminado el feature fantasma de fotos de evidencia en protocolos
+  (`evidencePhotos` sin setter ni UI de captura, pero cada guardado escribía
+  `evidence_photos: []` como si fuera real).
+- **Diseño**: las 8 páginas del módulo migradas a tokens semánticos (~70
+  usos de paleta cruda, 42 fondos claros sin dark) y a los componentes
+  compartidos `PageShell`/`EmptyState`/`LoadingState`. La isla blanca de
+  "Protocolos de Calidad" en dark mode (bug más visible del audit) queda
+  verificada con screenshot antes/después.
+
+### Reescrito — Pagnol AI: de "resumen de 50 filas" a asistente con datos reales (tool-calling + MCP)
+El asistente respondía sobre un JSON recortado (`slice(0,50)` de materiales/tools/
+solicitudes armado en el navegador) sin memoria de conversación, vía un server
+action sin auth ni rate limit. Rediseño completo en 4 fases:
+
+- **Fase 1 — Cerebro con herramientas reales**: `src/ai/tools/definitions.ts`
+  define 11 herramientas de solo-lectura (`buscarMateriales`, `stockPorContrato`,
+  `kardexMaterial`, `solicitudesMaterialPendientes`, `solicitudesCompraPendientes`,
+  `ordenesDeTrabajo`, `mantenimientosProximos`, `resumenAsistencia`,
+  `arriendosActivos`, `pagosPendientes`, `buscarPersonal`), cada una filtrando
+  SIEMPRE por `tenant_id` server-side y gateada por permiso (`module_pagnol:view`,
+  `module_payments:view`, etc. — mismo criterio que `can()`). `src/ai/tools/
+  genkit-tools.ts` las registra como tools de Genkit; el tenant/permisos viajan
+  por el `context` de `ai.generate()`, nunca por el input del modelo.
+  `pagnol-assistant-flow.ts` reescrito con historial de conversación real
+  (multi-turno) y `maxTurns: 6` para resolución de tool-calling. Se eliminó el
+  campo `decisions` (JSON estructurado que la UI nunca leía). **Bug de la API de
+  Gemini descubierto y corregido durante la verificación**: `tools` +
+  `output.schema` (salida estructurada) son incompatibles — Gemini responde
+  400 `Function calling with a response mime type: 'application/json' is
+  unsupported`; se usa `response.text` en su lugar.
+- **Fase 2 — Transporte seguro**: nuevo endpoint `POST /api/ai/assistant`
+  (`requireAuth` + `resolveTenant` + `rateLimitByIp` 30/hora) reemplaza el
+  server action abierto `askPagnol` (eliminado de `ask-ferro.ts`, que ya no
+  autenticaba ni limitaba). El tenant siempre viene de la sesión, nunca del
+  body.
+- **Fase 3 — UI**: `inventory-assistant.tsx` reescrito con historial real
+  enviado al backend, quick-queries que mapean a herramientas que existen de
+  verdad (antes preguntaban por "próximo mantenimiento" y `tools`, datos que
+  el contexto viejo ni tenía), y migrado a tokens del design system
+  (`bg-card`/`text-muted-foreground`/`border-border` en vez de `slate-*`/
+  `bg-white` crudos).
+- **Fase 4 — MCP externo**: `POST /api/mcp` expone las MISMAS herramientas de
+  `definitions.ts` a clientes externos (Claude Desktop, Claude Code) vía
+  JSON-RPC 2.0 stateless ("Streamable HTTP"), autenticado con un token propio
+  por usuario (no sesión Supabase). Nueva tabla `api_tokens` (migración
+  `20260715000000_api_tokens.sql`, **PENDIENTE DE APLICAR**): el token en
+  texto plano se genera en el navegador (Web Crypto), se hashea SHA-256 y solo
+  el hash se persiste — se muestra una sola vez. Gestión de tokens (generar/
+  revocar) agregada a `dashboard/configuracion` (card "Integraciones — Pagnol
+  AI (MCP)").
+
+**Verificado end-to-end en navegador** (login real + pregunta real): el
+asistente ejecutó `buscarMateriales(soloStockCritico:true)` contra la BD real
+y devolvió materiales concretos con nombres y stock reales. El protocolo MCP
+se verificó con curl (`initialize` OK, `tools/list` sin token → 401 correcto);
+la prueba completa con token real quedó pendiente de la migración de
+`api_tokens`.
+
+### Seguridad — Endurecimiento por linter de Supabase (lote 2026-07-12)
+Migración `20260714000000_security_linter_hardening.sql` — **APLICADA** por el
+usuario. Resuelve las advertencias del Security Advisor verificadas
+contra el código real:
+
+- **Buckets públicos sin listing** (lo más serio): eliminadas las policies
+  SELECT amplias de `contracts`, `asset-photos` y `tenant-logos`. Se confirmó
+  EN VIVO que un anon podía listar las carpetas por tenant vía la API de
+  storage (`/storage/v1/object/list/...`); en `contracts` eso expone PDFs de
+  contratos EA y de responsabilidad firmados (PII). La app no usa `.list()`
+  ni `.download()` (solo `upload`/`getPublicUrl`/`remove`), y la URL pública
+  no pasa por RLS en buckets públicos → cero impacto funcional.
+- **`check_rate_limit` solo service role**: se revocó EXECUTE de
+  anon/authenticated. Cierra un DoS selectivo: cualquiera podía quemar la
+  cuota de rate-limit de otra IP (p.ej. bloquear su reset de contraseña)
+  llamando la RPC directamente.
+- **`next_internal_code` con guard de tenant**: un usuario autenticado del
+  tenant A ya no puede quemar correlativos del tenant B (permite super-admin
+  cross-tenant y service role). Además se revocó EXECUTE de anon.
+- **`use_qr_token`**: revocado EXECUTE de anon (solo la usa el dashboard
+  autenticado).
+- **4 triggers `set_*_updated_at`** (work-reports, RFQ, recepción, cost
+  centers): `search_path` fijo + EXECUTE público revocado — habían quedado
+  fuera del hardening `20260614000001` por ser posteriores.
+- **Decisión documentada**: los helpers de RLS (`get_my_tenant_id`,
+  `is_super_admin`, `get_my_role`, `is_tenant_admin`) conservan EXECUTE para
+  anon a propósito — el login por RUT consulta `profiles` como anon y las
+  policies los invocan; para anon devuelven null/false (inofensivo).
+- Queda manual (no es SQL): activar "leaked password protection" en
+  Dashboard → Authentication (chequeo HaveIBeenPwned).
+
+### Agregado — Skills de auditoría para Claude Code (`.claude/skills/`)
+Tres skills que destilan la metodología y los hallazgos de todas las auditorías
+realizadas (2026-06/07), para que futuros modelos las usen como guía al auditar:
+
+- `auditoria-seguridad`: rutas API (api-auth, resolveTenant, rate-limit), RLS
+  (patrón canónico, USING(true), auto-escalación en profiles, GRANTs post-30may,
+  UPDATE silencioso de 0 filas), drift de esquema contra BD viva, storage,
+  secretos/PII, permisos `can()` y cómo probar con dos tenants.
+- `auditoria-ui-ux`: greps del design system (tokens vs paleta cruda, firma
+  Pagnol, anti-patrones), mapeo canónico de migración a tokens, receta completa
+  de verificación visual real en navegador (puppeteer-core + Chrome del sistema,
+  dark/light/mobile) y bugs de patrón conocidos (doble X, sticky sin breakpoint,
+  cmdk duplicados).
+- `auditoria-arquitectura`: invariantes (ledger de stock, flujo de datos único,
+  react-tracked, mutaciones bindeadas), bugs transversales ya vistos ≥2 veces
+  (INSERT roto en silencio, TZ off-by-one, mutación retroactiva en cascadas,
+  borrado sin guards, registros fantasma), decisiones deliberadas que NO son
+  hallazgos, y el método de auditoría de módulo paso a paso.
+
+Las tres codifican las reglas de trabajo del proyecto: crítica primero →
+implementar tras confirmación, nunca commitear, migraciones pendientes de
+aplicar avisadas explícitamente, CHANGELOG siempre.
+
 ### Agregado — Suministros del cliente (activos del cliente, caso Valar↔Novandino)
 Cuando el tenant no tiene o no consigue un material, el CLIENTE del contrato lo
 proporciona. Nueva iniciativa completa (Fases 0–4). Migración pendiente de

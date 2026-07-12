@@ -106,8 +106,10 @@ const getConstructionNavItems = (can: (p: any) => boolean) => [
   ...(can('construction_control:review_protocols') ? [
     { href: '/dashboard/construction-control/protocolos/plantillas', icon: BookOpen, label: 'Plantillas' },
   ] : []),
-  { href: '/dashboard/construction-control/mis-protocolos', icon: ClipboardList, label: 'Mis EDT' },
-  { href: '/dashboard/construction-control/revisar-protocolos', icon: ListChecks, label: 'Revisar EDT' },
+  { href: '/dashboard/construction-control/mis-protocolos', icon: ClipboardList, label: 'Mis Partidas' },
+  ...(can('construction_control:review_protocols') ? [
+    { href: '/dashboard/construction-control/revisar-protocolos', icon: ListChecks, label: 'Aprobar Partidas' },
+  ] : []),
 ];
 
 const getPurchasingNavItems = () => [

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { PageHeader } from '@/components/page-header';
+import { PageShell } from '@/components/page-shell';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { AlertCircle, BookOpen, FileCheck, ArrowRight, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -78,7 +78,7 @@ export default function NuevoProtocoloPage() {
           si: false, no: false, na: false,
         })),
       });
-      toast({ title: 'Protocolo creado', className: 'border-green-500' });
+      toast({ title: 'Protocolo creado', className: 'border-success' });
       router.push(`/dashboard/construction-control/protocolos/${protocolId}`);
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Error', description: e.message });
@@ -98,24 +98,23 @@ export default function NuevoProtocoloPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <PageHeader
-        title="Nuevo Protocolo"
-        description="Crea un protocolo de calidad para una actividad de obra."
-      />
-
+    <PageShell
+      title="Nuevo Protocolo"
+      description="Crea un protocolo de calidad para una actividad de obra."
+      className="max-w-2xl mx-auto"
+    >
       {step === 'select-template' && (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">Selecciona una plantilla como base o crea un protocolo en blanco:</p>
 
           {/* Opción en blanco */}
           <Card
-            className="rounded-[1.5rem] border-2 border-dashed border-slate-200 bg-slate-50 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+            className="rounded-[1.5rem] border-2 border-dashed bg-card cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
             onClick={() => handleSelectTemplate(null)}
           >
             <CardContent className="p-5 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-2xl bg-slate-200 flex items-center justify-center">
-                <FileCheck size={20} className="text-slate-500" />
+              <div className="w-10 h-10 rounded-2xl bg-muted flex items-center justify-center">
+                <FileCheck size={20} className="text-muted-foreground" />
               </div>
               <div>
                 <p className="font-bold text-sm">Protocolo en Blanco</p>
@@ -137,7 +136,7 @@ export default function NuevoProtocoloPage() {
                 {protocolTemplates.map(tmpl => (
                   <Card
                     key={tmpl.id}
-                    className="rounded-[1.5rem] border-none shadow-md bg-slate-50 cursor-pointer hover:shadow-lg hover:bg-primary/5 transition-all"
+                    className="rounded-[1.5rem] border-none shadow-md bg-card cursor-pointer hover:shadow-lg hover:bg-primary/5 transition-all"
                     onClick={() => handleSelectTemplate(tmpl)}
                   >
                     <CardContent className="p-5 flex items-center gap-4">
@@ -182,7 +181,7 @@ export default function NuevoProtocoloPage() {
             </div>
           )}
 
-          <Card className="rounded-[1.5rem] border-none shadow-lg bg-slate-50">
+          <Card className="rounded-[1.5rem] border-none shadow-lg bg-card">
             <CardContent className="p-6 space-y-5">
               <div className="space-y-1.5">
                 <Label htmlFor="title">Título del Protocolo *</Label>
@@ -260,6 +259,6 @@ export default function NuevoProtocoloPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

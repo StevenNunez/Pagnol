@@ -9,6 +9,7 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { mappers } from '../mappers';
 import type { MutationContext as Context } from './context';
 import { addToLedger, consumeFromLedger } from './stockLedger';
+import { WORK_ITEMS_SEED } from '@/lib/work-items-seed';
 
 // --- Tenant ---
 export async function addTenant({ tenantName, tenantId, adminName, adminEmail }: any, { user }: Context) {
@@ -741,10 +742,55 @@ export async function updateWorkItem(id: string, data: Partial<WorkItem>, { }: C
 }
 
 export async function deleteWorkItem(id: string, { }: Context) {
+    const [{ count: childCount }, { count: logCount }] = await Promise.all([
+        supabase.from('work_items').select('*', { count: 'exact', head: true }).eq('parent_id', id),
+        supabase.from('progress_logs').select('*', { count: 'exact', head: true }).eq('work_item_id', id),
+    ]);
+    if ((childCount || 0) > 0) {
+        throw new Error(`No se puede eliminar: tiene ${childCount} sub-partida(s). Elimina primero las sub-partidas.`);
+    }
+    if ((logCount || 0) > 0) {
+        throw new Error(`No se puede eliminar: tiene ${logCount} registro(s) de avance asociados.`);
+    }
+
     const { error } = await supabase
         .from('work_items')
         .delete()
         .eq('id', id);
+    if (error) throw error;
+}
+
+/**
+ * Siembra la estructura de obra de EJEMPLO (opt-in, botón en el estado vacío
+ * del EDT) — reemplaza el auto-seed silencioso que colisionaba entre tenants
+ * (usaba ids globales fijos '1'..'39', por lo que solo el primer tenant que
+ * sembraba tenía datos y los demás fallaban por RLS). Los ids se generan
+ * prefijados por tenant para no chocar nunca con otro tenant ni con el seed
+ * histórico ya sembrado (que usa ids cortos sin prefijo).
+ */
+export async function seedExampleWorkItems({ tenantId, user }: Context) {
+    if (!tenantId || !user) throw new Error('No autenticado o sin inquilino.');
+
+    const idMap = new Map<string, string>(
+        WORK_ITEMS_SEED.map(item => [item.id, `${tenantId}_${item.id}`])
+    );
+    const dataToInsert = WORK_ITEMS_SEED.map(item => ({
+        id: idMap.get(item.id),
+        project_id: tenantId,
+        name: item.name,
+        type: item.type,
+        parent_id: item.parentId ? idMap.get(item.parentId) : null,
+        path: item.path,
+        unit: item.unit,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        created_by: user.id,
+        tenant_id: tenantId,
+        progress: 0,
+        status: 'in-progress',
+    }));
+
+    const { error } = await supabase.from('work_items').upsert(dataToInsert, { onConflict: 'id' });
     if (error) throw error;
 }
 

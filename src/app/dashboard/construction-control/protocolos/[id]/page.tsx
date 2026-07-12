@@ -2,12 +2,11 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { PageHeader } from '@/components/page-header';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import {
   AlertCircle, CheckCircle2, XCircle, Clock, Save, Send, ArrowLeft,
-  Camera, Trash2, Pen, CheckSquare, ChevronDown, ChevronRight,
-  FileCheck, User, Shield, Star,
+  Trash2, Pen, CheckSquare, ChevronDown, ChevronRight,
+  FileCheck, User, Shield, Star, Lock,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,7 +43,6 @@ export default function ProtocolDetailPage() {
 
   // Local editable state (items)
   const [items, setItems] = useState<ProtocolItem[]>([]);
-  const [evidencePhotos] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -92,8 +90,8 @@ export default function ProtocolDetailPage() {
     if (!protocol) return;
     setSaving(true);
     try {
-      await saveProtocolDraft(protocol.id, { items, evidencePhotos, executorSignature });
-      toast({ title: 'Borrador guardado', className: 'border-green-500' });
+      await saveProtocolDraft(protocol.id, { items, evidencePhotos: [], executorSignature });
+      toast({ title: 'Borrador guardado', className: 'border-success' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Error', description: e.message });
     } finally {
@@ -154,11 +152,11 @@ export default function ProtocolDetailPage() {
     try {
       await submitProtocolForReview(protocol.id, {
         items,
-        evidencePhotos,
+        evidencePhotos: [],
         executorSignature,
         supervisorSignature: supervisorSignature ?? null,
       });
-      toast({ title: 'Enviado a revisión', className: 'border-green-500' });
+      toast({ title: 'Enviado a revisión', className: 'border-success' });
       router.push('/dashboard/construction-control/protocolos');
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Error', description: e.message });
@@ -184,7 +182,7 @@ export default function ProtocolDetailPage() {
         date: new Date().toISOString(),
       });
       setShowQMSig(false);
-      toast({ title: 'Protocolo aprobado', className: 'border-green-500' });
+      toast({ title: 'Protocolo aprobado', className: 'border-success' });
       router.push('/dashboard/construction-control/protocolos');
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Error', description: e.message });
@@ -229,11 +227,24 @@ export default function ProtocolDetailPage() {
     );
   }
 
+  // La lista (protocolos/page.tsx) ya oculta los borradores de otros usuarios a
+  // quien no revisa, pero esta página de detalle no tenía ningún chequeo — se
+  // podía editar/firmar el borrador de otra persona entrando por URL directa.
+  if (!canReview && protocol.createdBy !== user?.id) {
+    return (
+      <Alert variant="destructive">
+        <Lock className="h-4 w-4" />
+        <AlertTitle>Sin acceso</AlertTitle>
+        <AlertDescription>Este protocolo pertenece a otro usuario y no tienes permiso de revisor para verlo.</AlertDescription>
+      </Alert>
+    );
+  }
+
   const statusConfig = {
-    borrador: { label: 'Borrador', color: 'bg-slate-100 text-slate-700', icon: <FileCheck size={12} /> },
-    pendiente_revision: { label: 'En Revisión', color: 'bg-amber-100 text-amber-700', icon: <Clock size={12} /> },
-    aprobado: { label: 'Aprobado', color: 'bg-green-100 text-green-700', icon: <CheckCircle2 size={12} /> },
-    rechazado: { label: 'Rechazado', color: 'bg-red-100 text-red-700', icon: <XCircle size={12} /> },
+    borrador: { label: 'Borrador', color: 'bg-muted text-muted-foreground', icon: <FileCheck size={12} /> },
+    pendiente_revision: { label: 'En Revisión', color: 'bg-warning-subtle text-warning-subtle-foreground', icon: <Clock size={12} /> },
+    aprobado: { label: 'Aprobado', color: 'bg-success-subtle text-success-subtle-foreground', icon: <CheckCircle2 size={12} /> },
+    rechazado: { label: 'Rechazado', color: 'bg-destructive/10 text-destructive', icon: <XCircle size={12} /> },
   }[protocol.status];
 
   return (
@@ -269,7 +280,7 @@ export default function ProtocolDetailPage() {
 
       {/* Objetivo */}
       {protocol.objective && (
-        <Card className="rounded-[1.5rem] border-none shadow-md bg-slate-50">
+        <Card className="rounded-[1.5rem] border-none shadow-md bg-card">
           <CardContent className="p-5">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Objetivo</p>
             <p className="text-sm">{protocol.objective}</p>
@@ -279,7 +290,7 @@ export default function ProtocolDetailPage() {
 
       {/* Normativa */}
       {protocol.normativa.length > 0 && (
-        <Card className="rounded-[1.5rem] border-none shadow-md bg-slate-50">
+        <Card className="rounded-[1.5rem] border-none shadow-md bg-card">
           <CardContent className="p-5">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Normativa Aplicable</p>
             <div className="space-y-2">
@@ -296,7 +307,7 @@ export default function ProtocolDetailPage() {
 
       {/* Responsabilidades */}
       {protocol.responsibilities.length > 0 && (
-        <Card className="rounded-[1.5rem] border-none shadow-md bg-slate-50">
+        <Card className="rounded-[1.5rem] border-none shadow-md bg-card">
           <CardContent className="p-5">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Responsabilidades</p>
             <div className="space-y-2">
@@ -313,7 +324,7 @@ export default function ProtocolDetailPage() {
 
       {/* Checklist */}
       {items.length > 0 && (
-        <Card className="rounded-[1.5rem] border-none shadow-md bg-slate-50">
+        <Card className="rounded-[1.5rem] border-none shadow-md bg-card">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-black uppercase tracking-tight">
@@ -330,21 +341,21 @@ export default function ProtocolDetailPage() {
             {/* Header columns */}
             <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-5 pb-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
               <span>Elemento</span>
-              <span className="w-10 text-center text-green-600">SI</span>
-              <span className="w-10 text-center text-red-500">NO</span>
-              <span className="w-10 text-center text-slate-400">N/A</span>
+              <span className="w-10 text-center text-success">SI</span>
+              <span className="w-10 text-center text-destructive">NO</span>
+              <span className="w-10 text-center text-muted-foreground">N/A</span>
             </div>
             <Separator />
             <div className="divide-y">
               {items.map((item, index) => (
-                <div key={index} className={`px-5 py-3 ${!isReadOnly ? 'hover:bg-slate-100/50 transition-colors' : ''}`}>
+                <div key={index} className={`px-5 py-3 ${!isReadOnly ? 'hover:bg-muted/50 transition-colors' : ''}`}>
                   <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center">
                     <p className="text-sm">{item.element}</p>
                     {/* SI */}
                     <button
                       disabled={isReadOnly}
                       onClick={() => setItemAnswer(index, 'si')}
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${item.si ? 'bg-green-100 text-green-700 font-bold' : 'bg-slate-100 text-slate-400 hover:bg-green-50'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${item.si ? 'bg-success-subtle text-success-subtle-foreground font-bold' : 'bg-muted text-muted-foreground hover:bg-success-subtle'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
                     >
                       {item.si ? <CheckCircle2 size={18} /> : <span className="text-xs font-bold">SI</span>}
                     </button>
@@ -352,7 +363,7 @@ export default function ProtocolDetailPage() {
                     <button
                       disabled={isReadOnly}
                       onClick={() => setItemAnswer(index, 'no')}
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${item.no ? 'bg-red-100 text-red-700 font-bold' : 'bg-slate-100 text-slate-400 hover:bg-red-50'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${item.no ? 'bg-destructive/10 text-destructive font-bold' : 'bg-muted text-muted-foreground hover:bg-destructive/10'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
                     >
                       {item.no ? <XCircle size={18} /> : <span className="text-xs font-bold">NO</span>}
                     </button>
@@ -360,7 +371,7 @@ export default function ProtocolDetailPage() {
                     <button
                       disabled={isReadOnly}
                       onClick={() => setItemAnswer(index, 'na')}
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${item.na ? 'bg-slate-200 text-slate-700 font-bold' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${item.na ? 'bg-muted text-foreground font-bold' : 'bg-muted/60 text-muted-foreground hover:bg-muted'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
                     >
                       <span className="text-xs font-bold">N/A</span>
                     </button>
@@ -391,7 +402,7 @@ export default function ProtocolDetailPage() {
 
       {/* Firmas existentes (solo vista) */}
       {(protocol.executorSignature || protocol.supervisorSignature || protocol.qualityManagerSignature) && (
-        <Card className="rounded-[1.5rem] border-none shadow-md bg-slate-50">
+        <Card className="rounded-[1.5rem] border-none shadow-md bg-card">
           <CardContent className="p-5">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Firmas</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -418,16 +429,16 @@ export default function ProtocolDetailPage() {
 
       {/* Acciones — Modo Borrador */}
       {isDraft && (
-        <Card className="rounded-[1.5rem] border-none shadow-md bg-slate-50">
+        <Card className="rounded-[1.5rem] border-none shadow-md bg-card">
           <CardContent className="p-5 space-y-4">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Firma del Ejecutor</p>
 
             {executorSignature ? (
-              <div className="flex items-center gap-4 p-3 bg-green-50 rounded-xl border border-green-200">
-                <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+              <div className="flex items-center gap-4 p-3 bg-success-subtle rounded-xl border border-success/20">
+                <CheckCircle2 size={16} className="text-success shrink-0" />
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-green-800">{executorSignature.name}</p>
-                  <p className="text-xs text-green-600">Firmado el {format(new Date(executorSignature.date), 'dd/MM/yyyy HH:mm', { locale: es })}</p>
+                  <p className="text-sm font-semibold text-success-subtle-foreground">{executorSignature.name}</p>
+                  <p className="text-xs text-success">Firmado el {format(new Date(executorSignature.date), 'dd/MM/yyyy HH:mm', { locale: es })}</p>
                 </div>
                 <img src={executorSignature.signature} alt="Firma ejecutor" className="h-10 object-contain" />
                 <Button variant="ghost" size="sm" className="text-xs rounded-xl" onClick={() => setExecutorSignature(null)}>
@@ -447,11 +458,11 @@ export default function ProtocolDetailPage() {
             </div>
 
             {supervisorSignature ? (
-              <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-xl border border-blue-200">
-                <CheckCircle2 size={16} className="text-blue-600 shrink-0" />
+              <div className="flex items-center gap-4 p-3 bg-info-subtle rounded-xl border border-info/20">
+                <CheckCircle2 size={16} className="text-info shrink-0" />
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-blue-800">{supervisorSignature.name}</p>
-                  <p className="text-xs text-blue-600">Firmado</p>
+                  <p className="text-sm font-semibold text-info-subtle-foreground">{supervisorSignature.name}</p>
+                  <p className="text-xs text-info">Firmado</p>
                 </div>
                 <img src={supervisorSignature.signature} alt="Firma supervisor" className="h-10 object-contain" />
                 <Button variant="ghost" size="sm" className="text-xs rounded-xl" onClick={() => setSupervisorSignature(null)}>
@@ -484,22 +495,22 @@ export default function ProtocolDetailPage() {
 
       {/* Acciones — Modo Revisión (Encargado de Calidad) */}
       {isPending && canReview && (
-        <Card className="rounded-[1.5rem] border-none shadow-md bg-amber-50 border-amber-200">
+        <Card className="rounded-[1.5rem] border-none shadow-md bg-warning-subtle border border-warning/20">
           <CardContent className="p-5 space-y-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Revisión — Encargado de Calidad</p>
-            <p className="text-sm text-amber-800">
+            <p className="text-[10px] font-black uppercase tracking-widest text-warning-subtle-foreground">Revisión — Encargado de Calidad</p>
+            <p className="text-sm text-warning-subtle-foreground">
               Revisa los ítems completados y las firmas. Una vez conforme, aprueba o rechaza el protocolo.
             </p>
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                className="gap-2 rounded-xl flex-1 border-red-200 text-red-700 hover:bg-red-50"
+                className="gap-2 rounded-xl flex-1 border-destructive/30 text-destructive hover:bg-destructive/10"
                 onClick={() => setShowRejectDialog(true)}
               >
                 <XCircle size={14} /> Rechazar
               </Button>
               <Button
-                className="gap-2 rounded-xl flex-1 bg-green-600 hover:bg-green-700"
+                className="gap-2 rounded-xl flex-1 bg-success hover:bg-success/90 text-success-foreground"
                 onClick={() => setShowQMSig(true)}
               >
                 <CheckCircle2 size={14} /> Aprobar
@@ -553,7 +564,7 @@ export default function ProtocolDetailPage() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" className="rounded-xl" onClick={() => setShowQMSig(false)}>Cancelar</Button>
-            <Button className="rounded-xl bg-green-600 hover:bg-green-700" onClick={handleApprove}>
+            <Button className="rounded-xl bg-success hover:bg-success/90 text-success-foreground" onClick={handleApprove}>
               <CheckCircle2 size={14} className="mr-1" /> Aprobar Protocolo
             </Button>
           </DialogFooter>
@@ -582,7 +593,7 @@ export default function ProtocolDetailPage() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" className="rounded-xl" onClick={() => setShowRejectDialog(false)}>Cancelar</Button>
-            <Button className="rounded-xl bg-red-600 hover:bg-red-700" onClick={handleReject}>
+            <Button className="rounded-xl bg-destructive hover:bg-destructive/90" onClick={handleReject}>
               <XCircle size={14} className="mr-1" /> Confirmar Rechazo
             </Button>
           </DialogFooter>

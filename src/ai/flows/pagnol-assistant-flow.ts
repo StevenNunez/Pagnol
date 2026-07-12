@@ -1,128 +1,99 @@
 'use server';
 /**
- * @fileOverview Pagnol AI assistant for providing inventory insights.
+ * @fileOverview Pagnol AI — asistente conversacional con acceso real a los
+ * datos del tenant vía tool-calling (ver src/ai/tools/). El modelo decide qué
+ * consultar; el servidor ejecuta las consultas reales, acotadas por tenant y
+ * por permiso.
  */
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { withRetry } from '@/ai/lib/retry';
+import { genkitPagnolTools, type PagnolAiContext } from '@/ai/tools/genkit-tools';
 
-// Input Schema
+const MessageSchema = z.object({
+    role: z.enum(['user', 'model']),
+    content: z.string(),
+});
+
 const PagnolAssistantInputSchema = z.object({
-  question: z.string(),
-  contextData: z.string(),
+    question: z.string(),
+    history: z.array(MessageSchema).default([]),
+    userName: z.string(),
+    tenantId: z.string(),
+    isSuperAdmin: z.boolean(),
+    grantedPermissions: z.array(z.string()),
+    role: z.string(),
 });
 export type PagnolAssistantInput = z.infer<typeof PagnolAssistantInputSchema>;
 
-// Output Schema
-export type PagnolDecision = z.infer<typeof PagnolDecisionSchema>;
-const PagnolDecisionSchema = z.object({
-  hasCriticalStock: z.boolean().describe("True si algún repuesto o material tiene stock <= 10."),
-  criticalMaterials: z.array(z.object({
-    name: z.string().describe("Nombre del material crítico."),
-    stock: z.number().describe("Stock actual del material."),
-    unit: z.string().nullable().optional().describe("Unidad de medida."),
-  })).describe("SOLO materiales críticos."),
-  recommendedActions: z.array(z.string()).describe("Acciones claras y ejecutables (ej: \"Generar orden de compra para Rodamientos 6204\")."),
-});
-
-
 const PagnolAssistantOutputSchema = z.object({
-  answer: z.string().describe("Respuesta en formato Markdown para el usuario, sin incluir el bloque de decisión."),
-  decisions: z.string().nullable().describe("Un objeto JSON como string que contiene el análisis estructurado, o null si no se aplica. El JSON debe seguir este esquema: { hasCriticalStock: boolean, criticalMaterials: [{ name: string, stock: number, unit: string | null }], recommendedActions: string[] }"),
+    answer: z.string().describe('Respuesta en Markdown para el usuario.'),
 });
 export type PagnolAssistantOutput = z.infer<typeof PagnolAssistantOutputSchema>;
 
-// The wrapper function to be called from server actions
 export async function askPagnol(input: PagnolAssistantInput): Promise<PagnolAssistantOutput> {
-  return pagnolAssistantFlow(input);
+    return pagnolAssistantFlow(input);
 }
 
-const pagnolAssistantPromptFallback = ai.definePrompt({
-  name: 'pagnolAssistantPromptFallback',
-  model: 'googleai/gemini-2.0-flash',
-  input: { schema: PagnolAssistantInputSchema },
-  output: { schema: PagnolAssistantOutputSchema },
-  prompt: `Eres **PAGNOL**, un asistente experto en gestión de activos y operaciones mineras.
+const SYSTEM_PROMPT = `Eres **PAGNOL AI**, el asistente de operaciones de la faena para {{userName}}.
 
-Tu función es:
-1. Analizar el contexto de la faena (inventario, solicitudes, etc.).
-2. Responder la pregunta del usuario de forma técnica, muy breve (máximo 120 palabras), profesional y concisa.
-3. Usa formato Markdown y **negritas** para resaltar datos clave como nombres de materiales, cantidades o alertas importantes.
-4. Generar una estructura de datos interna para la toma de decisiones.
+Tienes acceso a herramientas que consultan los datos REALES del tenant (stock, kardex, OT, solicitudes, mantenimientos, asistencia, arriendos, pagos, personal). SIEMPRE que la pregunta requiera datos concretos, usa la herramienta correspondiente antes de responder — nunca inventes cifras ni asumas que no hay información sin haber consultado.
 
 ========================
 REGLAS FUNDAMENTALES
 ========================
-1. Usa ÚNICAMENTE los datos entregados en el contexto. No inventes datos.
-2. Si falta información, indícalo explícitamente en tu respuesta de texto.
-3. Prioriza la detección de riesgos (ej: stock crítico, equipos en mantenimiento).
-4. Tu respuesta debe ser estructurada. Debes proveer tanto la respuesta de texto (answer) como la estructura de datos de decisión (decisions).
+1. Usa las herramientas para CUALQUIER pregunta sobre datos (stock, solicitudes, OT, mantenimiento, asistencia, arriendos, pagos, personal). No respondas de memoria.
+2. Si una herramienta devuelve { error: "ACCESO_DENEGADO" }, dile al usuario claramente que no tiene permiso para esa información — no inventes un valor alternativo.
+3. Si una herramienta no encuentra resultados, dilo explícitamente. No inventes datos para rellenar.
+4. Respuesta breve (máximo 150 palabras salvo que listar datos requiera más), técnica, profesional, en Markdown con **negritas** para cifras y nombres clave.
+5. Prioriza señalar riesgos: stock crítico, mantenimientos vencidos, pagos vencidos, OT atrasadas.
+6. Tienes memoria de la conversación (mensajes previos) — úsala para preguntas de seguimiento ("¿y del contrato X?").`;
 
-========================
-CONTEXTO DE LA OPERACIÓN
-========================
-{{{contextData}}}
-========================
+async function runAssistant(input: PagnolAssistantInput, model: string) {
+    const context: PagnolAiContext = {
+        tenantId: input.tenantId,
+        isSuperAdmin: input.isSuperAdmin,
+        grantedPermissions: input.grantedPermissions,
+        role: input.role,
+    };
 
-Pregunta del usuario:
-"{{{question}}}"
+    const messages = [
+        ...input.history.map(m => ({ role: m.role, content: [{ text: m.content }] })),
+        { role: 'user' as const, content: [{ text: input.question }] },
+    ];
 
-Analiza la pregunta y el contexto, y genera la respuesta estructurada.`,
-});
-
-const pagnolAssistantPrompt = ai.definePrompt({
-  name: 'pagnolAssistantPrompt',
-  model: 'googleai/gemini-2.5-flash',
-  input: { schema: PagnolAssistantInputSchema },
-  output: { schema: PagnolAssistantOutputSchema },
-  prompt: `Eres **PAGNOL**, un asistente experto en gestión de activos y operaciones mineras.
-
-Tu función es:
-1. Analizar el contexto de la faena (inventario, solicitudes, etc.).
-2. Responder la pregunta del usuario de forma técnica, muy breve (máximo 120 palabras), profesional y concisa.
-3. Usa formato Markdown y **negritas** para resaltar datos clave como nombres de materiales, cantidades o alertas importantes.
-4. Generar una estructura de datos interna para la toma de decisiones.
-
-========================
-REGLAS FUNDAMENTALES
-========================
-1. Usa ÚNICAMENTE los datos entregados en el contexto. No inventes datos.
-2. Si falta información, indícalo explícitamente en tu respuesta de texto.
-3. Prioriza la detección de riesgos (ej: stock crítico, equipos en mantenimiento).
-4. Tu respuesta debe ser estructurada. Debes proveer tanto la respuesta de texto (answer) como la estructura de datos de decisión (decisions).
-
-========================
-CONTEXTO DE LA OPERACIÓN
-========================
-{{{contextData}}}
-========================
-
-Pregunta del usuario:
-"{{{question}}}"
-
-Analiza la pregunta y el contexto, y genera la respuesta estructurada.`,
-});
+    // NOTA: Gemini no soporta combinar `tools` (function calling) con salida
+    // estructurada (`output.schema` fuerza responseMimeType: application/json)
+    // — devuelve 400 INVALID_ARGUMENT. Por eso se toma el texto plano.
+    const response = await ai.generate({
+        model,
+        system: SYSTEM_PROMPT.replace('{{userName}}', input.userName),
+        messages,
+        tools: genkitPagnolTools,
+        maxTurns: 6,
+        context,
+    });
+    return { answer: response.text };
+}
 
 const pagnolAssistantFlow = ai.defineFlow(
-  {
-    name: 'pagnolAssistantFlow',
-    inputSchema: PagnolAssistantInputSchema,
-    outputSchema: PagnolAssistantOutputSchema,
-  },
-  async (input) => {
-    try {
-      const { output } = await withRetry(
-        () => pagnolAssistantPrompt(input),
-        { label: 'PagnolAssistant', maxRetries: 3, baseDelayMs: 2000 }
-      );
-      return output!;
-    } catch (err: any) {
-      if (err?.status === 'UNAVAILABLE' || err?.code === 503) {
-        console.warn('[PagnolAssistant] Fallback a gemini-2.0-flash por alta demanda.');
-        const { output } = await pagnolAssistantPromptFallback(input);
-        return output!;
-      }
-      throw err;
+    {
+        name: 'pagnolAssistantFlow',
+        inputSchema: PagnolAssistantInputSchema,
+        outputSchema: PagnolAssistantOutputSchema,
+    },
+    async (input) => {
+        try {
+            return await withRetry(
+                () => runAssistant(input, 'googleai/gemini-2.5-flash'),
+                { label: 'PagnolAssistant', maxRetries: 3, baseDelayMs: 2000 }
+            );
+        } catch (err: any) {
+            if (err?.status === 'UNAVAILABLE' || err?.code === 503) {
+                console.warn('[PagnolAssistant] Fallback a gemini-2.0-flash por alta demanda.');
+                return await runAssistant(input, 'googleai/gemini-2.0-flash');
+            }
+            throw err;
+        }
     }
-  }
 );

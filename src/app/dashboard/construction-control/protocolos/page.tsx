@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { PageHeader } from '@/components/page-header';
+import { PageShell } from '@/components/page-shell';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import {
   AlertCircle, Plus, FileCheck, Clock, CheckCircle2, XCircle,
   BookOpen, ChevronRight, Trash2, Search,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,10 +26,10 @@ import {
 import { useToast } from '@/modules/core/hooks/use-toast';
 
 const STATUS_CONFIG: Record<ProtocolStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  borrador: { label: 'Borrador', color: 'bg-slate-100 text-slate-700', icon: <FileCheck size={12} /> },
-  pendiente_revision: { label: 'En Revisión', color: 'bg-amber-100 text-amber-700', icon: <Clock size={12} /> },
-  aprobado: { label: 'Aprobado', color: 'bg-green-100 text-green-700', icon: <CheckCircle2 size={12} /> },
-  rechazado: { label: 'Rechazado', color: 'bg-red-100 text-red-700', icon: <XCircle size={12} /> },
+  borrador: { label: 'Borrador', color: 'bg-muted text-muted-foreground', icon: <FileCheck size={12} /> },
+  pendiente_revision: { label: 'En Revisión', color: 'bg-warning-subtle text-warning-subtle-foreground', icon: <Clock size={12} /> },
+  aprobado: { label: 'Aprobado', color: 'bg-success-subtle text-success-subtle-foreground', icon: <CheckCircle2 size={12} /> },
+  rechazado: { label: 'Rechazado', color: 'bg-destructive/10 text-destructive', icon: <XCircle size={12} /> },
 };
 
 export default function ProtocolosPage() {
@@ -74,7 +75,7 @@ export default function ProtocolosPage() {
   const handleDelete = async (protocol: Protocol) => {
     try {
       await deleteProtocol(protocol.id);
-      toast({ title: 'Protocolo eliminado', className: 'border-green-500' });
+      toast({ title: 'Protocolo eliminado', className: 'border-success' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Error', description: e.message });
     }
@@ -91,39 +92,37 @@ export default function ProtocolosPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <PageHeader
-        title="Protocolos de Calidad"
-        description="Gestión de protocolos de inicio y entrega de actividades."
-      />
-
-      {/* Acciones superiores */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por título, obra o actividad..."
-            className="pl-9 rounded-xl"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-2">
-          {canManageTemplates && (
-            <Link href="/dashboard/construction-control/protocolos/plantillas">
-              <Button variant="outline" className="gap-2 rounded-xl">
-                <BookOpen size={15} /> Plantillas
+    <PageShell
+      title="Protocolos de Calidad"
+      description="Gestión de protocolos de inicio y entrega de actividades."
+      toolbar={
+        <>
+          <div className="relative flex-1 w-full">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por título, obra o actividad..."
+              className="pl-9 rounded-xl"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {canManageTemplates && (
+              <Link href="/dashboard/construction-control/protocolos/plantillas">
+                <Button variant="outline" className="gap-2 rounded-xl">
+                  <BookOpen size={15} /> Plantillas
+                </Button>
+              </Link>
+            )}
+            <Link href="/dashboard/construction-control/protocolos/nuevo">
+              <Button className="gap-2 rounded-xl">
+                <Plus size={15} /> Nuevo Protocolo
               </Button>
             </Link>
-          )}
-          <Link href="/dashboard/construction-control/protocolos/nuevo">
-            <Button className="gap-2 rounded-xl">
-              <Plus size={15} /> Nuevo Protocolo
-            </Button>
-          </Link>
-        </div>
-      </div>
-
+          </div>
+        </>
+      }
+    >
       {/* Tabs por estado */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ProtocolStatus | 'todos')}>
         <TabsList className="rounded-xl h-auto flex-wrap">
@@ -134,34 +133,30 @@ export default function ProtocolosPage() {
             Borrador <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{counts.borrador}</Badge>
           </TabsTrigger>
           <TabsTrigger value="pendiente_revision" className="rounded-lg text-xs gap-1.5">
-            En Revisión <Badge className="text-[10px] h-4 px-1.5 bg-amber-500 text-white">{counts.pendiente_revision}</Badge>
+            En Revisión <Badge className="text-[10px] h-4 px-1.5 bg-warning text-warning-foreground">{counts.pendiente_revision}</Badge>
           </TabsTrigger>
           <TabsTrigger value="aprobado" className="rounded-lg text-xs gap-1.5">
-            Aprobados <Badge className="text-[10px] h-4 px-1.5 bg-green-500 text-white">{counts.aprobado}</Badge>
+            Aprobados <Badge className="text-[10px] h-4 px-1.5 bg-success text-success-foreground">{counts.aprobado}</Badge>
           </TabsTrigger>
           <TabsTrigger value="rechazado" className="rounded-lg text-xs gap-1.5">
-            Rechazados <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white">{counts.rechazado}</Badge>
+            Rechazados <Badge className="text-[10px] h-4 px-1.5 bg-destructive text-destructive-foreground">{counts.rechazado}</Badge>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-4">
           {filtered.length === 0 ? (
-            <Card className="rounded-[1.5rem] border-none shadow-lg bg-slate-50">
-              <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
-                <FileCheck size={40} className="text-muted-foreground/40" />
-                <div>
-                  <p className="font-semibold text-muted-foreground">Sin protocolos</p>
-                  <p className="text-sm text-muted-foreground/70 mt-1">
-                    {activeTab === 'todos' ? 'Crea tu primer protocolo de calidad.' : `No hay protocolos en estado "${STATUS_CONFIG[activeTab as ProtocolStatus]?.label ?? activeTab}".`}
-                  </p>
-                </div>
+            <EmptyState
+              icon={<FileCheck size={22} />}
+              title="Sin protocolos"
+              description={activeTab === 'todos' ? 'Crea tu primer protocolo de calidad.' : `No hay protocolos en estado "${STATUS_CONFIG[activeTab as ProtocolStatus]?.label ?? activeTab}".`}
+              action={
                 <Link href="/dashboard/construction-control/protocolos/nuevo">
-                  <Button className="gap-2 rounded-xl mt-2" size="sm">
+                  <Button className="gap-2 rounded-xl" size="sm">
                     <Plus size={14} /> Crear Protocolo
                   </Button>
                 </Link>
-              </CardContent>
-            </Card>
+              }
+            />
           ) : (
             <div className="grid gap-3">
               {filtered.map(protocol => {
@@ -171,10 +166,10 @@ export default function ProtocolosPage() {
                 return (
                   <Card
                     key={protocol.id}
-                    className={`rounded-[1.5rem] border-none shadow-md transition-shadow hover:shadow-lg ${isRejected ? 'bg-red-50 dark:bg-red-900/10' : 'bg-slate-50 dark:bg-slate-800/50'}`}
+                    className={`rounded-[1.5rem] border-none shadow-md transition-shadow hover:shadow-lg ${isRejected ? 'bg-destructive/10' : 'bg-card'}`}
                   >
                     <CardContent className="p-5 flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isRejected ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'}`}>
+                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isRejected ? 'bg-destructive/15 text-destructive' : 'bg-primary/10 text-primary'}`}>
                         <FileCheck size={20} />
                       </div>
 
@@ -193,7 +188,7 @@ export default function ProtocolosPage() {
                           {protocol.activityType && ` · ${protocol.activityType}`}
                         </p>
                         {isRejected && protocol.rejectionReason && (
-                          <p className="text-xs text-red-600 font-medium mt-1 line-clamp-1">
+                          <p className="text-xs text-destructive font-medium mt-1 line-clamp-1">
                             Motivo: {protocol.rejectionReason}
                           </p>
                         )}
@@ -207,7 +202,7 @@ export default function ProtocolosPage() {
                         {isDraft && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/60 hover:text-destructive hover:bg-destructive/10 rounded-xl">
                                 <Trash2 size={14} />
                               </Button>
                             </AlertDialogTrigger>
@@ -221,7 +216,7 @@ export default function ProtocolosPage() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
                                 <AlertDialogAction
-                                  className="rounded-xl bg-red-600 hover:bg-red-700"
+                                  className="rounded-xl bg-destructive hover:bg-destructive/90"
                                   onClick={() => handleDelete(protocol)}
                                 >
                                   Eliminar
@@ -244,6 +239,6 @@ export default function ProtocolosPage() {
           )}
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

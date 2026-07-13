@@ -76,3 +76,6 @@ scripts/
 .CLAUDE.md 
 .CHANGELOG.md 
 PENDIENTES.md
+
+.vercel
+.env*

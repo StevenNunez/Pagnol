@@ -94,9 +94,11 @@ export async function addPurchaseRequest(
  * Marca solicitudes de suministro (target='client') como enviadas al cliente.
  * Se llama después de que el correo con el PDF salió efectivamente: pasa las
  * filas a 'ordered' (en camino, esperando entrega del cliente) y registra
- * sent_to_client_at. Solo aplica sobre solicitudes ya autorizadas por el ADC.
+ * sent_to_client_at/sent_to_client_email. Solo aplica sobre solicitudes ya
+ * autorizadas por el ADC. También sirve para REENVIAR: no exige que la fila
+ * todavía esté en 'to_send' — sobrescribe fecha y destinatario cada vez.
  */
-export async function markClientRequestsSent(requestIds: string[], context: Context) {
+export async function markClientRequestsSent(requestIds: string[], sentToEmail: string, context: Context) {
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
   if (!requestIds.length) return;
@@ -104,7 +106,7 @@ export async function markClientRequestsSent(requestIds: string[], context: Cont
   const now = new Date().toISOString();
   const { data: updated, error } = await supabase
     .from('purchase_requests')
-    .update({ status: 'ordered', sent_to_client_at: now, ordered_at: now })
+    .update({ status: 'ordered', sent_to_client_at: now, sent_to_client_email: sentToEmail, ordered_at: now })
     .in('id', requestIds)
     .eq('tenant_id', tenantId)
     .eq('request_target', 'client')
@@ -147,6 +149,20 @@ export async function updatePurchaseRequestStatus(
   if (fetchErr || !currentReq) throw new Error("Solicitud no encontrada.");
   if (currentReq.tenant_id !== tenantId) throw new Error("No tienes permiso.");
 
+  // Aprobar/rechazar requiere el permiso de gestión de compras — antes
+  // cualquier usuario autenticado del tenant podía llamar esta mutación
+  // directamente sin pasar por la UI que sí lo verificaba.
+  if ((status === 'approved' || status === 'rejected') && !userCan(user, 'purchase_requests:approve')) {
+    throw new Error('No tienes permiso para aprobar o rechazar solicitudes de compra.');
+  }
+
+  // Gate ADC: la cola de Abastecimiento ya oculta las pendientes sin
+  // autorización, pero esta mutación (llamada también desde /pagnol/solicitudes-compra)
+  // no lo validaba en servidor — se podía aprobar una compra que el ADC nunca autorizó.
+  if (status === 'approved' && !currentReq.adc_authorized_at && !userCan(user, 'purchase_requests:authorize')) {
+    throw new Error('Esta solicitud aún no ha sido autorizada por el ADC.');
+  }
+
   const now = new Date().toISOString();
   const updateData: any = {
     status: status,
@@ -188,6 +204,7 @@ export async function receivePurchaseRequest(
 
   const { data: request, error: reqErr } = await supabase.from('purchase_requests').select('*').eq('id', requestId).single();
   if (reqErr || !request) throw new Error("Solicitud no encontrada");
+  if (request.tenant_id !== tenantId) throw new Error("No tienes permiso.");
 
   const requestedQuantity = request.quantity;
   const now = new Date().toISOString();
@@ -196,6 +213,41 @@ export async function receivePurchaseRequest(
   // los arrendados), porque al cierre del contrato hay que devolverlos y esa
   // cuenta es imposible si comparten contador con los activos propios.
   const isClientSupply = request.request_target === 'client';
+  const isPartial = receivedQuantity < requestedQuantity;
+
+  // Transición atómica PRIMERO, antes de tocar stock: solo avanza si la
+  // solicitud sigue en un estado "recibible". Si el botón se clickea dos
+  // veces (doble click, reintento tras error de red/columna faltante), el
+  // segundo intento encuentra 0 filas afectadas y aborta ANTES de crear
+  // material o sumar stock — así ya no se puede duplicar por reintento
+  // (esto es justo lo que pasó con VALAR-SCL-0001: 2 clicks, 2 veces stock
+  // sumado, porque el UPDATE final fallaba en silencio y el botón seguía ahí).
+  const claimUpdate: Record<string, any> = isPartial
+    ? {
+        quantity: requestedQuantity - receivedQuantity,
+        // El saldo de un suministro del cliente sigue "enviado, esperando
+        // entrega" (ordered); el de una compra vuelve a gestión (approved).
+        status: isClientSupply ? 'ordered' : 'approved',
+        lot_id: null,
+        notes: `Recepción parcial de ${receivedQuantity}. Pendientes: ${requestedQuantity - receivedQuantity}. ${request.notes || ''}`.trim(),
+      }
+    : {
+        status: 'received',
+        received_at: now,
+        quantity: receivedQuantity,
+        original_quantity: request.original_quantity || requestedQuantity,
+      };
+
+  const { data: claimed, error: claimErr } = await supabase
+    .from('purchase_requests')
+    .update(claimUpdate)
+    .eq('id', requestId)
+    .in('status', ['approved', 'batched', 'ordered'])
+    .select('id');
+  if (claimErr) throw claimErr;
+  if (!claimed || claimed.length === 0) {
+    throw new Error('Esta solicitud ya fue recibida o cambió de estado — recarga la página.');
+  }
 
   // Handle stock and material logic
   let materialId = existingMaterialId;
@@ -235,22 +287,14 @@ export async function receivePurchaseRequest(
     if (newMatErr) throw newMatErr;
     materialId = newMat.id;
   } else {
-    await supabase.from('materials').update({ stock: (existingMat.stock || 0) + receivedQuantity }).eq('id', materialId);
+    const { error: stockErr } = await supabase.from('materials').update({ stock: (existingMat.stock || 0) + receivedQuantity }).eq('id', materialId);
+    if (stockErr) throw stockErr;
   }
 
-  // Handle partial or full receipt
-  if (receivedQuantity < requestedQuantity) {
-    const remainingQuantity = requestedQuantity - receivedQuantity;
-    await supabase.from('purchase_requests').update({
-      quantity: remainingQuantity,
-      // El saldo de un suministro del cliente sigue "enviado, esperando
-      // entrega" (ordered); el de una compra vuelve a gestión (approved).
-      status: isClientSupply ? 'ordered' : 'approved',
-      lot_id: null,
-      notes: `Recepción parcial de ${receivedQuantity}. Pendientes: ${remainingQuantity}. ${request.notes || ''}`.trim(),
-    }).eq('id', requestId);
-
-    // Create a new received request for history
+  // Handle partial or full receipt: la fila original ya quedó actualizada
+  // arriba (transición atómica) — en el caso parcial falta crear la fila de
+  // historial "recibido" para esta porción.
+  if (isPartial) {
     const newPrqId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'PRQ');
     await insertPurchaseRequestRow({
       internal_code: newPrqId,
@@ -262,6 +306,10 @@ export async function receivePurchaseRequest(
       notes: `Parte de la solicitud original ${request.internal_code || requestId}.`,
       tenant_id: tenantId,
       requester_name: request.requester_name,
+      supervisor_id: request.supervisor_id,
+      contract_id: request.contract_id,
+      contract_name: request.contract_name,
+      area: request.area,
       unit: request.unit,
       category: request.category,
       ...(isClientSupply ? {
@@ -271,13 +319,6 @@ export async function receivePurchaseRequest(
         sent_to_client_at: request.sent_to_client_at,
       } : {}),
     }, isClientSupply ? ['request_target', 'client_id'] : []);
-  } else {
-    await supabase.from('purchase_requests').update({
-      status: 'received',
-      received_at: now,
-      quantity: receivedQuantity,
-      original_quantity: request.original_quantity || requestedQuantity,
-    }).eq('id', requestId);
   }
 
   // El stock recibido entra al desglose del contrato de la solicitud de compra.
@@ -290,7 +331,7 @@ export async function receivePurchaseRequest(
 
   // Stock Movement
   const movId = await nextInternalCode(tenantId, 'MOV');
-  await supabase.from('stock_movements').insert({
+  const { error: movErr } = await supabase.from('stock_movements').insert({
     id: movId,
     material_id: materialId,
     material_name: request.material_name,
@@ -308,6 +349,7 @@ export async function receivePurchaseRequest(
     contract_name: request.contract_name || null,
     tenant_id: tenantId,
   });
+  if (movErr) throw movErr;
 }
 
 export async function deletePurchaseRequest(requestId: string, { tenantId }: Context) {

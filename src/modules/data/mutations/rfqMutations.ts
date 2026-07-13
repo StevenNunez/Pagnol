@@ -176,11 +176,12 @@ export async function awardQuote(rfqId: string, quoteId: string, { user, tenantI
 
     // Marca las solicitudes incluidas como ordenadas.
     for (const reqId of (rfq.request_ids || [])) {
-        await supabase
+        const { error: reqUpdErr } = await supabase
             .from('purchase_requests')
             .update({ status: 'ordered', purchase_order_id: order.id, ordered_at: new Date().toISOString() })
             .eq('id', reqId)
             .eq('tenant_id', tenantId);
+        if (reqUpdErr) throw reqUpdErr;
     }
 
     // Cierra la RFQ como adjudicada.

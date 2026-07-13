@@ -2,7 +2,7 @@
 
 import { supabase } from '@/modules/core/lib/supabase';
 import { authHeaders } from '@/modules/core/lib/auth-header';
-import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
+import { ROLES as ROLES_DEFAULT, Permission, PLANS, userCan } from '@/modules/core/lib/permissions';
 import { nanoid } from 'nanoid';
 import type { UserRole, Tenant, WorkItem, ProgressLog, PaymentState, SupplierDocument, Supplier } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
@@ -423,10 +423,76 @@ export async function updateMaterial(materialId: string, data: any, { user, tena
     }
 }
 
-export async function deleteMaterial(materialId: string, { }: Context) {
+/**
+ * Eliminación de un activo — DISTINTA de la "baja" (RETIRE en la UI, que solo
+ * cambia `status` a 'Para Baja'). Reservada a `materials:delete` (hoy solo
+ * administrador/soporte-pagnol vía ADMINISTRADOR_PERMISSIONS).
+ *
+ * Es un borrado SUAVE (`deleted_at`/`deleted_by`/`deletion_reason`), no un
+ * DELETE real: `stock_movements.material_id` tiene FK `ON DELETE CASCADE`
+ * hacia `materials`, así que borrar la fila de verdad se llevaría por delante
+ * TODO el kardex histórico del activo (entradas/salidas/ajustes previos), no
+ * solo el evento de eliminación — lo comprobé en la base real. Con soft-delete
+ * el activo desaparece de toda la app (useSupabaseCollection con
+ * `softDelete: true` lo filtra, mismo patrón que `profiles`/`deleteUser`) pero
+ * la fila y su kardex completo quedan intactos para auditoría.
+ *
+ * Antes de "eliminar": bloquea si hay componentes hijos, devoluciones/retiros
+ * pendientes que la referencian, o si viene de un arriendo (ese ciclo de vida
+ * lo maneja el módulo Arriendos).
+ */
+export async function deleteMaterial(materialId: string, reason: string, { user, tenantId }: Context) {
+    if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+    if (!userCan(user, 'materials:delete')) throw new Error('No tienes permiso para eliminar activos.');
+    if (!reason?.trim()) throw new Error('Debes indicar el motivo de la eliminación.');
+
+    const { data: material, error: matErr } = await supabase.from('materials').select('*').eq('id', materialId).single();
+    if (matErr || !material) throw new Error('Activo no encontrado.');
+    if (material.tenant_id !== tenantId) throw new Error('No tienes permiso.');
+    if (material.deleted_at) throw new Error('Este activo ya fue eliminado.');
+
+    if (material.rental_asset_id) {
+        throw new Error('Este activo proviene de un contrato de arriendo — gestiona su baja desde el módulo Arriendos, no aquí.');
+    }
+
+    const [{ count: childCount }, { count: pendingReturns }, { data: pendingRequests }] = await Promise.all([
+        supabase.from('materials').select('*', { count: 'exact', head: true }).eq('parent_id', materialId).is('deleted_at', null),
+        supabase.from('return_requests').select('*', { count: 'exact', head: true }).eq('material_id', materialId).eq('status', 'pending'),
+        supabase.from('material_requests').select('id, items').eq('tenant_id', tenantId).in('status', ['pending', 'approved']),
+    ]);
+    if ((childCount || 0) > 0) {
+        throw new Error(`No se puede eliminar: tiene ${childCount} componente(s) asociado(s). Elimina o reasigna primero los sub-ítems.`);
+    }
+    if ((pendingReturns || 0) > 0) {
+        throw new Error('No se puede eliminar: tiene devoluciones pendientes de este material. Resuélvelas primero.');
+    }
+    const referencedInRequest = (pendingRequests || []).some((r: any) =>
+        Array.isArray(r.items) && r.items.some((it: any) => it.materialId === materialId)
+    );
+    if (referencedInRequest) {
+        throw new Error('No se puede eliminar: hay solicitudes de retiro pendientes o aprobadas que incluyen este material.');
+    }
+
+    const now = new Date().toISOString();
+    const movId = await nextInternalCode(tenantId, 'MOV');
+    const { error: movErr } = await supabase.from('stock_movements').insert({
+        id: movId,
+        material_id: materialId,
+        material_name: material.name,
+        quantity_change: -(material.stock || 0),
+        new_stock: 0,
+        type: 'deletion',
+        date: now,
+        justification: reason.trim(),
+        user_id: user.id,
+        user_name: user.name,
+        tenant_id: tenantId,
+    });
+    if (movErr) throw movErr;
+
     const { error } = await supabase
         .from('materials')
-        .delete()
+        .update({ deleted_at: now, deleted_by: user.id, deletion_reason: reason.trim() })
         .eq('id', materialId);
     if (error) throw error;
 }

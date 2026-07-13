@@ -184,7 +184,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         return () => { supabase.removeChannel(channel); };
     }, [tenantId, refreshVersion]);
 
-    const materialsData = useSupabaseCollection('materials', { tenantId, mapper: mappers.materials });
+    const materialsData = useSupabaseCollection('materials', { tenantId, mapper: mappers.materials, softDelete: true });
     const toolsData = useSupabaseCollection('tools', { tenantId });
     const usersData = useSupabaseCollection('profiles', { tenantId, mapper: mappers.profiles, softDelete: true });
     const requestsData = useSupabaseCollection('material_requests', { tenantId, mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });

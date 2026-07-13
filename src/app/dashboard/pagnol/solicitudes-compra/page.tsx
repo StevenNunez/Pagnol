@@ -1,35 +1,19 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/page-shell";
+import { DataTable, DataTableColumn } from "@/components/data-table";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import { PurchaseRequest, PurchaseRequestStatus, Material, User } from "@/modules/core/lib/data";
+import { PurchaseRequest, Material, User } from "@/modules/core/lib/data";
 import {
   Check,
-  Clock,
-  X,
   PackageCheck,
   Loader2,
-  Box,
-  FileText,
   Edit,
   AlertCircle,
   Search,
@@ -37,14 +21,12 @@ import {
   ChevronsUpDown,
   ShoppingCart,
   Building2,
+  FileDown,
+  ShieldQuestion,
+  ArrowRight,
+  Truck,
+  X,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { EditPurchaseRequestForm } from "@/components/operations/edit-purchase-request-form";
 import {
@@ -59,6 +41,9 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import * as ExcelJS from "exceljs";
+import { resolvePurchaseStage, STAGE_META, PurchaseStage } from "@/components/supervisor-purchases/purchase-pipeline";
+import { PurchaseStageBadge, STAGE_ICON } from "@/components/supervisor-purchases/purchase-stage-badge";
 
 interface ReceiveRequestDialogProps {
   request: PurchaseRequest | null;
@@ -100,11 +85,11 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
       setIsSubmitting(false);
     }
   };
-  
+
   const unarchivedMaterials = useMemo(() => materials.filter(m => !m.archived), [materials]);
 
   if (!request) return null;
-  
+
   const selectedMaterialName = selectedMaterialId
       ? materials.find(m => m.id === selectedMaterialId)?.name
       : "Asignar a material existente...";
@@ -112,7 +97,7 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent onInteractOutside={(e) => { e.preventDefault(); }}>
+      <DialogContent className="rounded-[1.5rem]" onInteractOutside={(e) => { e.preventDefault(); }}>
         <DialogHeader>
           <DialogTitle>Registrar Recepción de Material</DialogTitle>
           <DialogDescription>
@@ -128,6 +113,7 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
               value={receivedQuantity}
               onChange={(e) => setReceivedQuantity(e.target.value)}
               placeholder="Ingresa la cantidad que llegó..."
+              className="rounded-xl"
             />
             <p className="text-xs text-muted-foreground">
               Puedes ajustar la cantidad si es diferente a la aprobada ({request.quantity}).
@@ -147,7 +133,7 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
                 <Button
                   variant="outline"
                   role="combobox"
-                  className="w-full justify-between"
+                  className="w-full justify-between rounded-xl"
                 >
                   <span className="truncate">{selectedMaterialName}</span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -185,8 +171,8 @@ function ReceiveRequestDialog({ request, isOpen, onClose, onConfirm, materials }
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancelar</Button>
-          <Button onClick={handleConfirmClick} disabled={isSubmitting || !receivedQuantity}>
-            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PackageCheck className="mr-2 h-4 w-4" />}
+          <Button className="rounded-xl gap-2" onClick={handleConfirmClick} disabled={isSubmitting || !receivedQuantity}>
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
             Confirmar Recepción
           </Button>
         </DialogFooter>
@@ -202,36 +188,23 @@ const getDate = (date: Date | string | null | undefined): Date | null => {
 
 const formatDate = (date: Date | string | null | undefined): string => {
   const jsDate = getDate(date);
-  if (!jsDate) return "N/A";
+  if (!jsDate) return "—";
   return jsDate.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
-const getStatusBadge = (status: PurchaseRequestStatus) => {
-  switch (status) {
-    case "pending":
-      return <Badge variant="outline" className="gap-1 border-warning/30 bg-warning-subtle text-warning-subtle-foreground"><Clock className="h-3 w-3" />Pendiente</Badge>;
-    case "approved":
-      return <Badge variant="outline" className="gap-1 border-success/30 bg-success-subtle text-success-subtle-foreground"><Check className="h-3 w-3" />Aprobado</Badge>;
-    case "rejected":
-      return <Badge variant="destructive" className="gap-1"><X className="h-3 w-3" />Rechazado</Badge>;
-    case "received":
-      return <Badge variant="outline" className="gap-1 border-info/30 bg-info-subtle text-info-subtle-foreground"><PackageCheck className="h-3 w-3" />Recibido</Badge>;
-    case "batched":
-      return <Badge variant="default" className="bg-purple-600 text-white"><Box className="mr-1 h-3 w-3" />En Lote</Badge>;
-    case "ordered":
-      return <Badge variant="default" className="bg-cyan-600 text-white"><FileText className="mr-1 h-3 w-3" />Orden Generada</Badge>;
-    default:
-      return <Badge variant="outline">Desconocido</Badge>;
-  }
-};
+type DisplayFilter = "all" | "waiting_adc" | "managing" | "approved" | "ordered" | "received" | "rejected";
 
 export default function AdminPurchaseRequestsPage() {
-  const { purchaseRequests, users, receivePurchaseRequest, isLoading, materials } = useAppState();
+  const { purchaseRequests, users, receivePurchaseRequest, isLoading, materials, can } = useAppState();
   const { toast } = useToast();
-  const [statusFilter, setStatusFilter] = useState<"all" | PurchaseRequestStatus>("all");
+  const router = useRouter();
+  const [statusFilter, setStatusFilter] = useState<DisplayFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [applicantFilter, setApplicantFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
   const itemsPerPage = 10;
   const [editingRequest, setEditingRequest] = useState<PurchaseRequest | null>(null);
   const [receivingRequest, setReceivingRequest] = useState<PurchaseRequest | null>(null);
@@ -241,37 +214,65 @@ export default function AdminPurchaseRequestsPage() {
     [users]
   );
 
+  const getRequesterName = (req: PurchaseRequest) =>
+    req.requesterName || supervisorMap.get(req.supervisorId) || "N/A";
+
+  const kpis = useMemo(() => {
+    const all = purchaseRequests || [];
+    const stages = all.map((r) => resolvePurchaseStage(r));
+    const count = (pred: (s: PurchaseStage) => boolean) => stages.filter(pred).length;
+    return {
+      total: all.length,
+      waitingAdc: count((s) => s === "waiting_adc"),
+      managing: count((s) => s === "in_review" || s === "to_send"),
+      approved: count((s) => s === "approved"),
+      ordered: count((s) => s === "ordered"),
+      received: count((s) => s === "received"),
+      rejected: count((s) => s === "rejected"),
+    };
+  }, [purchaseRequests]);
+
+  const KPI_DEFS: { key: DisplayFilter; label: string; count: number; icon: any; iconCls: string }[] = [
+    { key: "all", label: "Todas", count: kpis.total, icon: ShoppingCart, iconCls: "bg-primary/10 text-primary" },
+    { key: "waiting_adc", label: "Esperando ADC", count: kpis.waitingAdc, icon: ShieldQuestion, iconCls: kpis.waitingAdc > 0 ? "bg-warning-subtle text-warning" : "bg-muted text-muted-foreground" },
+    { key: "managing", label: "Por Gestionar", count: kpis.managing, icon: Search, iconCls: kpis.managing > 0 ? "bg-info-subtle text-info" : "bg-muted text-muted-foreground" },
+    { key: "approved", label: "Aprobadas", count: kpis.approved, icon: Check, iconCls: "bg-success-subtle text-success-subtle-foreground" },
+    { key: "ordered", label: "Ordenadas", count: kpis.ordered, icon: Truck, iconCls: "bg-info-subtle text-info" },
+    { key: "received", label: "Recibidas", count: kpis.received, icon: PackageCheck, iconCls: "bg-muted text-muted-foreground" },
+    { key: "rejected", label: "Rechazadas", count: kpis.rejected, icon: X, iconCls: kpis.rejected > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground" },
+  ];
+
   const filteredRequests = useMemo(() => {
     let requests = purchaseRequests || [];
     if (statusFilter !== "all") {
-      requests = requests.filter((req: PurchaseRequest) => req.status === statusFilter);
+      requests = requests.filter((req: PurchaseRequest) => {
+        const stage = resolvePurchaseStage(req);
+        return statusFilter === "managing" ? (stage === "in_review" || stage === "to_send") : stage === statusFilter;
+      });
     }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       requests = requests.filter((req: PurchaseRequest) =>
-        String(req.materialName ?? "").toLowerCase().includes(term)
+        String(req.materialName ?? "").toLowerCase().includes(term) ||
+        String(req.internalCode ?? "").toLowerCase().includes(term)
       );
     }
     if (applicantFilter) {
       const term = applicantFilter.toLowerCase();
-      requests = requests.filter((req: PurchaseRequest) =>
-        String(supervisorMap.get(req.supervisorId) ?? "").toLowerCase().includes(term)
-      );
+      requests = requests.filter((req: PurchaseRequest) => getRequesterName(req).toLowerCase().includes(term));
+    }
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      requests = requests.filter((req) => { const d = getDate(req.createdAt); return d ? d >= from : false; });
+    }
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      requests = requests.filter((req) => { const d = getDate(req.createdAt); return d ? d <= to : false; });
     }
     return requests;
-  }, [purchaseRequests, statusFilter, searchTerm, applicantFilter, supervisorMap]);
-
-  const statusCounts = useMemo(() => {
-    const all = purchaseRequests || [];
-    return {
-      pending: all.filter(r => r.status === "pending").length,
-      approved: all.filter(r => r.status === "approved").length,
-      ordered: all.filter(r => r.status === "ordered").length,
-      batched: all.filter(r => r.status === "batched").length,
-      received: all.filter(r => r.status === "received").length,
-      rejected: all.filter(r => r.status === "rejected").length,
-    };
-  }, [purchaseRequests]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseRequests, statusFilter, searchTerm, applicantFilter, dateFrom, dateTo, supervisorMap]);
 
   const paginatedRequests = filteredRequests.slice(
     (page - 1) * itemsPerPage,
@@ -283,6 +284,7 @@ export default function AdminPurchaseRequestsPage() {
     try {
       await receivePurchaseRequest(id, quantity, existingMaterialId);
       setReceivingRequest(null);
+      toast({ title: "Recepción registrada", description: "El stock se actualizó correctamente." });
     } catch (error) {
       toast({
         variant: "destructive",
@@ -299,18 +301,185 @@ export default function AdminPurchaseRequestsPage() {
     return req.notes || null;
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Solicitudes de Compra");
+      const header = { font: { bold: true }, fill: { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFEFEFEF" } } };
+      ws.columns = [
+        { header: "Código", key: "code", width: 16 },
+        { header: "Material", key: "material", width: 34 },
+        { header: "Cantidad", key: "qty", width: 12 },
+        { header: "Unidad", key: "unit", width: 10 },
+        { header: "Justificación", key: "just", width: 40 },
+        { header: "Solicitante", key: "req", width: 22 },
+        { header: "Contrato", key: "contract", width: 26 },
+        { header: "Estado", key: "status", width: 18 },
+        { header: "Fecha solicitud", key: "created", width: 16 },
+        { header: "Fecha recepción", key: "received", width: 16 },
+      ];
+      ws.getRow(1).eachCell((c) => Object.assign(c, header));
+      for (const req of filteredRequests) {
+        ws.addRow({
+          code: req.internalCode || req.id.slice(0, 8).toUpperCase(),
+          material: req.materialName,
+          qty: req.quantity,
+          unit: req.unit,
+          just: req.justification || "",
+          req: getRequesterName(req),
+          contract: req.contractName || "—",
+          status: STAGE_META[resolvePurchaseStage(req)].label,
+          created: formatDate(req.createdAt),
+          received: req.receivedAt ? formatDate(req.receivedAt) : "—",
+        });
+      }
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `solicitudes-compra-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const columns: DataTableColumn<PurchaseRequest>[] = [
+    {
+      key: "code",
+      header: "Código",
+      cell: (req) => <span className="font-mono text-xs font-bold text-muted-foreground">{req.internalCode || req.id.slice(0, 8).toUpperCase()}</span>,
+    },
+    {
+      key: "material",
+      header: "Material",
+      className: "min-w-[220px]",
+      cell: (req) => (
+        <div className="space-y-1.5">
+          <p className="font-medium whitespace-pre-wrap break-words">{String(req.materialName ?? "")}</p>
+          {req.requestTarget === "client" && (
+            <Badge variant="outline" className="gap-1 border-info/40 bg-info-subtle text-info-subtle-foreground text-[9px] font-black uppercase tracking-widest w-fit">
+              <Building2 className="h-3 w-3" /> Cliente{req.clientName ? `: ${req.clientName}` : ""}
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "qty",
+      header: "Cantidad",
+      cell: (req) => {
+        const tooltip = getChangeTooltip(req);
+        return (
+          <div className="flex items-center gap-2">
+            <span>{req.quantity} {req.unit}</span>
+            {tooltip && (
+              <span title={tooltip}>
+                <AlertCircle className="h-4 w-4 text-warning shrink-0" />
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "justification",
+      header: "Justificación",
+      className: "min-w-[220px] whitespace-pre-wrap break-words text-sm text-muted-foreground",
+      cell: (req) => String(req.justification ?? "N/A"),
+    },
+    { key: "requester", header: "Solicitante", cell: (req) => getRequesterName(req) },
+    { key: "created", header: "Solicitud", className: "text-sm", cell: (req) => formatDate(req.createdAt) },
+    { key: "received", header: "Recepción", className: "text-sm", cell: (req) => formatDate(req.receivedAt) },
+    { key: "status", header: "Estado", cell: (req) => <PurchaseStageBadge stage={resolvePurchaseStage(req)} /> },
+    {
+      key: "action",
+      header: "Acción",
+      headerClassName: "text-right",
+      className: "text-right",
+      cell: (req) => {
+        const stage = resolvePurchaseStage(req);
+        if (stage === "waiting_adc") {
+          return <span className="text-xs text-muted-foreground">Esperando autorización ADC</span>;
+        }
+        if (stage === "to_send") {
+          return <span className="text-xs text-muted-foreground">El supervisor debe enviarla al cliente</span>;
+        }
+        if (stage === "in_review") {
+          if (!can("purchase_requests:approve")) {
+            return <span className="text-xs text-muted-foreground">Pendiente de gestión por Abastecimiento</span>;
+          }
+          return (
+            <Button size="sm" variant="outline" className="rounded-xl" onClick={() => setEditingRequest(req)}>
+              <Edit className="mr-2 h-4 w-4" /> Gestionar
+            </Button>
+          );
+        }
+        if (stage === "approved" || stage === "ordered") {
+          return (
+            <Button size="sm" className="rounded-xl gap-2" onClick={() => setReceivingRequest(req)}>
+              <PackageCheck className="h-4 w-4" /> Recibir
+            </Button>
+          );
+        }
+        return <span className="text-muted-foreground">—</span>;
+      },
+    },
+  ];
 
   return (
     <PageShell
       title="Solicitudes de Compra"
       description="Revisa, gestiona y registra el ingreso de materiales aprobados al pañol."
+      toolbar={
+        <>
+          <div className="flex flex-col sm:flex-row gap-3 flex-1">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Material o código..."
+                className="pl-9 rounded-xl h-10"
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+              />
+            </div>
+            <div className="relative flex-1 min-w-[180px]">
+              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Solicitante..."
+                className="pl-9 rounded-xl h-10"
+                value={applicantFilter}
+                onChange={(e) => { setApplicantFilter(e.target.value); setPage(1); }}
+              />
+            </div>
+            <Input
+              type="date"
+              className="rounded-xl h-10 w-full sm:w-[150px]"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+            />
+            <Input
+              type="date"
+              className="rounded-xl h-10 w-full sm:w-[150px]"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+            />
+          </div>
+          <Button
+            onClick={handleExport}
+            disabled={isExporting || filteredRequests.length === 0}
+            className="rounded-[1.5rem] shadow-lg shadow-primary/10 hover:scale-105 active:scale-95 shrink-0"
+          >
+            {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
+            Exportar Excel
+          </Button>
+        </>
+      }
     >
       {editingRequest && (
         <EditPurchaseRequestForm
@@ -328,220 +497,92 @@ export default function AdminPurchaseRequestsPage() {
         materials={materials}
       />
 
-      {/* Resumen de estados */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {[
-          { label: "Pendientes", count: statusCounts.pending, color: "text-yellow-600 dark:text-yellow-400" },
-          { label: "Aprobados", count: statusCounts.approved, color: "text-green-600 dark:text-green-400" },
-          { label: "En Lote", count: statusCounts.batched, color: "text-purple-600 dark:text-purple-400" },
-          { label: "Con Orden", count: statusCounts.ordered, color: "text-cyan-600 dark:text-cyan-400" },
-          { label: "Recibidos", count: statusCounts.received, color: "text-blue-600 dark:text-blue-400" },
-          { label: "Rechazados", count: statusCounts.rejected, color: "text-red-600 dark:text-red-400" },
-        ].map(({ label, count, color }) => (
-          <Card key={label} className="text-center py-3 px-2 shadow-sm">
-            <p className={`text-2xl font-bold ${color}`}>{count}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-          </Card>
+      {/* KPIs clickeables — filtran la tabla al hacer click */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+        {KPI_DEFS.map((k) => (
+          <button key={k.key} onClick={() => { setStatusFilter(k.key); setPage(1); }} className="text-left">
+            <Card className={cn(
+              "p-4 rounded-[1.5rem] border-none shadow-sm hover:shadow-lg transition-all h-full",
+              statusFilter === k.key && "ring-2 ring-primary",
+            )}>
+              <div className={cn("inline-flex p-2 rounded-xl mb-3", k.iconCls)}>
+                <k.icon size={16} />
+              </div>
+              <p className="text-2xl font-black font-outfit text-foreground">{k.count}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">{k.label}</p>
+            </Card>
+          </button>
         ))}
       </div>
 
-      <Card className="border-l-4 border-l-primary shadow-sm">
-        <CardHeader>
-          <CardTitle>Historial de Solicitudes</CardTitle>
-          <CardDescription>
+      {/* Banner: solicitudes esperando al ADC (si el usuario puede autorizar) */}
+      {kpis.waitingAdc > 0 && can("purchase_requests:authorize") && (
+        <button
+          onClick={() => router.push("/dashboard/authorizations")}
+          className="w-full flex items-center gap-4 p-4 rounded-2xl border border-warning/30 bg-warning-subtle hover:shadow-md transition-all group text-left"
+        >
+          <div className="p-2.5 rounded-xl bg-warning/15 text-warning shrink-0"><ShieldQuestion size={18} /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-black uppercase tracking-tight text-warning-subtle-foreground">
+              {kpis.waitingAdc} solicitud{kpis.waitingAdc > 1 ? "es" : ""} esperando al ADC
+            </p>
+            <p className="text-[11px] text-muted-foreground font-medium">Aún no autorizadas por el Administrador de Contrato — no puedes gestionarlas todavía.</p>
+          </div>
+          <ArrowRight size={16} className="text-warning shrink-0 group-hover:translate-x-1 transition-transform" />
+        </button>
+      )}
+
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-bold">Historial de Solicitudes</h2>
+          <p className="text-sm text-muted-foreground">
             {filteredRequests.length} solicitud{filteredRequests.length !== 1 ? "es" : ""}
             {filteredRequests.length !== (purchaseRequests || []).length && ` filtradas de ${(purchaseRequests || []).length} en total`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-grow">
-                <Label htmlFor="search-material">Buscar por material</Label>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="search-material"
-                    type="search"
-                    placeholder="Nombre del material..."
-                    className="pl-8"
-                    value={searchTerm}
-                    onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-                  />
-                </div>
-              </div>
-              <div className="flex-grow">
-                <Label htmlFor="applicant-filter">Filtrar por solicitante</Label>
-                <div className="relative">
-                  <UserIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="applicant-filter"
-                    type="search"
-                    placeholder="Nombre del solicitante..."
-                    className="pl-8"
-                    value={applicantFilter}
-                    onChange={(e) => { setApplicantFilter(e.target.value); setPage(1); }}
-                  />
-                </div>
-              </div>
-              <div className="w-full sm:w-[180px]">
-                <Label htmlFor="status-filter">Estado</Label>
-                <Select
-                  value={statusFilter}
-                  onValueChange={(value) => {
-                    setStatusFilter(value as "all" | PurchaseRequestStatus);
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger id="status-filter">
-                    <SelectValue placeholder="Todos" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="pending">Pendiente</SelectItem>
-                    <SelectItem value="approved">Aprobado</SelectItem>
-                    <SelectItem value="rejected">Rechazado</SelectItem>
-                    <SelectItem value="received">Recibido</SelectItem>
-                    <SelectItem value="batched">En Lote</SelectItem>
-                    <SelectItem value="ordered">Orden Generada</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+          </p>
+        </div>
 
-            <div className="relative w-full overflow-x-auto rounded-md border">
-              <div className="min-w-[1100px]">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-card">
-                    <TableRow>
-                      <TableHead className="min-w-[220px]">Material</TableHead>
-                      <TableHead className="min-w-[120px]">Cantidad</TableHead>
-                      <TableHead className="min-w-[260px]">Justificación</TableHead>
-                      <TableHead className="min-w-[140px]">Solicitante</TableHead>
-                      <TableHead className="min-w-[130px]">Solicitud</TableHead>
-                      <TableHead className="min-w-[130px]">Recepción</TableHead>
-                      <TableHead className="min-w-[140px]">Estado</TableHead>
-                      <TableHead className="min-w-[160px] text-right">Acción</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedRequests.length > 0 ? (
-                      paginatedRequests.map((req: PurchaseRequest) => {
-                        const supervisor = String(supervisorMap.get(req.supervisorId) ?? "N/A");
-                        const changeTooltip = getChangeTooltip(req);
-                        return (
-                          <TableRow key={req.id} className="hover:bg-muted/50">
-                            <TableCell className="font-medium whitespace-pre-wrap break-words">
-                              {String(req.materialName ?? "")}
-                              {req.requestTarget === 'client' && (
-                                <Badge variant="outline" className="ml-2 gap-1 border-info/40 bg-info-subtle text-info-subtle-foreground text-[9px] font-black uppercase tracking-widest align-middle">
-                                  <Building2 className="h-3 w-3" /> Cliente{req.clientName ? `: ${req.clientName}` : ''}
-                                </Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <span>{req.quantity} {req.unit}</span>
-                                {changeTooltip && (
-                                  <span title={changeTooltip}>
-                                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-                              {String(req.justification ?? "N/A")}
-                            </TableCell>
-                            <TableCell>{supervisor}</TableCell>
-                            <TableCell className="text-sm">{formatDate(req.createdAt)}</TableCell>
-                            <TableCell className="text-sm">
-                              {req.receivedAt ? formatDate(req.receivedAt) : <span className="text-muted-foreground">—</span>}
-                            </TableCell>
-                            <TableCell>{getStatusBadge(req.status)}</TableCell>
-                            <TableCell className="text-right">
-                              {/* Suministros del cliente: Abastecimiento NO gestiona — el
-                                  flujo es ADC autoriza → el supervisor envía el correo.
-                                  Aquí solo se registra la recepción cuando llega. */}
-                              {req.status === "pending" && req.requestTarget === 'client' && (
-                                <span className="text-xs text-muted-foreground">
-                                  {req.adcAuthorizedAt ? 'El supervisor debe enviarla al cliente' : 'Esperando autorización ADC'}
-                                </span>
-                              )}
-                              {req.status === "pending" && req.requestTarget !== 'client' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setEditingRequest(req)}
-                                >
-                                  <Edit className="mr-2 h-4 w-4" /> Gestionar
-                                </Button>
-                              )}
-                              {["approved", "batched", "ordered"].includes(req.status) && (
-                                <Button
-                                  size="sm"
-                                  className="bg-blue-600 hover:bg-blue-700"
-                                  onClick={() => setReceivingRequest(req)}
-                                >
-                                  <PackageCheck className="mr-2 h-4 w-4" /> Recibir
-                                </Button>
-                              )}
-                              {req.status === "received" && (
-                                <span className="text-xs text-green-600 font-medium">✓ Ingresado</span>
-                              )}
-                              {req.status === "rejected" && (
-                                <span className="text-xs text-red-500 font-medium">✗ Rechazada</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={8} className="h-40 text-center">
-                          <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                            <ShoppingCart className="h-10 w-10 opacity-30" />
-                            <p className="text-sm">
-                              {searchTerm || applicantFilter || statusFilter !== "all"
-                                ? "No hay solicitudes para los filtros aplicados."
-                                : "Aún no hay solicitudes de compra registradas."}
-                            </p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
+        <DataTable
+          columns={columns}
+          data={paginatedRequests}
+          rowKey={(r) => r.id}
+          isLoading={isLoading}
+          minWidth="1100px"
+          empty={{
+            icon: <ShoppingCart className="h-8 w-8" />,
+            title: searchTerm || applicantFilter || statusFilter !== "all" || dateFrom || dateTo
+              ? "No hay solicitudes para los filtros aplicados."
+              : "Aún no hay solicitudes de compra registradas.",
+          }}
+        />
 
-            {totalPages > 1 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <p className="text-sm text-muted-foreground">
-                  Mostrando {(page - 1) * itemsPerPage + 1}–{Math.min(page * itemsPerPage, filteredRequests.length)} de {filteredRequests.length}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page === 1}
-                    onClick={() => setPage((prev) => prev - 1)}
-                  >
-                    Anterior
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page === totalPages}
-                    onClick={() => setPage((prev) => prev + 1)}
-                  >
-                    Siguiente
-                  </Button>
-                </div>
-              </div>
-            )}
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              Mostrando {(page - 1) * itemsPerPage + 1}–{Math.min(page * itemsPerPage, filteredRequests.length)} de {filteredRequests.length}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                disabled={page === 1}
+                onClick={() => setPage((prev) => prev - 1)}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                disabled={page === totalPages}
+                onClick={() => setPage((prev) => prev + 1)}
+              >
+                Siguiente
+              </Button>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </PageShell>
   );
 }

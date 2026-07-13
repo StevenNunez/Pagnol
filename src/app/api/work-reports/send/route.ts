@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { isEmailConfigured, sendEmail } from '@/modules/core/lib/email';
+import { renderEmailLayout } from '@/modules/core/lib/emailLayout';
 import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 async function verifySession(req: NextRequest) {
@@ -38,16 +39,17 @@ export async function POST(request: NextRequest) {
 
     const content = Buffer.from(String(pdfBase64).replace(/^data:application\/pdf;base64,/, ''), 'base64');
 
+    const bodyHtml = `
+          <p style="margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:3px;color:#94a3b8;text-transform:uppercase;">Informe de terreno</p>
+          <h2 style="margin:0 0 20px;font-size:22px;font-weight:900;color:#0f172a;">${reportCode || ''}</h2>
+          <p style="margin:0;font-size:15px;color:#475569;line-height:1.7;">${message || 'Se adjunta informe de terreno generado desde Pagnol.'}</p>
+    `;
+
     await sendEmail({
       fromName: 'PAGNOL - Informes de Terreno',
       to: recipients.join(','),
       subject: subject || `Informe de terreno ${reportCode || ''}`.trim(),
-      html: `
-        <div style="font-family:Arial,sans-serif;color:#1f2937">
-          <h2 style="margin:0 0 12px">Informe de terreno ${reportCode || ''}</h2>
-          <p>${message || 'Se adjunta informe de terreno generado desde Pagnol.'}</p>
-        </div>
-      `,
+      html: renderEmailLayout({ eyebrow: 'Informes de Terreno', bodyHtml }),
       attachments: [{
         filename: filename || `informe-terreno-${reportCode || 'reporte'}.pdf`,
         content,

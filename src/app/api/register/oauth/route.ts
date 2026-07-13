@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
-import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
+import { sendWelcomeEmail } from '@/modules/core/lib/welcomeEmail';
 
 export async function POST(request: Request) {
   try {
@@ -88,6 +88,7 @@ export async function POST(request: Request) {
       adminName,
       adminEmail: user.email!,
       tenantName,
+      viaGoogle: true,
     }).catch(err => console.error('[OAuthRegister] Welcome email failed:', err?.message));
 
     return NextResponse.json({ success: true });
@@ -96,57 +97,4 @@ export async function POST(request: Request) {
     console.error('[OAuthRegister]', err);
     return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
-}
-
-async function sendWelcomeEmail({ adminName, adminEmail, tenantName }: {
-  adminName: string;
-  adminEmail: string;
-  tenantName: string;
-}) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.pagnol.cl';
-
-  if (!isEmailConfigured()) return;
-
-  const firstName = adminName.split(' ')[0];
-  const year = new Date().getFullYear();
-
-  await sendEmail({
-    to: adminEmail,
-    subject: `¡Bienvenido a Pagnol, ${firstName}! Tu organización está lista`,
-    html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;">
-<tr><td align="center"><table style="max-width:560px;width:100%;">
-  <tr><td style="background:#0f172a;border-radius:20px 20px 0 0;padding:32px 40px 24px;text-align:center;">
-    <p style="margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:4px;color:#f97316;text-transform:uppercase;">Sistema de Gestión Operativa</p>
-    <h1 style="margin:0;font-size:30px;font-weight:900;color:#fff;text-transform:uppercase;">PAGNOL</h1>
-    <div style="width:36px;height:3px;background:#f97316;margin:12px auto 0;border-radius:2px;"></div>
-  </td></tr>
-  <tr><td style="background:#fff;padding:40px 40px 32px;">
-    <h2 style="margin:0 0 16px;font-size:24px;font-weight:900;color:#0f172a;">
-      ¡Hola, ${firstName}!<br/><span style="color:#f97316;">${tenantName}</span> ya está en Pagnol
-    </h2>
-    <p style="font-size:15px;color:#475569;line-height:1.7;">
-      Registraste tu empresa con tu cuenta de Google. Ahora eres el <strong>Administrador</strong> y tienes acceso completo a la plataforma.
-    </p>
-    <p style="font-size:13px;color:#64748b;margin-top:16px;">
-      Puedes seguir iniciando sesión con el botón <strong>"Continuar con Google"</strong> en la página de login.
-    </p>
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
-      <tr><td align="center">
-        <a href="${appUrl}/dashboard" style="display:inline-block;background:#f97316;color:#fff;text-decoration:none;padding:18px 44px;border-radius:14px;font-size:13px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;">
-          Ir a mi Panel
-        </a>
-      </td></tr>
-    </table>
-  </td></tr>
-  <tr><td style="background:#f8fafc;border-radius:0 0 20px 20px;border-top:1px solid #e2e8f0;padding:20px 40px;text-align:center;">
-    <p style="margin:0;font-size:10px;color:#cbd5e1;text-transform:uppercase;font-weight:800;letter-spacing:2px;">
-      © ${year} TeoLabs — contacto@pagnol.cl
-    </p>
-  </td></tr>
-</table></td></tr>
-</table>
-</body></html>`,
-  });
 }

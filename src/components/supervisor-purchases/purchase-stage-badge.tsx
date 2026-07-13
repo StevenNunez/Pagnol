@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { ShieldQuestion, Search, CheckCircle2, Truck, PackageCheck, X, Mail } from 'lucide-react';
 import { PurchaseStage, STAGE_META } from './purchase-pipeline';
 
-const STAGE_ICON: Record<PurchaseStage, any> = {
+export const STAGE_ICON: Record<PurchaseStage, any> = {
     waiting_adc: ShieldQuestion,
     in_review: Search,
     to_send: Mail,

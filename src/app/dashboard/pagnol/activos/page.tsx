@@ -74,7 +74,7 @@ import { Loader2, ChevronsUpDown, Check, Package, PackagePlus, CalendarIcon } fr
 
 type Asset = Material; // Alias para compatibilidad con el nuevo diseño
 type AssetStatus = 'Disponible' | 'En Mantenimiento' | 'Para Baja' | 'Extraviado' | 'En Uso' | 'Agotado' | 'Stock Crítico' | 'Archivado';
-type ModalType = 'ADD' | 'EDIT' | 'MAINTENANCE' | 'RETIRE';
+type ModalType = 'ADD' | 'EDIT' | 'MAINTENANCE' | 'RETIRE' | 'DELETE';
 
 // Tipos de uso canónicos — deben calzar con el constraint
 // materials_usage_type_check de Supabase (los legacy Retornable/Permanente
@@ -165,6 +165,8 @@ export default function ActivosPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<ModalType>('ADD');
   const [selectedAsset, setSelectedAsset] = useState<Partial<Asset>>({});
+  const [deleteReason, setDeleteReason] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [visibleCount, setVisibleCount] = useState(24);
   const ITEMS_PER_LOAD = 24;
@@ -605,6 +607,27 @@ export default function ActivosPage() {
     setModalType('RETIRE');
     setSelectedAsset(asset);
     setIsModalOpen(true);
+  };
+
+  const openDeleteModal = (asset: Asset) => {
+    setModalType('DELETE');
+    setSelectedAsset(asset);
+    setDeleteReason('');
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteAsset = async () => {
+    if (!selectedAsset.id) return;
+    setIsDeleting(true);
+    try {
+      await deleteMaterial(selectedAsset.id, deleteReason);
+      toast({ title: 'Activo eliminado', description: `${selectedAsset.name} se eliminó definitivamente del sistema.` });
+      setIsModalOpen(false);
+    } catch (e: any) {
+      toast({ title: 'No se pudo eliminar', description: e.message, variant: 'destructive' });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleSaveAsset = async (data: FormData) => {
@@ -1210,6 +1233,7 @@ export default function ActivosPage() {
                                         <Button onClick={() => openMaintenanceModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Mantenimiento <Calendar size={14} /></Button>
                                       )}
                                       {canManageCatalog && <Button onClick={() => openRetireModal(asset)} variant="destructive" className="w-full justify-between bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-[1.5rem] h-12 px-6 border-none shadow-sm">Solicitar Baja <Trash2 size={14} /></Button>}
+                                      {can('materials:delete') && <Button onClick={() => openDeleteModal(asset)} variant="destructive" className="w-full justify-between rounded-[1.5rem] h-12 px-6 shadow-sm">Eliminar Definitivamente <Trash2 size={14} /></Button>}
                                     </div>
                                   </div>
                                 </div>
@@ -1269,15 +1293,53 @@ export default function ActivosPage() {
               <DialogHeader className="p-6 sm:p-10 industrial-gradient text-white flex flex-row justify-between items-center shrink-0 relative">
                 <div>
                   <DialogTitle className="text-3xl font-black tracking-tighter uppercase leading-none text-white font-outfit">
-                    {modalType === 'ADD' ? 'Registro de Activo' : modalType === 'EDIT' ? 'Edición de Ficha' : modalType === 'MAINTENANCE' ? 'Control de Mantenimiento' : 'Solicitud de Baja'}
+                    {modalType === 'ADD' ? 'Registro de Activo'
+                      : modalType === 'EDIT' ? 'Edición de Ficha'
+                      : modalType === 'MAINTENANCE' ? 'Control de Mantenimiento'
+                      : modalType === 'DELETE' ? 'Eliminar Activo'
+                      : 'Solicitud de Baja'}
                   </DialogTitle>
                   <DialogDescription className="text-white/40 text-[11px] font-black uppercase tracking-[0.2em] mt-2">
-                    PAGNOL IMS CORE SYSTEM | FAENA NORTE
+                    {modalType === 'ADD'
+                      ? 'Completa la ficha para sumarlo al inventario'
+                      : `${selectedAsset.internalCode || ''}${selectedAsset.name ? ` · ${selectedAsset.name}` : ''}`}
                   </DialogDescription>
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => setIsModalOpen(false)} className="p-3 bg-white/5 rounded-2xl text-white/40 hover:text-white hover:bg-white/10 transition-all absolute top-10 right-10"><X size={24} /></Button>
               </DialogHeader>
-              {modalType === 'RETIRE' ? (
+              {modalType === 'DELETE' ? (
+                <div className="py-10 px-10 space-y-8">
+                  <div className="text-center space-y-4">
+                    <div className="w-24 h-24 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto shadow-xl">
+                      <Trash2 size={48} />
+                    </div>
+                    <div>
+                      <h5 className="text-2xl font-black text-foreground uppercase tracking-tight">¿Eliminar definitivamente?</h5>
+                      <p className="text-muted-foreground font-medium mt-2">
+                        Esta acción borra <b>{selectedAsset.name}</b> del sistema — a diferencia de "Solicitar Baja", no se puede deshacer.
+                        Queda un registro en el kardex con tu nombre y el motivo, para auditoría.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Motivo de la eliminación <span className="text-destructive">*</span></Label>
+                    <Textarea
+                      value={deleteReason}
+                      onChange={(e) => setDeleteReason(e.target.value)}
+                      placeholder="Ej: Duplicado por error, dado de baja físicamente y retirado de faena, etc."
+                      className="rounded-2xl resize-none h-24"
+                      disabled={isDeleting}
+                    />
+                  </div>
+                  <DialogFooter className="p-0 pt-4 border-t flex flex-row justify-between items-center shrink-0 bg-card">
+                    <Button onClick={() => setIsModalOpen(false)} variant="ghost" disabled={isDeleting} className="px-8 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground">Cancelar</Button>
+                    <Button onClick={handleDeleteAsset} disabled={isDeleting || !deleteReason.trim()} className="px-10 py-6 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-destructive hover:bg-destructive/90 text-destructive-foreground shadow-xl shadow-destructive/20 transition-all transform hover:scale-105 gap-2" variant="destructive">
+                      {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      Eliminar Definitivamente
+                    </Button>
+                  </DialogFooter>
+                </div>
+              ) : modalType === 'RETIRE' ? (
                 <div className="text-center py-10 px-10 space-y-8">
                   <div className="w-24 h-24 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto shadow-xl">
                     <Trash2 size={48} />

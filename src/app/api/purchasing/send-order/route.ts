@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { isEmailConfigured, sendEmail } from '@/modules/core/lib/email';
+import { renderEmailLayout } from '@/modules/core/lib/emailLayout';
 import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 async function verifySession(req: NextRequest) {
@@ -50,39 +51,46 @@ export async function POST(request: NextRequest) {
     const company = esc(companyName) || 'Pagnol';
     const label = esc(docLabel) || 'Solicitud de cotización';
 
-    // Encabezado: logo del tenant si existe, si no su nombre.
-    const headerHtml = companyLogoUrl
-      ? `<img src="${esc(companyLogoUrl)}" alt="${company}" style="max-height:56px;max-width:220px;margin-bottom:8px" />`
-      : `<div style="font-size:20px;font-weight:700;color:#111827;margin-bottom:4px">${company}</div>`;
+    // "De parte de" el tenant: logo si existe, si no su nombre — dentro de la
+    // misma tarjeta Pagnol, en vez de reemplazar el header de marca.
+    const senderCompanyHtml = companyLogoUrl
+      ? `<img src="${esc(companyLogoUrl)}" alt="${company}" style="max-height:40px;max-width:200px;margin-bottom:16px" />`
+      : `<p style="margin:0 0 16px;font-size:15px;font-weight:800;color:#0f172a;">${company}</p>`;
 
     // Bloque de contacto: a quién responder (el reply-to apunta al mismo correo).
     const contactRows = [
-      senderName ? `<div style="font-weight:600;color:#111827">${esc(senderName)}${senderRole ? ` · <span style="font-weight:400;color:#6b7280">${esc(senderRole)}</span>` : ''}</div>` : '',
-      senderEmail ? `<div>✉️ <a href="mailto:${esc(senderEmail)}" style="color:#ea580c;text-decoration:none">${esc(senderEmail)}</a></div>` : '',
+      senderName ? `<div style="font-weight:600;color:#0f172a">${esc(senderName)}${senderRole ? ` · <span style="font-weight:400;color:#64748b">${esc(senderRole)}</span>` : ''}</div>` : '',
+      senderEmail ? `<div>✉️ <a href="mailto:${esc(senderEmail)}" style="color:#f97316;text-decoration:none">${esc(senderEmail)}</a></div>` : '',
       senderPhone ? `<div>📞 ${esc(senderPhone)}</div>` : '',
     ].filter(Boolean).join('');
     const contactHtml = contactRows
-      ? `<div style="margin-top:20px;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px">
-           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:6px">Para responder, contacta a</div>
-           ${contactRows}
-         </div>`
+      ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+           <tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+             <p style="margin:0 0 6px;font-size:9px;font-weight:800;letter-spacing:2px;color:#94a3b8;text-transform:uppercase;">Para responder, contacta a</p>
+             ${contactRows}
+           </td></tr>
+         </table>`
       : '';
+
+    const bodyHtml = `
+          <p style="margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:3px;color:#94a3b8;text-transform:uppercase;">${label}</p>
+          ${senderCompanyHtml}
+          <h2 style="margin:0 0 16px;font-size:20px;font-weight:900;color:#0f172a;">${label} ${esc(orderCode)}</h2>
+          <p style="margin:0 0 8px;font-size:15px;color:#475569;line-height:1.6;">${esc(message) || 'Estimado proveedor, adjuntamos nuestra solicitud. Quedamos atentos a su respuesta.'}</p>
+          <p style="margin:0;color:#94a3b8;font-size:13px;">Encontrará el detalle en el PDF adjunto.</p>
+          ${contactHtml}
+    `;
 
     await sendEmail({
       fromName: 'PAGNOL - Abastecimiento',
       replyTo: senderEmail || undefined,
       to: recipients.join(','),
       subject: subject || `${label} ${orderCode || ''}`.trim(),
-      html: `
-        <div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;max-width:560px">
-          ${headerHtml}
-          <h2 style="margin:8px 0 12px;font-size:18px;color:#111827">${label} ${esc(orderCode)}</h2>
-          <p style="line-height:1.5">${esc(message) || 'Estimado proveedor, adjuntamos nuestra solicitud. Quedamos atentos a su respuesta.'}</p>
-          <p style="color:#6b7280;font-size:13px">Encontrará el detalle en el PDF adjunto.</p>
-          ${contactHtml}
-          <p style="color:#9ca3af;font-size:11px;margin-top:20px">Enviado por ${company} a través de Pagnol.</p>
-        </div>
-      `,
+      html: renderEmailLayout({
+        eyebrow: 'Abastecimiento',
+        bodyHtml,
+        footerNote: `Enviado por ${company} a través de Pagnol.`,
+      }),
       attachments: [{
         filename: filename || `cotizacion-${orderCode || 'oc'}.pdf`,
         content,

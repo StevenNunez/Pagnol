@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendEmail, isEmailConfigured } from '@/modules/core/lib/email';
+import { renderEmailLayout } from '@/modules/core/lib/emailLayout';
 import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 export async function POST(request: Request) {
@@ -26,28 +27,10 @@ export async function POST(request: Request) {
             no_se: 'No lo sabe aún',
         };
 
-        const html = `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
-<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:40px 16px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+        const bodyHtml = `
+              <p style="margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:3px;color:#94a3b8;text-transform:uppercase;">Nueva solicitud</p>
+              <h2 style="margin:0 0 24px;font-size:22px;font-weight:900;color:#0f172a;">🔌 Integración ERP</h2>
 
-          <!-- Header -->
-          <tr>
-            <td style="background-color:#0f172a;border-radius:20px 20px 0 0;padding:28px 40px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:10px;font-weight:800;letter-spacing:4px;color:#f97316;text-transform:uppercase;">Nueva Solicitud</p>
-              <h1 style="margin:0;font-size:22px;font-weight:900;color:#ffffff;text-transform:uppercase;letter-spacing:-0.5px;">🔌 Integración ERP</h1>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="background-color:#ffffff;padding:36px 40px 32px;">
-
-              <!-- Contact info -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:14px;padding:20px 24px;margin-bottom:28px;">
                 <tr>
                   <td>
@@ -63,7 +46,6 @@ export async function POST(request: Request) {
                 </tr>
               </table>
 
-              <!-- ERP Details -->
               <p style="margin:0 0 10px;font-size:9px;font-weight:800;letter-spacing:2px;color:#94a3b8;text-transform:uppercase;">Detalles de integración</p>
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
                 <tr>
@@ -81,24 +63,13 @@ export async function POST(request: Request) {
               <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6;">
                 Este prospecto llegó desde la página <strong>/pricing</strong> de Pagnol.
               </p>
-            </td>
-          </tr>
+        `;
 
-          <!-- Footer -->
-          <tr>
-            <td style="background-color:#f8fafc;border-radius:0 0 20px 20px;border-top:1px solid #e2e8f0;padding:20px 40px;text-align:center;">
-              <p style="margin:0;font-size:10px;font-weight:800;letter-spacing:2px;color:#cbd5e1;text-transform:uppercase;">
-                PAGNOL — TeoLabs · ${new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' })}
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+        const html = renderEmailLayout({
+            eyebrow: 'Nueva Solicitud',
+            bodyHtml,
+            footerNote: `Recibido el ${new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' })}`,
+        });
 
         await sendEmail({
             to: 'contacto@pagnol.cl',

@@ -384,6 +384,7 @@ export interface PurchaseRequest {
   clientId?: string | null;
   clientName?: string | null;
   sentToClientAt?: Date | string | null;
+  sentToClientEmail?: string | null;
 }
 
 // Códigos de marcas de asistencia (estándar industria minera)

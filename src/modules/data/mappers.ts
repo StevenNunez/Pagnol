@@ -536,6 +536,7 @@ export const mappers = {
         clientId: item.client_id || null,
         clientName: item.client_name || null,
         sentToClientAt: item.sent_to_client_at || null,
+        sentToClientEmail: item.sent_to_client_email || null,
     }),
     return_requests: (item: any): ReturnRequest => ({
         id: item.id,

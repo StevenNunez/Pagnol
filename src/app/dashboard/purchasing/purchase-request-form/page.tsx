@@ -287,7 +287,9 @@ export default function PurchaseRequestFormPage() {
 
   const openSendToClient = (items: PurchaseRequest[]) => {
     const client = items[0]?.clientId ? clientMap.get(items[0].clientId) : undefined;
-    setSendTo(client?.contactEmail || '');
+    // Si ya se había enviado antes, precarga el destinatario usado la última
+    // vez (así se puede corregir un typo) en vez del correo genérico del cliente.
+    setSendTo(items[0]?.sentToClientEmail || client?.contactEmail || '');
     setSendMessage('');
     setSendingItems(items);
   };
@@ -340,7 +342,7 @@ export default function PurchaseRequestFormPage() {
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
 
       // Correo afuera → recién ahora se marcan como enviadas (ordered).
-      await markClientRequestsSent(sendingItems.map((r) => r.id));
+      await markClientRequestsSent(sendingItems.map((r) => r.id), sendTo.trim());
       toast({ title: 'Solicitud enviada al cliente', description: `Se envió a ${sendTo}. Quedó en espera de la entrega de ${client.name}.` });
       setSendingItems(null);
     } catch (e: any) {
@@ -673,13 +675,18 @@ export default function PurchaseRequestFormPage() {
         <DialogContent className="rounded-[1.5rem] sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-primary" /> Enviar al cliente
+              <Mail className="h-5 w-5 text-primary" /> {sendingItems?.[0]?.sentToClientAt ? 'Reenviar al cliente' : 'Enviar al cliente'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Se enviará la <b>Solicitud de Suministro {sendingItems?.[0]?.internalCode || ''}</b> ({sendingItems?.length || 0} ítem{(sendingItems?.length || 0) > 1 ? 's' : ''}) en PDF a <b>{sendingItems?.[0]?.clientName || 'el cliente'}</b>.
             </p>
+            {sendingItems?.[0]?.sentToClientAt && (
+              <p className="text-xs text-muted-foreground bg-muted/40 rounded-xl px-3 py-2">
+                Ya se había enviado el {new Date(sendingItems[0].sentToClientAt).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} a <b>{sendingItems[0].sentToClientEmail}</b>. Puedes corregir el destinatario y reenviar.
+              </p>
+            )}
             <div className="space-y-1.5">
               <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Destinatario(s) <span className="text-destructive">*</span></Label>
               <Input

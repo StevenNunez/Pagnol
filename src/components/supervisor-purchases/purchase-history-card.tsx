@@ -32,7 +32,11 @@ function ItemDetail({ req, stage }: { req: PurchaseRequest; stage: PurchaseStage
                     )}
                 </p>
             )}
-            {(stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send' || stage === 'approved' || stage === 'ordered') && (
+            {stage === 'ordered' && isClientSupply(req) && req.sentToClientAt ? (
+                <p className="text-[10px] font-medium text-muted-foreground">
+                    Enviado a <b>{req.sentToClientEmail}</b> el {formatDate(req.sentToClientAt)}
+                </p>
+            ) : (stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send' || stage === 'approved' || stage === 'ordered') && (
                 <p className="text-[10px] font-medium text-muted-foreground italic">{clientHint || STAGE_META[stage].hint}</p>
             )}
         </div>
@@ -51,14 +55,24 @@ function ClientBadge({ req }: { req: PurchaseRequest }) {
 
 /** Botón de envío al cliente: visible cuando el grupo tiene ítems autorizados
  * por el ADC aún sin enviar (etapa 'to_send'). El envío lo hace la página
- * dueña (genera PDF + correo + marca enviado) vía `onSendToClient`. */
+ * dueña (genera PDF + correo + marca enviado) vía `onSendToClient`. Si ya se
+ * enviaron (etapa 'ordered'), se ofrece "Reenviar" — por ejemplo si se
+ * escribió mal el correo o hay que mandarlo también a otro contacto. */
 function SendToClientButton({ items, onSendToClient }: { items: PurchaseRequest[]; onSendToClient?: (items: PurchaseRequest[]) => void }) {
     if (!onSendToClient) return null;
     const toSend = items.filter((r) => isClientSupply(r) && resolvePurchaseStage(r) === 'to_send');
-    if (!toSend.length) return null;
+    if (toSend.length) {
+        return (
+            <Button size="sm" className="rounded-xl gap-2 w-full" onClick={() => onSendToClient(toSend)}>
+                <Mail className="h-3.5 w-3.5" /> Enviar al cliente ({toSend.length} ítem{toSend.length > 1 ? 's' : ''})
+            </Button>
+        );
+    }
+    const alreadySent = items.filter((r) => isClientSupply(r) && resolvePurchaseStage(r) === 'ordered');
+    if (!alreadySent.length) return null;
     return (
-        <Button size="sm" className="rounded-xl gap-2 w-full" onClick={() => onSendToClient(toSend)}>
-            <Mail className="h-3.5 w-3.5" /> Enviar al cliente ({toSend.length} ítem{toSend.length > 1 ? 's' : ''})
+        <Button size="sm" variant="outline" className="rounded-xl gap-2 w-full" onClick={() => onSendToClient(alreadySent)}>
+            <Mail className="h-3.5 w-3.5" /> Reenviar al cliente ({alreadySent.length} ítem{alreadySent.length > 1 ? 's' : ''})
         </Button>
     );
 }

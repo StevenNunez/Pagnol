@@ -147,7 +147,7 @@ export interface AppStateContextType extends AppDataState {
   authorizePurchaseRequest: (requestId: string) => Promise<void>;
   updatePurchaseRequestStatus: (requestId: string, status: PurchaseRequest['status'], data: Partial<PurchaseRequest>) => Promise<void>;
   receivePurchaseRequest: (requestId: string, receivedQuantity: number, existingMaterialId?: string) => Promise<void>;
-  markClientRequestsSent: (requestIds: string[]) => Promise<void>;
+  markClientRequestsSent: (requestIds: string[], sentToEmail: string) => Promise<void>;
   deletePurchaseRequest: (requestId: string) => Promise<void>;
   cancelPurchaseOrder: (orderId: string) => Promise<void>;
   archiveLot: (requestIds: string[]) => Promise<void>;
@@ -179,7 +179,7 @@ export interface AppStateContextType extends AppDataState {
   deleteUser: (userId: string) => Promise<void>;
   addMaterial: (data: any) => Promise<void>;
   updateMaterial: (materialId: string, data: Partial<Material>) => Promise<void>;
-  deleteMaterial: (materialId: string) => Promise<void>;
+  deleteMaterial: (materialId: string, reason: string) => Promise<void>;
   addManualStockEntry: (materialId: string, quantity: number, justification: string) => Promise<void>;
   addMaterialCategory: (name: string, parentId: string | null) => Promise<void>;
   updateMaterialCategory: (id: string, data: { name?: string; parentId?: string | null }) => Promise<void>;

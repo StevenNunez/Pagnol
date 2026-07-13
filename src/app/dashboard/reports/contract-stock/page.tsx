@@ -35,6 +35,7 @@ const MOVEMENT_TYPE_LABEL: Record<string, string> = {
     "return-reentry": "Devolución",
     "adjustment": "Ajuste",
     "contract-transfer": "Transferencia",
+    "deletion": "Eliminación de activo",
 };
 
 export default function ContractStockReportPage() {

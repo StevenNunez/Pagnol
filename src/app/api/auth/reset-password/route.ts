@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase, getSupabaseAdmin } from '@/modules/core/lib/supabase';
 import { sendEmail } from '@/modules/core/lib/email';
+import { renderEmailLayout, emailButton } from '@/modules/core/lib/emailLayout';
 import { rateLimitByIp } from '@/modules/core/lib/rate-limit';
 
 export async function POST(request: Request) {
@@ -71,29 +72,9 @@ async function sendResetEmail({
   firstName: string;
   actionLink: string;
 }) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.pagnol.cl';
   const year = new Date().getFullYear();
 
-  await sendEmail({
-    to: email,
-    subject: 'Recupera tu acceso a Pagnol',
-    headers: { Importance: 'high' },
-    text: `Hola ${firstName},\n\nHaz clic en el enlace para restablecer tu contraseña (válido por 1 hora):\n${actionLink}\n\nSi no solicitaste esto, ignora este correo.\n\n© ${year} TeoLabs — contacto@pagnol.cl`,
-    html: `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 16px;">
-  <tr><td align="center">
-    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
-
-      <tr><td style="background:#0f172a;border-radius:20px 20px 0 0;padding:32px 40px 24px;text-align:center;">
-        <p style="margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:4px;color:#f97316;text-transform:uppercase;">Sistema de Gestión Operativa</p>
-        <h1 style="margin:0;font-size:30px;font-weight:900;letter-spacing:-1px;color:#fff;text-transform:uppercase;">PAGNOL</h1>
-        <div style="width:36px;height:3px;background:#f97316;margin:12px auto 0;border-radius:2px;"></div>
-      </td></tr>
-
-      <tr><td style="background:#fff;padding:40px 40px 32px;">
+  const bodyHtml = `
         <p style="margin:0 0 8px;font-size:11px;font-weight:800;letter-spacing:3px;color:#94a3b8;text-transform:uppercase;">Recuperación de contraseña</p>
         <h2 style="margin:0 0 18px;font-size:24px;font-weight:900;color:#0f172a;">
           Hola, ${firstName}<br/><span style="color:#f97316;">Restablece tu acceso</span>
@@ -103,13 +84,7 @@ async function sendResetEmail({
           Si no fuiste tú, ignora este correo — tu contraseña <strong>no cambiará</strong>.
         </p>
 
-        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
-          <tr><td align="center">
-            <a href="${actionLink}" style="display:inline-block;background:#f97316;color:#fff;text-decoration:none;padding:18px 44px;border-radius:14px;font-size:13px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;">
-              Restablecer Contraseña
-            </a>
-          </td></tr>
-        </table>
+        ${emailButton(actionLink, 'Restablecer Contraseña')}
 
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
           <tr><td style="background:#fff7ed;border:1px solid #fed7aa;border-radius:14px;padding:20px 24px;">
@@ -125,18 +100,13 @@ async function sendResetEmail({
           Si el botón no funciona, copia este enlace en tu navegador:<br/>
           <a href="${actionLink}" style="color:#f97316;word-break:break-all;">${actionLink}</a>
         </p>
-      </td></tr>
+  `;
 
-      <tr><td style="background:#f8fafc;border-radius:0 0 20px 20px;border-top:1px solid #e2e8f0;padding:24px 40px;text-align:center;">
-        <p style="margin:0;font-size:10px;font-weight:800;letter-spacing:2px;color:#cbd5e1;text-transform:uppercase;">
-          © ${year} TeoLabs — contacto@pagnol.cl &bull; ${appUrl}
-        </p>
-      </td></tr>
-
-    </table>
-  </td></tr>
-</table>
-</body>
-</html>`,
+  await sendEmail({
+    to: email,
+    subject: 'Recupera tu acceso a Pagnol',
+    headers: { Importance: 'high' },
+    text: `Hola ${firstName},\n\nHaz clic en el enlace para restablecer tu contraseña (válido por 1 hora):\n${actionLink}\n\nSi no solicitaste esto, ignora este correo.\n\n© ${year} TeoLabs — contacto@pagnol.cl`,
+    html: renderEmailLayout({ bodyHtml }),
   });
 }

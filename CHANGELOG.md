@@ -18,6 +18,95 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Eliminar activo en /dashboard/pagnol/activos (borrado auditado)
+No existía forma de eliminar un activo — el botón nunca se implementó (`deleteMaterial`
+estaba escrito pero sin usar en ningún lado). Al construirlo se encontró que
+`stock_movements.material_id` tiene FK `ON DELETE CASCADE` hacia `materials`: un
+DELETE real habría borrado TODO el kardex histórico del activo (entradas/salidas/
+ajustes previos), no solo el evento de eliminación — confirmado en la base real.
+Por eso "Eliminar" es un **borrado suave auditado** (`materials.deleted_at` /
+`deleted_by` / `deletion_reason`, migración `20260720000000`, pendiente de
+aplicar): el activo desaparece de toda la app (mismo mecanismo `softDelete` que
+ya usa `profiles`/`deleteUser`) pero la fila y su kardex completo quedan intactos,
+más un nuevo registro de kardex (`type: 'deletion'`) con motivo y quién eliminó.
+Antes de eliminar, bloquea si el activo tiene componentes hijos, devoluciones/
+retiros pendientes que lo referencian, o si viene de un contrato de arriendo.
+Reservado a `materials:delete` — hoy solo `administrador`/`soporte-pagnol` (ya
+estaba definido así en `ADMINISTRADOR_PERMISSIONS`, nadie más lo tenía). De paso
+se corrigió el texto fabricado del modal de edición ("PAGNOL IMS CORE SYSTEM |
+FAENA NORTE" no significaba nada) por el código interno y nombre real del activo.
+
+### Corregido — "Recibir" en Solicitudes de Compra podía duplicar stock en silencio
+Auditoría completa de `/dashboard/pagnol/solicitudes-compra` (2026-07-13).
+Encontrado y **reproducido en navegador**: `receivePurchaseRequest` escribía
+`original_quantity` (columna inexistente) como último paso, DESPUÉS de crear
+el material y sumar el stock — el error de esquema se ignoraba, el diálogo se
+cerraba como si hubiera funcionado, y la solicitud quedaba en el mismo estado
+con el botón "Recibir" disponible: cada reintento volvía a sumar stock. Así
+quedó un activo del cliente de Valar (`VALAR-ACT-0392`, solicitud
+`VALAR-SCL-0001`) con stock 2 en vez de 1 — **reparado manualmente** (kardex
+duplicado eliminado, ledger y stock corregidos, solicitud finalizada como
+`received`). Mismo patrón en `updatePurchaseRequestStatus` (`approver_name`
+tampoco existía — "Aprobar" en Gestionar fallaba siempre) y en el ajuste de
+cantidad (`original_quantity`). Migración
+`20260719000000_purchase_requests_original_quantity.sql` agrega ambas
+columnas (pendiente de aplicar). `receivePurchaseRequest` ahora hace la
+transición de estado **primero y de forma atómica** (`UPDATE ... WHERE status
+IN (...)`) antes de tocar material/stock — un reintento del mismo click ahora
+aborta con "ya fue recibida" en vez de duplicar, y revisa el error de todos
+los pasos intermedios (antes varios `.update()`/`.insert()` no se revisaban).
+
+### Agregado — Gate ADC + permiso en `updatePurchaseRequestStatus`
+Aprobar/rechazar una solicitud de compra no exigía el permiso
+`purchase_requests:approve` ni que el ADC la hubiera autorizado — cualquier
+usuario autenticado del tenant podía llamarla directamente. Ahora exige el
+permiso y, para aprobar, exige `adc_authorized_at` (o que quien aprueba
+también pueda autorizar).
+
+### Cambiado — Rediseño de Solicitudes de Compra (firma Pagnol)
+KPIs clickeables que filtran la tabla (antes un `<Select>` separado, con
+colores crudos `yellow-600`/`purple-600`/`cyan-600`/`blue-600`); nueva
+distinción "Esperando ADC" vs. "Por Gestionar" (antes ambos se veían como
+"Pendiente", reusando `resolvePurchaseStage`/`PurchaseStageBadge` ya
+construidos para el pipeline del supervisor); banner a Autorizaciones si hay
+solicitudes esperando ADC; columna de código interno; filtro de solicitante
+ahora usa `requesterName` con fallback (antes ignoraba las filas de recepción
+parcial, que no tienen `supervisorId`); filtro de fechas + export a Excel;
+`DataTable`/`EmptyState` reemplazan el spinner que bloqueaba toda la página.
+
+### Cambiado — Diseño de correo unificado en las 8 rutas que envían mail
+Cada ruta (invitación, bienvenida, reset de contraseña, alerta de feedback,
+solicitud de integración ERP, OC/cotización a proveedor, informe de terreno,
+suministro al cliente) tenía su propio HTML duplicado, con footers distintos
+entre sí y sin link a `www.pagnol.cl` en la mayoría. Se tomó la invitación
+como estándar y se extrajo a `src/modules/core/lib/emailLayout.ts`
+(`renderEmailLayout` + `emailButton`), y el correo de bienvenida duplicado
+entre `/api/register` y `/api/register/oauth` se unificó en
+`src/modules/core/lib/welcomeEmail.ts`. Todas las rutas ahora comparten header
+(PAGNOL + acento naranja), tarjeta blanca y footer con `www.pagnol.cl` +
+`contacto@pagnol.cl`. Las de OC/cotización e informe de terreno, que antes no
+tenían ningún branding (un `<div>` suelto), ahora usan el mismo envoltorio.
+
+### Agregado — Reenvío de suministro al cliente + ver a quién se envió
+`purchase_requests.sent_to_client_email` (migración `20260718000000`, pendiente
+de aplicar) guarda el destinatario real del último envío. El historial de
+solicitudes (`purchase-history-card.tsx`) ahora muestra "Enviado a X el fecha"
+para las ya `ordered`, y ofrece un botón **Reenviar al cliente** (antes el
+botón desaparecía tras el primer envío, sin forma de corregir un correo mal
+escrito ni de volver a mandarlo a otro contacto). El diálogo de envío precarga
+el último destinatario usado en vez de solo el correo genérico del cliente.
+
+### Corregido — `purchase_requests.ordered_at` no existía: transición a "ordered" fallaba
+`markClientRequestsSent`, `updatePurchaseRequestStatus` y `awardRfq` escriben
+`ordered_at` al pasar una solicitud a `status='ordered'`, pero la columna nunca
+se creó en ninguna migración. En el flujo de suministro al cliente esto se veía
+como "no se pudo enviar" justo después de que el correo salía bien; en la
+adjudicación de RFQ fallaba **en silencio** porque ese `UPDATE` no revisaba el
+error de retorno, así que las solicitudes nunca quedaban realmente en
+`ordered` ni con `purchase_order_id` asignado. Migración
+`20260717000000_purchase_requests_ordered_at.sql` agrega la columna (pendiente
+de aplicar); `rfqMutations.ts` ahora revisa y lanza el error de ese `UPDATE`.
+
 ### Corregido — Control de Obra: crear Contrato/Partida estaba 100% roto + siembra colisionaba entre tenants
 Auditoría completa del módulo (2026-07-12). Hallazgo más grave: **crear un
 Contrato/Partida nunca funcionó en producción** — `work_items.id` es `TEXT

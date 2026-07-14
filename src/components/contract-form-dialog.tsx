@@ -26,12 +26,14 @@ import { format } from "date-fns";
 const contractSchema = z.object({
   name: z.string().min(1, "Nombre requerido"),
   code: z.string().optional(),
+  kind: z.enum(["client", "internal"]).default("client"),
   clientId: z.string().optional(), // FK a Client (fuente de verdad)
   location: z.string().optional(),
   status: z.enum(["active", "suspended", "closed"]),
   startDate: z.string().min(1, "Fecha de inicio requerida"),
   endDate: z.string().optional(),
   description: z.string().optional(),
+  costCenterId: z.string().optional(),
   isSubcontractor: z.boolean().default(false),
   parentContractId: z.string().optional(),
   subcontractorCompany: z.string().optional(),
@@ -51,10 +53,12 @@ interface ContractFormDialogProps {
   contract?: Contract | null;
   /** Cliente preseleccionado al crear (p.ej. "+ Contrato" desde la ficha del cliente). */
   defaultClientId?: string | null;
+  /** Abre el diálogo en modo Área Interna (estructura propia, sin mandante). */
+  defaultKind?: 'client' | 'internal';
 }
 
-export function ContractFormDialog({ open, onOpenChange, contract, defaultClientId }: ContractFormDialogProps) {
-  const { clients, contracts, addClient, addContract, updateContract } = useAppState();
+export function ContractFormDialog({ open, onOpenChange, contract, defaultClientId, defaultKind }: ContractFormDialogProps) {
+  const { clients, contracts, costCenters, addClient, addContract, updateContract } = useAppState();
   const { toast } = useToast();
   const [creatingClient, setCreatingClient] = useState(false);
   const [newClientName, setNewClientName] = useState("");
@@ -63,11 +67,15 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
     () => [...clients].sort((a, b) => a.name.localeCompare(b.name)),
     [clients]
   );
+  const activeCostCenters = useMemo(
+    () => (costCenters || []).filter(cc => cc.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
+    [costCenters]
+  );
   const today = format(new Date(), "yyyy-MM-dd");
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<ContractFormData>({
     resolver: zodResolver(contractSchema),
-    defaultValues: { status: "active", startDate: today },
+    defaultValues: { status: "active", startDate: today, kind: "client" },
   });
 
   // Repuebla el form cada vez que se abre (crear limpio o editar con datos).
@@ -77,22 +85,30 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
     setNewClientName("");
     if (contract) {
       reset({
-        name: contract.name, code: contract.code ?? "", clientId: contract.clientId ?? "",
+        name: contract.name, code: contract.code ?? "",
+        kind: contract.kind ?? "client",
+        clientId: contract.clientId ?? "",
         location: contract.location ?? "", status: contract.status,
         startDate: toDateStr(contract.startDate),
         endDate: toDateStr(contract.endDate),
         description: contract.description ?? "",
+        costCenterId: contract.costCenterId ?? "",
         isSubcontractor: contract.isSubcontractor ?? false,
         parentContractId: contract.parentContractId ?? "",
         subcontractorCompany: contract.subcontractorCompany ?? "",
         subcontractorRut: contract.subcontractorRut ?? "",
       });
     } else {
-      reset({ status: "active", startDate: today, clientId: defaultClientId ?? "" });
+      reset({
+        status: "active", startDate: today,
+        kind: defaultKind ?? "client",
+        clientId: defaultKind === 'internal' ? "" : (defaultClientId ?? ""),
+      });
     }
-  }, [open, contract, defaultClientId, reset, today]);
+  }, [open, contract, defaultClientId, defaultKind, reset, today]);
 
   const watchedStatus = watch("status");
+  const isInternal = watch("kind") === "internal";
 
   // Crear un cliente al vuelo desde el formulario de contrato y seleccionarlo.
   const handleCreateClient = async () => {
@@ -111,23 +127,33 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
 
   const onSubmit = async (data: ContractFormData) => {
     try {
-      const clientName = data.clientId ? (clients.find(c => c.id === data.clientId)?.name ?? undefined) : undefined;
+      const internal = data.kind === 'internal';
+      // Un área interna no tiene mandante ni subcontratistas: se limpian esos
+      // campos aquí para no arrastrar residuos si el usuario cambió el tipo.
+      const clientName = !internal && data.clientId
+        ? (clients.find(c => c.id === data.clientId)?.name ?? undefined)
+        : undefined;
       const payload = {
-        name: data.name, code: data.code, clientId: data.clientId || null, clientName,
+        name: data.name, code: data.code,
+        kind: data.kind,
+        clientId: internal ? null : (data.clientId || null),
+        clientName,
         location: data.location, status: data.status,
         startDate: data.startDate, endDate: data.endDate || null,
         description: data.description,
-        isSubcontractor: data.isSubcontractor,
-        parentContractId: data.parentContractId || null,
-        subcontractorCompany: data.subcontractorCompany || null,
-        subcontractorRut: data.subcontractorRut || null,
+        costCenterId: data.costCenterId || null,
+        isSubcontractor: internal ? false : data.isSubcontractor,
+        parentContractId: internal ? null : (data.parentContractId || null),
+        subcontractorCompany: internal ? null : (data.subcontractorCompany || null),
+        subcontractorRut: internal ? null : (data.subcontractorRut || null),
       };
+      const noun = internal ? "Área interna" : "Contrato";
       if (contract) {
         await updateContract(contract.id, payload);
-        toast({ title: "Contrato actualizado" });
+        toast({ title: `${noun} actualizada` });
       } else {
         await addContract(payload);
-        toast({ title: "Contrato creado" });
+        toast({ title: `${noun} creada` });
       }
       onOpenChange(false);
     } catch (e: any) {
@@ -139,47 +165,90 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{contract ? "Editar contrato" : "Nuevo contrato"}</DialogTitle>
+          <DialogTitle>
+            {contract
+              ? (isInternal ? "Editar área interna" : "Editar contrato")
+              : (isInternal ? "Nueva área interna" : "Nuevo contrato")}
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* Naturaleza: contrato con mandante vs estructura propia de la empresa. */}
+          <div className="space-y-1">
+            <Label>Tipo</Label>
+            <Select value={watch("kind")} onValueChange={v => setValue("kind", v as any)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="client">Contrato de cliente (mandante externo)</SelectItem>
+                <SelectItem value="internal">Área interna (estructura propia)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {isInternal
+                ? "Administración, Finanzas, Abastecimiento… Su personal y su stock quedan imputados al área, no al pool de \"sin asignar\"."
+                : "Trabajo ejecutado para una empresa mandante."}
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1 col-span-2 sm:col-span-1">
-              <Label>Nombre del contrato *</Label>
-              <Input placeholder="Ej: Mina El Volcán — Fase 2" {...register("name")} />
+              <Label>{isInternal ? "Nombre del área *" : "Nombre del contrato *"}</Label>
+              <Input
+                placeholder={isInternal ? "Ej: Administración" : "Ej: Mina El Volcán — Fase 2"}
+                {...register("name")}
+              />
               {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
             </div>
             <div className="space-y-1">
               <Label>Código</Label>
-              <Input placeholder="Ej: CT-2025-001" {...register("code")} />
+              <Input placeholder={isInternal ? "Ej: INT-ADM" : "Ej: CT-2025-001"} {...register("code")} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
+            {/* Un área interna no tiene mandante (lo impide un CHECK en la BD). */}
+            {!isInternal && (
+              <div className="space-y-1">
+                <Label>Cliente (empresa mandante)</Label>
+                {creatingClient ? (
+                  <div className="flex gap-2">
+                    <Input autoFocus placeholder="Nombre del nuevo cliente" value={newClientName} onChange={e => setNewClientName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateClient(); } }} />
+                    <Button type="button" size="sm" onClick={handleCreateClient} disabled={!newClientName.trim()}>Crear</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setCreatingClient(false); setNewClientName(""); }}>Cancelar</Button>
+                  </div>
+                ) : (
+                  <Select
+                    value={watch("clientId") || "none"}
+                    onValueChange={v => { if (v === "__new__") { setCreatingClient(true); } else { setValue("clientId", v === "none" ? "" : v); } }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Selecciona un cliente" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin cliente</SelectItem>
+                      {activeClients.map(cl => <SelectItem key={cl.id} value={cl.id}>{cl.name}</SelectItem>)}
+                      <SelectItem value="__new__" className="text-primary font-bold">+ Nuevo cliente…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+            {/* Presupuesto de compras: entidad aparte (cost_centers), enlace opcional. */}
             <div className="space-y-1">
-              <Label>Cliente (empresa mandante)</Label>
-              {creatingClient ? (
-                <div className="flex gap-2">
-                  <Input autoFocus placeholder="Nombre del nuevo cliente" value={newClientName} onChange={e => setNewClientName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateClient(); } }} />
-                  <Button type="button" size="sm" onClick={handleCreateClient} disabled={!newClientName.trim()}>Crear</Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => { setCreatingClient(false); setNewClientName(""); }}>Cancelar</Button>
-                </div>
-              ) : (
-                <Select
-                  value={watch("clientId") || "none"}
-                  onValueChange={v => { if (v === "__new__") { setCreatingClient(true); } else { setValue("clientId", v === "none" ? "" : v); } }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Selecciona un cliente" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin cliente</SelectItem>
-                    {activeClients.map(cl => <SelectItem key={cl.id} value={cl.id}>{cl.name}</SelectItem>)}
-                    <SelectItem value="__new__" className="text-primary font-bold">+ Nuevo cliente…</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
+              <Label>Centro de costo</Label>
+              <Select
+                value={watch("costCenterId") || "none"}
+                onValueChange={v => setValue("costCenterId", v === "none" ? "" : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Sin centro de costo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin centro de costo</SelectItem>
+                  {activeCostCenters.map(cc => (
+                    <SelectItem key={cc.id} value={cc.id}>{cc.code} · {cc.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
-              <Label>Faena / Ubicación</Label>
-              <Input placeholder="Ej: Sierra Gorda, II Región" {...register("location")} />
+              <Label>{isInternal ? "Ubicación" : "Faena / Ubicación"}</Label>
+              <Input placeholder={isInternal ? "Ej: Oficina Central" : "Ej: Sierra Gorda, II Región"} {...register("location")} />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -209,8 +278,8 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
             <Input placeholder="Alcance del contrato, observaciones..." {...register("description")} />
           </div>
 
-          {/* Subcontratista */}
-          <div className="border-t border-border pt-3 space-y-3">
+          {/* Subcontratista — no aplica a un área interna (es estructura propia). */}
+          {!isInternal && <div className="border-t border-border pt-3 space-y-3">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -239,19 +308,22 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
                     <SelectTrigger><SelectValue placeholder="Sin contrato padre" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Sin contrato padre</SelectItem>
+                      {/* El padre de un subcontrato es siempre un contrato de cliente. */}
                       {contracts
-                        .filter(c => !c.isSubcontractor && c.status === 'active' && c.id !== contract?.id)
+                        .filter(c => c.kind !== 'internal' && !c.isSubcontractor && c.status === 'active' && c.id !== contract?.id)
                         .map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
             )}
-          </div>
+          </div>}
           <DialogFooter>
             <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
             <Button type="submit" disabled={isSubmitting}>
-              {contract ? "Guardar cambios" : "Crear contrato"}
+              {contract
+                ? "Guardar cambios"
+                : (isInternal ? "Crear área interna" : "Crear contrato")}
             </Button>
           </DialogFooter>
         </form>

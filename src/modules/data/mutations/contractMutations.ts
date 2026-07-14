@@ -80,19 +80,28 @@ export async function addContract(
 ): Promise<Contract> {
   if (!user || !tenantId) throw new Error('No autenticado.');
 
+  // Un área interna no tiene mandante (lo garantiza también un CHECK en la BD).
+  const isInternal = data.kind === 'internal';
+
   const { data: inserted, error } = await supabase
     .from('contracts')
     .insert({
       tenant_id: tenantId,
       name: data.name,
       code: data.code || null,
-      client_id: data.clientId || null,
-      client_name: data.clientName || null, // denormalizado para vistas legacy
+      kind: data.kind || 'client',
+      client_id: isInternal ? null : (data.clientId || null),
+      client_name: isInternal ? null : (data.clientName || null), // denormalizado para vistas legacy
       location: data.location || null,
       status: data.status,
       start_date: data.startDate,
       end_date: data.endDate || null,
       description: data.description || null,
+      cost_center_id: data.costCenterId || null,
+      is_subcontractor: data.isSubcontractor ?? false,
+      parent_contract_id: data.parentContractId || null,
+      subcontractor_company: data.subcontractorCompany || null,
+      subcontractor_rut: data.subcontractorRut || null,
       created_by: user.id,
     })
     .select()
@@ -112,6 +121,7 @@ export async function updateContract(
   const payload: any = {};
   if (data.name !== undefined) payload.name = data.name;
   if (data.code !== undefined) payload.code = data.code;
+  if (data.kind !== undefined) payload.kind = data.kind;
   if (data.clientId !== undefined) payload.client_id = data.clientId || null;
   if (data.clientName !== undefined) payload.client_name = data.clientName;
   if (data.location !== undefined) payload.location = data.location;
@@ -119,12 +129,25 @@ export async function updateContract(
   if (data.startDate !== undefined) payload.start_date = data.startDate;
   if (data.endDate !== undefined) payload.end_date = data.endDate;
   if (data.description !== undefined) payload.description = data.description;
+  if (data.costCenterId !== undefined) payload.cost_center_id = data.costCenterId || null;
+  if (data.isSubcontractor !== undefined) payload.is_subcontractor = data.isSubcontractor;
+  if (data.parentContractId !== undefined) payload.parent_contract_id = data.parentContractId || null;
+  if (data.subcontractorCompany !== undefined) payload.subcontractor_company = data.subcontractorCompany || null;
+  if (data.subcontractorRut !== undefined) payload.subcontractor_rut = data.subcontractorRut || null;
+
+  // Convertir a área interna implica soltar el mandante, o el CHECK de la BD
+  // rechaza la fila. Se limpia aquí y no en la UI para que valga desde cualquier caller.
+  if (data.kind === 'internal') {
+    payload.client_id = null;
+    payload.client_name = null;
+  }
 
   const { error } = await supabase
     .from('contracts')
     .update(payload)
     .eq('id', id)
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    .select();
 
   if (error) throw error;
 }

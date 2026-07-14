@@ -61,6 +61,7 @@ export default function ClientesPage() {
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [contractClientId, setContractClientId] = useState<string | null>(null);
+  const [contractKind, setContractKind] = useState<'client' | 'internal'>('client');
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
@@ -77,15 +78,24 @@ export default function ClientesPage() {
         || (cl.contactName || "").toLowerCase().includes(q));
   }, [clients, search]);
 
+  // Las áreas internas también tienen client_id NULL, pero NO son contratos
+  // huérfanos: son estructura propia de la empresa. Se separan antes de agrupar
+  // o acabarían listadas como "contratos sin cliente" pidiendo que se les asigne uno.
+  const clientContracts = useMemo(() => contracts.filter(c => c.kind !== 'internal'), [contracts]);
+  const internalAreas = useMemo(
+    () => contracts.filter(c => c.kind === 'internal').sort((a, b) => a.name.localeCompare(b.name)),
+    [contracts]
+  );
+
   const contractsByClient = useMemo(() => {
     const map = new Map<string | null, Contract[]>();
-    for (const c of contracts) {
+    for (const c of clientContracts) {
       const key = c.clientId ?? null;
       map.set(key, [...(map.get(key) || []), c]);
     }
     for (const list of map.values()) list.sort((a, b) => a.name.localeCompare(b.name));
     return map;
-  }, [contracts]);
+  }, [clientContracts]);
 
   const orphanContracts = contractsByClient.get(null) || [];
 
@@ -137,12 +147,21 @@ export default function ClientesPage() {
   const openNewContract = (clientId: string | null) => {
     setEditingContract(null);
     setContractClientId(clientId);
+    setContractKind('client');
+    setContractDialogOpen(true);
+  };
+
+  const openNewInternalArea = () => {
+    setEditingContract(null);
+    setContractClientId(null);
+    setContractKind('internal');
     setContractDialogOpen(true);
   };
 
   const openEditContract = (c: Contract) => {
     setEditingContract(c);
     setContractClientId(null);
+    setContractKind(c.kind ?? 'client');
     setContractDialogOpen(true);
   };
 
@@ -167,7 +186,9 @@ export default function ClientesPage() {
         className="flex items-center gap-3 p-3 rounded-2xl border bg-muted/40 hover:bg-muted/70 transition-colors cursor-pointer"
         onClick={() => router.push(`/dashboard/attendance/contracts/${c.id}`)}
       >
-        <Briefcase size={15} className="text-muted-foreground shrink-0" />
+        {c.kind === 'internal'
+          ? <Building2 size={15} className="text-muted-foreground shrink-0" />
+          : <Briefcase size={15} className="text-muted-foreground shrink-0" />}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-foreground truncate">
             {c.name}{c.code ? <span className="text-muted-foreground font-medium"> · {c.code}</span> : null}
@@ -287,6 +308,34 @@ export default function ClientesPage() {
         </div>
       )}
 
+      {/* Áreas internas — estructura propia de la empresa, sin mandante.
+          Su personal y su stock se imputan al área en vez de caer a "sin asignar". */}
+      {!search && (
+        <Card className="rounded-[1.5rem] shadow-sm">
+          <CardContent className="p-6 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className={MICRO_LABEL}>Áreas internas</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Estructura propia de la empresa (Administración, Finanzas, Abastecimiento…). No tienen
+                  mandante, pero sí personal, pañoles y stock propios.
+                </p>
+              </div>
+              <Button variant="outline" onClick={openNewInternalArea} className="h-9 rounded-xl gap-1.5 text-[10px] font-black uppercase tracking-widest px-3">
+                <Plus size={13} /> Área Interna
+              </Button>
+            </div>
+            {internalAreas.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                Sin áreas internas — el personal de planta y el stock de oficina quedan hoy como "sin asignar".
+              </p>
+            ) : (
+              <div className="space-y-2">{internalAreas.map(c => contractRow(c))}</div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Contratos huérfanos (sin cliente) — asignables editándolos */}
       {orphanContracts.length > 0 && !search && (
         <Card className="rounded-[1.5rem] border-warning/40 shadow-sm">
@@ -382,12 +431,13 @@ export default function ClientesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo compartido crear/editar contrato */}
+      {/* Diálogo compartido crear/editar contrato o área interna */}
       <ContractFormDialog
         open={contractDialogOpen}
         onOpenChange={setContractDialogOpen}
         contract={editingContract}
         defaultClientId={contractClientId}
+        defaultKind={contractKind}
       />
     </PageShell>
   );

@@ -1045,7 +1045,7 @@ export default function MovimientosPagnolPage() {
                       </div>
                     )}
                     <span className={`inline-flex mt-1.5 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${tx.contractName ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground/60'}`}>
-                      {tx.contractName || 'Pool central'}
+                      {tx.contractName || 'Sin imputar'}
                     </span>
                   </td>
                   <td className="px-6 sm:px-10 py-6">
@@ -1366,18 +1366,21 @@ export default function MovimientosPagnolPage() {
                     </div>
                   )}
 
-                  {/* Contrato del trabajador: define de qué desglose sale (o a cuál vuelve) el stock */}
+                  {/* Contrato o área del trabajador: define de qué desglose sale (o a cuál vuelve) el stock.
+                      Un área interna (Administración, Finanzas…) se comporta igual que un contrato. */}
                   <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20">
                     <p className="text-[9px] font-black text-primary uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                      <ClipboardList size={11} /> Contrato {selectedType === 'WITHDRAWAL' ? 'de Cargo' : 'de Devolución'}
+                      <ClipboardList size={11} /> Contrato / Área {selectedType === 'WITHDRAWAL' ? 'de Cargo' : 'de Devolución'}
                     </p>
                     {employeeContracts.length === 0 ? (
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                        {selectedEmployee?.name || 'El trabajador'} no está asignado a ningún contrato — se imputará al pool central.
+                      <p className="text-[9px] font-bold text-warning uppercase tracking-widest">
+                        {selectedEmployee?.name || 'El trabajador'} no está asignado a ningún contrato ni área interna —
+                        el movimiento quedará sin imputar. Si es personal de planta, asígnalo a su área.
                       </p>
                     ) : employeeContracts.length === 1 ? (
                       <span className="inline-flex px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-primary text-primary-foreground">
                         {employeeContracts[0].name}
+                        {employeeContracts[0].kind === 'internal' && ' · Área interna'}
                       </span>
                     ) : (
                       <div className="flex flex-wrap gap-2">
@@ -1388,14 +1391,14 @@ export default function MovimientosPagnolPage() {
                             onClick={() => setTxContractId(txContractId === c.id ? null : c.id)}
                             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${txContractId === c.id ? 'bg-primary text-primary-foreground border-primary shadow-md' : 'bg-card text-muted-foreground border-primary/20 hover:border-primary/40'}`}
                           >
-                            {c.name}
+                            {c.name}{c.kind === 'internal' && ' · Área'}
                           </button>
                         ))}
                       </div>
                     )}
                     {employeeContracts.length > 1 && !txContractId && (
                       <p className="text-[8px] text-primary/70 font-bold mt-2 uppercase tracking-widest">
-                        El trabajador tiene varios contratos — seleccione a cuál se imputa
+                        El trabajador tiene varias asignaciones — seleccione a cuál se imputa
                       </p>
                     )}
                   </div>

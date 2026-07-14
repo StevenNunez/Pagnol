@@ -116,6 +116,16 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
         () => contracts.filter(c => c.status === 'active' && !assignments.some(a => a.contractId === c.id)),
         [contracts, assignments]
     );
+    // El selector separa ambos mundos: un trabajador de planta se asigna a un área
+    // interna (Administración…), no a un contrato de cliente.
+    const availableClientContracts = useMemo(
+        () => availableContracts.filter(c => c.kind !== 'internal'),
+        [availableContracts]
+    );
+    const availableInternalAreas = useMemo(
+        () => availableContracts.filter(c => c.kind === 'internal'),
+        [availableContracts]
+    );
     const [newContractId, setNewContractId] = useState('');
     const [newShiftId, setNewShiftId] = useState('');
     const [newRotationStart, setNewRotationStart] = useState(() => new Date().toISOString().slice(0, 10));
@@ -384,27 +394,32 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                                         )}
                                     </div>
 
-                                    {/* Contratos / faenas asignados */}
+                                    {/* Contratos de cliente y áreas internas asignadas */}
                                     <div className="mt-8 pt-6 border-t space-y-4">
-                                        <Label className={labelCls}>Contratos / Faenas asignadas</Label>
+                                        <Label className={labelCls}>Contratos / Áreas asignadas</Label>
                                         {assignments.length === 0 ? (
                                             <p className="text-xs text-muted-foreground italic">
-                                                Sin contrato asignado — sus movimientos se atribuyen al pool general.
+                                                Sin asignar — no pertenece a ningún contrato ni área interna. Si es personal de
+                                                planta (administración, finanzas…), asígnalo a su área interna; si no, sus
+                                                movimientos quedarán sin imputar.
                                             </p>
                                         ) : (
                                             <div className="space-y-2">
                                                 {assignments.map(cw => {
                                                     const contract = contracts.find(c => c.id === cw.contractId);
-                                                    const clientName = contract
+                                                    const isInternal = contract?.kind === 'internal';
+                                                    const clientName = contract && !isInternal
                                                         ? (clients.find(cl => cl.id === contract.clientId)?.name || contract.clientName)
                                                         : null;
                                                     return (
                                                         <div key={cw.id} className="flex items-center gap-3 p-3 rounded-2xl border bg-muted/40">
                                                             <div className="flex-1 min-w-0">
                                                                 <p className="text-sm font-bold text-foreground truncate">{contract?.name || 'Contrato desconocido'}</p>
-                                                                {clientName && (
+                                                                {isInternal ? (
+                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground truncate">Área interna</p>
+                                                                ) : clientName ? (
                                                                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground truncate">{clientName}</p>
-                                                                )}
+                                                                ) : null}
                                                             </div>
                                                             <select
                                                                 value={cw.shiftScheduleId ?? ''}
@@ -448,10 +463,21 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                                                         onChange={e => setNewContractId(e.target.value)}
                                                         className="h-11 flex-1 rounded-xl border bg-background px-3 text-sm"
                                                     >
-                                                        <option value="">Asignar a contrato…</option>
-                                                        {availableContracts.map(c => (
-                                                            <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
-                                                        ))}
+                                                        <option value="">Asignar a contrato o área…</option>
+                                                        {availableClientContracts.length > 0 && (
+                                                            <optgroup label="Contratos de cliente">
+                                                                {availableClientContracts.map(c => (
+                                                                    <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                                                                ))}
+                                                            </optgroup>
+                                                        )}
+                                                        {availableInternalAreas.length > 0 && (
+                                                            <optgroup label="Áreas internas">
+                                                                {availableInternalAreas.map(c => (
+                                                                    <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                                                                ))}
+                                                            </optgroup>
+                                                        )}
                                                     </select>
                                                     <select
                                                         value={newShiftId}

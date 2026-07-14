@@ -111,7 +111,7 @@ const stockPorContrato: ToolDef = {
             ctx.admin.from('contracts').select('id, name').eq('tenant_id', ctx.tenantId),
             ctx.admin.from('warehouses').select('id, name').eq('tenant_id', ctx.tenantId),
         ]);
-        const contractName = (id: string | null) => id ? (contracts?.find(c => c.id === id)?.name ?? 'Contrato desconocido') : 'Pool general (sin contrato)';
+        const contractName = (id: string | null) => id ? (contracts?.find(c => c.id === id)?.name ?? 'Contrato desconocido') : 'Sin asignar (ni contrato ni área interna)';
         const warehouseName = (id: string | null) => id ? (warehouses?.find(w => w.id === id)?.name ?? 'Pañol desconocido') : 'Sin pañol asignado';
 
         const results = [];

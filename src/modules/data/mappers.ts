@@ -146,6 +146,9 @@ export const mappers = {
         tenantId: item.tenant_id,
         name: item.name,
         code: item.code || undefined,
+        // Tenants cuya BD aún no corrió la migración de áreas internas devuelven
+        // undefined: se asume 'client', que es como se comportaba todo hasta ahora.
+        kind: item.kind === 'internal' ? 'internal' : 'client',
         clientId: item.client_id || null,
         clientName: item.client_name || undefined,
         location: item.location || undefined,
@@ -153,8 +156,13 @@ export const mappers = {
         startDate: item.start_date,
         endDate: item.end_date || null,
         description: item.description || undefined,
+        costCenterId: item.cost_center_id || null,
         createdBy: item.created_by || undefined,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+        isSubcontractor: item.is_subcontractor ?? false,
+        parentContractId: item.parent_contract_id || null,
+        subcontractorCompany: item.subcontractor_company || null,
+        subcontractorRut: item.subcontractor_rut || null,
     }),
     contract_workers: (item: any): ContractWorker => ({
         id: item.id,

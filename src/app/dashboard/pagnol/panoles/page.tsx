@@ -364,12 +364,14 @@ export default function WarehousesPage() {
                         </div>
 
                         <div className="space-y-1.5">
-                            <Label>Contratos que atiende</Label>
+                            <Label>Contratos y áreas que atiende</Label>
                             {activeContracts.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">No hay contratos activos.</p>
+                                <p className="text-sm text-muted-foreground">No hay contratos ni áreas activas.</p>
                             ) : (
                                 <ScrollArea className="max-h-44 rounded-xl border">
                                     <div className="p-3 space-y-2">
+                                        {/* Un pañol de oficina atiende a un área interna; el pañol central
+                                            puede atender a todos los contratos a la vez (N:M). */}
                                         {activeContracts.map((c) => (
                                             <label key={c.id} className="flex items-center gap-2.5 cursor-pointer">
                                                 <Checkbox
@@ -378,6 +380,11 @@ export default function WarehousesPage() {
                                                 />
                                                 <span className="text-sm">
                                                     {c.name}{c.code ? ` (${c.code})` : ""}
+                                                    {c.kind === 'internal' && (
+                                                        <span className="ml-1.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                                                            Área interna
+                                                        </span>
+                                                    )}
                                                 </span>
                                             </label>
                                         ))}

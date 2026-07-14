@@ -71,6 +71,8 @@ export function EnrollmentWizard({
     const [shiftScheduleId, setShiftScheduleId] = useState('');
     const [rotationStartDate, setRotationStartDate] = useState(() => new Date().toISOString().slice(0, 10));
     const activeContracts = contracts.filter(c => c.status === 'active');
+    const activeClientContracts = activeContracts.filter(c => c.kind !== 'internal');
+    const activeInternalAreas = activeContracts.filter(c => c.kind === 'internal');
     // Turno rotativo (no 5x2) = pide fecha de subida (día 1 del ciclo del trabajador).
     const selectedShiftIsRotating = (() => {
         const s = shiftSchedules.find(sh => sh.id === shiftScheduleId);
@@ -488,20 +490,31 @@ export function EnrollmentWizard({
                                 {!selectedUser && (
                                     <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 space-y-4">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                            Contrato / Faena de destino (opcional)
+                                            Contrato / Área de destino (opcional)
                                         </p>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                             <div className="space-y-1.5">
-                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Contrato</label>
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Contrato / Área</label>
                                                 <select
                                                     value={contractId}
                                                     onChange={e => { setContractId(e.target.value); if (!e.target.value) setShiftScheduleId(''); }}
                                                     className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
                                                 >
-                                                    <option value="">Sin contrato (pool general)</option>
-                                                    {activeContracts.map(c => (
-                                                        <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
-                                                    ))}
+                                                    <option value="">Sin asignar</option>
+                                                    {activeClientContracts.length > 0 && (
+                                                        <optgroup label="Contratos de cliente">
+                                                            {activeClientContracts.map(c => (
+                                                                <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                                                            ))}
+                                                        </optgroup>
+                                                    )}
+                                                    {activeInternalAreas.length > 0 && (
+                                                        <optgroup label="Áreas internas">
+                                                            {activeInternalAreas.map(c => (
+                                                                <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                                                            ))}
+                                                        </optgroup>
+                                                    )}
                                                 </select>
                                             </div>
                                             <div className="space-y-1.5">

@@ -16,12 +16,14 @@ import {
   User as UserIcon, FileText, CheckCircle, AlertCircle,
   Grid, List, History, ArrowUpRight, ArrowDownLeft,
   ScanFace, Lock, Download, Printer, Package, ClipboardList,
-  Building2, Calendar, AlertTriangle, Send, Pencil, CheckCheck
+  Building2, Calendar, AlertTriangle, Send, Pencil, CheckCheck, Briefcase
 } from 'lucide-react';
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ClientContractFilter, contractIdsOfClient, CC_ALL, CC_POOL } from "@/components/client-contract-filter";
+import type { Contract } from "@/modules/core/lib/data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -45,9 +47,24 @@ type DisplayTransaction = {
 };
 
 export default function PersonalPage() {
-  const { users, requests, returnRequests, materials, addUser, enrollUser, eaDocuments, generateEADocument, confirmEASentToDT, updateTenant } = useAppState();
+  const { users, requests, returnRequests, materials, contracts, contractWorkers, addUser, enrollUser, eaDocuments, generateEADocument, confirmEASentToDT, updateTenant } = useAppState();
   const { user: currentUser, can } = useAuth();
   const { toast } = useToast();
+
+  // Asignaciones vigentes (sin fecha de término) por usuario: contratos de cliente
+  // y áreas internas por igual — ambos son filas de `contracts`.
+  const assignmentsByUser = useMemo(() => {
+    const map = new Map<string, Contract[]>();
+    for (const cw of contractWorkers) {
+      if (cw.endDate) continue;
+      const contract = contracts.find(c => c.id === cw.contractId);
+      if (!contract) continue;
+      const list = map.get(cw.userId) || [];
+      list.push(contract);
+      map.set(cw.userId, list);
+    }
+    return map;
+  }, [contractWorkers, contracts]);
 
   // Datos legales del tenant (cargados una vez al montar)
   const [currentTenant, setCurrentTenant] = useState<Partial<Tenant> | null>(null);
@@ -106,6 +123,8 @@ export default function PersonalPage() {
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filter, setFilter] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState<string>(CC_ALL);
+  const [selectedContractId, setSelectedContractId] = useState<string>(CC_ALL);
   const [historySearch, setHistorySearch] = useState('');
 
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
@@ -152,8 +171,22 @@ export default function PersonalPage() {
       );
     }
 
+    // Filtro por asignación: contrato de cliente o área interna.
+    if (selectedContractId !== CC_ALL || selectedClientId !== CC_ALL) {
+      userList = userList.filter(emp => {
+        const assigned = assignmentsByUser.get(emp.id) || [];
+        // POOL = sin contrato NI área: dato faltante, no "personal de planta".
+        if (selectedContractId === CC_POOL) return assigned.length === 0;
+
+        const allowed = selectedContractId !== CC_ALL
+          ? new Set([selectedContractId])
+          : contractIdsOfClient(contracts, selectedClientId);
+        return assigned.some(c => allowed.has(c.id));
+      });
+    }
+
     return userList;
-  }, [users, filter, currentUser]);
+  }, [users, filter, currentUser, selectedClientId, selectedContractId, assignmentsByUser, contracts]);
 
   const transactions = useMemo(() => {
     const allTransactions: DisplayTransaction[] = [];
@@ -201,12 +234,21 @@ export default function PersonalPage() {
           <button onClick={() => setViewMode('list')} className={`p-3 rounded-[1rem] transition-all ${viewMode === 'list' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}><List size={20} /></button>
         </div>
         <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
-          <div className="relative w-full md:w-[400px]">
+          <div className="relative w-full md:w-[340px]">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
             <Input type="text" placeholder="Buscar por RUT, Nombre o ID..."
               className="pl-12 pr-6 py-4 h-12 bg-card border rounded-[1.5rem] focus:ring-4 focus:ring-primary/10 w-full"
               value={filter} onChange={(e) => setFilter(e.target.value)} />
           </div>
+          <ClientContractFilter
+            clientId={selectedClientId}
+            contractId={selectedContractId}
+            onClientChange={setSelectedClientId}
+            onContractChange={setSelectedContractId}
+            includePool
+            poolLabel="Sin asignar"
+            triggerClassName="w-full md:w-48 h-12 rounded-[1.5rem] bg-card border"
+          />
           {canManageEmployees && (
             <Button onClick={() => handleOpenEnrollment()} className="w-full md:w-auto shrink-0 flex items-center justify-center gap-3 px-8 py-5 sm:py-4 rounded-[1.5rem] transform hover:scale-105 active:scale-95 shadow-lg shadow-primary/10">
               <UserPlus size={18} /> Enrolar Nuevo Empleado
@@ -215,7 +257,7 @@ export default function PersonalPage() {
         </div>
       </div>
       {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 pb-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 pb-20">
           {filteredUsers.length === 0 ? (
             <div className="col-span-full py-20 text-center bg-card rounded-[2.5rem] border border-dashed">
               <UserIcon size={48} className="mx-auto text-muted-foreground/30 mb-4" />
@@ -223,38 +265,56 @@ export default function PersonalPage() {
             </div>
           ) : (
             filteredUsers.map(emp => (
-              <Card key={emp.id} className="p-8 rounded-[2.5rem] border-none shadow-xl shadow-black/5 bg-card flex flex-col justify-between h-full gap-6 group hover:shadow-2xl transition-all duration-500">
+              <Card key={emp.id} className="p-5 rounded-[2rem] border-none shadow-xl shadow-black/5 bg-card flex flex-col justify-between h-full gap-4 group hover:shadow-2xl transition-all duration-500">
                 <div>
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="flex items-center gap-5">
-                      <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center text-xl font-black text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-all duration-300 uppercase shrink-0">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-sm font-black text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-all duration-300 uppercase shrink-0">
                         {emp?.name?.split(' ').map(n => n[0]).join('') || 'U'}
                       </div>
                       <div>
-                        <h4 className="font-black text-foreground text-lg uppercase tracking-tight leading-tight line-clamp-2">{emp.name}</h4>
-                        <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mt-1">{emp.internalId}</p>
+                        <h4 className="font-black text-foreground text-sm uppercase tracking-tight leading-tight line-clamp-2">{emp.name}</h4>
+                        <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">{emp.internalId}</p>
                       </div>
                     </div>
-                    <div className={`p-3 rounded-2xl shrink-0 ${emp.biometric_template ? 'bg-success-subtle text-success' : 'bg-muted text-muted-foreground/50'}`} title={emp.biometric_template ? 'Biometría enrolada' : 'Falta enrolar'}>
-                      <Fingerprint size={24} />
+                    <div className={`p-2 rounded-xl shrink-0 ${emp.biometric_template ? 'bg-success-subtle text-success' : 'bg-muted text-muted-foreground/50'}`} title={emp.biometric_template ? 'Biometría enrolada' : 'Falta enrolar'}>
+                      <Fingerprint size={18} />
                     </div>
                   </div>
-                  <div className="space-y-3 px-1">
-                    <div className="flex items-center gap-3 text-xs font-bold text-muted-foreground">
-                      <ShieldCheck size={16} /> <span>RUT: {emp.rut || 'N/A'}</span>
+                  <div className="space-y-2 px-1">
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                      <ShieldCheck size={13} /> <span>RUT: {emp.rut || 'N/A'}</span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs font-bold text-muted-foreground">
-                      <Mail size={16} /> <span className="truncate" title={emp.email}>{emp.email}</span>
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                      <Mail size={13} /> <span className="truncate" title={emp.email}>{emp.email}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {(assignmentsByUser.get(emp.id) || []).length > 0 ? (
+                        (assignmentsByUser.get(emp.id) || []).map(c => c.kind === 'internal' ? (
+                          <span key={c.id} className="badge-warning text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase flex items-center gap-1" title="Área interna">
+                            <Building2 size={9} /> {c.name}
+                          </span>
+                        ) : (
+                          <span key={c.id} className="badge-info text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase flex items-center gap-1" title="Contrato de cliente">
+                            <Briefcase size={9} /> {c.name}
+                          </span>
+                        ))
+                      ) : (
+                        // Ni contrato ni área: dato faltante, no "planta".
+                        <span className="text-[8px] font-black text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-md border border-dashed border-border uppercase flex items-center gap-1">
+                          <Briefcase size={9} /> Sin asignar
+                        </span>
+                      )}
                     </div>
                     {emp.enrolledBy && (
-                      <div className="flex items-center gap-2 text-[9px] font-bold text-muted-foreground mt-2 bg-muted p-2 rounded-xl border">
-                        <ShieldCheck size={12} className="text-pagnol-orange" />
+                      <div className="flex items-center gap-2 text-[9px] font-bold text-muted-foreground mt-1.5 bg-muted p-1.5 rounded-lg border">
+                        <ShieldCheck size={11} className="text-pagnol-orange shrink-0" />
                         <span className="leading-tight">Autorizado por: <b className="text-muted-foreground">{emp.enrolledBy}</b> el {new Date(emp.enrolledAt!).toLocaleDateString('es-CL')}</span>
                       </div>
                     )}
                   </div>
                 </div>
-                <div className="mt-4 flex flex-col gap-2">
+                <div className="mt-1 flex flex-col gap-2">
                   <div className="flex gap-2">
                     {canDelegatePermissions && emp.id !== currentUser?.id && (() => {
                       const hasEnrollPerm = getEffectivePermissions(emp).includes('pagnol:enroll_personal');
@@ -262,34 +322,34 @@ export default function PersonalPage() {
                         <Button
                           onClick={() => handleOpenPermissions(emp)}
                           variant="outline"
-                          className={`flex-1 py-1 h-9 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 ${hasEnrollPerm
+                          className={`flex-1 py-1 h-8 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${hasEnrollPerm
                             ? 'border-success/30 text-success-subtle-foreground bg-success-subtle hover:bg-success/10'
                             : 'border-pagnol-orange/20 text-pagnol-orange hover:bg-pagnol-orange/5'
                             }`}
                         >
-                          {hasEnrollPerm ? <><CheckCircle size={12} /> Aprobado</> : <><Lock size={12} /> Permisos</>}
+                          {hasEnrollPerm ? <><CheckCircle size={11} /> Aprobado</> : <><Lock size={11} /> Permisos</>}
                         </Button>
                       );
                     })()}
                     <Button
                       onClick={() => { setSelectedEmployeeForEA(emp); setIsEAModalOpen(true); }}
                       variant="outline"
-                      className="flex-1 py-1 h-9 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border-info/30 text-info hover:bg-info-subtle"
+                      className="flex-1 py-1 h-8 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 border-info/30 text-info hover:bg-info-subtle"
                     >
-                      <ClipboardList size={12} /> Acta EA
+                      <ClipboardList size={11} /> Acta EA
                     </Button>
                   </div>
                   {canManageEmployees && (
                     <Button
                       onClick={() => !emp.biometric_template && handleOpenEnrollment(emp)}
                       variant={emp.biometric_template ? 'ghost' : 'default'}
-                      className={`w-full py-1 h-10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all
+                      className={`w-full py-1 h-9 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all
                         ${emp.biometric_template
                           ? 'bg-success-subtle text-success-subtle-foreground hover:bg-success/10 cursor-default border border-success/30'
                           : 'bg-foreground text-background shadow-xl shadow-black/10 hover:bg-foreground/90'
                         }`}>
-                      {emp.biometric_template ? <CheckCircle size={16} /> : <ScanFace size={16} />}
-                      {emp.biometric_template ? 'Personal Enrolado Biométricamente' : 'Iniciar Enrolamiento Biométrico'}
+                      {emp.biometric_template ? <CheckCircle size={14} /> : <ScanFace size={14} />}
+                      {emp.biometric_template ? 'Enrolado Biométricamente' : 'Iniciar Enrolamiento Biométrico'}
                     </Button>
                   )}
                 </div>
@@ -304,7 +364,7 @@ export default function PersonalPage() {
               <TableHeader className="min-w-[1000px]">
                 <TableRow>
                   <TableHead>Personal / Identificación</TableHead><TableHead>RUT</TableHead><TableHead>ID Interno</TableHead>
-                  <TableHead>Rol</TableHead><TableHead>Estado Biométrico</TableHead><TableHead className="text-center">Acciones</TableHead>
+                  <TableHead>Rol</TableHead><TableHead>Contrato / Área</TableHead><TableHead>Estado Biométrico</TableHead><TableHead className="text-center">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -324,6 +384,23 @@ export default function PersonalPage() {
                     <TableCell className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{emp.rut}</TableCell>
                     <TableCell className="text-xs font-mono tracking-widest">{emp.internalId}</TableCell>
                     <TableCell><Badge variant="outline">{getRoleDisplayName(emp.role)}</Badge></TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1 max-w-[220px]">
+                        {(assignmentsByUser.get(emp.id) || []).length > 0 ? (
+                          (assignmentsByUser.get(emp.id) || []).map(c => (
+                            <span
+                              key={c.id}
+                              title={c.kind === 'internal' ? 'Área interna' : 'Contrato de cliente'}
+                              className={`${c.kind === 'internal' ? 'badge-warning' : 'badge-info'} text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase`}
+                            >
+                              {c.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[8px] font-black text-muted-foreground uppercase">Sin asignar</span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${emp.biometric_template ? 'text-success' : 'text-muted-foreground'}`}>
                         <ScanFace size={14} /> {emp.biometric_template ? 'Enrolado / Activo' : 'Pendiente'}

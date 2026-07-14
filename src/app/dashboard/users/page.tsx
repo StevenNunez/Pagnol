@@ -19,14 +19,34 @@ import { useToast } from "@/modules/core/hooks/use-toast";
 import QRCode from "react-qr-code";
 import { Input } from "@/components/ui/input";
 import { ROLES } from "@/modules/core/lib/permissions";
+import { Briefcase, Building2 } from "lucide-react";
+import { ClientContractFilter, contractIdsOfClient, CC_ALL, CC_POOL } from "@/components/client-contract-filter";
+import type { Contract } from "@/modules/core/lib/data";
 
 
 export default function AdminUsersPage() {
-  const { users, deleteUser, can } = useAppState();
+  const { users, contracts, contractWorkers, deleteUser, can } = useAppState();
   const { user: authUser } = useAuth();
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<string>(CC_ALL);
+  const [selectedContractId, setSelectedContractId] = useState<string>(CC_ALL);
   const { toast } = useToast();
+
+  // Asignaciones vigentes (sin fecha de término) por usuario: contratos de cliente
+  // y áreas internas por igual — ambos son filas de `contracts`.
+  const assignmentsByUser = useMemo(() => {
+    const map = new Map<string, Contract[]>();
+    for (const cw of contractWorkers) {
+      if (cw.endDate) continue;
+      const contract = contracts.find(c => c.id === cw.contractId);
+      if (!contract) continue;
+      const list = map.get(cw.userId) || [];
+      list.push(contract);
+      map.set(cw.userId, list);
+    }
+    return map;
+  }, [contractWorkers, contracts]);
 
   const getInitials = (name: string) => {
     if (!name) return '??';
@@ -67,14 +87,26 @@ export default function AdminUsersPage() {
 
   const filteredUsers = useMemo(() => {
     if (!users) return [];
-    if (!searchTerm) return users;
 
-    return users.filter((user: User) =>
-      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (user.rut && user.rut.includes(searchTerm))
-    );
-  }, [users, searchTerm]);
+    return users.filter((user: User) => {
+      const matchesSearch = !searchTerm ||
+        user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (user.rut && user.rut.includes(searchTerm));
+      if (!matchesSearch) return false;
+
+      if (selectedContractId === CC_ALL && selectedClientId === CC_ALL) return true;
+
+      const assigned = assignmentsByUser.get(user.id) || [];
+      // POOL = sin contrato NI área interna: dato faltante, no "personal de planta".
+      if (selectedContractId === CC_POOL) return assigned.length === 0;
+
+      const allowed = selectedContractId !== CC_ALL
+        ? new Set([selectedContractId])
+        : contractIdsOfClient(contracts, selectedClientId);
+      return assigned.some(c => allowed.has(c.id));
+    });
+  }, [users, searchTerm, selectedClientId, selectedContractId, assignmentsByUser, contracts]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-1000">
@@ -119,6 +151,15 @@ export default function AdminUsersPage() {
                   className="pl-11 h-12 bg-muted/30 border-none rounded-xl focus-visible:ring-primary/20"
                 />
               </div>
+              <ClientContractFilter
+                clientId={selectedClientId}
+                contractId={selectedContractId}
+                onClientChange={setSelectedClientId}
+                onContractChange={setSelectedContractId}
+                includePool
+                poolLabel="Sin asignar"
+                triggerClassName="w-full sm:w-52 h-12 rounded-xl bg-muted/30 border-none"
+              />
               {can('users:print_qr') && (
                 <Button asChild className="h-12 px-6 rounded-xl bg-pagnol-orange hover:bg-orange-600 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-orange-500/20">
                   <Link href="/dashboard/users/print-qrs">
@@ -161,6 +202,24 @@ export default function AdminUsersPage() {
                         {user.rut && (
                           <span className="text-[9px] font-black text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border uppercase">
                             RUT: {user.rut}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-0.5">
+                        {(assignmentsByUser.get(user.id) || []).length > 0 ? (
+                          (assignmentsByUser.get(user.id) || []).map(c => c.kind === 'internal' ? (
+                            <span key={c.id} className="badge-warning text-[9px] font-black px-2 py-0.5 rounded-md uppercase flex items-center gap-1" title="Área interna">
+                              <Building2 size={10} /> {c.name}
+                            </span>
+                          ) : (
+                            <span key={c.id} className="badge-info text-[9px] font-black px-2 py-0.5 rounded-md uppercase flex items-center gap-1" title="Contrato de cliente">
+                              <Briefcase size={10} /> {c.name}
+                            </span>
+                          ))
+                        ) : (
+                          // Ni contrato ni área: dato faltante, no "planta".
+                          <span className="text-[9px] font-black text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-md border border-dashed border-border uppercase flex items-center gap-1">
+                            <Briefcase size={10} /> Sin asignar
                           </span>
                         )}
                       </div>

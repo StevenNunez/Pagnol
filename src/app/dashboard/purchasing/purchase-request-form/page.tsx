@@ -69,12 +69,27 @@ export default function PurchaseRequestFormPage() {
     );
     return activeContracts.filter((c) => myContractIds.has(c.id));
   }, [contractWorkers, authUser, activeContracts]);
-  const selectableContracts = canSelectAnyContract ? activeContracts : myAssignedContracts;
-  const isFieldWorkerSingleContract = !canSelectAnyContract && myAssignedContracts.length === 1;
+  // Una solicitud al cliente (SCL) necesita un mandante a quien pedirle: las áreas
+  // internas no tienen cliente, así que se ocultan en ese modo (el submit ya las
+  // rechazaba, pero mejor no dejar elegir una opción que deja el botón muerto).
+  const selectableContracts = useMemo(() => {
+    const base = canSelectAnyContract ? activeContracts : myAssignedContracts;
+    return target === 'client' ? base.filter((c) => c.kind !== 'internal' && c.clientId) : base;
+  }, [canSelectAnyContract, activeContracts, myAssignedContracts, target]);
 
+  const isFieldWorkerSingleContract = !canSelectAnyContract && selectableContracts.length === 1;
+
+  // Un solo efecto para ambas cosas: limpiar la selección que dejó de ser válida
+  // (p.ej. área interna al cambiar a "pedir al cliente") y autocargar cuando el
+  // trabajador de terreno tiene una única opción. Separarlos los hacía pelearse:
+  // uno reponía el contrato que el otro acababa de limpiar.
   useEffect(() => {
-    if (isFieldWorkerSingleContract && !contractId) setContractId(myAssignedContracts[0].id);
-  }, [isFieldWorkerSingleContract, myAssignedContracts, contractId]);
+    if (contractId && !selectableContracts.some((c) => c.id === contractId)) {
+      setContractId(isFieldWorkerSingleContract ? selectableContracts[0].id : "");
+      return;
+    }
+    if (isFieldWorkerSingleContract && !contractId) setContractId(selectableContracts[0].id);
+  }, [selectableContracts, contractId, isFieldWorkerSingleContract]);
 
   // Cliente del contrato seleccionado (para solicitudes de suministro).
   const clientMap = useMemo(() => new Map(((clients || []) as Client[]).map((c) => [c.id, c])), [clients]);

@@ -63,8 +63,9 @@ export default function ContractStockReportPage() {
         [warehouses],
     );
 
+    // null = existencias sin imputar a ningún contrato ni área interna (limbo).
     const contractLabel = (cid: string | null) =>
-        cid === null ? "Pool central" : contractsMap.get(cid)?.name || "Contrato eliminado";
+        cid === null ? "Sin asignar" : contractsMap.get(cid)?.name || "Contrato eliminado";
     const warehouseLabel = (wid: string | null) =>
         wid === null ? "Sin pañol" : warehousesMap.get(wid)?.name || "Pañol eliminado";
 
@@ -505,7 +506,7 @@ export default function ContractStockReportPage() {
                             onClientChange={setClientFilter}
                             onContractChange={setContractFilter}
                             includePool
-                            poolLabel="Pool central"
+                            poolLabel="Sin asignar"
                             triggerClassName="w-[200px] rounded-xl"
                             contractPredicate={(c) => c.status === "active" || contractHasStock.has(c.id)}
                         />

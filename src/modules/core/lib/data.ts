@@ -470,18 +470,31 @@ export interface Client {
   createdAt: Date;
 }
 
+/**
+ * Naturaleza del contrato:
+ * - 'client'   — contrato con un mandante externo (Torres, Novandino…).
+ * - 'internal' — Área Interna: estructura propia de la empresa (Administración,
+ *   Finanzas, Abastecimiento…). Sin cliente. Existe para que su personal, su
+ *   stock y sus pañoles tengan un dueño real en vez de caer al pool central,
+ *   que significa "sin asignar" (limbo), no "de la empresa".
+ */
+export type ContractKind = 'client' | 'internal';
+
 export interface Contract {
   id: string;
   tenantId: string;
   name: string;
   code?: string;
-  clientId?: string | null; // FK a Client (la fuente de verdad)
+  kind: ContractKind;
+  clientId?: string | null; // FK a Client (la fuente de verdad). Siempre null si kind='internal'.
   clientName?: string; // legacy: string suelto pre-entidad Cliente (solo lectura)
   location?: string;
   status: 'active' | 'closed' | 'suspended';
   startDate: Date | string;
   endDate?: Date | string | null;
   description?: string;
+  /** Presupuesto de compras del área/contrato (entidad aparte: cost_centers). */
+  costCenterId?: string | null;
   createdBy?: string;
   createdAt: Date;
   // Subcontratistas
@@ -490,6 +503,11 @@ export interface Contract {
   subcontractorCompany?: string | null;
   subcontractorRut?: string | null;
 }
+
+/** Un Área Interna es un contrato sin mandante: estructura propia de la empresa. */
+export const isInternalArea = (c: Contract) => c.kind === 'internal';
+/** Contrato con mandante externo (lo que históricamente se llamó "contrato"). */
+export const isClientContract = (c: Contract) => c.kind !== 'internal';
 
 export interface ContractWorker {
   id: string;

@@ -18,6 +18,61 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Áreas Internas: la estructura propia de la empresa (caso Valar)
+
+**El problema de fondo:** "personal/stock de planta" y "dato que falta asignar" eran
+el **mismo estado**. Un trabajador de Administración simplemente no tenía fila en
+`contract_workers`, exactamente igual que un operario que alguien olvidó asignar; y el
+casco que se le entregaba caía al pool central (`material_stocks.contract_id IS NULL`),
+que la migración `20260701010000` definió explícitamente como **limbo** ("se reparte
+después con la acción de transferencia"), no como una unidad organizacional real.
+Resultado: era imposible distinguir al contador de finanzas de un olvido, y el costo de
+su equipamiento contaminaba el balde de "no asignado" en vez de imputarse a su área.
+
+**El modelo:** un **Área Interna** (Administración, Finanzas, Abastecimiento, Gerencia…)
+es una fila de `contracts` con `kind='internal'` y `client_id NULL`. Como todo el sistema
+ya pivotea sobre `contract_id` (`contract_workers`, `material_stocks`, `warehouse_contracts`,
+kardex, asistencia, las 3 solicitudes), un área hereda **gratis** personas, stock, pañoles,
+imputación y reportes — sin una segunda dimensión que duplicaría el invariante del ledger.
+Se descartó por eso una entidad `internal_areas` paralela.
+
+Efecto colateral deseado: `contract_id IS NULL` **recupera su significado real** (limbo), y
+"sin asignar" pasa de ser un estado normal a una **alerta de calidad de dato** accionable.
+
+- Migración `20260721000000` (**pendiente de aplicar**): `contracts.kind` (`client`|`internal`,
+  default `client` → los contratos existentes no cambian), `contracts.cost_center_id` (FK opcional
+  a `cost_centers`: el presupuesto de compras sigue siendo entidad aparte, solo se enlaza), y un
+  CHECK que impide que un área interna tenga mandante.
+- **Sin backfill, deliberado**: no se mueve el pool actual a ningún área (contiene todo el stock
+  histórico; migrarlo declararía en silencio que es suyo) ni se auto-asigna a planta al personal
+  sin contrato (puede ser planta o un olvido — solo el usuario sabe cuál).
+- **Sin seed en SQL**: Pagnol es multi-tenant y un `INSERT` en la migración inyectaría las áreas a
+  *todos* los tenants. Se crean desde Configuración → Clientes y Contratos, por tenant.
+- Pañol de oficina: es un `warehouse` normal ligado al área vía `warehouse_contracts` (N:M) — cero
+  código nuevo de ledger. El pañol central que "abastece a todo" ya estaba soportado por ese N:M.
+- UI: nueva sección "Áreas internas" en Configuración; selector de tipo en el formulario de
+  contrato; agrupación Contratos / Áreas Internas en `ClientContractFilter`, `UserPanel` y el
+  wizard de enrolamiento; badges diferenciados en Usuarios y Personal.
+
+### Corregido — El bloque "subcontratista" del formulario de contrato no persistía nada
+`isSubcontractor`, `parentContractId`, `subcontractorCompany` y `subcontractorRut` estaban
+declarados en el tipo `Contract` y en el formulario, pero **el mapper no los leía y las
+mutaciones no los escribían**, y las columnas ni siquiera existían en `contracts`. Marcar la
+casilla no tenía efecto alguno: se perdía en silencio al guardar. Se añaden las columnas
+(migración `20260721000000`), el mapeo y la escritura. `tsc` no lo detectaba porque los campos
+son opcionales.
+
+### Corregido — `updateContract` podía fallar en silencio bajo RLS
+No encadenaba `.select()`, así que un `UPDATE` que no matchea ninguna fila por RLS "tenía
+éxito" sin escribir nada (gotcha conocido del proyecto).
+
+### Agregado — Filtro por contrato/área en /dashboard/users y /dashboard/pagnol/personal
+Con muchos usuarios era imposible saber en qué contrato estaba cada uno sin entrar a su ficha.
+Ambas páginas ganan el filtro en cascada Cliente → Contrato/Área (reusando `ClientContractFilter`,
+con opción "Sin asignar") y muestran los contratos y áreas de cada persona como badges en la
+tarjeta — distinguiendo visualmente contrato de cliente (azul) de área interna (ámbar). La
+tarjeta de Personal se compactó (menos padding, avatar y tipografías más chicas).
+
 ### Agregado — Eliminar activo en /dashboard/pagnol/activos (borrado auditado)
 No existía forma de eliminar un activo — el botón nunca se implementó (`deleteMaterial`
 estaba escrito pero sin usar en ningún lado). Al construirlo se encontró que

@@ -26,17 +26,19 @@ type FormState = {
   code: string; direction: RentalDirection; partyId: string; title: string;
   status: RentalContractStatus; startDate: string; endDate: string;
   billingCycle: RentalBillingCycle; amount: string; currency: string; paymentDay: string; notes: string;
+  clientContractId: string;
 };
 
 const EMPTY: FormState = {
   code: '', direction: 'incoming', partyId: '', title: '', status: 'active',
   startDate: new Date().toISOString().slice(0, 10), endDate: '',
   billingCycle: 'monthly', amount: '', currency: 'CLP', paymentDay: '', notes: '',
+  clientContractId: '',
 };
 
 export default function RentalContractsPage() {
   const router = useRouter();
-  const { rentalContracts, rentalParties, suppliers, addRentalContract, updateRentalContract, can, notify } = useAppState();
+  const { rentalContracts, rentalParties, suppliers, contracts, addRentalContract, updateRentalContract, can, notify } = useAppState();
   const canManage = can('rentals:manage_contracts');
 
   const [dirFilter, setDirFilter] = useState<'all' | RentalDirection>('all');
@@ -75,6 +77,7 @@ export default function RentalContractsPage() {
       status: c.status, startDate: toInputDate(c.startDate), endDate: c.endDate ? toInputDate(c.endDate) : '',
       billingCycle: c.billingCycle, amount: String(c.amount ?? ''), currency: c.currency || 'CLP',
       paymentDay: c.paymentDay != null ? String(c.paymentDay) : '', notes: c.notes ?? '',
+      clientContractId: c.clientContractId ?? '',
     });
     setOpen(true);
   };
@@ -96,6 +99,8 @@ export default function RentalContractsPage() {
       currency: form.currency,
       paymentDay: form.paymentDay ? Number(form.paymentDay) : null,
       notes: form.notes || undefined,
+      // Imputación del costo a la faena (ADR-004): a qué contrato cliente se carga.
+      clientContractId: form.clientContractId || null,
     };
     try {
       if (editing) {
@@ -252,6 +257,22 @@ export default function RentalContractsPage() {
                 </SelectContent>
               </Select>
             </Field>
+            {form.direction === 'incoming' && (
+              <Field label="Imputar a contrato (Finanzas)" full>
+                <Select
+                  value={form.clientContractId || '__none__'}
+                  onValueChange={(v) => setForm({ ...form, clientContractId: v === '__none__' ? '' : v })}
+                >
+                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="Sin imputar" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sin imputar (alerta en Finanzas)</SelectItem>
+                    {(contracts || []).filter((c) => c.status === 'active').map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}{c.clientName ? ` — ${c.clientName}` : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
             <Field label="Notas" full><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="rounded-xl" /></Field>
           </div>
           <DialogFooter>

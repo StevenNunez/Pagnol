@@ -93,6 +93,10 @@ export const ALL_PERMISSIONS = {
     'module_finance:view': { label: 'Acceder a Finanzas (Resultado por Contrato)', group: 'Acceso a Módulos' },
     'finance:manage': { label: 'Administrar Finanzas (presupuestos, cierres)', group: 'Finanzas' },
 
+    // ── Estado de Pago (F2): el EP aprobado devenga INGRESO en el ledger ──────
+    'payment_states:approve': { label: 'Aprobar/Anular Estados de Pago', group: 'Finanzas' },
+    'payment_states:pay': { label: 'Registrar Cobro de Estados de Pago', group: 'Finanzas' },
+
     'users:create': { label: 'Crear Usuarios', group: 'Usuarios' },
     'users:view': { label: 'Ver Usuarios', group: 'Usuarios' },
     'users:edit': { label: 'Editar Usuarios', group: 'Usuarios' },
@@ -538,6 +542,9 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'purchase_requests:authorize', 'purchase_requests:view_all', 'purchase_requests:create',
             'rentals:authorize', 'module_rentals:view', 'rentals:request',
             'material_requests:create',
+            // F2: el ADC administra el contrato — aprueba y registra el cobro
+            // de los estados de pago (ADR-004 §10).
+            'payment_states:approve', 'payment_states:pay',
         ],
     },
     'gerente-general': {

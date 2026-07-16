@@ -373,10 +373,11 @@ export default function ContractorContractDetailPage() {
         try {
             const leafItems = contractItems.filter(i => i.id !== contractId);
             const epId = await addPaymentState({
+                workItemRootId: contractId,
                 totalValue: financialKPIs.totalContract,
                 earnedValue: financialKPIs.earnedValue,
                 items: leafItems,
-            } as any);
+            });
             await generateEstadoDePagoPDF(epId, user.name, financialKPIs.totalContract, financialKPIs.earnedValue, leafItems, currentTenant?.logoUrl);
             toast({
                 title: 'Estado de Pago Generado',

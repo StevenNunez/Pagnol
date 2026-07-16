@@ -5,9 +5,58 @@ import { MaterialRequest, Material, ReturnRequest, UserRole } from '@/modules/co
 import { ROLES, Permission, userCan } from '@/modules/core/lib/permissions';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
-import { addToLedger, consumeFromLedger, describeConsumeSources } from './stockLedger';
+import { addToLedger, consumeFromLedger, describeConsumeSources, type ConsumeSource } from './stockLedger';
+import { emitFinanceEntries } from './financeLedger';
+import { consumptionTransfers } from './financeMath';
 
 import type { MutationContext as Context } from './context';
+
+/**
+ * Emisor F2 (ADR-004 §7-8): la entrega de un CONSUMIBLE a un contrato mueve el
+ * costo de la dimensión de la que salieron las unidades (pool = "Sin contrato",
+ * u otro contrato en cascada) hacia el contrato destino. Lo que ya estaba en el
+ * destino no re-emite (la recepción ya lo devengó ahí: una unidad nunca costea
+ * dos veces). Herramientas/activos se PRESTAN, no se consumen: no emiten.
+ */
+async function emitConsumptionForDelivery(
+  opts: {
+    mat: { id: string; name: string; usage_type?: string | null; unit_cost?: number | null };
+    sources: ConsumeSource[];
+    contractId: string | null;
+    contractName: string | null;
+    requestCode: string;
+  },
+  context: Context,
+): Promise<void> {
+  if (opts.mat.usage_type !== 'Consumible') return;
+  const moves = consumptionTransfers(opts.sources, opts.contractId, Number(opts.mat.unit_cost) || 0);
+  if (!moves.length) return;
+
+  // Nombres de los contratos involucrados (snapshot en el hecho).
+  const ids = [...new Set(moves.map((m) => m.contractId).filter(Boolean))] as string[];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const { data } = await supabase.from('contracts').select('id, name').in('id', ids);
+    for (const c of data || []) names.set(c.id, c.name);
+  }
+  if (opts.contractId && opts.contractName) names.set(opts.contractId, opts.contractName);
+
+  await emitFinanceEntries(moves.map((m) => ({
+    nature: 'cost' as const,
+    stage: 'accrued' as const,
+    category: 'materials' as const,
+    amountNet: m.amountNet,
+    contractId: m.contractId,
+    contractName: m.contractId ? names.get(m.contractId) ?? null : null,
+    sourceType: 'material_request',
+    sourceId: opts.requestCode,
+    sourceCode: opts.requestCode,
+    counterpartyType: 'material',
+    counterpartyId: opts.mat.id,
+    counterpartyName: opts.mat.name,
+    notes: `Consumo de pañol — ${opts.mat.name}`,
+  })), context);
+}
 
 export async function addMaterialRequest(
   requestData: {
@@ -171,6 +220,13 @@ export async function addAndApproveMaterialRequest(
       warehouse_id: warehouseId,
       tenant_id: tenantId,
     });
+    await emitConsumptionForDelivery({
+      mat: u.mat,
+      sources,
+      contractId,
+      contractName: requestData.contractName || null,
+      requestCode: requestId,
+    }, context);
   }
 }
 
@@ -276,6 +332,13 @@ export async function updateMaterialRequestStatus(
         contract_name: request.contract_name || null,
         tenant_id: tenantId,
       });
+      await emitConsumptionForDelivery({
+        mat: u.mat,
+        sources,
+        contractId,
+        contractName: request.contract_name || null,
+        requestCode: request.internal_code || requestId,
+      }, context);
     }
 
     await supabase.from('material_requests').update({

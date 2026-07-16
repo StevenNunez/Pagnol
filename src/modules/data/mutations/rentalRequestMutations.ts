@@ -328,6 +328,20 @@ export async function awardRentalQuote(
   // Número de OC del arriendo (correlativo por tenant).
   const ocNumber = await nextInternalCode(tenantId, 'OCA');
 
+  // Imputación al contrato CLIENTE (ADR-004): heredada de las solicitudes de
+  // terreno que originaron el RFQ. Si vienen de contratos distintos, queda sin
+  // imputar (alerta de calidad de dato, editable en la ficha del arriendo).
+  let clientContractId: string | null = null;
+  if (quote.requestIds?.length) {
+    const { data: reqs } = await supabase
+      .from('rental_requests')
+      .select('contract_id')
+      .in('id', quote.requestIds)
+      .eq('tenant_id', tenantId);
+    const distinct = [...new Set((reqs || []).map((r) => r.contract_id).filter(Boolean))];
+    if (distinct.length === 1) clientContractId = distinct[0] as string;
+  }
+
   // 1) Contrato de arriendo (entrante). Queda 'pending' con la OC por emitir:
   //    el calendario de pagos NO se genera todavía — corre al CONFIRMAR la OC.
   const contract = await addRentalContract(
@@ -346,6 +360,7 @@ export async function awardRentalQuote(
       ocNumber,
       ocStatus: 'pending',
       paymentTermsDays: 30,
+      clientContractId,
       notes: `Generado al adjudicar RFQ ${quote.internalCode || quote.id} a ${winner.partyName}.`,
     },
     context

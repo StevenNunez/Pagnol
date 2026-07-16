@@ -22,6 +22,7 @@ const FormSchema = z.object({
   type: z.enum(['project', 'task'], { required_error: 'Debes seleccionar un tipo.' }),
   parentId: z.string().optional().nullable(),
   assignedTo: z.string().optional().nullable(),
+  contractId: z.string().optional().nullable(),
 });
 
 type FormData = z.infer<typeof FormSchema>;
@@ -33,7 +34,7 @@ interface CreateWorkItemFormProps {
 }
 
 export function CreateWorkItemForm({ workItems }: CreateWorkItemFormProps) {
-  const { addWorkItem, users } = useAppState();
+  const { addWorkItem, users, contracts } = useAppState();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -54,6 +55,7 @@ export function CreateWorkItemForm({ workItems }: CreateWorkItemFormProps) {
       type: 'task',
       parentId: null,
       assignedTo: null,
+      contractId: null,
     },
   });
 
@@ -88,6 +90,8 @@ export function CreateWorkItemForm({ workItems }: CreateWorkItemFormProps) {
         status: 'in-progress' as const,
         projectId: user.tenantId,
         parentId: data.type === 'project' ? null : (data.parentId ?? null),
+        // Puente ADR-004: la imputación solo vive en la raíz de la obra.
+        contractId: data.type === 'project' ? (data.contractId ?? null) : null,
       };
 
       await addWorkItem(fullData);
@@ -152,6 +156,38 @@ export function CreateWorkItemForm({ workItems }: CreateWorkItemFormProps) {
           />
           <p className="text-xs text-muted-foreground">
             Este usuario verá el contrato en su módulo &quot;Estado de Pago&quot;.
+          </p>
+        </div>
+      )}
+
+      {/* Al crear un CONTRATO: imputación al contrato comercial (puente ADR-004).
+          Los estados de pago heredan esta imputación → ingresos en Finanzas. */}
+      {selectedType === 'project' && (
+        <div className="space-y-2">
+          <Label htmlFor="contractId">Contrato comercial (Finanzas)</Label>
+          <Controller
+            name="contractId"
+            control={control}
+            render={({ field }) => (
+              <Select onValueChange={(v) => field.onChange(v === '__none__' ? null : v)} value={field.value || '__none__'}>
+                <SelectTrigger id="contractId">
+                  <SelectValue placeholder="Sin imputar (alerta en Finanzas)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sin imputar</SelectItem>
+                  {(contracts || [])
+                    .filter(c => c.status === 'active')
+                    .map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}{c.clientName ? ` — ${c.clientName}` : ''}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          <p className="text-xs text-muted-foreground">
+            Los estados de pago de esta obra devengarán su ingreso a este contrato.
           </p>
         </div>
       )}

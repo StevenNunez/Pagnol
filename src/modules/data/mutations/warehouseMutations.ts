@@ -3,6 +3,8 @@ import { userCan } from '@/modules/core/lib/permissions';
 import type { Warehouse } from '@/modules/core/lib/data';
 import { mappers } from '../mappers';
 import { transferInLedger } from './stockLedger';
+import { emitFinanceEntries } from './financeLedger';
+import { consumptionTransfers } from './financeMath';
 
 import type { MutationContext as Context } from './context';
 
@@ -136,7 +138,7 @@ export async function transferMaterialStock(
 
     const { data: mat, error: matErr } = await supabase
         .from('materials')
-        .select('id, name, stock')
+        .select('id, name, stock, usage_type, unit_cost')
         .eq('id', params.materialId)
         .eq('tenant_id', tenantId)
         .single();
@@ -192,4 +194,31 @@ export async function transferMaterialStock(
         },
     ]);
     if (movErr) throw movErr;
+
+    // Emisor F2 (ADR-004 §8): una transferencia de CONSUMIBLES mueve el costo
+    // devengado entre dimensiones (negativo origen / positivo destino).
+    // Herramientas/activos solo cambian de ubicación: no emiten.
+    if (mat.usage_type === 'Consumible') {
+        const moves = consumptionTransfers(
+            [{ contractId: params.fromContractId, qty: params.qty }],
+            params.toContractId,
+            Number(mat.unit_cost) || 0,
+        );
+        if (moves.length) {
+            await emitFinanceEntries(moves.map((m) => ({
+                nature: 'cost' as const,
+                stage: 'accrued' as const,
+                category: 'materials' as const,
+                amountNet: m.amountNet,
+                contractId: m.contractId,
+                contractName: m.contractId ? labelOf(m.contractId) : null,
+                sourceType: 'stock_transfer',
+                sourceId: `${mat.id}:${now}`,
+                counterpartyType: 'material',
+                counterpartyId: mat.id,
+                counterpartyName: mat.name,
+                notes: `Transferencia de stock ${labelOf(params.fromContractId)} → ${labelOf(params.toContractId)} (${params.qty} u.)${reason}`,
+            })), { user, tenantId } as Context);
+        }
+    }
 }

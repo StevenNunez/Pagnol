@@ -642,6 +642,9 @@ export interface RentalContract {
   ocSentAt?: Date | string | null;
   ocConfirmedAt?: Date | string | null;
   paymentTermsDays?: number;          // plazo de pago: 1er venc. = confirmación OC + N días
+  // Imputación al contrato CLIENTE (ADR-004): a qué faena/contrato se carga el
+  // costo del arriendo. Se precarga desde la solicitud al adjudicar; editable.
+  clientContractId?: string | null;
   createdBy?: string;
   createdAt: Date;
 }
@@ -1208,7 +1211,9 @@ export interface CostCenter {
 export type FinanceNature = 'cost' | 'income';
 export type FinanceStage = 'committed' | 'accrued' | 'paid';
 export type FinanceCategory =
-    | 'materials' | 'labor' | 'equipment' | 'subcontract' | 'rental' | 'services' | 'indirect';
+    | 'materials' | 'labor' | 'equipment' | 'subcontract' | 'rental' | 'services' | 'indirect'
+    // Ingresos (F2): las demás categorías son taxonomía de costo.
+    | 'revenue';
 
 // Fila agregada que devuelve la RPC finance_contract_summary.
 export interface FinanceContractSummaryRow {
@@ -1570,6 +1575,9 @@ export interface WorkItem {
   id: string;
   tenantId: string;
   projectId: string; // Main obra ID
+  // Puente WBS↔contratos (ADR-004 §1): solo se usa en la RAÍZ de la obra;
+  // los estados de pago lo heredan de ahí.
+  contractId?: string | null;
   name: string;
   type: 'project' | 'phase' | 'subphase' | 'activity' | 'task';
   status: 'in-progress' | 'pending-quality-review' | 'completed' | 'rejected';
@@ -1590,13 +1598,24 @@ export interface WorkItem {
 
 export interface PaymentState {
   id: string;
+  internalCode?: string | null;      // correlativo EP-XXX-0001
   contractorId: string;
   contractorName: string;
   createdAt: Date | string;
   totalValue: number;
-  earnedValue: number;
-  status: 'pending' | 'approved' | 'paid';
+  earnedValue: number;               // acumulado del documento — JAMÁS se devenga
+  previousEarned: number;            // acumulado del EP anterior (congelado al crear)
+  periodEarned: number;              // delta del período: lo ÚNICO que se devenga (ADR-004)
+  status: 'pending' | 'approved' | 'paid' | 'annulled';
   items: WorkItem[];
+  workItemRootId?: string | null;    // raíz WBS de la obra
+  contractId?: string | null;        // heredado de la raíz WBS
+  contractName?: string | null;
+  approvedAt?: Date | string | null;
+  approvedByName?: string | null;
+  paidAt?: string | null;            // YYYY-MM-DD (fecha real del cobro)
+  annulledAt?: Date | string | null;
+  notes?: string | null;
   tenantId: string;
 }
 

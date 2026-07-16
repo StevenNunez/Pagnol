@@ -18,6 +18,45 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Dominio Financiero F2: ingresos y emisores restantes (RFC-002-F2-Plan / ADR-004)
+
+**Migración `20260723010000_finance_f2.sql` — PENDIENTE DE APLICAR.** Con ella el panel
+de Finanzas muestra por primera vez **MARGEN por contrato** (ingreso devengado − costo
+devengado) — el diferenciador estratégico del RFC-001.
+
+- **Ingresos desde Estado de Pago**: puente WBS↔contratos (`work_items.contract_id` en
+  la raíz de la obra, selector en Control de Obra); el EP hereda la imputación y congela
+  el **delta del período** al crearse (`previous_earned`/`period_earned` — el acumulado
+  JAMÁS se devenga, duplicaría los EP anteriores; delta ≤ 0 bloquea la creación).
+  Máquina de estados nueva en `paymentStateMutations.ts`: **Aprobar** (permiso
+  `payment_states:approve`, default ADC) → ingreso devengado `revenue`; **Marcar
+  cobrado** (`payment_states:pay`, fecha real) → ingreso pagado; **Anular** → reverso
+  de todo lo vivo. Correlativo `EP` + acciones en el historial (quien aprueba ve todos
+  los EP del tenant).
+- **Arriendos** (categoría `rental`, imputados vía `rental_contracts.client_contract_id`,
+  heredado de las solicitudes de terreno al adjudicar y editable en la ficha):
+  OC confirmada → **comprometido** = Σ del calendario generado (UF congelada del día);
+  **ciclo vencido → devengado** por materializador diario (mismo cron de MO, ventana 35
+  días, autor `Sistema (devengo arriendo)`); pago marcado → **pagado** (fecha real).
+  Des-marcar/eliminar cuota, cortar calendario al cerrar (con recompromiso por el
+  calendario final) y eliminar contrato reversan sus hechos.
+- **Consumo de pañol** (anti-doble-conteo, ADR-004 §7-8): la entrega de un CONSUMIBLE
+  mueve el costo desde la dimensión de origen real (pool = "Sin contrato" u otro
+  contrato, según lo que reporte `consumeFromLedger`) hacia el contrato destino —
+  una unidad nunca costea dos veces. Transferencias de stock entre contratos emiten el
+  par negativo/positivo. Herramientas se prestan, no se consumen: no emiten.
+  Devoluciones no emiten (reingresan a la misma dimensión).
+- **Mantenciones: DIFERIDA con ADR-004 §6** (decisión Steven): `total_cost`/`parts_used`
+  son digitación libre que no mueve stock; MO ya la captura F1 y los repuestos el consumo
+  de pañol — emitir duplicaría.
+- **Panel Finanzas**: KPIs Ingresos y **Margen** + columnas por contrato (margen y %)
+  + fila de ingresos (devengado/cobrado) en el desglose.
+- **Drift #5 reparado por la migración**: `payment_states` viva no tenía
+  `total_value`/`earned_value` — **crear un EP estaba 100% roto** (PGRST204), mismo
+  patrón que compras (F0) y asistencia (F1).
+- 12 tests nuevos de matemática pura (`epPeriodEarned`, `rentalNetToClp`,
+  `consumptionTransfers`) — 50 en verde.
+
 ### Agregado — Dominio Financiero F1: costo de mano de obra (RFC-002-F1-Plan / ADR-003)
 
 **Sin migración SQL propia** (la categoría `labor`, `counterparty_type='worker'` y

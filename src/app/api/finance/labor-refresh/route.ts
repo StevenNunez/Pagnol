@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
 import { materializeLaborForTenant } from '@/lib/labor-cost';
+import { materializeRentalAccrualsForTenant } from '@/lib/finance-accruals';
 
-// Fallback manual del cron labor-cost (patrón uf-refresh): un admin puede
-// forzar la materialización del costo de MO de SU tenant desde el panel de
-// Finanzas (p.ej. tras configurar sueldos base que faltaban, sin esperar al
-// cron de la madrugada). Solo re-ejecuta la reconciliación — no acepta montos.
+// Fallback manual del cron de devengos (patrón uf-refresh): un admin puede
+// forzar la materialización de los devengos diarios de SU tenant (costo MO +
+// ciclos de arriendo) desde el panel de Finanzas, sin esperar al cron de la
+// madrugada. Solo re-ejecuta la reconciliación — no acepta montos.
 
 export const maxDuration = 300;
 
@@ -56,7 +57,8 @@ export async function POST(req: NextRequest) {
             id: tenant.id,
             laborCostFactor: Number(tenant.labor_cost_factor) || 1.35,
         });
-        return NextResponse.json({ ok: true, ...stats });
+        const rentals = await materializeRentalAccrualsForTenant(admin, tenant.id);
+        return NextResponse.json({ ok: true, ...stats, rentals });
     } catch (e: any) {
         console.error('labor-refresh:', e);
         return NextResponse.json({ error: e?.message || 'Error desconocido' }, { status: 500 });

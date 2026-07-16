@@ -3,6 +3,7 @@ import {
     DEFAULT_TAX_RATE, buildEntryRow, netFromGross, toClp,
     laborDayCost, laborDaySourceId, parseLaborSourceId, laborDayPresence, laborDayExpected,
     reconcileLaborDay,
+    epPeriodEarned, rentalNetToClp, consumptionTransfers,
     type FinanceEntryInput, type LaborDayLog, type LaborLiveEntry,
 } from './financeMath';
 
@@ -222,5 +223,68 @@ describe('reconcileLaborDay', () => {
         expect(r.mirrors).toContainEqual({ amountNet: -27_000, contractId: 'c1', contractName: 'Contrato 1', reversalOf: 'e1' });
         expect(r.mirrors).toContainEqual({ amountNet: -15_000, contractId: 'c2', contractName: 'Contrato 2', reversalOf: 'e2' });
         expect(r.emit).toEqual({ amountNet: 27_000, contractId: 'c1' });
+    });
+});
+
+// ─── F2: ingresos EP, arriendos y consumo de pañol (ADR-004) ─────────────────
+
+describe('epPeriodEarned', () => {
+    it('el devengo del EP es el delta del período, no el acumulado', () => {
+        expect(epPeriodEarned(1_500_000, 1_000_000)).toBe(500_000);
+        expect(epPeriodEarned(1_000_000, 0)).toBe(1_000_000); // primer EP
+    });
+
+    it('sin avance nuevo (o retroceso) el delta es ≤ 0 y el llamador bloquea', () => {
+        expect(epPeriodEarned(1_000_000, 1_000_000)).toBe(0);
+        expect(epPeriodEarned(900_000, 1_000_000)).toBe(-100_000);
+        expect(epPeriodEarned(NaN, 0)).toBe(0);
+    });
+});
+
+describe('rentalNetToClp', () => {
+    it('CLP pasa directo redondeado; UF congela la tasa del día', () => {
+        expect(rentalNetToClp(850_000, 'CLP')).toBe(850_000);
+        expect(rentalNetToClp(10, 'UF', 40_844.79)).toBe(408_448);
+    });
+
+    it('UF sin tasa no inventa un monto (0 ⇒ el emisor no emite)', () => {
+        expect(rentalNetToClp(10, 'UF', null)).toBe(0);
+        expect(rentalNetToClp(10, 'UF', 0)).toBe(0);
+    });
+
+    it('montos inválidos ⇒ 0', () => {
+        expect(rentalNetToClp(0, 'CLP')).toBe(0);
+        expect(rentalNetToClp(NaN, 'CLP')).toBe(0);
+    });
+});
+
+describe('consumptionTransfers', () => {
+    it('lo que sale del pool hacia un contrato mueve su costo (− pool, + contrato)', () => {
+        expect(consumptionTransfers([{ contractId: null, qty: 5 }], 'c1', 1_000)).toEqual([
+            { contractId: null, amountNet: -5_000 },
+            { contractId: 'c1', amountNet: 5_000 },
+        ]);
+    });
+
+    it('lo que ya estaba en el contrato destino NO vuelve a costear', () => {
+        expect(consumptionTransfers([{ contractId: 'c1', qty: 5 }], 'c1', 1_000)).toEqual([]);
+    });
+
+    it('cascada mixta: cada origen distinto emite su negativo, el destino un solo positivo', () => {
+        const r = consumptionTransfers(
+            [{ contractId: 'c1', qty: 2 }, { contractId: null, qty: 3 }, { contractId: 'c2', qty: 1 }],
+            'c1',
+            500,
+        );
+        expect(r).toEqual([
+            { contractId: null, amountNet: -1_500 },
+            { contractId: 'c2', amountNet: -500 },
+            { contractId: 'c1', amountNet: 2_000 },
+        ]);
+    });
+
+    it('sin costo unitario conocible no se inventan hechos', () => {
+        expect(consumptionTransfers([{ contractId: null, qty: 5 }], 'c1', 0)).toEqual([]);
+        expect(consumptionTransfers([{ contractId: null, qty: 5 }], 'c1', NaN)).toEqual([]);
     });
 });

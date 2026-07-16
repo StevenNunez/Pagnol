@@ -23,7 +23,7 @@ import type { AttendanceLog, FinanceCategory, FinanceContractSummaryRow, User } 
 import { laborDayPresence } from "@/modules/data/mutations/financeMath";
 import {
     Landmark, HandCoins, PackageCheck, AlertTriangle, ChevronDown, ChevronRight,
-    RefreshCcw, Loader2, ShieldAlert, HardHat,
+    RefreshCcw, Loader2, ShieldAlert, HardHat, TrendingUp, Scale,
 } from "lucide-react";
 
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
@@ -36,6 +36,7 @@ const CATEGORY_LABEL: Record<FinanceCategory, string> = {
     rental: "Arriendos",
     services: "Servicios",
     indirect: "Indirectos",
+    revenue: "Ingresos (EP)",
 };
 
 type ContractRollup = {
@@ -44,6 +45,8 @@ type ContractRollup = {
     committed: number;
     accrued: number;
     paid: number;
+    incomeAccrued: number;
+    incomePaid: number;
     categories: Map<FinanceCategory, { committed: number; accrued: number; paid: number }>;
 };
 
@@ -172,23 +175,28 @@ export default function FinanzasPage() {
 
     const { contracts, totals } = useMemo(() => {
         const byContract = new Map<string, ContractRollup>();
-        const totals = { committed: 0, accrued: 0, paid: 0, unassigned: 0 };
+        const totals = { committed: 0, accrued: 0, paid: 0, unassigned: 0, incomeAccrued: 0 };
         for (const r of rows) {
-            if (r.nature !== "cost") continue; // ingresos llegan en F2
             const key = r.contract_id ?? "__none__";
             const cur = byContract.get(key) || {
                 contractId: r.contract_id,
                 contractName: r.contract_name || "Sin contrato",
                 committed: 0, accrued: 0, paid: 0,
+                incomeAccrued: 0, incomePaid: 0,
                 categories: new Map(),
             };
-            const cat = cur.categories.get(r.category) || { committed: 0, accrued: 0, paid: 0 };
             const amount = Number(r.total_net) || 0;
-            if (r.stage === "committed") { cur.committed += amount; cat.committed += amount; totals.committed += amount; }
-            if (r.stage === "accrued")   { cur.accrued += amount;   cat.accrued += amount;   totals.accrued += amount; }
-            if (r.stage === "paid")      { cur.paid += amount;      cat.paid += amount;      totals.paid += amount; }
-            if (r.contract_id === null) totals.unassigned += amount;
-            cur.categories.set(r.category, cat);
+            if (r.nature === "income") {
+                if (r.stage === "accrued") { cur.incomeAccrued += amount; totals.incomeAccrued += amount; }
+                if (r.stage === "paid")    { cur.incomePaid += amount; }
+            } else {
+                const cat = cur.categories.get(r.category) || { committed: 0, accrued: 0, paid: 0 };
+                if (r.stage === "committed") { cur.committed += amount; cat.committed += amount; totals.committed += amount; }
+                if (r.stage === "accrued")   { cur.accrued += amount;   cat.accrued += amount;   totals.accrued += amount; }
+                if (r.stage === "paid")      { cur.paid += amount;      cat.paid += amount;      totals.paid += amount; }
+                if (r.contract_id === null) totals.unassigned += amount;
+                cur.categories.set(r.category, cat);
+            }
             byContract.set(key, cur);
         }
         const contracts = Array.from(byContract.values()).sort((a, b) => {
@@ -199,6 +207,9 @@ export default function FinanzasPage() {
         });
         return { contracts, totals };
     }, [rows]);
+
+    // Margen del período = ingreso devengado − costo devengado (solo hechos del rango).
+    const totalMargin = totals.incomeAccrued - totals.accrued;
 
     const toggle = (key: string) =>
         setExpanded((prev) => {
@@ -254,12 +265,14 @@ export default function FinanzasPage() {
             }
         >
             {/* KPIs */}
-            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 xl:grid-cols-6 gap-4">
                 {[
-                    { icon: Landmark, label: "Comprometido", value: CLP.format(totals.committed), hint: "OC emitidas", tone: "bg-info-subtle text-info-subtle-foreground" },
-                    { icon: PackageCheck, label: "Devengado", value: CLP.format(totals.accrued), hint: "Recepciones", tone: "bg-success-subtle text-success-subtle-foreground" },
-                    { icon: HandCoins, label: "Pagado", value: CLP.format(totals.paid), hint: "Facturas pagadas (neto)", tone: "bg-muted text-foreground" },
-                    { icon: AlertTriangle, label: "Sin contrato", value: CLP.format(totals.unassigned), hint: "Hechos por imputar", tone: totals.unassigned > 0 ? "bg-warning-subtle text-warning-subtle-foreground" : "bg-muted text-foreground" },
+                    { icon: Landmark, label: "Comprometido", value: CLP.format(totals.committed), hint: "OC compras y arriendos", tone: "bg-info-subtle text-info-subtle-foreground" },
+                    { icon: PackageCheck, label: "Costo devengado", value: CLP.format(totals.accrued), hint: "Recepciones, MO, ciclos", tone: "bg-muted text-foreground" },
+                    { icon: HandCoins, label: "Costo pagado", value: CLP.format(totals.paid), hint: "Facturas y cuotas (neto)", tone: "bg-muted text-foreground" },
+                    { icon: TrendingUp, label: "Ingresos", value: CLP.format(totals.incomeAccrued), hint: "EP aprobados (período)", tone: "bg-success-subtle text-success-subtle-foreground" },
+                    { icon: Scale, label: "Margen", value: CLP.format(totalMargin), hint: "Ingresos − costo devengado", tone: totalMargin >= 0 ? "bg-success-subtle text-success-subtle-foreground" : "bg-destructive/10 text-destructive" },
+                    { icon: AlertTriangle, label: "Sin contrato", value: CLP.format(totals.unassigned), hint: "Costos por imputar", tone: totals.unassigned > 0 ? "bg-warning-subtle text-warning-subtle-foreground" : "bg-muted text-foreground" },
                 ].map((k) => (
                     <Card key={k.label} className="rounded-[1.5rem]">
                         <CardContent className="p-5 flex items-center gap-4">
@@ -320,17 +333,20 @@ export default function FinanzasPage() {
                                     <TableHead className="w-8" />
                                     <TableHead>Contrato</TableHead>
                                     <TableHead className="text-right">Comprometido</TableHead>
-                                    <TableHead className="text-right">Devengado</TableHead>
-                                    <TableHead className="text-right">Pagado</TableHead>
-                                    <TableHead className="text-right w-32">% Devengado</TableHead>
+                                    <TableHead className="text-right">Costo devengado</TableHead>
+                                    <TableHead className="text-right">Costo pagado</TableHead>
+                                    <TableHead className="text-right">Ingresos</TableHead>
+                                    <TableHead className="text-right">Margen</TableHead>
+                                    <TableHead className="text-right w-24">% Margen</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {contracts.map((c) => {
                                     const key = c.contractId ?? "__none__";
                                     const isOpen = expanded.has(key);
-                                    const pct = c.committed > 0 ? Math.round((c.accrued / c.committed) * 100) : null;
                                     const isUnassigned = c.contractId === null;
+                                    const margin = c.incomeAccrued - c.accrued;
+                                    const marginPct = c.incomeAccrued > 0 ? Math.round((margin / c.incomeAccrued) * 100) : null;
                                     return (
                                         <React.Fragment key={key}>
                                             <TableRow
@@ -352,18 +368,36 @@ export default function FinanzasPage() {
                                                 <TableCell className="text-right font-mono">{CLP.format(c.committed)}</TableCell>
                                                 <TableCell className="text-right font-mono font-bold">{CLP.format(c.accrued)}</TableCell>
                                                 <TableCell className="text-right font-mono">{CLP.format(c.paid)}</TableCell>
-                                                <TableCell className="text-right font-mono">{pct === null ? "—" : `${pct}%`}</TableCell>
+                                                <TableCell className="text-right font-mono">{c.incomeAccrued !== 0 || c.incomePaid !== 0 ? CLP.format(c.incomeAccrued) : "—"}</TableCell>
+                                                <TableCell className={`text-right font-mono font-bold ${c.incomeAccrued !== 0 ? (margin >= 0 ? "text-success-subtle-foreground" : "text-destructive") : "text-muted-foreground"}`}>
+                                                    {c.incomeAccrued !== 0 ? CLP.format(margin) : "—"}
+                                                </TableCell>
+                                                <TableCell className="text-right font-mono">{marginPct === null ? "—" : `${marginPct}%`}</TableCell>
                                             </TableRow>
-                                            {isOpen && Array.from(c.categories.entries()).map(([cat, v]) => (
-                                                <TableRow key={`${key}-${cat}`} className="bg-muted/40 text-sm">
-                                                    <TableCell />
-                                                    <TableCell className="pl-10 text-muted-foreground">{CATEGORY_LABEL[cat] || cat}</TableCell>
-                                                    <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(v.committed)}</TableCell>
-                                                    <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(v.accrued)}</TableCell>
-                                                    <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(v.paid)}</TableCell>
-                                                    <TableCell />
-                                                </TableRow>
-                                            ))}
+                                            {isOpen && (
+                                                <>
+                                                    {Array.from(c.categories.entries()).map(([cat, v]) => (
+                                                        <TableRow key={`${key}-${cat}`} className="bg-muted/40 text-sm">
+                                                            <TableCell />
+                                                            <TableCell className="pl-10 text-muted-foreground">{CATEGORY_LABEL[cat] || cat}</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(v.committed)}</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(v.accrued)}</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(v.paid)}</TableCell>
+                                                            <TableCell colSpan={3} />
+                                                        </TableRow>
+                                                    ))}
+                                                    {(c.incomeAccrued !== 0 || c.incomePaid !== 0) && (
+                                                        <TableRow className="bg-success-subtle/20 text-sm">
+                                                            <TableCell />
+                                                            <TableCell className="pl-10 text-muted-foreground">{CATEGORY_LABEL.revenue}</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">—</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(c.incomeAccrued)}</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(c.incomePaid)}</TableCell>
+                                                            <TableCell colSpan={3} className="text-right text-[10px] uppercase tracking-widest text-muted-foreground">devengado / cobrado</TableCell>
+                                                        </TableRow>
+                                                    )}
+                                                </>
+                                            )}
                                         </React.Fragment>
                                     );
                                 })}

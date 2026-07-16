@@ -223,7 +223,10 @@ export interface AppStateContextType extends AppDataState {
   submitForQualityReview: (workItemId: string) => Promise<void>;
   approveWorkItem: (workItemId: string) => Promise<void>;
   rejectWorkItem: (workItemId: string, reason: string) => Promise<void>;
-  addPaymentState: (data: Omit<PaymentState, 'id' | 'tenantId' | 'createdAt' | 'status' | 'contractorId' | 'contractorName'>) => Promise<string>;
+  addPaymentState: (data: { workItemRootId: string; totalValue: number; earnedValue: number; items: WorkItem[] }) => Promise<string>;
+  approvePaymentState: (id: string) => Promise<void>;
+  markPaymentStatePaid: (id: string, paidDate: string) => Promise<void>;
+  annulPaymentState: (id: string, reason: string) => Promise<void>;
 
   // Safety
   addChecklistTemplate: (template: Pick<ChecklistTemplate, 'title' | 'items'>) => Promise<void>;

@@ -33,6 +33,7 @@ import { AppDataState, AppStateAction, AppStateContextType } from './types';
 import * as materialRequestMutations from './mutations/materialRequestMutations';
 import * as purchaseRequestMutations from './mutations/purchaseRequestMutations';
 import * as genericMutations from './mutations/genericMutations';
+import * as paymentStateMutations from './mutations/paymentStateMutations';
 import * as rfqMutations from './mutations/rfqMutations';
 import * as receptionMutations from './mutations/receptionMutations';
 import * as costCenterMutations from './mutations/costCenterMutations';
@@ -535,7 +536,10 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         submitForQualityReview: bindContext(genericMutations.submitForQualityReview),
         approveWorkItem: bindContext(genericMutations.approveWorkItem),
         rejectWorkItem: bindContext(genericMutations.rejectWorkItem),
-        addPaymentState: bindContext(genericMutations.addPaymentState),
+        addPaymentState: bindContext(paymentStateMutations.addPaymentState),
+        approvePaymentState: bindContext(paymentStateMutations.approvePaymentState),
+        markPaymentStatePaid: bindContext(paymentStateMutations.markPaymentStatePaid),
+        annulPaymentState: bindContext(paymentStateMutations.annulPaymentState),
 
         // Safety
         addChecklistTemplate: bindContext(safetyMutations.addChecklistTemplate),

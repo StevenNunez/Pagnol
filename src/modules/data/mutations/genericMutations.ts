@@ -765,6 +765,8 @@ export async function addWorkItem(data: Omit<WorkItem, 'id' | 'tenantId' | 'prog
         .insert({
             name: data.name,
             type: data.type,
+            // Puente WBS↔contratos (ADR-004 §1): solo tiene sentido en la raíz.
+            contract_id: data.parentId ? null : (data.contractId ?? null),
             parent_id: data.parentId || null,
             unit: data.unit,
             quantity: data.quantity,
@@ -800,6 +802,7 @@ export async function updateWorkItem(id: string, data: Partial<WorkItem>, { }: C
     if ('unit' in data) snakeData.unit = data.unit;
     if ('type' in data) snakeData.type = data.type;
     if ('parentId' in data) snakeData.parent_id = data.parentId;
+    if ('contractId' in data) snakeData.contract_id = data.contractId;
 
     const { error } = await supabase
         .from('work_items')
@@ -947,27 +950,5 @@ export async function approveWorkItem(workItemId: string, { user }: Context) {
     if (error) throw error;
 }
 
-export async function addPaymentState(
-    data: Omit<PaymentState, 'id' | 'tenantId' | 'createdAt' | 'status' | 'contractorId' | 'contractorName'>,
-    { user, tenantId }: Context
-): Promise<string> {
-    if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
-
-    const { data: newPS, error } = await supabase
-        .from('payment_states')
-        .insert({
-            total_value: (data as any).totalValue ?? 0,
-            earned_value: (data as any).earnedValue ?? 0,
-            items: (data as any).items ?? [],
-            contractor_id: user.id,
-            contractor_name: user.name,
-            status: 'pending',
-            tenant_id: tenantId,
-        })
-        .select()
-        .single();
-
-    if (error) throw error;
-    return newPS.id;
-}
+// addPaymentState y la máquina de estados del EP viven en paymentStateMutations.ts (F2).
 

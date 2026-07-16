@@ -176,6 +176,63 @@ export function reconcileLaborDay(
     };
 }
 
+// ─── F2: ingresos EP, arriendos y consumo de pañol (ADR-004) ─────────────────
+
+/**
+ * Delta del período de un Estado de Pago (ADR-004 §2): lo ÚNICO que se devenga.
+ * `previous` = acumulado del último EP vivo del contrato. Devuelve el delta
+ * redondeado; ≤ 0 significa "no hay avance nuevo que cobrar" (el llamador bloquea).
+ */
+export function epPeriodEarned(currentEarned: number, previousEarned: number): number {
+    if (!Number.isFinite(currentEarned) || !Number.isFinite(previousEarned)) return 0;
+    return Math.round(currentEarned) - Math.round(previousEarned);
+}
+
+/**
+ * Neto CLP de un monto de arriendo según su moneda (congelado al emitir).
+ * UF exige tasa del día; USD/otras quedan 1:1 documentado (igual que F0)
+ * hasta que exista fuente de tasa.
+ */
+export function rentalNetToClp(amount: number, currency: string, ufRate?: number | null): number {
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    if (currency === 'UF') {
+        if (!ufRate || !Number.isFinite(ufRate) || ufRate <= 0) return 0; // sin tasa no se inventa
+        return toClp(amount, ufRate);
+    }
+    return Math.round(amount);
+}
+
+export interface ConsumeSourceLike {
+    contractId: string | null;
+    qty: number;
+}
+
+/**
+ * Transferencia de costo de un consumo de pañol (ADR-004 §7-8): la recepción ya
+ * devengó cada unidad en la dimensión donde cayó (contrato o pool="Sin contrato").
+ * Al entregar a `toContractId`, toda unidad que venga de OTRA dimensión mueve su
+ * costo: hecho negativo en el origen + positivo en el destino. Lo que ya estaba
+ * en el contrato destino no emite nada (una unidad nunca costea dos veces).
+ */
+export function consumptionTransfers(
+    sources: ConsumeSourceLike[],
+    toContractId: string | null,
+    unitCost: number,
+): { contractId: string | null; amountNet: number }[] {
+    if (!Number.isFinite(unitCost) || unitCost <= 0) return [];
+    const out: { contractId: string | null; amountNet: number }[] = [];
+    let moved = 0;
+    for (const s of sources) {
+        if (s.contractId === toContractId || s.qty <= 0) continue;
+        const amount = Math.round(s.qty * unitCost);
+        if (amount === 0) continue;
+        out.push({ contractId: s.contractId, amountNet: -amount });
+        moved += amount;
+    }
+    if (moved > 0) out.push({ contractId: toContractId, amountNet: moved });
+    return out;
+}
+
 /**
  * Normaliza un input a la fila snake_case que espera `finance_entries`.
  */

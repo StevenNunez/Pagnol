@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
 import { materializeLaborForTenant } from '@/lib/labor-cost';
+import { materializeRentalAccrualsForTenant } from '@/lib/finance-accruals';
 
-// Cron diario (ver vercel.json, 06:00 UTC ≈ 02:00–03:00 Chile: el día ya cerró
-// en America/Santiago). Materializa el costo de mano de obra de TODOS los
-// tenants (ADR-003): días cerrados + reconciliación de la ventana móvil.
+// Cron diario de DEVENGOS (ver vercel.json, 06:00 UTC ≈ 02:00–03:00 Chile: el
+// día ya cerró en America/Santiago). Materializa para TODOS los tenants los
+// hechos derivados del paso del tiempo: costo de mano de obra (ADR-003) y
+// ciclos de arriendo vencidos (ADR-004 §5). La URL conserva su nombre
+// histórico para no tocar vercel.json/prod.
 // Fallback manual por tenant: POST /api/finance/labor-refresh (admin).
 
 export const maxDuration = 300;
@@ -32,11 +35,12 @@ export async function GET(req: NextRequest) {
         // Un tenant con datos rotos no debe frenar la materialización del resto.
         for (const t of tenants || []) {
             try {
-                const stats = await materializeLaborForTenant(admin, {
+                const labor = await materializeLaborForTenant(admin, {
                     id: t.id,
                     laborCostFactor: Number(t.labor_cost_factor) || 1.35,
                 });
-                results.push(stats);
+                const rentals = await materializeRentalAccrualsForTenant(admin, t.id);
+                results.push({ ...labor, rentals });
             } catch (e: any) {
                 failed++;
                 console.error(`labor-cost tenant ${t.id}:`, e);
@@ -46,8 +50,8 @@ export async function GET(req: NextRequest) {
 
         const totals = results.reduce(
             (acc, r) => ({
-                emitted: acc.emitted + (r.emitted || 0),
-                mirrors: acc.mirrors + (r.mirrors || 0),
+                emitted: acc.emitted + (r.emitted || 0) + (r.rentals?.emitted || 0),
+                mirrors: acc.mirrors + (r.mirrors || 0) + (r.rentals?.mirrors || 0),
                 noSalaryWorkers: acc.noSalaryWorkers + (r.noSalaryWorkers || 0),
             }),
             { emitted: 0, mirrors: 0, noSalaryWorkers: 0 },

@@ -11,7 +11,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/page-shell";
 import { EmptyState } from "@/components/empty-state";
 import { LoadingState } from "@/components/loading-state";
-import { useAuth } from "@/modules/core/contexts/app-provider";
+import { useAuth, useAppState } from "@/modules/core/contexts/app-provider";
 import { supabase } from "@/modules/core/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,10 +19,11 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import type { FinanceCategory, FinanceContractSummaryRow } from "@/modules/core/lib/data";
+import type { AttendanceLog, FinanceCategory, FinanceContractSummaryRow, User } from "@/modules/core/lib/data";
+import { laborDayPresence } from "@/modules/data/mutations/financeMath";
 import {
     Landmark, HandCoins, PackageCheck, AlertTriangle, ChevronDown, ChevronRight,
-    RefreshCcw, Loader2, ShieldAlert,
+    RefreshCcw, Loader2, ShieldAlert, HardHat,
 } from "lucide-react";
 
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
@@ -58,6 +59,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export default function FinanzasPage() {
     const { can, getTenantId } = useAuth();
+    const { users, attendanceLogs } = useAppState();
     const { toast } = useToast();
 
     const [from, setFrom] = useState(monthStart());
@@ -67,6 +69,7 @@ export default function FinanzasPage() {
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [ufInfo, setUfInfo] = useState<{ date: string; value: number } | null>(null);
     const [refreshingUf, setRefreshingUf] = useState(false);
+    const [refreshingLabor, setRefreshingLabor] = useState(false);
 
     const canView = can("module_finance:view");
 
@@ -127,6 +130,45 @@ export default function FinanzasPage() {
             setRefreshingUf(false);
         }
     };
+
+    const recalcLabor = async () => {
+        setRefreshingLabor(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            if (!token) throw new Error("Sesión no disponible.");
+            const res = await fetch("/api/finance/labor-refresh", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ tenantId: getTenantId() ?? undefined }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+            await fetchSummary();
+            toast({
+                title: "Costo de MO reconciliado",
+                description: `${json.emitted ?? 0} hecho(s) nuevo(s), ${json.mirrors ?? 0} reverso(s) — ventana ${json.window?.from} → ${json.window?.to}.`,
+            });
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "No se pudo recalcular la MO", description: e?.message || "Error desconocido." });
+        } finally {
+            setRefreshingLabor(false);
+        }
+    };
+
+    // Alerta de calidad de dato (ADR-003 §4): presencia en el rango sin sueldo
+    // base configurado ⇒ ese costo NO está en el ledger (no se inventan $0).
+    const noSalaryWorkers = useMemo(() => {
+        const present = new Set<string>();
+        for (const l of attendanceLogs as AttendanceLog[]) {
+            if (!l.date || l.date < from || l.date > to) continue;
+            if (present.has(l.userId)) continue;
+            if (laborDayPresence([{ type: l.type, markType: l.markType, contractId: l.contractId, timestamp: "" }])) {
+                present.add(l.userId);
+            }
+        }
+        return (users as User[]).filter((u) => present.has(u.id) && !(Number(u.baseSalary) > 0));
+    }, [users, attendanceLogs, from, to]);
 
     const { contracts, totals } = useMemo(() => {
         const byContract = new Map<string, ContractRollup>();
@@ -203,6 +245,10 @@ export default function FinanzasPage() {
                             {refreshingUf ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-2 h-3.5 w-3.5" />}
                             Actualizar UF
                         </Button>
+                        <Button variant="outline" size="sm" className="rounded-xl" onClick={recalcLabor} disabled={refreshingLabor}>
+                            {refreshingLabor ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <HardHat className="mr-2 h-3.5 w-3.5" />}
+                            Recalcular MO
+                        </Button>
                     </div>
                 </>
             }
@@ -229,6 +275,32 @@ export default function FinanzasPage() {
                     </Card>
                 ))}
             </div>
+
+            {/* Calidad de dato MO: presencia sin sueldo base = costo invisible (ADR-003 §4) */}
+            {noSalaryWorkers.length > 0 && (
+                <Card className="rounded-[1.5rem] border-warning/50 bg-warning-subtle/40">
+                    <CardContent className="p-5 flex items-start gap-4">
+                        <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 bg-warning-subtle text-warning-subtle-foreground">
+                            <HardHat className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                            <MicroLabel>Calidad de dato — Mano de obra</MicroLabel>
+                            <p className="font-bold">
+                                {noSalaryWorkers.length} trabajador(es) con asistencia en el período y sin sueldo base
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                                Sus días trabajados NO devengan costo en el ledger (no se inventan montos $0).
+                                Configura el sueldo en la ficha del trabajador y usa «Recalcular MO» — la
+                                reconciliación emitirá los días pendientes de la ventana.
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1 truncate">
+                                {noSalaryWorkers.slice(0, 5).map((u) => u.name).join(", ")}
+                                {noSalaryWorkers.length > 5 ? ` y ${noSalaryWorkers.length - 5} más…` : ""}
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Tabla por contrato */}
             <Card className="rounded-[1.5rem]">

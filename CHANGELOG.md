@@ -18,6 +18,63 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Dominio Financiero F1: costo de mano de obra (RFC-002-F1-Plan / ADR-003)
+
+**Sin migración SQL propia** (la categoría `labor`, `counterparty_type='worker'` y
+`tenants.labor_cost_factor` existen desde F0); requiere la reparación de asistencia
+`20260723000000` (abajo). **Verificado E2E (2026-07-16, tenant DEMO, vía
+`/api/finance/labor-refresh` real):** día trabajado devengó $54.000 (1,2M/30×1,35) al
+contrato de la primera marca; vacaciones ('V') no devengó; presencia sin contrato alertó;
+el día abierto (hoy) quedó excluido; segunda corrida = no-op (idempotencia); cambio de
+sueldo → espejo negativo fechado hoy (`reversal_of`) + re-emisión fechada el día
+trabajado; configurar el sueldo faltante emitió el día pendiente y apagó la alerta;
+netos vivos y RPC del panel cuadrados tras 11 hechos inmutables. Cron protegido
+(401 sin/con token falso).
+
+- **Modelo día-persona** (decisión Steven): `presencia × sueldo base/30 × factor
+  costo-empresa`. Presencia = ≥1 marca `'in'` trabajada del día (scan normal o marcas
+  importadas P/ATR/MJ; A/D/LM/PSG/V/PP no devengan). Contrato del hecho = el de la
+  primera marca del día (resuelto por el scan vía `contract_workers`); sin sueldo base
+  ⇒ NO se emite hecho $0, se alerta (calidad de dato). Sesgo documentado: los descansos
+  pagados de turnos rotativos no devengan (ajuste llegará con el presupuesto, F3/F4).
+- **Materializador con ventana de reconciliación** (`src/lib/labor-cost.ts`): primer
+  emisor del ledger que NO vive en una mutación (ADR-003) — el día-persona es una
+  derivación de marcas que se editan retroactivamente. Cron diario materializa días
+  CERRADOS (hoy en America/Santiago excluido) y re-verifica una ventana móvil de 35 días:
+  si marcas/sueldo/factor cambiaron, emite espejo negativo (`reversal_of`, misma semántica
+  que `finance_reverse_source`) + hecho corregido. Idempotente; INSERT-only (Art. 2);
+  autor `Sistema (costo MO)` (Art. 5, autoría explícita del proceso).
+- **Matemática pura en `financeMath.ts`** (+17 tests): `laborDayCost`, `laborDaySourceId`,
+  `laborDayPresence`, `laborDayExpected`, `reconcileLaborDay` (decisión no-op / reverso+
+  re-emisión). Detectó y respeta que el import Excel inserta `type='in'` para TODAS las
+  marcas, incluidas ausencias.
+- **`/api/cron/labor-cost`** (GET, `CRON_SECRET` fail-closed, diario 06:00 UTC ≈ 02–03 AM
+  Chile en `vercel.json`): itera todos los tenants; un tenant con datos rotos no frena al
+  resto. **`/api/finance/labor-refresh`** (POST, admin del tenant, patrón uf-refresh):
+  respaldo manual; `tenantId` del body solo se honra para super-admin.
+- **Panel Finanzas**: botón «Recalcular MO» (llama al respaldo manual y refresca el
+  resumen) + tarjeta de alerta «N trabajador(es) con asistencia sin sueldo base» derivada
+  client-side del rango visible. La categoría *Mano de obra* ya se despliega en el rollup
+  por contrato existente (F0).
+
+### Corregido — 🔴 Drift de esquema: registro de asistencia 100% roto (preexistente)
+
+**Migración `20260723000000_attendance_drift_repair.sql` — APLICADA (2026-07-16),
+verificada: columnas nuevas presentes, 140 filas legacy normalizadas a `in`/`out` +
+`qr`, `date` rellenada desde el timestamp.**
+Descubierto por el E2E de F1 (mismo patrón que el drift de compras reparado en F0):
+la tabla `attendance_logs` viva nació con el esquema antiguo y nunca se migró.
+
+- El INSERT del scan QR, del registro manual y del import Excel **fallaba con PGRST204**
+  (el código escribe `date`, `registrar_id`, `registrar_name`, que no existían), y
+  `updateAttendanceLog` igual (`original_timestamp`, `modified_at`, `modified_by`).
+- Las 140 filas legacy (siembra demo de abril) usan `type='check-in'/'check-out'` y
+  `method='QR'`; el código lee `type='in'/'out'` — esas marcas eran invisibles para
+  el módulo de asistencia, los reportes y el costo de MO. La migración las normaliza
+  y rellena `date` desde el `timestamp` en hora de Chile.
+- Índice nuevo `(tenant_id, date)` para el reporte de asistencia y la ventana de
+  reconciliación del materializador de MO.
+
 ### Agregado — Dominio Financiero F0: ledger de hechos económicos (RFC-002)
 
 **Migración `20260722000000_finance_ledger.sql` — APLICADA (2026-07-16).**

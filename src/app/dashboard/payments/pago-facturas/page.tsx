@@ -1,456 +1,367 @@
-
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { PageHeader } from "@/components/page-header";
-import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+// Facturas de Proveedor (cuentas por pagar). Reconstruida en F0 del Dominio
+// Financiero: antes este archivo era un duplicado copy-paste del procesador de
+// cotizaciones y NO existía superficie para registrar/pagar facturas (las
+// mutaciones addSupplierPayment/markPaymentAsPaid estaban huérfanas).
+// Marcar una factura como pagada emite el hecho financiero "pagado"; el vínculo
+// opcional con la OC hereda el contrato para el panel Resultado por Contrato.
+
+import React, { useMemo, useState } from "react";
+import { PageShell } from "@/components/page-shell";
+import { EmptyState } from "@/components/empty-state";
+import { useAppState } from "@/modules/core/contexts/app-provider";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+    AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/modules/core/hooks/use-toast";
-import { FileText, Upload, CheckCircle, XCircle, Download, Loader2, AlertCircle, RefreshCcw, ArrowRight, X, Check, FileCheck } from "lucide-react";
+import type { SupplierPayment } from "@/modules/core/lib/data";
+import { Receipt, Plus, CircleDollarSign, Clock, AlertTriangle, Trash2, CheckCircle2, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { PurchaseLot, PurchaseRequest, Supplier, User } from "@/modules/core/lib/data";
-import { generateOCPDF } from "@/lib/pdf-oc-generator";
 
-// --- Tipos internos ---
-type ProcessingItem = {
-  requestId: string;
-  price: number;
-  confirmed: boolean; // ¿Viene en la cotización?
-  quantity: number;
+const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
+const NONE = "__none__";
+
+const STATUS_BADGE: Record<SupplierPayment["status"], { label: string; cls: string }> = {
+    pending: { label: "Pendiente", cls: "badge-warning" },
+    paid: { label: "Pagada", cls: "badge-success" },
+    overdue: { label: "Vencida", cls: "badge-destructive" },
 };
 
-export default function FinanceQuoteProcessor() {
-  const { purchaseLots, purchaseRequests, users, suppliers, createPurchaseOrder, returnToPool, currentTenant } = useAppState();
-  const { user, can } = useAuth();
-  const { toast } = useToast();
+function MicroLabel({ children }: { children: React.ReactNode }) {
+    return <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{children}</p>;
+}
 
-  const [selectedLot, setSelectedLot] = React.useState<(PurchaseLot & { requestIds: string[] }) | null>(null);
-  const [fileUrl, setFileUrl] = React.useState<string | null>(null);
-  const [ocNumber, setOcNumber] = React.useState("");
-  const [itemsState, setItemsState] = React.useState<Record<string, ProcessingItem>>({});
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+export default function SupplierInvoicesPage() {
+    const {
+        supplierPayments, suppliers, purchaseOrders,
+        addSupplierPayment, markPaymentAsPaid, deleteSupplierPayment,
+    } = useAppState();
+    const { toast } = useToast();
 
-  const pendingLots = React.useMemo(() => {
-    return (purchaseLots || []).filter(l => l.status === 'open').map(lot => {
-        const requestsInLot = (purchaseRequests || []).filter(r => r.lotId === lot.id);
+    const [createOpen, setCreateOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [payTarget, setPayTarget] = useState<SupplierPayment | null>(null);
+    const [payMethod, setPayMethod] = useState("Transferencia");
+    const [deleteTarget, setDeleteTarget] = useState<SupplierPayment | null>(null);
+    const [processingId, setProcessingId] = useState<string | null>(null);
+
+    // Formulario de nueva factura
+    const [supplierId, setSupplierId] = useState("");
+    const [invoiceNumber, setInvoiceNumber] = useState("");
+    const [amount, setAmount] = useState("");
+    const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [dueDate, setDueDate] = useState("");
+    const [poId, setPoId] = useState(NONE);
+
+    const supplierMap = useMemo(() => new Map((suppliers || []).map((s) => [s.id, s.name])), [suppliers]);
+
+    // OCs vinculables del proveedor elegido (activas o completadas, no anuladas).
+    const linkablePOs = useMemo(() => {
+        return (purchaseOrders || [])
+            .filter((po) => po.status !== "cancelled")
+            .filter((po) => !supplierId || po.supplierId === supplierId)
+            .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
+    }, [purchaseOrders, supplierId]);
+
+    const rows = useMemo(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        return (supplierPayments || [])
+            .map((p) => ({
+                ...p,
+                // 'pending' con vencimiento pasado se muestra como vencida.
+                status: (p.status === "pending" && p.dueDate && new Date(p.dueDate).toISOString().slice(0, 10) < today
+                    ? "overdue" : p.status) as SupplierPayment["status"],
+            }))
+            .sort((a, b) => new Date(b.issueDate as any).getTime() - new Date(a.issueDate as any).getTime());
+    }, [supplierPayments]);
+
+    const kpis = useMemo(() => {
+        const pending = rows.filter((r) => r.status !== "paid");
         return {
-            ...lot,
-            requestIds: requestsInLot.map(r => r.id)
-        }
-    });
-  }, [purchaseLots, purchaseRequests]);
-
-  const handleSelectLot = (lot: PurchaseLot & { requestIds: string[] }) => {
-    setSelectedLot(lot);
-    setFileUrl(null);
-    setOcNumber("");
-    
-    const requestsInLot = (purchaseRequests || []).filter(r => lot.requestIds.includes(r.id));
-    const initialItems: Record<string, ProcessingItem> = {};
-    
-    requestsInLot.forEach(req => {
-      initialItems[req.id] = {
-        requestId: req.id,
-        price: 0,
-        confirmed: true,
-        quantity: req.quantity
-      };
-    });
-    setItemsState(initialItems);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.includes("pdf") && !file.type.includes("image")) {
-      toast({ variant: "destructive", title: "Formato no válido", description: "Solo PDF o imágenes" });
-      return;
-    }
-
-    const url = URL.createObjectURL(file);
-    setFileUrl(url);
-    toast({ title: "Documento cargado", description: "Ahora valida los precios y confirma los items." });
-  };
-
-  const toggleItem = (id: string) => {
-    setItemsState((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], confirmed: !prev[id].confirmed },
-    }));
-  };
-
-  const updateItem = (id: string, field: 'price' | 'quantity', value: string) => {
-    const num = parseFloat(value) || 0;
-    setItemsState(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: num }
-    }));
-  };
-
-  const calculateTotal = () => {
-    return Object.values(itemsState).reduce((total, item) => {
-        if (item.confirmed) {
-            return total + item.price * item.quantity;
-        }
-        return total;
-    }, 0);
-  };
-
-  const handleGenerateOrder = async () => {
-    if (!selectedLot) {
-      toast({ variant: "destructive", title: "Faltan datos", description: "No se ha seleccionado un lote." });
-      return;
-    }
-     if (!ocNumber.trim()) {
-      toast({ variant: "destructive", title: "Faltan datos", description: "Debes ingresar el número de OC." });
-      return;
-    }
-
-    const confirmedItems = Object.values(itemsState).filter(i => i.confirmed && i.quantity > 0);
-    if (confirmedItems.length === 0) {
-      toast({ variant: "destructive", title: "Sin items", description: "Confirma al menos un material con cantidad mayor a cero." });
-      return;
-    }
-
-    setIsSubmitting(true);
-    
-    try {
-      const rejectedItems = Object.values(itemsState).filter(i => !i.confirmed || i.quantity <= 0);
-      
-      const itemsForMutation = confirmedItems.map(item => {
-        const req = (purchaseRequests || []).find(r => r.id === item.requestId);
-        return {
-          ...item,
-          name: req?.materialName || 'Desconocido',
-          unit: req?.unit || 'und',
+            porPagar: pending.reduce((a, r) => a + (r.amount || 0), 0),
+            pendientes: pending.filter((r) => r.status === "pending").length,
+            vencidas: pending.filter((r) => r.status === "overdue").length,
+            pagadasMes: rows.filter((r) => {
+                if (r.status !== "paid" || !r.paymentDate) return false;
+                const d = new Date(r.paymentDate);
+                const now = new Date();
+                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+            }).length,
         };
-      });
+    }, [rows]);
 
-      const orderId = await createPurchaseOrder({
-        lotId: selectedLot.id,
-        ocNumber: ocNumber.trim(),
-        items: itemsForMutation,
-        totalAmount: calculateTotal(),
-      });
-        
-      if (rejectedItems.length > 0) {
-        await returnToPool(rejectedItems.map(i => i.requestId));
-      }
+    const resetForm = () => {
+        setSupplierId(""); setInvoiceNumber(""); setAmount("");
+        setIssueDate(new Date().toISOString().slice(0, 10)); setDueDate(""); setPoId(NONE);
+    };
 
-      toast({
-        title: "✅ Orden de Compra Generada",
-        description: `Se procesaron ${confirmedItems.length} items y ${rejectedItems.length} ítems devueltos. El PDF se descargará a continuación.`,
-        duration: 10000,
-      });
+    const handleCreate = async () => {
+        if (!supplierId || !invoiceNumber.trim() || !(parseFloat(amount) > 0) || !dueDate) {
+            toast({ variant: "destructive", title: "Faltan datos", description: "Proveedor, N° de factura, monto y vencimiento son obligatorios." });
+            return;
+        }
+        setSaving(true);
+        try {
+            await addSupplierPayment({
+                supplier_id: supplierId,
+                invoice_number: invoiceNumber.trim(),
+                amount: Math.round(parseFloat(amount)),
+                issue_date: issueDate,
+                due_date: dueDate,
+                purchase_order_id: poId === NONE ? null : poId,
+            });
+            toast({ title: "Factura registrada", description: `${invoiceNumber.trim()} · ${CLP.format(parseFloat(amount))} (bruto).` });
+            setCreateOpen(false);
+            resetForm();
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "No se pudo registrar", description: e?.message || "Error desconocido." });
+        } finally {
+            setSaving(false);
+        }
+    };
 
-      // ---- PDF GENERATION ----
-      const supplier = suppliers.find(s => s.id === selectedLot.supplierId);
-      if (!supplier) {
-        throw new Error("No se pudo encontrar la información del proveedor para el PDF.");
-      }
+    const handlePay = async () => {
+        if (!payTarget) return;
+        setProcessingId(payTarget.id);
+        try {
+            await markPaymentAsPaid(payTarget.id, { paymentDate: new Date(), paymentMethod: payMethod });
+            toast({ title: "Factura pagada", description: `${payTarget.invoiceNumber} quedó registrada como pagada.` });
+            setPayTarget(null);
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "No se pudo marcar el pago", description: e?.message || "Error desconocido." });
+        } finally {
+            setProcessingId(null);
+        }
+    };
 
-      const pdfData = {
-          ocNumber: ocNumber.trim(),
-          date: new Date(),
-          supplierName: supplier.name,
-          supplierRut: supplier.rut || 'N/A',
-          supplierAddress: supplier.address || 'N/A',
-          supplierContact: supplier.phone || 'N/A',
-          supplierEmail: supplier.email || 'N/A',
-          project: 'CONSTRUCCIÓN TIENDA Y SERVICIOS CORDILLERA, LA SERENA',
-          file: '721',
-          items: itemsForMutation.map((item, index) => ({
-            item: index + 1,
-            code: item.requestId.slice(0, 8).toUpperCase(),
-            description: item.name,
-            unit: item.unit,
-            quantity: item.quantity,
-            unitPrice: item.price,
-            netValue: item.quantity * item.price,
-          })),
-          totalNet: calculateTotal(),
-          paymentTerms: '30 DÍAS',
-          createdByName: user?.name || 'Usuario del Sistema',
-          logoUrl: currentTenant?.logoUrl,
-      };
-      
-      const { blob, filename } = await generateOCPDF(pdfData);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      setSelectedLot(null);
+    const handleDelete = async () => {
+        if (!deleteTarget) return;
+        setProcessingId(deleteTarget.id);
+        try {
+            await deleteSupplierPayment(deleteTarget.id);
+            toast({ title: "Factura eliminada", description: "Sus hechos financieros fueron reversados." });
+            setDeleteTarget(null);
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "No se pudo eliminar", description: e?.message || "Error desconocido." });
+        } finally {
+            setProcessingId(null);
+        }
+    };
 
-    } catch (error: any) {
-      console.error(error);
-      toast({
-        variant: "destructive",
-        title: "Error crítico",
-        description: error.message || "No se pudo generar la orden.",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-
-  if (!can("finance:manage_purchase_orders")) {
     return (
-      <div className="p-12 text-center">
-        <AlertCircle className="mx-auto h-12 w-12 text-destructive" />
-        <h2 className="mt-4 text-xl font-semibold">Acceso Denegado</h2>
-        <p className="mt-2 text-muted-foreground">No tienes permisos para acceder a esta sección.</p>
-      </div>
-    );
-  }
-
-  if (!selectedLot) {
-    return (
-      <>
-        <PageHeader
-          title="Finanzas – Procesar Cotizaciones"
-          description="Valida la cotización del proveedor y genera la Orden de Compra real"
-        />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-7xl mx-auto">
-          {pendingLots.length === 0 ? (
-            <Card className="col-span-full">
-              <CardContent className="py-20 text-center">
-                <Check className="h-16 w-16 mx-auto mb-4 text-green-500 opacity-50" />
-                <p className="text-xl">¡Todo al día!</p>
-                <p className="text-muted-foreground">No hay cotizaciones pendientes de procesar.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            pendingLots.map((lot) => {
-              const count = lot.requestIds.length;
-              const creator = users?.find((u) => u.id === lot.creatorId)?.name || "Admin Obra";
-              const createdAt = new Date(lot.createdAt as any);
-
-              return (
-                <Card
-                  key={lot.id}
-                  className="cursor-pointer hover:shadow-lg transition-all hover:border-primary"
-                  onClick={() => handleSelectLot(lot)}
-                >
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{lot.name}</CardTitle>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {createdAt ? format(createdAt, "dd MMM yyyy", { locale: es }) : ''}
-                        </p>
-                      </div>
-                      <Badge>Nuevo</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span>Items:</span>
-                      <span className="font-bold">{count}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Creado por:</span>
-                      <span className="font-medium">{creator}</span>
-                    </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button className="w-full mt-2">
-                      Procesar Cotización <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </CardFooter>
-                </Card>
-              );
-            })
-          )}
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Header fijo */}
-      <div className="h-16 border-b flex items-center justify-between px-6 bg-card">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => setSelectedLot(null)}>
-            <X className="h-5 w-5" />
-          </Button>
-          <div>
-            <h2 className="text-xl font-bold">Procesando lote: {selectedLot.name}</h2>
-            <p className="text-sm text-muted-foreground">Valida precios y confirma items</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-6">
-          <div className="text-right">
-            <p className="text-sm text-muted-foreground">Total Orden de Compra</p>
-            <p className="text-3xl font-bold text-green-600">
-              ${calculateTotal().toLocaleString("es-CL")}
-            </p>
-          </div>
-          <Button
-            size="lg"
-            onClick={handleGenerateOrder}
-            disabled={!ocNumber.trim() || isSubmitting}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Generando...
-              </>
-            ) : (
-              <>
-                <FileCheck className="mr-2 h-5 w-5" /> Generar OC Real
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {/* Split View */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* IZQUIERDA: PDF */}
-        <div className="w-1/2 border-r bg-muted/30 flex flex-col">
-          <div className="p-4 border-b flex justify-between items-center">
-            <h3 className="font-semibold flex items-center gap-2">
-              <FileText className="h-4 w-4" /> Cotización del Proveedor
-            </h3>
-            <label htmlFor="quote-upload">
-              <Input
-                id="quote-upload"
-                type="file"
-                accept=".pdf,image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-              <Button asChild variant="outline" size="sm">
-                <span>
-                    <Upload className="h-4 w-4 mr-2" />
-                    {fileUrl ? "Cambiar" : "Subir documento"}
-                </span>
-              </Button>
-            </label>
-          </div>
-          <div className="flex-1 overflow-hidden bg-white m-4 rounded-lg shadow-inner">
-            {fileUrl ? (
-              <iframe src={fileUrl} className="w-full h-full" title="Cotización PDF" />
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                <Upload className="h-16 w-16 mb-4 opacity-30" />
-                <p className="text-lg">Sube el PDF o foto de la cotización</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* DERECHA: Formulario */}
-        <div className="w-1/2 overflow-y-auto p-6">
-          <div className="max-w-2xl mx-auto space-y-6">
-            <Card>
-              <CardContent className="pt-6">
-                <Label className="text-base">Número de Orden de Compra o Cotización</Label>
-                <Input
-                  placeholder="Ej: OC-2025-089 o COT-4451"
-                  value={ocNumber}
-                  onChange={(e) => setOcNumber(e.target.value)}
-                  className="text-lg font-mono mt-2"
-                />
-              </CardContent>
-            </Card>
-
-            <div>
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <Check className="h-5 w-5 text-green-600" /> Validación de Items
-              </h3>
-              <div className="p-3 mb-4 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <p>Ajusta las cantidades confirmadas y los precios unitarios según el documento del proveedor. Desmarca los ítems que no serán comprados.</p>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12"></TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead className="w-28 text-right">Cant. Confirmada</TableHead>
-                    <TableHead className="w-32 text-right">Precio Unitario</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(purchaseRequests || [])
-                    .filter((r) => selectedLot?.requestIds.includes(r.id))
-                    .map((req) => {
-                      const state = itemsState[req.id];
-                      if (!state) return null;
-
-                      return (
-                        <TableRow
-                          key={req.id}
-                          className={!state.confirmed ? "opacity-50" : ""}
-                        >
-                          <TableCell>
-                            <Checkbox
-                              checked={state.confirmed}
-                              onCheckedChange={() => toggleItem(req.id)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className={state.confirmed ? "font-medium" : "line-through"}>
-                                {req.materialName}
-                              </p>
-                              <span className="text-xs text-muted-foreground">
-                                Solicitado: {req.quantity} {req.unit}
-                              </span>
-                              {!state.confirmed && (
-                                <p className="text-xs text-red-600 flex items-center gap-1">
-                                  <RefreshCcw className="h-3 w-3" /> Volverá a pendientes
-                                </p>
-                              )}
+        <PageShell
+            title="Facturas de Proveedor"
+            description="Registra las facturas recibidas, vincúlalas a su OC y marca los pagos. El pago alimenta el Resultado por Contrato."
+        >
+            {/* KPIs */}
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+                {[
+                    { icon: CircleDollarSign, label: "Por pagar (bruto)", value: CLP.format(kpis.porPagar), tone: "bg-muted text-foreground" },
+                    { icon: Clock, label: "Pendientes", value: String(kpis.pendientes), tone: "bg-info-subtle text-info-subtle-foreground" },
+                    { icon: AlertTriangle, label: "Vencidas", value: String(kpis.vencidas), tone: kpis.vencidas > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-foreground" },
+                    { icon: CheckCircle2, label: "Pagadas este mes", value: String(kpis.pagadasMes), tone: "bg-success-subtle text-success-subtle-foreground" },
+                ].map((k) => (
+                    <Card key={k.label} className="rounded-[1.5rem]">
+                        <CardContent className="p-5 flex items-center gap-4">
+                            <div className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ${k.tone}`}>
+                                <k.icon className="h-5 w-5" />
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={state.quantity || ""}
-                              onChange={(e) => updateItem(req.id, 'quantity', e.target.value)}
-                              disabled={!state.confirmed}
-                              className="text-right font-mono"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={state.price || ""}
-                              onChange={(e) => updateItem(req.id, 'price', e.target.value)}
-                              disabled={!state.confirmed}
-                              className="text-right font-mono"
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                </TableBody>
-              </Table>
+                            <div className="min-w-0">
+                                <MicroLabel>{k.label}</MicroLabel>
+                                <p className="text-xl font-bold truncate">{k.value}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                ))}
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+
+            {/* Toolbar */}
+            <div className="flex justify-end">
+                <Button
+                    onClick={() => setCreateOpen(true)}
+                    className="rounded-[1.5rem] shadow-lg shadow-primary/10 hover:scale-105 active:scale-95"
+                >
+                    <Plus className="mr-2 h-4 w-4" /> Registrar factura
+                </Button>
+            </div>
+
+            {/* Tabla */}
+            <Card className="rounded-[1.5rem]">
+                <CardContent className="p-0">
+                    {rows.length === 0 ? (
+                        <EmptyState
+                            icon={<Receipt className="h-6 w-6" />}
+                            title="Sin facturas registradas"
+                            description="Registra la primera factura de proveedor para empezar a controlar las cuentas por pagar."
+                        />
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Factura</TableHead>
+                                    <TableHead>Proveedor</TableHead>
+                                    <TableHead>OC</TableHead>
+                                    <TableHead className="text-right">Monto (bruto)</TableHead>
+                                    <TableHead>Vencimiento</TableHead>
+                                    <TableHead>Estado</TableHead>
+                                    <TableHead className="text-right">Acciones</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {rows.map((p) => (
+                                    <TableRow key={p.id} className={p.status === "paid" ? "text-muted-foreground" : undefined}>
+                                        <TableCell className="font-medium font-mono">{p.invoiceNumber}</TableCell>
+                                        <TableCell>{supplierMap.get(p.supplierId) || "—"}</TableCell>
+                                        <TableCell className="font-mono text-xs">{p.purchaseOrderId || p.purchaseOrderNumber || "—"}</TableCell>
+                                        <TableCell className="text-right font-mono font-bold">{CLP.format(p.amount || 0)}</TableCell>
+                                        <TableCell>{p.dueDate ? format(new Date(p.dueDate), "dd MMM yyyy", { locale: es }) : "—"}</TableCell>
+                                        <TableCell>
+                                            <Badge className={STATUS_BADGE[p.status].cls}>{STATUS_BADGE[p.status].label}</Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right space-x-2">
+                                            {processingId === p.id ? (
+                                                <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                                            ) : (
+                                                <>
+                                                    {p.status !== "paid" && (
+                                                        <Button size="sm" variant="outline" className="rounded-xl" onClick={() => { setPayMethod("Transferencia"); setPayTarget(p); }}>
+                                                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Pagar
+                                                        </Button>
+                                                    )}
+                                                    <Button size="sm" variant="ghost" className="rounded-xl text-destructive hover:text-destructive" onClick={() => setDeleteTarget(p)}>
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Diálogo: nueva factura */}
+            <Dialog open={createOpen} onOpenChange={(o) => { setCreateOpen(o); if (!o) resetForm(); }}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Registrar factura de proveedor</DialogTitle>
+                        <DialogDescription>
+                            El monto es el TOTAL de la factura (bruto, IVA incluido). Vincular la OC permite imputar el pago al contrato correcto.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4 py-2">
+                        <div className="col-span-2 space-y-1.5">
+                            <Label>Proveedor *</Label>
+                            <Select value={supplierId} onValueChange={(v) => { setSupplierId(v); setPoId(NONE); }}>
+                                <SelectTrigger className="rounded-xl"><SelectValue placeholder="Seleccionar proveedor" /></SelectTrigger>
+                                <SelectContent>
+                                    {(suppliers || []).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>N° de factura *</Label>
+                            <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="F-001234" className="rounded-xl font-mono" />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Monto bruto (CLP) *</Label>
+                            <Input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="rounded-xl font-mono text-right" />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Fecha de emisión</Label>
+                            <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} className="rounded-xl" />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Vencimiento *</Label>
+                            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="rounded-xl" />
+                        </div>
+                        <div className="col-span-2 space-y-1.5">
+                            <Label>Orden de Compra (opcional)</Label>
+                            <Select value={poId} onValueChange={setPoId}>
+                                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value={NONE}>Sin OC vinculada</SelectItem>
+                                    {linkablePOs.map((po) => (
+                                        <SelectItem key={po.id} value={po.id}>
+                                            {(po.officialOCId || po.id)} · {po.supplierName}{po.totalAmount ? ` · ${CLP.format(po.totalAmount)}` : ""}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleCreate} disabled={saving}>
+                            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                            Registrar
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Diálogo: marcar pagada */}
+            <Dialog open={!!payTarget} onOpenChange={(o) => { if (!o) setPayTarget(null); }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Marcar como pagada</DialogTitle>
+                        <DialogDescription>
+                            {payTarget && <>Factura <span className="font-mono font-bold">{payTarget.invoiceNumber}</span> por {CLP.format(payTarget.amount || 0)} (bruto). Se emitirá el hecho financiero de pago.</>}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-1.5 py-2">
+                        <Label>Método de pago</Label>
+                        <Select value={payMethod} onValueChange={setPayMethod}>
+                            <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {["Transferencia", "Cheque", "Efectivo", "Vale vista", "Otro"].map((m) => (
+                                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPayTarget(null)}>Cancelar</Button>
+                        <Button onClick={handlePay} disabled={!!processingId}>
+                            {processingId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                            Confirmar pago
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Confirmación de borrado */}
+            <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>¿Eliminar esta factura?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {deleteTarget && <>Se eliminará la factura <span className="font-mono font-bold">{deleteTarget.invoiceNumber}</span>. Si estaba pagada, sus hechos financieros se reversarán (no se borran — se emite el espejo contable).</>}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Eliminar
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </PageShell>
+    );
 }

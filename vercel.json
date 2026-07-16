@@ -4,6 +4,7 @@
     "installCommand": "npm install --legacy-peer-deps",
     "buildCommand": "npm run build",
     "crons": [
-        { "path": "/api/cron/rental-alerts", "schedule": "0 12 * * *" }
+        { "path": "/api/cron/rental-alerts", "schedule": "0 12 * * *" },
+        { "path": "/api/cron/uf-rate", "schedule": "0 10 * * *" }
     ]
 }

@@ -339,6 +339,15 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
     if (pathname.startsWith('/dashboard/rrhh')) {
       return { navItems: getRrhhNavItems(can), moduleTitle: 'Recursos Humanos', moduleIcon: UserCog };
     }
+    if (pathname.startsWith('/dashboard/finanzas')) {
+      return {
+        navItems: [
+          { href: '/dashboard/finanzas', icon: LayoutDashboard, label: 'Resultado por Contrato' },
+        ],
+        moduleTitle: 'Finanzas',
+        moduleIcon: DollarSign,
+      };
+    }
     if (pathname.startsWith('/dashboard/estado-pago')) {
       return {
         navItems: [

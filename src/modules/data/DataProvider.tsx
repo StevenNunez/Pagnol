@@ -163,6 +163,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             codePrefix: t.code_prefix ?? undefined,
             codePrefixes: t.code_prefixes ?? {},
             codeTypes: t.code_types ?? {},
+            laborCostFactor: t.labor_cost_factor != null ? Number(t.labor_cost_factor) : undefined,
         });
 
         supabase.from('tenants').select('*').eq('id', tenantId).single().then(({ data: t }) => {

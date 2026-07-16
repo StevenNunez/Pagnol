@@ -779,7 +779,7 @@ function HistoryTab({ supplier }: { supplier: Supplier }) {
         [supplierPayments, supplier.id],
     );
 
-    const totalOrders = orders.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+    const totalOrders = orders.filter((o) => o.status !== 'cancelled').reduce((acc, o) => acc + (o.totalAmount || 0), 0);
     const pendingPay = payments.filter((p) => p.status !== "paid").reduce((acc, p) => acc + (p.amount || 0), 0);
 
     const orderCols: DataTableColumn<PurchaseOrder>[] = [

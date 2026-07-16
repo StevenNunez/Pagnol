@@ -676,6 +676,7 @@ export const mappers = {
         status: item.status,
         createdAt: item.created_at ? new Date(item.created_at) : undefined,
         purchaseOrderNumber: item.purchase_order_number,
+        purchaseOrderId: item.purchase_order_id || null,
         work: item.work,
         paymentDate: item.payment_date || item.paid_date ? new Date(item.payment_date || item.paid_date) : undefined,
         paymentMethod: item.payment_method,

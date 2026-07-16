@@ -18,6 +18,110 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Dominio Financiero F0: ledger de hechos económicos (RFC-002)
+
+**Migración `20260722000000_finance_ledger.sql` — APLICADA (2026-07-16).**
+**Verificado E2E en navegador (2026-07-16)**: solicitud → OC valorizada ($ de catálogo
+precargado) → recepción (devengado + `unitCost` actualizado al precio real) → factura
+bruta → pago (neto IVA 19%) → panel Resultado por Contrato con las tres etapas en
+$61.725 y 100% devengado; luego los tres reversos en cadena (eliminar factura pagada,
+eliminar recepción, anular OC) dejaron el panel en $0 neto con 3 hechos + 3 espejos
+enlazados por `reversal_of`, stock y desglose por contrato cuadrados. Cron UF probado
+(401 sin token / 200 con `CRON_SECRET`, 31 tasas desde mindicador.cl).
+
+- **`finance_entries`**: tabla de hechos económicos inmutables (Art. 2 de la Constitución:
+  sin política ni GRANT de UPDATE/DELETE — para nadie). Neto CLP congelado + moneda origen +
+  tasa; dimensiones planas (contrato, partida, categoría, documento origen, contraparte);
+  reversos vía RPC `finance_reverse_source` (SECURITY DEFINER, idempotente). SELECT solo
+  administrador/soporte-pagnol (`is_finance_viewer()`); INSERT cualquier miembro del tenant.
+  Deliberadamente FUERA de Realtime y del DataProvider.
+- **Emisores en compras** (`financeLedger.ts`, patrón stockLedger elevado a dinero):
+  OC creada → *comprometido* (ambas rutas), recepción → *devengado* (por ítem, con el contrato
+  ya resuelto), factura pagada → *pagado* (bruto→neto IVA 19%, contrato heredado de la OC).
+- **Toda OC nace valorizada + retroalimentación de precios**: la generación de cotizaciones
+  ahora exige precios (precargados desde `materials.unitCost`, diálogo nuevo) y guarda
+  `total_amount`; al recibir, el precio real de compra actualiza el catálogo.
+- **`abastecimiento/recepcion` → panel**: RPC `finance_contract_summary` (agregación
+  server-side) alimenta la página nueva **`/dashboard/finanzas` (Resultado por Contrato)**:
+  comprometido / devengado / pagado por contrato con desglose por categoría, fila
+  "Sin contrato" como alerta de calidad de dato, y rango de fechas.
+- **Facturas de Proveedor** (`payments/pago-facturas`): página reconstruida — era un duplicado
+  copy-paste del procesador de cotizaciones y NO existía superficie para registrar/pagar
+  facturas. Ahora: registrar (bruto + vencimiento + OC vinculada vía columna nueva
+  `purchase_order_id`), marcar pagada, eliminar con reverso.
+- **UF automática**: tabla global `uf_rates` + cron diario `/api/cron/uf-rate`
+  (mindicador.cl, patrón CRON_SECRET, registrado en vercel.json) + botón "Actualizar UF"
+  (`/api/finance/uf-refresh`, solo re-consulta la fuente oficial — nunca digitación manual).
+- **Configuración**: campo factor costo-empresa (`tenants.labor_cost_factor`, default 1.35,
+  validado 1.0–3.0); lo consumirá el costo de MO en F1.
+- **Permisos**: `module_finance:view` + `finance:manage` (ningún rol los recibe por defecto;
+  admin/soporte entran por el bypass de `can()`); tarjeta en el panel central y sidebar.
+- **Tests**: `financeMath.ts` (neto/bruto, UF→CLP, armado de filas) con 12 tests; el include
+  de Vitest ahora lo cubre.
+
+### Corregido — Drift de esquema: generar OC estaba 100% roto en el proyecto actual
+
+**Migración `20260722010000_purchasing_schema_repair.sql` — APLICADA (2026-07-16).**
+Descubierto por el E2E de F0: el esquema vivo (reconstruido post-30-may-2026) nunca tuvo
+las columnas que el código de compras usa hace meses — el insert de `purchase_orders`
+fallaba con PGRST204 y ninguna OC se había podido crear jamás en este proyecto.
+
+- **`purchase_orders`**: se agregan `internal_code`, `supplier_name`, `creator_name`,
+  `request_ids`, `official_oc_id`, `processed_at`, `processed_by`; `id` pasa de uuid a
+  **text** (el generador asigna códigos correlativos tipo `MDS-PUR-0002`), junto con sus
+  tres referencias (`supplier_payments`, `purchase_requests`, `goods_receipts`).
+- **`purchase_lots.supplier_id`**: no existía — el generador lo guardaba con error
+  silencioso y el flujo RFQ no podía emitir la OC firme.
+- **`supplier_payments`**: se agregan `issue_date` y `payment_date` (las escribe la página
+  de Facturas de Proveedor).
+- **`generatePurchaseOrder` ahora es segura ante fallos**: las solicitudes se marcan
+  `ordered` DESPUÉS de persistir la OC (antes quedaban en estado fantasma si el insert
+  fallaba).
+- **Toasts de la página de órdenes ya no tragan el error real**: los `PostgrestError` de
+  Supabase son objetos planos (no `instanceof Error`) y todo fallo se mostraba como
+  "Error desconocido"; ahora se lee `.message` directo.
+
+### Corregido — 2 bugs de integridad preexistentes en compras
+
+- **`cancelPurchaseOrder` hacía DELETE de la OC**: el documento desaparecía sin rastro.
+  Ahora es soft-cancel (`status='cancelled'`) + reverso de sus hechos financieros; los KPIs
+  que sumaban "todas las OC" ahora excluyen anuladas (purchasing y proveedores 360°).
+  Además ya no permite anular una OC completada.
+- **`deleteGoodsReceipt` borraba la recepción SIN revertir el stock ingresado**: el total del
+  material, el desglose por contrato y el kardex quedaban inflados para siempre (violaba el
+  espíritu del Art. 3). Ahora reversa stock + ledger + kardex (misma resolución de contrato
+  que usó la recepción), reabre la OC si había quedado completada y reversa los hechos
+  financieros.
+
+### Agregado — Manifiesto Arquitectónico v2.0 en tres capas + registro de decisiones (ADR)
+
+- **`docs/research/ARCHITECTURAL_MANIFESTO.md` v2.0**: reescritura conjunta tras desafío
+  deliberado de la v1.0 (Steven). Clasifica el sistema por el test "¿quién sufre si esto
+  cambia?": **Constitución** (5 artículos innegociables: aislamiento de tenants, hechos
+  inmutables, ledgers cuadran, biometría en dispositivo, todo hecho tiene autor; enmienda
+  solo con dos firmas), **Arquitectura** (cambia vía RFC con tres peajes: carga de la prueba
+  proporcional, migración de datos, ADR) y **Capa rápida** (convención sin cuestionamiento).
+  La idea central de la v1.0 ("Pagnol se descubre") se conserva como mecanismo estructural:
+  el ascensor del descubrimiento entre capas.
+- **`docs/decisions/`** nace como registro de decisiones arquitectónicas;
+  **ADR-001** documenta la decisión de tres capas y las alternativas rechazadas.
+
+### Agregado — Dominio Financiero: investigación arquitectónica (RFC-001 / RFC-002)
+
+Nace `docs/research/` con los primeros RFC del proyecto:
+
+- **RFC-001-Dominio-Financiero.md** (Steven): planteamiento del problema — Pagnol registra
+  la operación pero no puede responder preguntas financieras (costo real por contrato,
+  utilidad, flujo proyectado). Rescatado desde un worktree huérfano al repo principal.
+- **RFC-002-Resultado-por-Contrato.md** (respuesta arquitectónica): ledger financiero
+  append-only alimentado por los módulos existentes (patrón `stockLedger` elevado a dinero),
+  máquina de estados Presupuesto→Comprometido→Devengado→Pagado, ingresos vía estado-pago,
+  presupuesto de costo por partida (manual/Excel; APU en fase posterior), CLP+UF desde v1,
+  MO = asistencia × factor costo-empresa, agregación server-side (primera ruptura consciente
+  del patrón `useSupabaseCollection`), cierre de período y fases F0–F5. Explícitamente fuera
+  de alcance: contabilidad general y tesorería v1. Solo documentación — sin código ni
+  migraciones; pendiente aprobación para planificar F0.
+
 ### Agregado — Áreas Internas: la estructura propia de la empresa (caso Valar)
 
 **El problema de fondo:** "personal/stock de planta" y "dato que falta asignar" eran

@@ -283,6 +283,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             codePrefix: t.code_prefix ?? undefined,
             codePrefixes: t.code_prefixes ?? {},
             codeTypes: t.code_types ?? {},
+            laborCostFactor: t.labor_cost_factor != null ? Number(t.labor_cost_factor) : undefined,
           })) as Tenant[]);
 
           const saved = localStorage.getItem("selectedTenantId");

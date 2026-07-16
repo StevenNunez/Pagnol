@@ -11,7 +11,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
-    // Solo el motor offline por ahora (no hay suite global en el resto).
-    include: ['src/modules/offline/**/*.test.ts'],
+    // Motor offline + matemática del ledger financiero (no hay suite global en el resto).
+    include: ['src/modules/offline/**/*.test.ts', 'src/modules/data/mutations/financeMath.test.ts'],
   },
 });

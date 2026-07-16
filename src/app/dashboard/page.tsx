@@ -190,6 +190,17 @@ export default function DashboardHub() {
             permission: 'safety_checklists:review'
         },
         {
+            title: "Finanzas — Resultado por Contrato",
+            description: "Ledger de hechos económicos: comprometido, devengado y pagado por contrato (RFC-002).",
+            icon: DollarSign,
+            href: "/dashboard/finanzas",
+            color: "text-teal-600 dark:text-teal-400",
+            bg: "bg-teal-100 dark:bg-teal-500/10",
+            border: "hover:border-teal-300 dark:hover:border-teal-500/50",
+            shadow: "hover:shadow-teal-500/20 dark:hover:shadow-teal-500/10",
+            permission: 'module_finance:view'
+        },
+        {
             title: "Facturación DTE",
             description: "Emisión y gestión de documentos tributarios electrónicos.",
             icon: Receipt,

@@ -60,13 +60,17 @@ interface GenerateOrderCardProps {
 }
 
 const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive }) => {
-    const { suppliers, generatePurchaseOrder } = useAppState();
+    const { suppliers, materials, generatePurchaseOrder } = useAppState();
     const [selectedSupplier, setSelectedSupplier] = useState<string>('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [isArchiving, setIsArchiving] = useState(false);
+    // Valorización (F0): toda OC nace con precios reales. Se precargan desde el
+    // catálogo (materials.unitCost, calce por nombre) y el usuario los confirma.
+    const [pricingOpen, setPricingOpen] = useState(false);
+    const [prices, setPrices] = useState<Record<string, string>>({});
     const { toast } = useToast();
 
-    const handleGenerateOrder = async () => {
+    const openPricing = () => {
         if (!selectedSupplier) {
             toast({ variant: 'destructive', title: 'Proveedor requerido', description: 'Por favor, selecciona un proveedor para continuar.' });
             return;
@@ -75,20 +79,42 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
             toast({ variant: 'destructive', title: 'Lote vacío', description: 'Este lote no tiene solicitudes para generar una orden.' });
             return;
         }
+        const byName = new Map<string, number>();
+        for (const m of materials || []) {
+            const key = (m.name || '').trim().toLowerCase();
+            if (key && m.unitCost && !byName.has(key)) byName.set(key, m.unitCost);
+        }
+        const initial: Record<string, string> = {};
+        for (const req of lot.requests) {
+            const catalog = byName.get((req.materialName || '').trim().toLowerCase());
+            initial[req.id] = catalog ? String(catalog) : '';
+        }
+        setPrices(initial);
+        setPricingOpen(true);
+    };
 
+    const totalEstimate = lot.requests.reduce((acc, req) => acc + (parseFloat(prices[req.id]) || 0) * (req.quantity || 0), 0);
+    const allPriced = lot.requests.every((req) => (parseFloat(prices[req.id]) || 0) > 0);
+
+    const handleGenerateOrder = async () => {
         setIsGenerating(true);
         try {
-            await generatePurchaseOrder(lot.requests, selectedSupplier);
-            toast({ title: 'Orden Generada', description: `La cotización para ${lot.category} ha sido creada exitosamente.` });
+            const numericPrices: Record<string, number> = {};
+            for (const req of lot.requests) numericPrices[req.id] = parseFloat(prices[req.id]) || 0;
+            await generatePurchaseOrder(lot.requests, selectedSupplier, numericPrices);
+            toast({ title: 'Orden Generada', description: `La cotización valorizada para ${lot.category} ha sido creada exitosamente.` });
             setSelectedSupplier('');
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            setPricingOpen(false);
+        } catch (error: any) {
+            // Los errores de Supabase (PostgrestError) son objetos planos, no
+            // instancias de Error: leer .message directo o se pierde el detalle.
+            const errorMessage = error?.message || 'Error desconocido';
             toast({ variant: 'destructive', title: 'Error', description: errorMessage || 'No se pudo generar la orden.' });
         } finally {
             setIsGenerating(false);
         }
     };
-    
+
     const handleArchiveWrapper = async () => {
         setIsArchiving(true);
         try {
@@ -135,15 +161,63 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
                     </Select>
                 </div>
                 <div className="flex gap-2">
-                     <Button 
-                        className="w-full" 
-                        onClick={handleGenerateOrder} 
+                     <Button
+                        className="w-full"
+                        onClick={openPricing}
                         disabled={!selectedSupplier || totalRequests === 0 || isGenerating}
                     >
                         {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileText className="mr-2 h-4 w-4"/>}
                         Generar
                     </Button>
-                    
+
+                    {/* Diálogo de valorización: la OC no puede nacer sin precios */}
+                    <Dialog open={pricingOpen} onOpenChange={setPricingOpen}>
+                        <DialogContent className="sm:max-w-lg">
+                            <DialogHeader>
+                                <DialogTitle>Valorizar cotización · {lot.category}</DialogTitle>
+                                <DialogDescription>
+                                    Precios unitarios netos precargados desde el catálogo. Confírmalos o ajústalos —
+                                    el documento compromete este presupuesto y la recepción actualizará el catálogo con el precio real.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="max-h-[50vh] overflow-y-auto space-y-3 py-2">
+                                {lot.requests.map((req) => (
+                                    <div key={req.id} className="flex items-center gap-3">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">{req.materialName}</p>
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                                {req.quantity} {req.unit}{req.contractName ? ` · ${req.contractName}` : ''}
+                                            </p>
+                                        </div>
+                                        <div className="w-36 shrink-0">
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                placeholder="Precio unit."
+                                                value={prices[req.id] ?? ''}
+                                                onChange={(e) => setPrices((prev) => ({ ...prev, [req.id]: e.target.value }))}
+                                                className="text-right font-mono rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex items-center justify-between border-t pt-3">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total neto estimado</span>
+                                <span className="text-lg font-bold font-mono">
+                                    {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(totalEstimate)}
+                                </span>
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setPricingOpen(false)}>Cancelar</Button>
+                                <Button onClick={handleGenerateOrder} disabled={!allPriced || isGenerating}>
+                                    {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileText className="mr-2 h-4 w-4"/>}
+                                    Generar valorizada
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
                              <Button 
@@ -298,8 +372,8 @@ export default function OrdersPage() {
         try {
             await cancelPurchaseOrder(orderId);
             toast({ title: 'Orden Anulada', description: `La orden ${orderId.slice(0, 8)}... fue cancelada.` });
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+        } catch (error: any) {
+            const errorMessage = error?.message || "Error desconocido";
             toast({ variant: 'destructive', title: 'Error', description: errorMessage || 'No se pudo anular la orden.' });
         } finally {
             setCancelingId(null);

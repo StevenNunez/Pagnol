@@ -27,6 +27,9 @@ export interface Tenant {
   // Prefijo base para los correlativos internos (Configuración de App).
   // Vacío = se derivan las iniciales del nombre (comportamiento histórico).
   codePrefix?: string;
+  // Factor costo-empresa sobre baseSalary (leyes sociales, gratificación…).
+  // Lo consume el Dominio Financiero (F1, costo MO). Default 1.35.
+  laborCostFactor?: number;
   // Override de prefijo POR TIPO de documento ({ "PUR": "OC", "REC": "REC", ... }).
   // Tiene prioridad sobre codePrefix; tipo sin override hereda el prefijo base.
   codePrefixes?: Record<string, string>;
@@ -1199,6 +1202,25 @@ export interface CostCenter {
   tenantId: string;
 }
 
+// ── Dominio Financiero (RFC-002, F0) ─────────────────────────────────────────
+// Hechos económicos inmutables (tabla finance_entries). NO viajan al
+// DataProvider: los paneles consumen la RPC finance_contract_summary.
+export type FinanceNature = 'cost' | 'income';
+export type FinanceStage = 'committed' | 'accrued' | 'paid';
+export type FinanceCategory =
+    | 'materials' | 'labor' | 'equipment' | 'subcontract' | 'rental' | 'services' | 'indirect';
+
+// Fila agregada que devuelve la RPC finance_contract_summary.
+export interface FinanceContractSummaryRow {
+    contract_id: string | null;
+    contract_name: string | null;
+    nature: FinanceNature;
+    stage: FinanceStage;
+    category: FinanceCategory;
+    total_net: number;
+    entry_count: number;
+}
+
 export interface StockMovement {
   id: string;
   materialId: string;
@@ -1499,6 +1521,9 @@ export interface SupplierPayment {
   status: 'pending' | 'paid' | 'overdue';
   createdAt?: Date;
   purchaseOrderNumber?: string;
+  // Vínculo real a purchase_orders.id (el string purchaseOrderNumber es legacy).
+  // Permite heredar el contrato de la OC al emitir el hecho financiero "pagado".
+  purchaseOrderId?: string | null;
   work?: string; // Obra
   paymentDate?: Date;
   paymentMethod?: string;

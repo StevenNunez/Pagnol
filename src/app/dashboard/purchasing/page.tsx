@@ -451,7 +451,7 @@ export default function PurchasingHubPage() {
       pending: prs.filter((pr) => pr.status === "pending").length,
       approved: prs.filter((pr) => pr.status === "approved" && !pr.lotId).length,
       inLots: batchedLots.length, // Usamos la longitud de lotes activos
-      ordered: (purchaseOrders || []).length,
+      ordered: (purchaseOrders || []).filter(po => po.status !== 'cancelled').length,
     };
   }, [purchaseRequests, batchedLots, purchaseOrders]);
 

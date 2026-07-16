@@ -86,6 +86,13 @@ export const ALL_PERMISSIONS = {
     'finance:manage_purchase_orders': { label: 'Generar OC Oficiales', group: 'Finanzas' },
     'cost_centers:manage': { label: 'Gestionar Centros de Costo', group: 'Finanzas' },
 
+    // ── Dominio Financiero (RFC-002) — el margen es el dato más sensible ──────
+    // Decisión F0: NINGÚN rol lo recibe por defecto en ROLES_DEFAULT; nace solo
+    // para administrador/soporte-pagnol (que pasan por el bypass de can()) y se
+    // otorga explícitamente a otros roles cuando el tenant lo decida.
+    'module_finance:view': { label: 'Acceder a Finanzas (Resultado por Contrato)', group: 'Acceso a Módulos' },
+    'finance:manage': { label: 'Administrar Finanzas (presupuestos, cierres)', group: 'Finanzas' },
+
     'users:create': { label: 'Crear Usuarios', group: 'Usuarios' },
     'users:view': { label: 'Ver Usuarios', group: 'Usuarios' },
     'users:edit': { label: 'Editar Usuarios', group: 'Usuarios' },

@@ -125,6 +125,9 @@ export default function ConfiguracionPage() {
   const [codePrefixes, setCodePrefixes] = useState<Record<string, string>>({});
   const [codeTypes, setCodeTypes] = useState<Record<string, string>>({});
   const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+  // Dominio Financiero: factor costo-empresa sobre el sueldo base (leyes
+  // sociales, gratificación…). Lo consume el costo de MO (F1).
+  const [laborFactor, setLaborFactor] = useState("1.35");
 
   const [savingCompany, setSavingCompany] = useState(false);
   const [savingPrefix, setSavingPrefix] = useState(false);
@@ -144,6 +147,7 @@ export default function ConfiguracionPage() {
     setCodePrefixes(currentTenant.codePrefixes || {});
     setCodeTypes(currentTenant.codeTypes || {});
     setLogoUrl(currentTenant.logoUrl);
+    setLaborFactor(String(currentTenant.laborCostFactor ?? 1.35));
   }, [currentTenant]);
 
   // Prefijo base efectivo: el configurado, o las iniciales del nombre.
@@ -167,6 +171,12 @@ export default function ConfiguracionPage() {
     }
     setSavingCompany(true);
     try {
+      const factor = parseFloat(laborFactor);
+      if (!(factor >= 1 && factor <= 3)) {
+        toast({ variant: "destructive", title: "Factor costo-empresa inválido", description: "Debe estar entre 1.0 y 3.0 (ej: 1.35)." });
+        setSavingCompany(false);
+        return;
+      }
       await updateTenant(currentTenant!.id, {
         name: name.trim(),
         rut: rut.trim() || undefined,
@@ -174,6 +184,7 @@ export default function ConfiguracionPage() {
         legalRepresentativeRut: legalRepRut.trim() || undefined,
         address: address.trim() || undefined,
         faenas,
+        laborCostFactor: factor,
       });
       toast({ title: "Datos guardados", description: "La información de la empresa se actualizó." });
     } catch (e: any) {
@@ -295,6 +306,18 @@ export default function ConfiguracionPage() {
             <div className="space-y-2">
               <Label className={MICRO_LABEL}>Dirección</Label>
               <Input value={address} onChange={(e) => setAddress(e.target.value)} className="rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label className={MICRO_LABEL}>Factor costo-empresa (Finanzas)</Label>
+              <Input
+                type="number" step="0.01" min="1" max="3"
+                value={laborFactor} onChange={(e) => setLaborFactor(e.target.value)}
+                className="rounded-xl font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Multiplicador sobre el sueldo base para el costo real de mano de obra
+                (leyes sociales, gratificación). Típico en Chile: 1.30–1.45.
+              </p>
             </div>
             <div className="space-y-2">
               <Label className={MICRO_LABEL}>Faenas / Sectores</Label>

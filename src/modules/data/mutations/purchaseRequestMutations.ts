@@ -6,6 +6,7 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { userCan } from '@/modules/core/lib/permissions';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 import { addToLedger } from './stockLedger';
+import { emitFinanceEntries, reverseEntriesForSource, type FinanceEntryInput } from './financeLedger';
 
 import type { MutationContext as Context } from './context';
 
@@ -358,9 +359,27 @@ export async function deletePurchaseRequest(requestId: string, { tenantId }: Con
   if (error) throw error;
 }
 
-export async function generatePurchaseOrder(requests: PurchaseRequest[], supplierId: string, { user, tenantId }: Context) {
+/**
+ * Genera la cotización valorizada (status 'generated') de un lote.
+ *
+ * Decisión F0 (RFC-002-F0-Plan): toda OC nace VALORIZADA — `prices` trae el
+ * precio unitario neto por solicitud (la UI lo precarga desde el catálogo y el
+ * usuario lo confirma/ajusta). El documento compromete costo estimado en el
+ * ledger financiero desde este momento; la recepción lo devenga con el precio
+ * real y retroalimenta el catálogo.
+ */
+export async function generatePurchaseOrder(
+  requests: PurchaseRequest[],
+  supplierId: string,
+  prices: Record<string, number>,
+  { user, tenantId }: Context,
+) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
   if (requests.length === 0) throw new Error("No hay solicitudes para procesar.");
+  const missing = requests.filter((r) => !(Number(prices[r.id]) > 0));
+  if (missing.length > 0) {
+    throw new Error(`Falta el precio unitario de: ${missing.map((r) => r.materialName).join(', ')}.`);
+  }
 
   const lotId = requests[0].lotId;
   const { data: supplier } = await supabase.from('suppliers').select('name').eq('id', supplierId).single();
@@ -368,13 +387,23 @@ export async function generatePurchaseOrder(requests: PurchaseRequest[], supplie
 
   const orderId = await nextInternalCode(tenantId, 'PUR');
 
+  // Ítems agrupados por material (formato histórico del documento). El precio
+  // del grupo es el promedio ponderado si dos solicitudes del mismo material
+  // traen precios distintos.
   const itemsMap = new Map<string, any>();
+  let totalAmount = 0;
   for (const req of requests) {
+    const price = Number(prices[req.id]);
+    totalAmount += price * req.quantity;
     const key = req.materialName;
-    if (itemsMap.has(key)) itemsMap.get(key).totalQuantity += req.quantity;
-    else itemsMap.set(key, { name: req.materialName, unit: req.unit, totalQuantity: req.quantity, category: req.category });
-
-    await supabase.from('purchase_requests').update({ status: 'ordered' }).eq('id', req.id);
+    if (itemsMap.has(key)) {
+      const it = itemsMap.get(key);
+      const newQty = it.totalQuantity + req.quantity;
+      it.price = Math.round((it.price * it.totalQuantity + price * req.quantity) / newQty);
+      it.totalQuantity = newQty;
+    } else {
+      itemsMap.set(key, { name: req.materialName, unit: req.unit, totalQuantity: req.quantity, category: req.category, price });
+    }
   }
 
   const { error: orderErr } = await supabase.from('purchase_orders').insert({
@@ -388,13 +417,40 @@ export async function generatePurchaseOrder(requests: PurchaseRequest[], supplie
     status: 'generated',
     request_ids: requests.map(r => r.id),
     items: Array.from(itemsMap.values()),
+    total_amount: Math.round(totalAmount),
     tenant_id: tenantId,
     lot_id: lotId,
   });
 
   if (orderErr) throw orderErr;
 
+  // Recién con la OC persistida se marcan las solicitudes: si el insert falla,
+  // ninguna queda en estado 'ordered' fantasma.
+  for (const req of requests) {
+    await supabase.from('purchase_requests').update({ status: 'ordered' }).eq('id', req.id);
+  }
+
   if (lotId) await supabase.from('purchase_lots').update({ supplier_id: supplierId }).eq('id', lotId);
+
+  // Emisor financiero: comprometido por solicitud (cada una conserva SU contrato).
+  await emitFinanceEntries(
+    requests.map((req): FinanceEntryInput => ({
+      nature: 'cost',
+      stage: 'committed',
+      category: 'materials',
+      amountNet: Number(prices[req.id]) * req.quantity,
+      contractId: req.contractId ?? null,
+      contractName: req.contractName ?? null,
+      sourceType: 'purchase_order',
+      sourceId: orderId,
+      sourceCode: orderId,
+      counterpartyType: 'supplier',
+      counterpartyId: supplierId,
+      counterpartyName: supplier.name,
+      notes: `Cotización valorizada — compromiso estimado (${req.materialName} × ${req.quantity})`,
+    })),
+    { user, tenantId },
+  );
 
   return orderId;
 }
@@ -443,6 +499,41 @@ export async function createPurchaseOrder(
     }).eq('id', item.requestId);
   }
 
+  // Emisor financiero: OC firme del flujo RFQ → comprometido por ítem, con el
+  // contrato de la solicitud de origen.
+  const reqIds = items.map((i) => i.requestId).filter(Boolean);
+  const contractByReq = new Map<string, { id: string | null; name: string | null }>();
+  if (reqIds.length) {
+    const { data: reqs } = await supabase
+      .from('purchase_requests')
+      .select('id, contract_id, contract_name')
+      .in('id', reqIds);
+    for (const r of reqs || []) contractByReq.set(r.id, { id: r.contract_id || null, name: r.contract_name || null });
+  }
+  await emitFinanceEntries(
+    items
+      .filter((item) => Number(item.price) > 0 && Number(item.quantity) > 0)
+      .map((item): FinanceEntryInput => {
+        const contract = contractByReq.get(item.requestId) || { id: null, name: null };
+        return {
+          nature: 'cost',
+          stage: 'committed',
+          category: 'materials',
+          amountNet: Number(item.price) * Number(item.quantity),
+          contractId: contract.id,
+          contractName: contract.name,
+          sourceType: 'purchase_order',
+          sourceId: order.id,
+          sourceCode: ocNumber.trim(),
+          counterpartyType: 'supplier',
+          counterpartyId: lot.supplier_id,
+          counterpartyName: supplier?.name || null,
+          notes: `OC firme (RFQ) — ${item.name} × ${item.quantity}`,
+        };
+      }),
+    { user, tenantId },
+  );
+
   return order.id;
 }
 
@@ -463,6 +554,7 @@ export async function cancelPurchaseOrder(orderId: string, { user, tenantId }: C
 
   const { data: order } = await supabase.from('purchase_orders').select('*').eq('id', orderId).single();
   if (!order) throw new Error("La orden no existe.");
+  if (order.status === 'completed') throw new Error("La OC ya fue recibida: no puede anularse.");
 
   if (order.request_ids && order.request_ids.length > 0) {
     for (const reqId of order.request_ids) {
@@ -470,8 +562,19 @@ export async function cancelPurchaseOrder(orderId: string, { user, tenantId }: C
     }
   }
 
-  const { error } = await supabase.from('purchase_orders').delete().eq('id', orderId);
+  // Fix F0: antes se hacía DELETE de la fila — el documento desaparecía sin
+  // rastro. Ahora se anula (soft-cancel) y sus hechos financieros se reversan
+  // (Art. 2: nunca se borra un hecho; se emite el espejo).
+  const { data: rows, error } = await supabase
+    .from('purchase_orders')
+    .update({ status: 'cancelled', processed_at: new Date().toISOString(), processed_by: user.id })
+    .eq('id', orderId)
+    .eq('tenant_id', tenantId)
+    .select('id');
   if (error) throw error;
+  if (!rows || rows.length === 0) throw new Error('No se pudo anular la orden (RLS).');
+
+  await reverseEntriesForSource('purchase_order', orderId, `OC anulada por ${user.name}`, { user, tenantId });
 }
 
 export async function archiveLot(requestIds: string[], { user, tenantId }: Context) {

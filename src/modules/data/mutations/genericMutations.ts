@@ -43,6 +43,7 @@ export async function updateTenant(tenantId: string, data: Partial<Tenant>, { }:
     if (data.codePrefix !== undefined) payload.code_prefix = data.codePrefix?.trim() || null;
     if (data.codePrefixes !== undefined) payload.code_prefixes = data.codePrefixes ?? {};
     if (data.codeTypes !== undefined) payload.code_types = data.codeTypes ?? {};
+    if (data.laborCostFactor !== undefined) payload.labor_cost_factor = data.laborCostFactor;
     // `.select()` para detectar UPDATE silencioso de 0 filas (típico de RLS que no
     // matchea): sin esto Supabase no devuelve error y el cambio no persiste.
     const { data: rows, error } = await supabase

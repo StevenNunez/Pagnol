@@ -185,9 +185,16 @@ async function rentalFinanceContext(contractRow: {
   }
   let partyName: string | null = null;
   if (contractRow.party_id) {
-    const { data: p } = await supabase
-      .from('rental_parties').select('name').eq('id', contractRow.party_id).maybeSingle();
-    partyName = p?.name ?? null;
+    // Unificación arrendadores=proveedores: el party puede vivir en suppliers
+    // (contratos adjudicados desde RFQ) o en rental_parties (legacy/clientes).
+    const { data: s } = await supabase
+      .from('suppliers').select('name').eq('id', contractRow.party_id).maybeSingle();
+    partyName = s?.name ?? null;
+    if (!partyName) {
+      const { data: p } = await supabase
+        .from('rental_parties').select('name').eq('id', contractRow.party_id).maybeSingle();
+      partyName = p?.name ?? null;
+    }
   }
   let ufRate: number | null = null;
   if (contractRow.currency === 'UF') {

@@ -20,9 +20,19 @@ Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Agregado — Dominio Financiero F2: ingresos y emisores restantes (RFC-002-F2-Plan / ADR-004)
 
-**Migración `20260723010000_finance_f2.sql` — PENDIENTE DE APLICAR.** Con ella el panel
-de Finanzas muestra por primera vez **MARGEN por contrato** (ingreso devengado − costo
+**Migración `20260723010000_finance_f2.sql` — APLICADA (2026-07-16).** El panel de
+Finanzas muestra por primera vez **MARGEN por contrato** (ingreso devengado − costo
 devengado) — el diferenciador estratégico del RFC-001.
+
+**Verificado E2E (2026-07-16, tenant DEMO, ejercitando las mutaciones reales con sesión
+real):** 17/17 — EP con correlativo, delta congelado y herencia del contrato de la raíz
+WBS; aprobar devengó $300.000 de ingreso; EP2 encadenó el delta ($200.000); EP sin
+avance nuevo bloqueado; cobro con fecha real; anulación reversó a $0 y el EP siguiente
+calculó su delta contra el último EP VIVO; arriendo comprometió Σ calendario
+($1.500.000) sin duplicar al re-confirmar, el materializador devengó el ciclo vencido
+(idempotente), pago→pagado, des-marcar reversó todo y el materializador re-devengó;
+consumo movió el costo pool→contrato ($26.700) y la transferencia de stock
+pool→Miscelánios movió $17.800 con su par negativo/positivo.
 
 - **Ingresos desde Estado de Pago**: puente WBS↔contratos (`work_items.contract_id` en
   la raíz de la obra, selector en Control de Obra); el EP hereda la imputación y congela

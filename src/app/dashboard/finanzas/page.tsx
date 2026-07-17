@@ -8,6 +8,7 @@
 // ledger será la tabla más grande del sistema y jamás viaja al navegador.
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/page-shell";
 import { EmptyState } from "@/components/empty-state";
 import { LoadingState } from "@/components/loading-state";
@@ -23,7 +24,7 @@ import type { AttendanceLog, FinanceCategory, FinanceContractSummaryRow, User } 
 import { laborDayPresence } from "@/modules/data/mutations/financeMath";
 import {
     Landmark, HandCoins, PackageCheck, AlertTriangle, ChevronDown, ChevronRight,
-    RefreshCcw, Loader2, ShieldAlert, HardHat, TrendingUp, Scale,
+    RefreshCcw, Loader2, ShieldAlert, HardHat, TrendingUp, Scale, ClipboardList,
 } from "lucide-react";
 
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
@@ -61,6 +62,7 @@ const monthStart = () => {
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export default function FinanzasPage() {
+    const router = useRouter();
     const { can, getTenantId } = useAuth();
     const { users, attendanceLogs } = useAppState();
     const { toast } = useToast();
@@ -259,6 +261,10 @@ export default function FinanzasPage() {
                         <Button variant="outline" size="sm" className="rounded-xl" onClick={recalcLabor} disabled={refreshingLabor}>
                             {refreshingLabor ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <HardHat className="mr-2 h-3.5 w-3.5" />}
                             Recalcular MO
+                        </Button>
+                        <Button variant="outline" size="sm" className="rounded-xl" onClick={() => router.push("/dashboard/finanzas/presupuesto")}>
+                            <ClipboardList className="mr-2 h-3.5 w-3.5" />
+                            Presupuesto
                         </Button>
                     </div>
                 </>

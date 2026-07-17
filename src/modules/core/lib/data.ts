@@ -1215,6 +1215,21 @@ export type FinanceCategory =
     // Ingresos (F2): las demás categorías son taxonomía de costo.
     | 'revenue';
 
+// Línea de presupuesto de costo (F3, ADR-005): append-only — línea inicial +
+// modificaciones con motivo; el vigente es la suma. NO es un hecho económico.
+export interface FinanceBudgetEntry {
+    id: string;
+    tenantId: string;
+    contractId: string;
+    category: Exclude<FinanceCategory, 'revenue'>;
+    workItemId?: string | null;   // evolución futura (partida)
+    amountNet: number;            // CLP entero; negativo = rebaja
+    reason: string;
+    createdBy?: string | null;
+    createdByName?: string | null;
+    createdAt: Date | string;
+}
+
 // Fila agregada que devuelve la RPC finance_contract_summary.
 export interface FinanceContractSummaryRow {
     contract_id: string | null;

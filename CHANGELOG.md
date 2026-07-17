@@ -18,6 +18,26 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Dominio Financiero F3: presupuesto de costo (RFC-002-F3-Plan / ADR-005)
+
+**Migración `20260723020000_finance_budget.sql` — PENDIENTE DE APLICAR.** Le da
+referencia al margen: presupuesto vs comprometido vs devengado vs pagado.
+
+- **`finance_budget_entries`**: líneas de presupuesto **append-only** por contrato ×
+  categoría de costo (decisión Steven: esa granularidad en v1 — los hechos aún no llevan
+  partida; `work_item_id` queda nullable para el futuro). Línea inicial y modificaciones
+  son lo mismo: un INSERT con **motivo obligatorio** (rebajas en negativo); el vigente es
+  la suma — el historial de modificaciones presupuestarias de RFC-001 sale gratis del
+  esquema (Art. 2: sin UPDATE/DELETE). Solo CLP en v1 (decisión Steven). RLS cerrada a
+  visores financieros; editar exige `finance:manage` (permiso existente de F0).
+- **`/dashboard/finanzas/presupuesto`**: tabla presupuesto | comprometido | devengado |
+  pagado | disponible | % ejecución por contrato (expandible a categoría), contra el
+  ledger **histórico completo** (el presupuesto es total, no de un rango); badges
+  "sin presupuesto" y "sobre-comprometido"; diálogo de línea/rebaja con motivo;
+  historial por contrato; **importación CSV** (papaparse: Contrato | Categoría |
+  Monto | Motivo). Botón "Presupuesto" en la toolbar del panel Resultado por Contrato.
+- Matemática pura `budgetRollup` / `budgetExecutionPct` (+5 tests, 55 en verde).
+
 ### Agregado — Dominio Financiero F2: ingresos y emisores restantes (RFC-002-F2-Plan / ADR-004)
 
 **Migración `20260723010000_finance_f2.sql` — APLICADA (2026-07-16).** El panel de

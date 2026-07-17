@@ -4,6 +4,7 @@ import {
     laborDayCost, laborDaySourceId, parseLaborSourceId, laborDayPresence, laborDayExpected,
     reconcileLaborDay,
     epPeriodEarned, rentalNetToClp, consumptionTransfers,
+    budgetRollup, budgetExecutionPct,
     type FinanceEntryInput, type LaborDayLog, type LaborLiveEntry,
 } from './financeMath';
 
@@ -286,5 +287,45 @@ describe('consumptionTransfers', () => {
     it('sin costo unitario conocible no se inventan hechos', () => {
         expect(consumptionTransfers([{ contractId: null, qty: 5 }], 'c1', 0)).toEqual([]);
         expect(consumptionTransfers([{ contractId: null, qty: 5 }], 'c1', NaN)).toEqual([]);
+    });
+});
+
+// ─── F3: presupuesto de costo (ADR-005) ──────────────────────────────────────
+
+describe('budgetRollup', () => {
+    const line = (contractId: string, category: string, amountNet: number) => ({ contractId, category, amountNet });
+
+    it('vigente = suma de línea inicial + modificaciones (rebajas restan)', () => {
+        const r = budgetRollup([
+            line('c1', 'materials', 10_000_000),
+            line('c1', 'materials', -2_000_000), // rebaja con motivo
+            line('c1', 'labor', 5_000_000),
+        ]);
+        expect(r.get('c1|materials')).toBe(8_000_000);
+        expect(r.get('c1|labor')).toBe(5_000_000);
+        expect(r.get('c1')).toBe(13_000_000); // total contrato
+    });
+
+    it('contratos independientes no se mezclan', () => {
+        const r = budgetRollup([line('c1', 'materials', 1_000), line('c2', 'materials', 2_000)]);
+        expect(r.get('c1')).toBe(1_000);
+        expect(r.get('c2')).toBe(2_000);
+    });
+
+    it('un presupuesto rebajado a 0 se reporta (0 es información, no ausencia)', () => {
+        const r = budgetRollup([line('c1', 'rental', 500), line('c1', 'rental', -500)]);
+        expect(r.get('c1|rental')).toBe(0);
+    });
+});
+
+describe('budgetExecutionPct', () => {
+    it('devengado / vigente, redondeado', () => {
+        expect(budgetExecutionPct(2_500_000, 10_000_000)).toBe(25);
+        expect(budgetExecutionPct(11_000_000, 10_000_000)).toBe(110); // sobre-ejecución visible
+    });
+
+    it('sin presupuesto (0 o inválido) ⇒ null, no división por cero', () => {
+        expect(budgetExecutionPct(1_000, 0)).toBeNull();
+        expect(budgetExecutionPct(1_000, NaN)).toBeNull();
     });
 });

@@ -233,6 +233,32 @@ export function consumptionTransfers(
     return out;
 }
 
+// ─── F3: presupuesto de costo (ADR-005) ──────────────────────────────────────
+
+/**
+ * Rollup de líneas de presupuesto: vigente por clave (contrato o
+ * contrato|categoría). Las líneas negativas (rebajas) restan; el vigente puede
+ * quedar en 0 pero se reporta igual (un presupuesto rebajado a 0 es información).
+ */
+export function budgetRollup<T extends { contractId: string; category: string; amountNet: number }>(
+    lines: T[],
+): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const l of lines) {
+        const amount = Math.round(Number(l.amountNet) || 0);
+        out.set(l.contractId, (out.get(l.contractId) || 0) + amount);
+        const key = `${l.contractId}|${l.category}`;
+        out.set(key, (out.get(key) || 0) + amount);
+    }
+    return out;
+}
+
+/** % de ejecución presupuestaria: devengado / vigente (null sin presupuesto). */
+export function budgetExecutionPct(accrued: number, budget: number): number | null {
+    if (!Number.isFinite(budget) || budget <= 0) return null;
+    return Math.round((accrued / budget) * 100);
+}
+
 /**
  * Normaliza un input a la fila snake_case que espera `finance_entries`.
  */

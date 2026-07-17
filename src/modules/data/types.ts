@@ -3,6 +3,8 @@ import {
   User,
   Material,
   Tool,
+  FinanceCategory,
+  FinanceBudgetEntry,
   MaterialRequest,
   ReturnRequest,
   PurchaseRequest,
@@ -227,6 +229,7 @@ export interface AppStateContextType extends AppDataState {
   approvePaymentState: (id: string) => Promise<void>;
   markPaymentStatePaid: (id: string, paidDate: string) => Promise<void>;
   annulPaymentState: (id: string, reason: string) => Promise<void>;
+  addBudgetEntry: (data: { contractId: string; category: Exclude<FinanceCategory, 'revenue'>; amountNet: number; reason: string }) => Promise<FinanceBudgetEntry>;
 
   // Safety
   addChecklistTemplate: (template: Pick<ChecklistTemplate, 'title' | 'items'>) => Promise<void>;

@@ -5,6 +5,7 @@ import {
   Tool,
   FinanceCategory,
   FinanceBudgetEntry,
+  FinancePeriodEvent,
   MaterialRequest,
   ReturnRequest,
   PurchaseRequest,
@@ -230,6 +231,8 @@ export interface AppStateContextType extends AppDataState {
   markPaymentStatePaid: (id: string, paidDate: string) => Promise<void>;
   annulPaymentState: (id: string, reason: string) => Promise<void>;
   addBudgetEntry: (data: { contractId: string; category: Exclude<FinanceCategory, 'revenue'>; amountNet: number; reason: string }) => Promise<FinanceBudgetEntry>;
+  closePeriod: (data: { month: string; reason?: string }) => Promise<FinancePeriodEvent>;
+  reopenPeriod: (data: { month: string; reason: string }) => Promise<FinancePeriodEvent>;
 
   // Safety
   addChecklistTemplate: (template: Pick<ChecklistTemplate, 'title' | 'items'>) => Promise<void>;

@@ -53,8 +53,12 @@ export async function GET(req: NextRequest) {
                 emitted: acc.emitted + (r.emitted || 0) + (r.rentals?.emitted || 0),
                 mirrors: acc.mirrors + (r.mirrors || 0) + (r.rentals?.mirrors || 0),
                 noSalaryWorkers: acc.noSalaryWorkers + (r.noSalaryWorkers || 0),
+                // F4.1: hechos que no entraron por período cerrado. Se reportan
+                // en cada corrida — el cron reintenta, así que reabrir el mes
+                // basta para que se emitan solos.
+                blocked: acc.blocked + (r.blocked || 0) + (r.rentals?.blocked || 0),
             }),
-            { emitted: 0, mirrors: 0, noSalaryWorkers: 0 },
+            { emitted: 0, mirrors: 0, noSalaryWorkers: 0, blocked: 0 },
         );
         return NextResponse.json({ ok: failed === 0, tenants: results.length, failed, ...totals, results });
     } catch (e: any) {

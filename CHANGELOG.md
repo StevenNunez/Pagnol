@@ -18,10 +18,160 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Dominio Financiero F4.2: flujo de caja proyectado (RFC-002-F4-Plan / ADR-007)
+
+**Migraciones `20260726000000_finance_cash_flow.sql` y `20260726010000_finance_reverse_due_date.sql`
+— APLICADAS (2026-07-28).** El ledger respondía "¿cuánto gané?"; ahora también "¿me alcanza
+la plata, y cuándo?".
+
+**Verificado E2E 17/17 + regresión 10/10 (tenant DEMO, mutaciones reales).**
+
+- **Las obligaciones de caja entran al ledger como naturaleza propia** (`payable` /
+  `receivable`), junto a `cost`/`income`. Una factura pendiente NO es un costo nuevo —la
+  recepción ya lo devengó—, así que sumarla como costo habría duplicado el margen. Se
+  descartó la idea original (que la factura reemplazara el devengo de la recepción) porque
+  `purchase_order_id` es opcional y una OC admite facturas parciales: exigía un prorrateo
+  delicado. Detalle en ADR-007.
+- **Convención de monto invertida y deliberada:** `cost`/`income` en **NETO** (resultado);
+  `payable`/`receivable` en **BRUTO** (caja, lo que sale del banco).
+- **Ciclo de vida por reverso, nunca por UPDATE** (Art. 2): la obligación nace con el
+  documento, se apaga al pagar/eliminar/anular, se re-emite al repactar monto o vencimiento
+  y **revive** al des-marcar un pago de arriendo.
+- **Tres fuentes**: facturas de proveedor, cuotas de arriendo y EP por cobrar. Los EP entran
+  **sin vencimiento** a propósito —no hay fecha de cobro comprometida y estimarla sería
+  inventarla—; la página los muestra aparte en vez de ocultarlos.
+- **`/dashboard/finanzas/flujo`**: calendario semanal de entradas/salidas con **saldo
+  acumulado** (la pregunta no es cuánto sale esta semana, sino en qué semana falta plata),
+  marca de vencido y bloque "sin fecha comprometida". El saldo parte de cero: proyecta
+  movimiento, no saldo bancario (Pagnol no lleva tesorería).
+
+### Corregido — 🔴 Los reversos perdían el vencimiento (afectaba a todo el dominio)
+
+`finance_reverse_source` se escribió en F0, antes de que existiera `due_date`, y emitía los
+reversos con esa columna en NULL. El neto global siempre estuvo correcto —por eso ninguna
+suma lo delataba—, pero el error era de **agrupación**: el reverso no neteaba con su
+original y el flujo habría mostrado **pagos que ya no existen**, con las obligaciones
+repactadas contadas dos veces. Ahora `due_date` entra al `GROUP BY` y se copia al reverso;
+`entry_date` sigue siendo `CURRENT_DATE` para no chocar nunca con un período cerrado (F4.1).
+Verificado que las cadenas de costo de F0–F2 (sin vencimiento) siguen neteando e idempotentes.
+
+### Corregido — El panel de Finanzas habría contado las obligaciones como costo
+
+Clasificaba con `if (income) … else → costo`; al agregar `payable` ese `else` habría
+duplicado el margen. Pasa a clasificación explícita por naturaleza. **Todo consumidor nuevo
+del ledger debe filtrar por `nature` explícitamente — un `else` genérico ahora es un bug.**
+
+### Agregado — Dominio Financiero F4.1: cierre de período (RFC-002-F4-Plan / ADR-006)
+
+**Migración `20260725000000_finance_period_close.sql` — APLICADA (2026-07-28).**
+
+**Verificado E2E 23/23 + precheck 6/6 (2026-07-28, tenant DEMO, ejercitando el trigger
+real):** el guard rechaza al usuario autenticado **y al service role** con un mensaje que
+nombra período, fecha y autor del cierre; no se coló ningún hecho; siguen pasando los
+hechos de hoy, los reversos (se fechan con `CURRENT_DATE`) y el presupuesto; el resto del
+lote entra aunque una fila esté bloqueada; los eventos no aceptan `UPDATE`/`DELETE`;
+cerrar el período de otro tenant lo rechaza la RLS; reabrir sin motivo falla, y tras
+reabrir el hecho vuelve a entrar quedando cierre **y** reapertura en el historial. El
+precheck se probó creando las condiciones a propósito: detecta asistencia sin sueldo,
+ciclo de arriendo sin devengar y meses anteriores abiertos — y **se apaga** al corregir la
+causa (no es ruido permanente). DEMO quedó sin residuos.
+
+Sin cierre, todo lo construido en F0–F3 seguía siendo mutable hacia atrás: un hecho
+fechado en enero podía nacer en julio y cambiar un margen ya reportado. El soft-lock
+congela el pasado.
+
+- **`finance_period_events`** — eventos append-only (`close`/`reopen`) por tenant × mes,
+  con autor y motivo. El estado vigente de un mes es su último evento, así que
+  cerrar → reabrir → cerrar queda completo en el historial. Reabrir exige motivo.
+- **El guard vive en la base**, no en los emisores: trigger `BEFORE INSERT` sobre
+  `finance_entries` que rechaza cualquier hecho cuya fecha contable caiga en un mes
+  cerrado, con un mensaje que nombra el período, la fecha de cierre y quién lo cerró.
+  Son nueve emisores y dos crons — congelar el pasado no puede depender de que todos
+  recuerden chequear. Aplica también al service role.
+- **Chequeo previo antes de cerrar** (`finance_period_precheck`): días con asistencia sin
+  sueldo base (su MO no está en el ledger), ciclos de arriendo vencidos sin devengar, EP
+  aprobados sin cobrar, y meses anteriores todavía abiertos. No bloquea — muestra la foto
+  para que nadie cierre a ciegas.
+- **Los materializadores reportan lo bloqueado en vez de perderlo** (decisión D1): el cron
+  de MO y el de ciclos de arriendo apartan las filas del mes cerrado *antes* del INSERT
+  —el lote es de 500 y una sola fila rechazada lo abortaría entero—, emiten todo lo demás
+  y devuelven `blocked` + los meses afectados. Reintentan en cada corrida, así que reabrir
+  el mes basta para que se emitan solos.
+- **`/dashboard/finanzas/cierre`**: estado de los últimos 18 meses, cerrar/reabrir con
+  revisión previa, e historial. El presupuesto NO se bloquea: es intención, no un hecho
+  ocurrido, y se replanifica hacia adelante (ADR-005).
+- Regla compartida `closedMonthsFromEvents` / `splitByClosedPeriod` en `src/lib/finance-periods.ts`
+  (+9 tests, 72 en verde) para que UI, crons y guard no puedan discrepar.
+
+Permisos: sin novedad — `finance:manage` ya decía *"Administrar Finanzas (presupuestos,
+**cierres**)"*.
+
+### Corregido — 🔴 El "disponible" del presupuesto ignoraba el costo de mano de obra
+
+**Migración `20260724000000_finance_budget_consumption.sql` — PENDIENTE DE APLICAR.**
+Encontrado por el E2E de F3 (la única fase que se commiteó antes de verificarse).
+Detalle y decisión en el addendum del `ADR-005`.
+
+`disponible = presupuesto − comprometido` daba por hecho que todo costo se
+compromete antes de devengarse. **La mano de obra nace devengada** —el trabajador
+trabajó, no hay OC que comprometer— igual que el consumo de pañol y las
+transferencias de stock. Consecuencia: el mayor costo de una faena era invisible
+para el control presupuestario, y la misma fila mostraba *"49% ejecutado"* junto a
+*"disponible: todo el presupuesto"*. Medido en DEMO: $108.000 de MO fuera del
+cálculo sobre un presupuesto de $220.000.
+
+- Nueva columna **Consumido** = comprometido + devengado de las fuentes que no
+  pasan por compromiso (`labor_day`, `material_request`, `stock_transfer`);
+  **Disponible** = presupuesto − consumido. El badge "sobre-comprometido" ahora se
+  evalúa contra el consumido. `% Ejec.` no cambia.
+- La regla vive en `financeMath.budgetConsumption()` (puro, +8 tests → 51 en verde),
+  con `UNCOMMITTED_SOURCES` como punto único de verdad: **al escribir un emisor
+  nuevo hay que decidir si entra ahí**. El RPC `finance_contract_summary` solo
+  agrega — se le sumó `source_type` al `GROUP BY`.
+- Se descartó `max(comprometido, devengado)` por subestimar categorías que mezclan
+  orígenes (OC pendiente + consumo de pañol); hay un test que fija ese caso.
+
+### Seguridad — Los permisos de Finanzas dejan de ser decorativos en la base
+
+**Migraciones `20260724000000` (APLICADA) y `20260724010000` — PENDIENTE DE APLICAR.**
+
+La mutación exigía `finance:manage` pero la RLS exigía `is_finance_viewer()`, que
+solo mira el ROL (`administrador`/`soporte-pagnol`/`super-admin`). Todo el dominio
+financiero estaba cerrado por rol: **otorgar `module_finance:view` o `finance:manage`
+a cualquier otro rol no habilitaba nada**, aunque el cliente sí los evaluara.
+
+- `public.can_manage_finance()` — nuevo helper que replica la cadena real de `can()`
+  (super-admin → bypass admin/soporte → `granted_permissions` → rol por tenant) y
+  gobierna la escritura de presupuesto.
+- `public.is_finance_viewer()` ahora reconoce además `module_finance:view` con esa
+  misma cadena. Se **amplía, nunca se restringe** — los tres roles que ya pasaban
+  siguen pasando —, y al vivir en una sola función alinea de una vez el ledger
+  (`finance_entries`) y el presupuesto, sin tocar sus políticas.
+- La política de SELECT del presupuesto admite también `can_manage_finance()`:
+  administrar ⊃ ver. Sin eso, `addBudgetEntry` (que hace `.insert().select()`)
+  fallaba justo después de escribir.
+
+**Consecuencia deliberada:** otorgar `module_finance:view` a un rol ahora sí abre el
+margen y la estructura de costos — lo que el permiso decía hacer desde F0.
+
+### Verificado — E2E de F3 (2026-07-28, tenant DEMO, mutaciones reales)
+
+20/21 en verde antes de la corrección; el fallo era el bug de arriba. Cubrió:
+guards de monto 0 y motivo vacío · append-only con vigente = suma
+(200.000 + 50.000 − 30.000 = 220.000) · **Art. 2**: `UPDATE`/`DELETE` no pasan y la
+línea sobrevive intacta · **Art. 1**: INSERT en otro tenant rechazado por RLS ·
+**Art. 5**: autoría en cada línea · import CSV (2 válidas, 3 inválidas rechazadas
+con detalle por fila, `"1.500.000"` bien parseado) · badge sobre-comprometido.
+DEMO quedó sin residuos.
+
+---
+
 ### Agregado — Dominio Financiero F3: presupuesto de costo (RFC-002-F3-Plan / ADR-005)
 
-**Migración `20260723020000_finance_budget.sql` — PENDIENTE DE APLICAR.** Le da
-referencia al margen: presupuesto vs comprometido vs devengado vs pagado.
+> Commiteado en `8d42669`; migración `20260723020000_finance_budget.sql` **APLICADA**
+> (2026-07-16). Se mantiene aquí por continuidad de lectura con la corrección de arriba.
+
+Le da referencia al margen: presupuesto vs comprometido vs devengado vs pagado.
 
 - **`finance_budget_entries`**: líneas de presupuesto **append-only** por contrato ×
   categoría de costo (decisión Steven: esa granularidad en v1 — los hechos aún no llevan

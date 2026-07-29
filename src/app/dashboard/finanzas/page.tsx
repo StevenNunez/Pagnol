@@ -24,7 +24,7 @@ import type { AttendanceLog, FinanceCategory, FinanceContractSummaryRow, User } 
 import { laborDayPresence } from "@/modules/data/mutations/financeMath";
 import {
     Landmark, HandCoins, PackageCheck, AlertTriangle, ChevronDown, ChevronRight,
-    RefreshCcw, Loader2, ShieldAlert, HardHat, TrendingUp, Scale, ClipboardList,
+    RefreshCcw, Loader2, ShieldAlert, HardHat, TrendingUp, Scale, ClipboardList, Lock, Wallet,
 } from "lucide-react";
 
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
@@ -188,10 +188,13 @@ export default function FinanzasPage() {
                 categories: new Map(),
             };
             const amount = Number(r.total_net) || 0;
+            // Clasificación EXPLÍCITA por naturaleza: desde F4.2 el ledger también
+            // lleva obligaciones de caja (payable/receivable), que NO son costo ni
+            // ingreso — un `else` genérico las sumaría al costo y duplicaría el margen.
             if (r.nature === "income") {
                 if (r.stage === "accrued") { cur.incomeAccrued += amount; totals.incomeAccrued += amount; }
                 if (r.stage === "paid")    { cur.incomePaid += amount; }
-            } else {
+            } else if (r.nature === "cost") {
                 const cat = cur.categories.get(r.category) || { committed: 0, accrued: 0, paid: 0 };
                 if (r.stage === "committed") { cur.committed += amount; cat.committed += amount; totals.committed += amount; }
                 if (r.stage === "accrued")   { cur.accrued += amount;   cat.accrued += amount;   totals.accrued += amount; }
@@ -265,6 +268,14 @@ export default function FinanzasPage() {
                         <Button variant="outline" size="sm" className="rounded-xl" onClick={() => router.push("/dashboard/finanzas/presupuesto")}>
                             <ClipboardList className="mr-2 h-3.5 w-3.5" />
                             Presupuesto
+                        </Button>
+                        <Button variant="outline" size="sm" className="rounded-xl" onClick={() => router.push("/dashboard/finanzas/flujo")}>
+                            <Wallet className="mr-2 h-3.5 w-3.5" />
+                            Flujo de Caja
+                        </Button>
+                        <Button variant="outline" size="sm" className="rounded-xl" onClick={() => router.push("/dashboard/finanzas/cierre")}>
+                            <Lock className="mr-2 h-3.5 w-3.5" />
+                            Cierre
                         </Button>
                     </div>
                 </>

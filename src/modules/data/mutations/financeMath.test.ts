@@ -4,7 +4,7 @@ import {
     laborDayCost, laborDaySourceId, parseLaborSourceId, laborDayPresence, laborDayExpected,
     reconcileLaborDay,
     epPeriodEarned, rentalNetToClp, consumptionTransfers,
-    budgetRollup, budgetExecutionPct,
+    budgetRollup, budgetExecutionPct, budgetConsumption,
     type FinanceEntryInput, type LaborDayLog, type LaborLiveEntry,
 } from './financeMath';
 
@@ -327,5 +327,61 @@ describe('budgetExecutionPct', () => {
     it('sin presupuesto (0 o inválido) ⇒ null, no división por cero', () => {
         expect(budgetExecutionPct(1_000, 0)).toBeNull();
         expect(budgetExecutionPct(1_000, NaN)).toBeNull();
+    });
+});
+
+describe('budgetConsumption', () => {
+    const row = (stage: string, source_type: string, total_net: number) => ({ stage, source_type, total_net });
+
+    it('cadena que se compromete primero: el devengado NO se suma dos veces', () => {
+        // OC por 1.000.000 y recepción de 600.000: el compromiso ya representa el gasto.
+        expect(budgetConsumption([
+            row('committed', 'purchase_order', 1_000_000),
+            row('accrued', 'goods_receipt', 600_000),
+        ])).toBe(1_000_000);
+    });
+
+    it('mano de obra: nace devengada, así que consume presupuesto (el bug de F3)', () => {
+        // Caso real del E2E: labor con 0 comprometido y 108.000 devengados.
+        expect(budgetConsumption([row('accrued', 'labor_day', 108_000)])).toBe(108_000);
+    });
+
+    it('consumo de pañol y transferencias también consumen', () => {
+        expect(budgetConsumption([
+            row('accrued', 'material_request', 26_700),
+            row('accrued', 'stock_transfer', 17_800),
+        ])).toBe(44_500);
+    });
+
+    it('categoría mixta: compras comprometidas + consumo de pañol se suman', () => {
+        // El caso que `max(comprometido, devengado)` habría subestimado.
+        expect(budgetConsumption([
+            row('committed', 'purchase_order', 1_000_000),
+            row('accrued', 'material_request', 500_000),
+        ])).toBe(1_500_000);
+    });
+
+    it('arriendo: comprometido por calendario, devengado por ciclo ⇒ solo el compromiso', () => {
+        expect(budgetConsumption([
+            row('committed', 'rental_contract', 1_500_000),
+            row('accrued', 'rental_payment', 1_000_000),
+            row('paid', 'rental_payment', 500_000),
+        ])).toBe(1_500_000);
+    });
+
+    it('pagado nunca suma (es una etapa posterior del mismo costo)', () => {
+        expect(budgetConsumption([row('paid', 'supplier_payment', 900_000)])).toBe(0);
+    });
+
+    it('los reversos (negativos) descuentan', () => {
+        expect(budgetConsumption([
+            row('accrued', 'labor_day', 108_000),
+            row('accrued', 'labor_day', -108_000),
+        ])).toBe(0);
+    });
+
+    it('ingresos no entran (el llamador filtra nature=cost) y source_type ausente no rompe', () => {
+        expect(budgetConsumption([{ stage: 'accrued', total_net: 300_000 } as any])).toBe(0);
+        expect(budgetConsumption([])).toBe(0);
     });
 });

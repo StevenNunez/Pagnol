@@ -1208,7 +1208,11 @@ export interface CostCenter {
 // ── Dominio Financiero (RFC-002, F0) ─────────────────────────────────────────
 // Hechos económicos inmutables (tabla finance_entries). NO viajan al
 // DataProvider: los paneles consumen la RPC finance_contract_summary.
-export type FinanceNature = 'cost' | 'income';
+// 'cost'/'income' miden RESULTADO y se guardan en NETO.
+// 'payable'/'receivable' miden CAJA (obligaciones con vencimiento) y se guardan
+// en BRUTO — es lo que sale o entra del banco. No son costo ni ingreso: una
+// factura pendiente no vuelve a costear lo que la recepción ya devengó (F4.2).
+export type FinanceNature = 'cost' | 'income' | 'payable' | 'receivable';
 export type FinanceStage = 'committed' | 'accrued' | 'paid';
 export type FinanceCategory =
     | 'materials' | 'labor' | 'equipment' | 'subcontract' | 'rental' | 'services' | 'indirect'
@@ -1230,6 +1234,28 @@ export interface FinanceBudgetEntry {
     createdAt: Date | string;
 }
 
+// Cierre de período (F4.1). Append-only: cerrar → reabrir → cerrar deja los tres
+// eventos; el estado vigente de un mes es su último evento.
+export interface FinancePeriodEvent {
+    id: string;
+    tenantId: string;
+    periodMonth: string;          // 'YYYY-MM-01' — primer día del mes
+    action: 'close' | 'reopen';
+    reason?: string | null;       // obligatorio al reabrir
+    createdBy?: string | null;
+    createdByName?: string | null;
+    createdAt: Date | string;
+}
+
+// Advertencia que devuelve finance_period_precheck antes de cerrar un mes.
+export interface FinancePeriodWarning {
+    kind: string;
+    severity: 'warning' | 'info';
+    detail: string;
+    count: number;
+    amount: number | null;
+}
+
 // Fila agregada que devuelve la RPC finance_contract_summary.
 export interface FinanceContractSummaryRow {
     contract_id: string | null;
@@ -1237,6 +1263,9 @@ export interface FinanceContractSummaryRow {
     nature: FinanceNature;
     stage: FinanceStage;
     category: FinanceCategory;
+    /** Origen del hecho. Define si su devengado consume presupuesto por sí solo
+     *  (ver financeMath.budgetConsumption / migración 20260724000000). */
+    source_type: string | null;
     total_net: number;
     entry_count: number;
 }

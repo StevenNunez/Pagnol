@@ -14,7 +14,7 @@ import { LoadingState } from "@/components/loading-state";
 import { useAuth, useAppState } from "@/modules/core/contexts/app-provider";
 import { supabase } from "@/modules/core/lib/supabase";
 import { fetchBudgetEntries } from "@/modules/data/mutations/budgetMutations";
-import { budgetRollup, budgetExecutionPct } from "@/modules/data/mutations/financeMath";
+import { budgetRollup, budgetExecutionPct, budgetConsumption } from "@/modules/data/mutations/financeMath";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,20 +96,29 @@ export default function PresupuestoPage() {
     const budget = useMemo(() => budgetRollup(lines), [lines]);
 
     const rows = useMemo(() => {
-        // Realidad por contrato/categoría (solo costos).
-        const real = new Map<string, { committed: number; accrued: number; paid: number }>();
-        const bump = (key: string, stage: string, amount: number) => {
-            const cur = real.get(key) || { committed: 0, accrued: 0, paid: 0 };
-            if (stage === "committed") cur.committed += amount;
-            if (stage === "accrued") cur.accrued += amount;
-            if (stage === "paid") cur.paid += amount;
+        // Realidad por contrato/categoría (solo costos). Guardamos también las
+        // filas crudas: el consumo de presupuesto necesita el origen del hecho,
+        // porque la mano de obra y el consumo de pañol nacen devengados y jamás
+        // pasaron por "comprometido" (financeMath.budgetConsumption).
+        const real = new Map<string, { committed: number; accrued: number; paid: number; consumed: number }>();
+        const rawByKey = new Map<string, typeof ledger>();
+        const bump = (key: string, r: (typeof ledger)[number], amount: number) => {
+            const cur = real.get(key) || { committed: 0, accrued: 0, paid: 0, consumed: 0 };
+            if (r.stage === "committed") cur.committed += amount;
+            if (r.stage === "accrued") cur.accrued += amount;
+            if (r.stage === "paid") cur.paid += amount;
             real.set(key, cur);
+            rawByKey.set(key, [...(rawByKey.get(key) || []), r]);
         };
         for (const r of ledger) {
             if (r.nature !== "cost" || !r.contract_id) continue;
             const amount = Number(r.total_net) || 0;
-            bump(r.contract_id, r.stage, amount);
-            bump(`${r.contract_id}|${r.category}`, r.stage, amount);
+            bump(r.contract_id, r, amount);
+            bump(`${r.contract_id}|${r.category}`, r, amount);
+        }
+        for (const [key, raws] of rawByKey) {
+            const cur = real.get(key)!;
+            cur.consumed = budgetConsumption(raws);
         }
 
         // Un contrato aparece si tiene presupuesto O costos reales.
@@ -117,15 +126,16 @@ export default function PresupuestoPage() {
         for (const l of lines) ids.add(l.contractId);
         for (const r of ledger) if (r.nature === "cost" && r.contract_id) ids.add(r.contract_id);
 
+        const EMPTY = { committed: 0, accrued: 0, paid: 0, consumed: 0 };
         return Array.from(ids).map((contractId) => {
             const c = contracts?.find((x) => x.id === contractId);
             const b = budget.get(contractId) || 0;
-            const r = real.get(contractId) || { committed: 0, accrued: 0, paid: 0 };
+            const r = real.get(contractId) || EMPTY;
             const cats = COST_CATEGORIES
                 .map(({ value }) => ({
                     category: value,
                     budget: budget.get(`${contractId}|${value}`) || 0,
-                    real: real.get(`${contractId}|${value}`) || { committed: 0, accrued: 0, paid: 0 },
+                    real: real.get(`${contractId}|${value}`) || EMPTY,
                 }))
                 .filter((x) => x.budget !== 0 || x.real.committed !== 0 || x.real.accrued !== 0 || x.real.paid !== 0);
             return { contractId, name: c?.name || "Contrato eliminado", budget: b, ...r, cats };
@@ -246,6 +256,7 @@ export default function PresupuestoPage() {
                                         <TableHead className="text-right">Comprometido</TableHead>
                                         <TableHead className="text-right">Devengado</TableHead>
                                         <TableHead className="text-right">Pagado</TableHead>
+                                        <TableHead className="text-right">Consumido</TableHead>
                                         <TableHead className="text-right">Disponible</TableHead>
                                         <TableHead className="text-right w-24">% Ejec.</TableHead>
                                         <TableHead className="w-10" />
@@ -254,9 +265,12 @@ export default function PresupuestoPage() {
                                 <TableBody>
                                     {rows.map((r) => {
                                         const isOpen = expanded.has(r.contractId);
-                                        const available = r.budget - r.committed;
+                                        // Consumido (no "comprometido"): incluye los costos que nacen
+                                        // devengados — mano de obra, consumo de pañol — que nunca se
+                                        // comprometen y antes quedaban fuera del disponible.
+                                        const available = r.budget - r.consumed;
                                         const pct = budgetExecutionPct(r.accrued, r.budget);
-                                        const over = r.budget > 0 && r.committed > r.budget;
+                                        const over = r.budget > 0 && r.consumed > r.budget;
                                         return (
                                             <React.Fragment key={r.contractId}>
                                                 <TableRow className="cursor-pointer" onClick={() => toggle(r.contractId)}>
@@ -270,6 +284,7 @@ export default function PresupuestoPage() {
                                                     <TableCell className="text-right font-mono">{CLP.format(r.committed)}</TableCell>
                                                     <TableCell className="text-right font-mono">{CLP.format(r.accrued)}</TableCell>
                                                     <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(r.paid)}</TableCell>
+                                                    <TableCell className="text-right font-mono font-medium">{CLP.format(r.consumed)}</TableCell>
                                                     <TableCell className={`text-right font-mono ${r.budget && available < 0 ? "text-destructive font-bold" : ""}`}>{r.budget ? CLP.format(available) : "—"}</TableCell>
                                                     <TableCell className={`text-right font-mono ${pct !== null && pct > 100 ? "text-destructive font-bold" : ""}`}>{pct === null ? "—" : `${pct}%`}</TableCell>
                                                     <TableCell>
@@ -289,7 +304,8 @@ export default function PresupuestoPage() {
                                                             <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(cat.real.committed)}</TableCell>
                                                             <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(cat.real.accrued)}</TableCell>
                                                             <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(cat.real.paid)}</TableCell>
-                                                            <TableCell className="text-right font-mono text-muted-foreground">{cat.budget ? CLP.format(cat.budget - cat.real.committed) : "—"}</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">{CLP.format(cat.real.consumed)}</TableCell>
+                                                            <TableCell className="text-right font-mono text-muted-foreground">{cat.budget ? CLP.format(cat.budget - cat.real.consumed) : "—"}</TableCell>
                                                             <TableCell className="text-right font-mono text-muted-foreground">{catPct === null ? "—" : `${catPct}%`}</TableCell>
                                                             <TableCell />
                                                         </TableRow>
@@ -306,8 +322,11 @@ export default function PresupuestoPage() {
             </Card>
 
             <p className="text-xs text-muted-foreground">
-                Disponible = presupuesto − comprometido · % Ejec. = devengado / presupuesto.
-                La ejecución cruza el ledger histórico completo del contrato (no un rango de fechas).
+                Consumido = comprometido + los costos que nacen devengados (mano de obra, consumo de
+                pañol): esos nunca pasan por un compromiso previo, así que sumarlos aparte evita
+                contarlos dos veces y evita que desaparezcan. · Disponible = presupuesto − consumido ·
+                % Ejec. = devengado / presupuesto. La ejecución cruza el ledger histórico completo del
+                contrato (no un rango de fechas).
             </p>
 
             {/* Diálogo: nueva línea / modificación */}

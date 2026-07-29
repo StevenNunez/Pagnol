@@ -10,6 +10,7 @@ import {
     type LaborDayLog,
     type LaborLiveEntry,
 } from '@/modules/data/mutations/financeMath';
+import { fetchClosedMonths, splitByClosedPeriod } from './finance-periods';
 
 // Materializador del costo de mano de obra (Dominio Financiero F1 — ADR-003).
 //
@@ -35,6 +36,11 @@ export interface LaborMaterializeStats {
     mirrors: number;       // espejos de reverso
     noSalaryWorkers: number; // trabajadores con presencia y sin sueldo base (alerta)
     noContractDays: number;  // días devengados sin contrato (alerta)
+    /** Hechos que NO se emitieron porque su fecha contable cae en un mes cerrado
+     *  (F4.1). Se reportan en vez de perderse: el cron reintenta cada día y el
+     *  panel los muestra hasta que alguien reabra el período o los asuma. */
+    blocked: number;
+    blockedMonths: string[]; // 'YYYY-MM' afectados, para el mensaje de la UI
 }
 
 /** Hoy en America/Santiago (nunca se materializa un día aún abierto). */
@@ -198,9 +204,16 @@ export async function materializeLaborForTenant(
         }
     }
 
+    // Cierre de período (F4.1): un hecho fechado en un mes cerrado sería
+    // rechazado por el trigger y, como el INSERT va en lotes, tumbaría el lote
+    // entero. Se apartan ANTES y se reportan — no se pierden en silencio ni
+    // bloquean al resto (decisión D1 del RFC-002-F4-Plan).
+    const closedMonths = await fetchClosedMonths(admin, tenant.id);
+    const { insertable, blocked, blockedMonths } = splitByClosedPeriod(rows, closedMonths);
+
     const BATCH = 500;
-    for (let i = 0; i < rows.length; i += BATCH) {
-        const { error } = await admin.from('finance_entries').insert(rows.slice(i, i + BATCH));
+    for (let i = 0; i < insertable.length; i += BATCH) {
+        const { error } = await admin.from('finance_entries').insert(insertable.slice(i, i + BATCH));
         if (error) throw error;
     }
 
@@ -212,5 +225,7 @@ export async function materializeLaborForTenant(
         mirrors,
         noSalaryWorkers: noSalary.size,
         noContractDays,
+        blocked: blocked.length,
+        blockedMonths,
     };
 }

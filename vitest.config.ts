@@ -12,6 +12,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     // Motor offline + matemática del ledger financiero (no hay suite global en el resto).
-    include: ['src/modules/offline/**/*.test.ts', 'src/modules/data/mutations/financeMath.test.ts'],
+    include: [
+      'src/modules/offline/**/*.test.ts',
+      'src/modules/data/mutations/financeMath.test.ts',
+      'src/lib/finance-periods.test.ts',
+    ],
   },
 });

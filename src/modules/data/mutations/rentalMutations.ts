@@ -291,6 +291,8 @@ export async function closeRentalContract(
       .gt('due_date', returnDateStr);
     for (const p of toDelete || []) {
       await reverseEntriesForSource('rental_payment', p.id, 'Arriendo cerrado: calendario cortado', { user, tenantId } as Context);
+      // …y la obligación de caja de esa cuota: ya no se va a pagar (F4.2).
+      await reverseEntriesForSource('rental_installment', p.id, 'Arriendo cerrado: calendario cortado', { user, tenantId } as Context);
     }
     const { error: pErr } = await supabase
       .from('rental_payments')
@@ -625,8 +627,38 @@ export async function generateRentalSchedule(
     };
   });
 
-  const { error } = await supabase.from('rental_payments').insert(rows);
+  const { data: created, error } = await supabase.from('rental_payments').insert(rows).select('id, due_date, amount');
   if (error) throw error;
+
+  // Obligación de caja por cuota (F4.2). El COSTO ya se comprometió al confirmar
+  // la OC y se devenga por ciclo; esto es la otra dimensión: cuánto sale del
+  // banco y cuándo. Se apaga por reverso al pagarse o al cortarse el calendario.
+  const { clientContractName, partyName, ufRate } = await rentalFinanceContext(contract as any);
+  const payables = (created || []).map((p) => {
+    const amountOriginal = Number(p.amount) || 0;
+    return {
+      nature: 'payable' as const,
+      stage: 'accrued' as const,
+      category: 'rental' as const,
+      // BRUTO en CLP: el arriendo en UF se convierte con la tasa vigente; la
+      // caja real se ajusta al pagarse (ahí manda la tasa del día del pago).
+      amountNet: rentalNetToClp(amountOriginal, contract.currency || 'CLP', ufRate),
+      currency: contract.currency || 'CLP',
+      amountOriginal,
+      fxRate: contract.currency === 'UF' ? ufRate ?? 1 : 1,
+      dueDate: p.due_date,
+      contractId: contract.clientContractId ?? null,
+      contractName: clientContractName,
+      sourceType: 'rental_installment',
+      sourceId: p.id,
+      sourceCode: contract.ocNumber || contract.code || null,
+      counterpartyType: 'supplier',
+      counterpartyId: contract.partyId ?? null,
+      counterpartyName: partyName,
+      notes: `Cuota de arriendo por pagar — ${contract.title} (vence ${p.due_date})`,
+    };
+  }).filter((e) => e.amountNet > 0);
+  if (payables.length) await emitFinanceEntries(payables, { user, tenantId } as Context);
 }
 
 export async function markRentalPaymentPaid(
@@ -652,6 +684,9 @@ export async function markRentalPaymentPaid(
     .select('id, contract_id, amount, paid_date');
   if (error) throw error;
   if (!updated?.length) return; // ya estaba pagado: no-op
+
+  // La cuota deja de ser un pago futuro: se apaga su obligación de caja (F4.2).
+  await reverseEntriesForSource('rental_installment', id, 'Cuota de arriendo pagada', context);
 
   // Emisor F2: costo PAGADO del ciclo, fechado el día real del pago.
   const pay = updated[0];
@@ -725,16 +760,51 @@ export async function updateRentalPayment(
 
   if (before?.status === 'paid' && data.status !== undefined && data.status !== 'paid') {
     await reverseEntriesForSource('rental_payment', id, 'Pago de arriendo des-marcado', context);
+    // Vuelve a ser un pago pendiente: la obligación de caja REVIVE (F4.2), o el
+    // flujo mostraría una cuota impaga que ya no proyecta salida.
+    await reemitRentalInstallmentPayable(id, context);
   }
+}
+
+/** Re-emite la obligación de caja de una cuota que volvió a quedar pendiente. */
+async function reemitRentalInstallmentPayable(paymentId: string, context: Context): Promise<void> {
+  const { user, tenantId } = context;
+  if (!user || !tenantId) return;
+  const { data: p } = await supabase
+    .from('rental_payments')
+    .select('id, due_date, amount, status, contract_id')
+    .eq('id', paymentId).eq('tenant_id', tenantId).single();
+  if (!p || p.status === 'paid') return;
+  const { data: cRow } = await supabase
+    .from('rental_contracts').select('*').eq('id', p.contract_id).eq('tenant_id', tenantId).single();
+  if (!cRow) return;
+  const contract = mappers.rental_contracts(cRow);
+  const { clientContractName, partyName, ufRate } = await rentalFinanceContext(contract as any);
+  const amountOriginal = Number(p.amount) || 0;
+  const amountNet = rentalNetToClp(amountOriginal, contract.currency || 'CLP', ufRate);
+  if (amountNet <= 0) return;
+  await emitFinanceEntries([{
+    nature: 'payable', stage: 'accrued', category: 'rental',
+    amountNet, currency: contract.currency || 'CLP', amountOriginal,
+    fxRate: contract.currency === 'UF' ? ufRate ?? 1 : 1,
+    dueDate: p.due_date,
+    contractId: contract.clientContractId ?? null,
+    contractName: clientContractName,
+    sourceType: 'rental_installment', sourceId: p.id,
+    sourceCode: contract.ocNumber || contract.code || null,
+    counterpartyType: 'supplier', counterpartyId: contract.partyId ?? null, counterpartyName: partyName,
+    notes: `Cuota de arriendo por pagar — ${contract.title} (vence ${p.due_date})`,
+  }], context);
 }
 
 export async function deleteRentalPayment(id: string, context: Context): Promise<void> {
   const { tenantId } = context;
   if (!tenantId) throw new Error('No autenticado.');
 
-  // La cuota desaparece: sus hechos (devengado/pagado) se reversan ANTES de
-  // borrar la fila (después ya no habría documento origen que consultar).
+  // La cuota desaparece: sus hechos (devengado/pagado) y su obligación de caja
+  // se reversan ANTES de borrar la fila (después ya no habría documento origen).
   await reverseEntriesForSource('rental_payment', id, 'Cuota de arriendo eliminada', context);
+  await reverseEntriesForSource('rental_installment', id, 'Cuota de arriendo eliminada', context);
 
   const { error } = await supabase
     .from('rental_payments')

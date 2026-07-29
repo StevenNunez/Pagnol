@@ -45,3 +45,91 @@ En el sistema ya existían dos "presupuestos" que NO son este: `CostCenter.budge
   la mitad que faltaba de "presupuesto vs real" del RFC-001.
 - Deuda consciente: presupuesto por partida y su comparación (requiere hechos con
   `work_item_id`); APU como generador (fase posterior, RFC-002).
+
+---
+
+## Addendum 2026-07-28 — corrección de las decisiones 5 y 6
+
+**Origen:** el E2E de F3 (pendiente desde el cierre de la fase; F3 fue la única
+fase que se commiteó antes de verificarse). Migración `20260724000000`.
+
+### Qué estaba mal en la decisión 6
+
+`disponible = presupuesto − comprometido` asumía que **todo costo pasa por
+COMPROMETIDO antes de DEVENGADO**. Es falso, y el propio sistema lo desmiente:
+
+| Cadena | committed | accrued |
+|---|---|---|
+| `purchase_order` → `goods_receipt` | ✅ | ✅ |
+| `rental_contract` → `rental_payment` | ✅ | ✅ |
+| `labor_day` (MO, ADR-003) | ❌ | ✅ |
+| `material_request` / `stock_transfer` (consumo de pañol, ADR-004) | ❌ | ✅ |
+
+La mano de obra **nace devengada**: el trabajador trabajó, no hay OC que
+comprometer. Resultado en producción: el mayor costo de una faena era invisible
+para el control presupuestario, y la misma fila mostraba *"49% ejecutado"* junto
+a *"disponible: el 100% del presupuesto"*. Medido en DEMO: sobreestimación de
+$108.000 sobre un presupuesto de $220.000 de MO.
+
+**Nueva convención:**
+
+```
+consumido  = comprometido + devengado de fuentes sin compromiso previo
+disponible = presupuesto − consumido
+```
+
+La tabla gana una columna **Consumido**, y el badge "sobre-comprometido" pasa a
+evaluarse contra ella. `% ejecución = devengado / presupuesto` no cambia.
+
+**Dónde vive la regla:** en `financeMath.budgetConsumption()` — TypeScript puro y
+testeado (8 tests), no en SQL. El RPC `finance_contract_summary` solo agrega: se
+le agregó `source_type` al `GROUP BY` para que el dominio pueda decidir. La lista
+`UNCOMMITTED_SOURCES` es el punto único de verdad: **al escribir un emisor nuevo
+hay que decidir si entra ahí**.
+
+Se descartó `max(comprometido, devengado)` (más simple, sin migración) porque
+subestima cuando una categoría mezcla orígenes — p.ej. `materials` con una OC
+pendiente de $1.000.000 más consumo de pañol por $500.000 da $1.000.000 en vez
+de $1.500.000. Hay un test que fija justamente ese caso.
+
+### Qué estaba mal en la decisión 5
+
+El gate de escritura estaba desalineado: la mutación exige `finance:manage` pero
+la RLS exigía `is_finance_viewer()` (rol `administrador`/`soporte-pagnol`).
+Otorgar el permiso granular a otro rol pasaba el guard del cliente y lo rechazaba
+la base. Fallaba ruidosamente —no en silencio—, pero el permiso era decorativo.
+
+Nuevo helper `public.can_manage_finance()`, que replica la cadena real de `can()`:
+super-admin → bypass admin/soporte → `profiles.granted_permissions` → fila de rol
+por tenant. **Nota de mantenimiento:** `finance:manage` hoy no está en ningún
+`ROLES_DEFAULT`; si algún día se agrega a un rol por defecto, el helper debe
+seguirlo (en SQL no se puede leer `permissions.ts`).
+
+#### Lo que faltaba: el dominio financiero estaba cerrado por ROL, no por permiso
+
+Verificar el arreglo anterior mostró que no alcanzaba (migración `20260724010000`):
+
+```
+can_manage_finance()  = true
+INSERT sin RETURNING  = ✅   la escritura ya estaba bien
+INSERT ... RETURNING  = ❌   addBudgetEntry hace .insert().select()
+SELECT                = 0 filas
+```
+
+Leer seguía exigiendo `is_finance_viewer()`, que solo mira el rol. Es decir: **los
+permisos `module_finance:view` y `finance:manage` eran decorativos en la base**
+aunque el cliente los evaluara — otorgarlos no habilitaba nada, y un usuario con
+`finance:manage` habría visto la página de presupuesto con toda la ejecución en
+cero (el RPC del ledger también respeta esa política).
+
+`is_finance_viewer()` pasa a reconocer `module_finance:view` con la misma cadena
+que `can()`. Se **amplía, nunca se restringe**: los tres roles que ya pasaban
+siguen pasando. Al vivir en una sola función, alinea de una vez el ledger y el
+presupuesto sin tocar sus políticas. Y la política de SELECT del presupuesto
+admite además `can_manage_finance()`: administrar ⊃ ver, y exigir los dos permisos
+juntos sería un acoplamiento que nadie recordaría al asignar un rol.
+
+**Consecuencia deliberada:** el acceso a Finanzas ya no es exclusivo de
+administrador/soporte-pagnol. Otorgar `module_finance:view` a un rol ahora
+**sí** abre el margen y la estructura de costos — que es lo que el permiso decía
+hacer desde F0, pero no hacía.

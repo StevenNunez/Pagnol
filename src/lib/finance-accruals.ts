@@ -6,6 +6,7 @@ import {
     type LaborLiveEntry,
 } from '@/modules/data/mutations/financeMath';
 import { LABOR_WINDOW_DAYS, todaySantiago } from '@/lib/labor-cost';
+import { fetchClosedMonths, splitByClosedPeriod } from '@/lib/finance-periods';
 
 // Devengo diario de ciclos de arriendo (F2 — ADR-004 §5): una cuota cuyo
 // vencimiento ya pasó es costo devengado del período, se haya pagado o no.
@@ -26,6 +27,10 @@ export interface RentalAccrualStats {
     emitted: number;
     mirrors: number;
     ratesMissing: number;  // cuotas UF sin tasa disponible (no se tocan)
+    /** Devengos no emitidos por caer en un mes cerrado (F4.1): se reportan, no
+     *  se pierden — el cron reintenta en cada corrida. */
+    blocked: number;
+    blockedMonths: string[];
 }
 
 function addDaysIso(iso: string, days: number): string {
@@ -52,7 +57,7 @@ export async function materializeRentalAccrualsForTenant(
         .lte('due_date', to);
     if (pErr) throw pErr;
     if (!payments?.length) {
-        return { tenantId, window: { from, to }, cycles: 0, emitted: 0, mirrors: 0, ratesMissing: 0 };
+        return { tenantId, window: { from, to }, cycles: 0, emitted: 0, mirrors: 0, ratesMissing: 0, blocked: 0, blockedMonths: [] };
     }
 
     // Hechos vivos de esas fuentes (solo etapa devengado). Todo hecho de una
@@ -160,11 +165,19 @@ export async function materializeRentalAccrualsForTenant(
         }
     }
 
+    // Los devengos de ciclo se fechan en el VENCIMIENTO de la cuota, así que un
+    // mes cerrado los rechaza. Se apartan antes del lote (ver finance-periods).
+    const closedMonths = await fetchClosedMonths(admin, tenantId);
+    const { insertable, blocked, blockedMonths } = splitByClosedPeriod(rows, closedMonths);
+
     const BATCH = 500;
-    for (let i = 0; i < rows.length; i += BATCH) {
-        const { error } = await admin.from('finance_entries').insert(rows.slice(i, i + BATCH));
+    for (let i = 0; i < insertable.length; i += BATCH) {
+        const { error } = await admin.from('finance_entries').insert(insertable.slice(i, i + BATCH));
         if (error) throw error;
     }
 
-    return { tenantId, window: { from, to }, cycles: payments.length, emitted, mirrors, ratesMissing };
+    return {
+        tenantId, window: { from, to }, cycles: payments.length, emitted, mirrors, ratesMissing,
+        blocked: blocked.length, blockedMonths,
+    };
 }

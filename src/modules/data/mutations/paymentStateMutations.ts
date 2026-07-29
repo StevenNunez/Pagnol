@@ -3,7 +3,7 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { userCan } from '@/modules/core/lib/permissions';
 import type { WorkItem } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
-import { emitFinanceEntries, reverseEntriesForSource } from './financeLedger';
+import { emitFinanceEntries, reverseEntriesForSource, DEFAULT_TAX_RATE } from './financeLedger';
 import { epPeriodEarned } from './financeMath';
 
 // Estado de Pago (RFC-002-F2-Plan / ADR-004): el documento con el que se cobra
@@ -163,6 +163,28 @@ export async function approvePaymentState(id: string, { user, tenantId }: Contex
         counterpartyId: clientId,
         counterpartyName: clientName,
         notes: `EP aprobado — avance del período`,
+    }, {
+        // Obligación de cobro (F4.2): el ingreso ya se devengó, pero la CAJA
+        // sigue pendiente. Va sin `dueDate` a propósito — el EP no captura una
+        // fecha de cobro comprometida, y estimarla (30 días, por ejemplo) sería
+        // inventar un dato que nadie pactó. El flujo lo muestra aparte, como
+        // "por cobrar sin fecha", que es la verdad.
+        nature: 'receivable',
+        stage: 'accrued',
+        category: 'revenue',
+        // BRUTO: es lo que entra al banco. `period_earned` se maneja neto en el
+        // resultado; acá se le agrega el IVA que el mandante efectivamente paga.
+        amountNet: Math.round((Number(ps.period_earned) || 0) * (1 + DEFAULT_TAX_RATE / 100)),
+        taxRate: DEFAULT_TAX_RATE,
+        contractId: ps.contract_id ?? null,
+        contractName: ps.contract_name ?? null,
+        sourceType: 'payment_state_receivable',
+        sourceId: ps.id,
+        sourceCode: ps.internal_code ?? null,
+        counterpartyType: 'client',
+        counterpartyId: clientId,
+        counterpartyName: clientName,
+        notes: 'EP aprobado por cobrar — sin fecha de cobro comprometida',
     }], { user, tenantId });
 }
 
@@ -200,6 +222,9 @@ export async function markPaymentStatePaid(
         .select('id');
     if (error) throw error;
     if (!updated?.length) throw new Error('No se pudo registrar el cobro (¿el EP cambió de estado?).');
+
+    // Cobrado: deja de ser una entrada futura (F4.2).
+    await reverseEntriesForSource('payment_state_receivable', ps.id, 'EP cobrado', { user, tenantId } as Context);
 
     await emitFinanceEntries([{
         entryDate: paidDate,
@@ -248,4 +273,6 @@ export async function annulPaymentState(id: string, reason: string, { user, tena
     if (!updated?.length) throw new Error('No se pudo anular el estado de pago.');
 
     await reverseEntriesForSource('payment_state', ps.id, reason || 'EP anulado', { user, tenantId } as Context);
+    // El EP anulado tampoco se va a cobrar: se apaga la entrada proyectada.
+    await reverseEntriesForSource('payment_state_receivable', ps.id, reason || 'EP anulado', { user, tenantId } as Context);
 }

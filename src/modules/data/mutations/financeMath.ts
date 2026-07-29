@@ -14,8 +14,12 @@ export interface FinanceEntryInput {
     nature: FinanceNature;
     stage: FinanceStage;
     category: FinanceCategory;
-    /** Neto en CLP (los reversos los emite el servidor, no pases negativos aquí). */
+    /** Neto en CLP para cost/income; BRUTO para payable/receivable (miden caja,
+     *  no resultado). Los reversos los emite el servidor: no pases negativos. */
     amountNet: number;
+    /** Vencimiento (YYYY-MM-DD). Solo lo llenan los emisores que lo conocen al
+     *  emitir —factura, cuota de arriendo—; alimenta el flujo de caja (F4.2). */
+    dueDate?: string | null;
     currency?: string;          // default 'CLP'
     amountOriginal?: number;    // default = amountNet
     fxRate?: number;            // default 1
@@ -260,6 +264,42 @@ export function budgetExecutionPct(accrued: number, budget: number): number | nu
 }
 
 /**
+ * Fuentes cuyos hechos NACEN devengados: no existe un compromiso previo que
+ * registrar, así que su devengado JAMÁS fue contado como comprometido.
+ *
+ * Las demás cadenas sí se comprometen primero (purchase_order → goods_receipt,
+ * rental_contract → rental_payment): ahí el devengado ya está representado en
+ * el comprometido y sumarlo lo contaría dos veces.
+ *
+ * Si se agrega un emisor nuevo, esta lista decide si su costo consume
+ * presupuesto — revísala al escribir el emisor (addendum a ADR-005).
+ */
+export const UNCOMMITTED_SOURCES = ['labor_day', 'material_request', 'stock_transfer'] as const;
+
+/**
+ * Cuánto presupuesto consume realmente la ejecución de un contrato/categoría.
+ *
+ *     consumido = comprometido + devengado de las fuentes sin compromiso previo
+ *
+ * Nace del E2E de F3: `presupuesto − comprometido` dejaba fuera el costo de mano
+ * de obra (el mayor de una faena), y la fila mostraba "49% ejecutado" junto a
+ * "100% disponible". Trabaja sobre las filas del RPC `finance_contract_summary`,
+ * que desde la migración 20260724000000 desglosa por `source_type`.
+ */
+export function budgetConsumption<
+    T extends { stage: string; source_type?: string | null; total_net: number | string },
+>(rows: T[]): number {
+    const uncommitted = new Set<string>(UNCOMMITTED_SOURCES);
+    let total = 0;
+    for (const r of rows) {
+        const amount = Number(r.total_net) || 0;
+        if (r.stage === 'committed') total += amount;
+        else if (r.stage === 'accrued' && uncommitted.has(r.source_type || '')) total += amount;
+    }
+    return Math.round(total);
+}
+
+/**
  * Normaliza un input a la fila snake_case que espera `finance_entries`.
  */
 export function buildEntryRow(input: FinanceEntryInput, tenantId: string, user: { id: string; name: string } | null) {
@@ -267,6 +307,7 @@ export function buildEntryRow(input: FinanceEntryInput, tenantId: string, user: 
     return {
         tenant_id: tenantId,
         entry_date: input.entryDate ?? new Date().toISOString().slice(0, 10),
+        due_date: input.dueDate ?? null,
         nature: input.nature,
         stage: input.stage,
         category: input.category,

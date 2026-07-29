@@ -73,8 +73,9 @@ scripts/
 
 .docs
 
-.CLAUDE.md 
-.CHANGELOG.md 
+CLAUDE.md
+.CLAUDE.md
+.CHANGELOG.md
 PENDIENTES.md
 
 .vercel

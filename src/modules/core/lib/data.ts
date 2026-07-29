@@ -133,6 +133,79 @@ export interface LeaveRequest {
   createdAt: Date | string;
 }
 
+// ── Remuneraciones F1 (RFC-003) ──────────────────────────────────────────────
+// OJO CON EL VOCABULARIO: `Contract` en Pagnol es el contrato de OBRA con el
+// cliente. Esto es el contrato LABORAL del trabajador — cosa distinta. En la UI
+// siempre se nombra "Contrato Laboral".
+
+export type EmploymentContractType = 'indefinido' | 'plazo_fijo' | 'por_obra';
+/** Dotación mixta: administrativos mensual, terreno por día trabajado. */
+export type SalaryMode = 'monthly' | 'daily';
+export type HealthSystem = 'fonasa' | 'isapre';
+
+export interface EmploymentContract {
+    id: string;
+    tenantId: string;
+    userId: string;
+    /** Desde cuándo rigen ESTAS condiciones. Un anexo es una fila nueva
+     *  (append-only, Art. 2); el vigente en una fecha es el de mayor
+     *  effectiveFrom <= fecha. */
+    effectiveFrom: string;
+    contractType: EmploymentContractType;
+    /** Término del contrato (plazo fijo / por obra); null en indefinido. */
+    contractEndDate?: string | null;
+    salaryMode: SalaryMode;
+    /** Mensual o valor día, según salaryMode. */
+    baseSalary: number;
+    workSchedule?: string | null;   // texto libre heredado (ej. "7x7")
+    weeklyHours: number;
+    afpName?: string | null;
+    healthSystem: HealthSystem;
+    /** Solo Isapre: plan pactado en UF. El 7% legal es el piso. */
+    healthPlanUf?: number | null;
+    familyCharges: number;
+    hasGratification: boolean;
+    notes?: string | null;
+    createdBy?: string | null;
+    createdByName?: string | null;
+    createdAt: Date | string;
+}
+
+/** Catálogo nacional de AFP: la comisión es lo que distingue a cada una
+ *  (el 10% obligatorio es igual en todas y vive en los parámetros). */
+export interface AfpRate {
+    id: string;
+    name: string;
+    commissionRate: number;
+    /** SIS: lo paga el EMPLEADOR, no se descuenta al trabajador. */
+    sisRate?: number | null;
+    effectiveFrom: string;
+    isActive: boolean;
+}
+
+export interface FamilyAllowanceBracket { max_income: number | null; amount: number }
+export interface IncomeTaxBracket { from_utm: number; to_utm: number | null; factor: number; deduction_utm: number }
+
+/** Paramétrica legal con vigencia: una liquidación de marzo se calcula con los
+ *  parámetros de marzo, siempre. Global (es ley nacional), no por tenant. */
+export interface PayrollParameters {
+    id: string;
+    effectiveFrom: string;
+    minimumWage: number;
+    capPensionUf: number;
+    capUnemploymentUf: number;
+    pensionRate: number;
+    healthRate: number;
+    afcIndefiniteWorker: number;
+    afcIndefiniteEmployer: number;
+    afcFixedEmployer: number;
+    gratificationRate: number;
+    gratificationCapImm: number;
+    familyAllowanceBrackets: FamilyAllowanceBracket[];
+    incomeTaxBrackets: IncomeTaxBracket[];
+    notes?: string | null;
+}
+
 export type HRDocumentType = 'contract' | 'certificate' | 'license' | 'exam' | 'other';
 
 export interface HRDocument {

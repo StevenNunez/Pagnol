@@ -18,6 +18,43 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Remuneraciones F1: fundación de datos (RFC-003)
+
+**Migración `20260727000000_payroll_foundation.sql` — PENDIENTE DE APLICAR.**
+
+Hasta ahora "remuneraciones" era una calculadora: el sueldo se **digitaba a mano** aunque
+`profiles.base_salary` existiera, `afp` era texto libre (convivían `'Habitat'`, `''` y
+`NULL`), no había plan de Isapre ni contrato laboral, y los parámetros legales estaban
+hardcodeados en el componente (`SUELDO_MINIMO = 460000`, con un comentario que admitía que
+debería ser dinámico). Esta fase crea la materia prima; **el motor de cálculo es F2**.
+
+- **`employment_contracts`** — el contrato **laboral** del trabajador (distinto de
+  `contracts`, que en Pagnol es el contrato de **obra** con el cliente; por eso el nombre
+  explícito y "Contrato Laboral" en toda la UI). **Append-only**: un anexo es una versión
+  nueva con su vigencia, nunca un `UPDATE`, así liquidar marzo con las condiciones de marzo
+  sale del propio esquema. Incluye tipo de contrato, **modalidad mensual o por día**
+  (dotación mixta), jornada, AFP, salud con **plan de Isapre en UF** y cargas.
+- **`payroll_parameters`** — paramétrica legal **con vigencia**: sueldo mínimo, topes
+  imponibles en UF, tasas AFC por tipo de contrato, tope de gratificación y los tramos de
+  asignación familiar e impuesto único (jsonb). **Global, no por tenant**: son ley nacional,
+  y que cada tenant tuviera su propio sueldo mínimo sería fuente de error, no de
+  flexibilidad (corrige lo que proponía el RFC-003).
+- **`afp_rates`** — catálogo nacional que reemplaza el texto libre. Separa la comisión de
+  cada AFP del 10% obligatorio, y registra el SIS (que **paga el empleador**, no se
+  descuenta al trabajador).
+- **Serie UTM** (`utm_rates`) — el impuesto único usa tramos en UTM. Se extendió el cron de
+  UF de F0 en vez de crear otro: es el mismo proveedor y el mismo patrón. **Si la UTM falla,
+  la UF igual se actualiza** — sostiene arriendos y topes que ya están en producción.
+- **`can_manage_hr()`** con la misma cadena que `can()`, y **`employment_contract_at()`**
+  para que la regla "el vigente en una fecha" exista en un solo lugar.
+- UI dentro del `UserPanel` (superficie única de edición): estado del contrato vigente,
+  alta de anexos con **selector de AFP** en vez de texto libre, e historial de versiones.
+
+⚠️ **Los valores semilla (tasas, topes, tramos) son de referencia y deben verificarse contra
+la normativa vigente antes de emitir liquidaciones reales.** Están versionados justamente
+para corregirlos sin tocar código. Los campos legacy de `profiles` se conservan intactos:
+el costo de MO del ledger los sigue usando y romperlos dejaría la asistencia sin devengar.
+
 ### Agregado — Dominio Financiero F4.2: flujo de caja proyectado (RFC-002-F4-Plan / ADR-007)
 
 **Migraciones `20260726000000_finance_cash_flow.sql` y `20260726010000_finance_reverse_due_date.sql`

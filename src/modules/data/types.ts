@@ -6,6 +6,7 @@ import {
   FinanceCategory,
   FinanceBudgetEntry,
   FinancePeriodEvent,
+  EmploymentContract,
   MaterialRequest,
   ReturnRequest,
   PurchaseRequest,
@@ -231,6 +232,7 @@ export interface AppStateContextType extends AppDataState {
   markPaymentStatePaid: (id: string, paidDate: string) => Promise<void>;
   annulPaymentState: (id: string, reason: string) => Promise<void>;
   addBudgetEntry: (data: { contractId: string; category: Exclude<FinanceCategory, 'revenue'>; amountNet: number; reason: string }) => Promise<FinanceBudgetEntry>;
+  addEmploymentContract: (data: Omit<EmploymentContract, 'id' | 'tenantId' | 'createdBy' | 'createdByName' | 'createdAt'>) => Promise<EmploymentContract>;
   closePeriod: (data: { month: string; reason?: string }) => Promise<FinancePeriodEvent>;
   reopenPeriod: (data: { month: string; reason: string }) => Promise<FinancePeriodEvent>;
 

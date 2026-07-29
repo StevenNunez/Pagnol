@@ -36,6 +36,7 @@ import * as genericMutations from './mutations/genericMutations';
 import * as paymentStateMutations from './mutations/paymentStateMutations';
 import * as budgetMutations from './mutations/budgetMutations';
 import * as periodMutations from './mutations/periodMutations';
+import * as payrollMutations from './mutations/payrollMutations';
 import * as rfqMutations from './mutations/rfqMutations';
 import * as receptionMutations from './mutations/receptionMutations';
 import * as costCenterMutations from './mutations/costCenterMutations';
@@ -543,6 +544,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         markPaymentStatePaid: bindContext(paymentStateMutations.markPaymentStatePaid),
         annulPaymentState: bindContext(paymentStateMutations.annulPaymentState),
         addBudgetEntry: bindContext(budgetMutations.addBudgetEntry),
+        addEmploymentContract: bindContext(payrollMutations.addEmploymentContract),
         closePeriod: bindContext(periodMutations.closePeriod),
         reopenPeriod: bindContext(periodMutations.reopenPeriod),
 

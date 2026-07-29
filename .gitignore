@@ -73,6 +73,10 @@ scripts/
 
 .docs
 
+# Documentación interna de desarrollo (RFCs, ADRs, manifiesto, planes de fase).
+# No hace falta para compilar ni correr la app: es material de trabajo.
+docs/
+
 CLAUDE.md
 .CLAUDE.md
 .CHANGELOG.md

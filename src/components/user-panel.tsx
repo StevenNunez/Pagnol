@@ -27,6 +27,7 @@ import { useAssignableRoles } from '@/modules/core/hooks/use-assignable-roles';
 import { generateUserInternalId } from '@/modules/core/lib/user-internal-id';
 import { ROLES } from '@/modules/core/lib/permissions';
 import type { User } from '@/modules/core/lib/data';
+import { EmploymentContractSection } from '@/components/employment-contract-section';
 
 const ProfileSchema = z.object({
     name: z.string().min(3, 'El nombre es requerido.'),
@@ -390,9 +391,19 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                                                     </select>
                                                 </Field>
                                                 <Field label="Cargas familiares"><Input type="number" {...register('cargasFamiliares')} className="h-12 rounded-xl" /></Field>
+                                                <p className="md:col-span-2 text-[11px] text-muted-foreground -mt-1">
+                                                    Estos campos siguen alimentando el costo de mano de obra del ledger. El
+                                                    cálculo de remuneraciones usa el <strong>Contrato Laboral</strong> de abajo,
+                                                    que además guarda AFP con su comisión, plan de Isapre y tipo de contrato.
+                                                </p>
                                             </>
                                         )}
                                     </div>
+
+                                    {/* Contrato laboral: condiciones previsionales versionadas (RFC-003 F1) */}
+                                    {(canEditPayroll || self) && (
+                                        <EmploymentContractSection userId={user.id} canEdit={canEditPayroll} />
+                                    )}
 
                                     {/* Contratos de cliente y áreas internas asignadas */}
                                     <div className="mt-8 pt-6 border-t space-y-4">

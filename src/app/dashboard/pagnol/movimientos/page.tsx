@@ -123,7 +123,10 @@ export default function MovimientosPagnolPage() {
   const [searchAsset, setSearchAsset] = useState('');
   const [description, setDescription] = useState('');
   const [returnNotes, setReturnNotes] = useState<Record<string, string>>({});
+  /** Path en el bucket privado (lo que se persiste). */
   const [returnPhotos, setReturnPhotos] = useState<Record<string, string>>({});
+  /** Data URL del archivo local, solo para la vista previa en pantalla. */
+  const [returnPhotoPreviews, setReturnPhotoPreviews] = useState<Record<string, string>>({});
   const [isBiometricPulse, setIsBiometricPulse] = useState(false);
   const [qrInput, setQrInput] = useState('');
   const [isPagnoleroConfirming, setIsPagnoleroConfirming] = useState(false);
@@ -636,8 +639,10 @@ export default function MovimientosPagnolPage() {
         )
       ]) as { data: any; error: any };
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from('contracts').getPublicUrl(path);
-      return publicUrl;
+      // Se guarda el PATH, no una URL: el bucket es privado y las URLs firmadas
+      // expiran, así que persistir una la dejaría muerta a los minutos. Quien
+      // muestre el archivo lo firma en el momento (<SecureFileLink>).
+      return path;
     } catch (err) {
       console.warn('Storage upload failed:', err);
       return null;
@@ -648,19 +653,23 @@ export default function MovimientosPagnolPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
+      // La vista previa siempre sale del archivo local: lo que se persiste es el
+      // path del bucket privado, que no sirve como `src` de una imagen.
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setReturnPhotoPreviews(prev => ({ ...prev, [assetId]: ev.target?.result as string }));
+      };
+      reader.readAsDataURL(file);
+
       const path = `return-evidence/${Date.now()}-${assetId}.jpg`;
-      const url = await uploadWithTimeout(path, file);
-      if (url) {
-        setReturnPhotos(prev => ({ ...prev, [assetId]: url }));
+      const stored = await uploadWithTimeout(path, file);
+      if (stored) {
+        setReturnPhotos(prev => ({ ...prev, [assetId]: stored }));
         toast({ variant: 'success', title: "Foto Guardada", description: "Evidencia fotográfica registrada en la nube." });
       } else {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const base64 = ev.target?.result as string;
-          setReturnPhotos(prev => ({ ...prev, [assetId]: base64 }));
-          toast({ variant: 'info', title: "Foto Local", description: "Sin conexión — imagen guardada localmente." });
-        };
-        reader.readAsDataURL(file);
+        // Sin conexión el archivo no llegó al bucket: se conserva solo la vista
+        // previa local y no se persiste un path que no existe.
+        toast({ variant: 'info', title: "Foto Local", description: "Sin conexión — la evidencia no se respaldó en la nube." });
       }
     } catch (err) {
       console.error("Evidence upload failed:", err);
@@ -1578,9 +1587,9 @@ export default function MovimientosPagnolPage() {
                               </div>
 
                               <div className="flex items-center gap-4">
-                                {returnPhotos[id] && (
+                                {returnPhotoPreviews[id] && (
                                   <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-success/30 shadow-sm shrink-0">
-                                    <img src={returnPhotos[id]} className="w-full h-full object-cover" alt="Evidencia" />
+                                    <img src={returnPhotoPreviews[id]} className="w-full h-full object-cover" alt="Evidencia" />
                                   </div>
                                 )}
                                 <div className="flex-1">
@@ -1588,11 +1597,11 @@ export default function MovimientosPagnolPage() {
                                   <Button
                                     variant="outline"
                                     onClick={() => { setCapturingPhotoFor(id); evidenceInputRef.current?.click(); }}
-                                    className={`w-full h-14 rounded-2xl border-2 border-dashed transition-all flex items-center justify-center gap-3 ${returnPhotos[id] ? 'border-success/30 bg-success-subtle text-success hover:bg-success-subtle' : 'border-border hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-primary'}`}
+                                    className={`w-full h-14 rounded-2xl border-2 border-dashed transition-all flex items-center justify-center gap-3 ${returnPhotoPreviews[id] ? 'border-success/30 bg-success-subtle text-success hover:bg-success-subtle' : 'border-border hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-primary'}`}
                                   >
                                     <Camera size={20} />
                                     <span className="text-[10px] font-black uppercase tracking-widest">
-                                      {returnPhotos[id] ? 'Cambiar Foto de Evidencia' : 'Tomar Foto de Evidencia'}
+                                      {returnPhotoPreviews[id] ? 'Cambiar Foto de Evidencia' : 'Tomar Foto de Evidencia'}
                                     </span>
                                   </Button>
                                 </div>

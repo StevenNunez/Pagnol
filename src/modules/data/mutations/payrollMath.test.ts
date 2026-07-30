@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     calculatePayroll, earnedBaseSalary, overtimeHourValue, gratificationAmount,
     taxableCap, healthContribution, unemploymentContribution, familyAllowance, incomeTax,
-    earningAmount, sumEarnings,
+    earningAmount, sumEarnings, legalMaxWeeklyHours, endOfPeriod,
     OVERTIME_WEEK_DAYS, OVERTIME_MONTH_DAYS, OVERTIME_SURCHARGE,
 } from './payrollMath';
 import type { EmploymentContract, PayrollParameters, AfpRate } from '@/modules/core/lib/data';
@@ -713,9 +713,310 @@ describe('anclaje — liquidación real de marzo 2026 (16 días, gratificación 
     });
 });
 
-// ⚠️ PENDIENTE — el par anterior cubre FONASA. Falta un caso ISAPRE para cerrar
-// la condición de salida a producción del RFC-003: es el único camino donde el
-// plan en UF puede superar al 7% legal, y ninguna de estas dos liquidaciones lo
-// ejercita. Tampoco están validados los topes imponibles en UF (la renta nunca
-// se acercó), los tramos altos del impuesto ni la asignación familiar (0 cargas).
+// ⚠️ SIGUE PENDIENTE: anclar el camino Isapre contra un DOCUMENTO REAL. Los tests
+// de más abajo verifican su mecánica contra la normativa y son sólidos, pero
+// verifican mi lectura de la ley — no el comportamiento de un emisor real. La
+// diferencia no es teórica: el anclaje de Fonasa destapó que la hora extra estaba
+// 4× mal, y ningún test sintético lo habría detectado porque se derivaban de la
+// misma constante equivocada. Basta UNA liquidación real con Isapre para cerrarlo.
 describe.todo('anclaje contra liquidación real con Isapre');
+
+// =============================================================================
+// Paramétrica VERIFICADA contra normativa (ADR-011)
+//
+// A diferencia de PARAMS —la semilla de referencia que fija la mecánica—, estos
+// son los valores legales reales, con su fuente en el ADR. Los tests de este
+// bloque sí dan por buenos los números.
+// =============================================================================
+
+/** Vigente desde las remuneraciones de agosto de 2026. */
+const PARAMS_AGO_2026: PayrollParameters = {
+    ...PARAMS,
+    id: 'p-ago26',
+    effectiveFrom: '2026-08-01',
+    minimumWage: 553553,        // Ley 21.751, desde 01-05-2026
+    gratificationImm: 529000,   // IMM al 31-12-2025: el del ejercicio comercial
+    capPensionUf: 90.0,         // Superintendencia de Pensiones, desde feb-2026
+    capUnemploymentUf: 135.2,
+    employerSisRate: 0,         // absorbido por el aporte desde ago-2026
+    employerPensionRate: 3.5,   // Ley 21.735
+    familyAllowanceBrackets: [
+        { max_income: 649039, amount: 22601 },
+        { max_income: 947990, amount: 13870 },
+        { max_income: 1478539, amount: 4382 },
+        { max_income: null, amount: 0 },
+    ],
+    notes: 'Verificada ADR-011',
+};
+
+/** Vigente en julio de 2026: SIS aparte (1,62%) y aporte al 1%. */
+const PARAMS_JUL_2026: PayrollParameters = {
+    ...PARAMS_AGO_2026,
+    id: 'p-jul26',
+    effectiveFrom: '2026-05-01',
+    employerSisRate: 1.62,
+    employerPensionRate: 1.0,
+};
+
+describe('jornada máxima legal (Ley 21.561)', () => {
+    it('44 horas antes del 26 de abril de 2026', () => {
+        expect(legalMaxWeeklyHours('2026-04-25')).toBe(44);
+    });
+
+    it('42 horas desde el 26 de abril de 2026 — el día exacto del corte', () => {
+        expect(legalMaxWeeklyHours('2026-04-26')).toBe(42);
+    });
+
+    it('40 horas desde abril de 2028', () => {
+        expect(legalMaxWeeklyHours('2028-04-26')).toBe(40);
+    });
+
+    it('endOfPeriod resuelve el último día del mes, con febrero bisiesto incluido', () => {
+        expect(endOfPeriod('2026-04')).toBe('2026-04-30');
+        expect(endOfPeriod('2026-02')).toBe('2026-02-28');
+        expect(endOfPeriod('2028-02')).toBe('2028-02-29');
+        expect(endOfPeriod('2026-08-01')).toBe('2026-08-31');
+    });
+
+    it('avisa cuando el contrato quedó sobre el máximo legal', () => {
+        const r = base({ contract: contract({ weeklyHours: 44 }), periodMonth: '2026-08' });
+        expect(r.warnings.some((w) => w.includes('supera el máximo legal'))).toBe(true);
+    });
+
+    it('no avisa si la jornada está dentro del máximo', () => {
+        const r = base({ contract: contract({ weeklyHours: 42 }), periodMonth: '2026-08' });
+        expect(r.warnings.some((w) => w.includes('supera el máximo legal'))).toBe(false);
+    });
+
+    it('abril de 2026 es un mes partido: se evalúa con el cierre del período', () => {
+        // La jornada bajó el 26 de abril, así que liquidar abril con 44 h ya avisa.
+        const r = base({ contract: contract({ weeklyHours: 44 }), periodMonth: '2026-04' });
+        expect(r.warnings.some((w) => w.includes('supera el máximo legal'))).toBe(true);
+        // ...pero marzo no: ahí 44 era la jornada legal.
+        const marzo = base({ contract: contract({ weeklyHours: 44 }), periodMonth: '2026-03' });
+        expect(marzo.warnings.some((w) => w.includes('supera el máximo legal'))).toBe(false);
+    });
+
+    it('sin período no se inventa la advertencia (ningún monto depende de él)', () => {
+        const r = base({ contract: contract({ weeklyHours: 44 }) });
+        expect(r.warnings.some((w) => w.includes('supera el máximo legal'))).toBe(false);
+    });
+
+    it('la jornada más corta ENCARECE la hora extra: la ley prohíbe rebajar la remuneración', () => {
+        const con44 = overtimeHourValue(900000, 44);
+        const con42 = overtimeHourValue(900000, 42);
+        expect(con42).toBeGreaterThan(con44);
+        // 4,8% más cara — es lo que se le paga de menos al trabajador mientras el
+        // contrato siga diciendo 44. La razón no da 44/42 EXACTO porque el factor
+        // se redondea a 7 decimales (el redondeo que reproduce al emisor real),
+        // así que se compara con la tolerancia que ese redondeo permite.
+        expect(con42 / con44).toBeCloseTo(44 / 42, 5);
+    });
+});
+
+describe('cotización de cargo del empleador (Ley 21.735) — ADR-011', () => {
+    it('julio 2026: SIS 1,62% y aporte 1% se SUMAN', () => {
+        const r = base({ parameters: PARAMS_JUL_2026 });
+        expect(r.employerSis).toBe(Math.round(r.cappedTaxableBase * 0.0162));
+        expect(r.employerPension).toBe(Math.round(r.cappedTaxableBase * 0.01));
+    });
+
+    it('agosto 2026: el SIS queda ABSORBIDO — el patronal es 3,5%, no 3,5% + 1,62%', () => {
+        const r = base({ parameters: PARAMS_AGO_2026 });
+        expect(r.employerSis).toBe(0);
+        expect(r.employerPension).toBe(Math.round(r.cappedTaxableBase * 0.035));
+    });
+
+    it('el aporte sube el costo empresa sin tocar un peso del líquido del trabajador', () => {
+        const julio = base({ parameters: PARAMS_JUL_2026 });
+        const agosto = base({ parameters: PARAMS_AGO_2026 });
+        expect(agosto.netPay).toBe(julio.netPay);           // al trabajador no le llega
+        expect(agosto.totalDeductions).toBe(julio.totalDeductions);
+        expect(agosto.employerCost).toBeGreaterThan(julio.employerCost); // a la empresa sí
+    });
+
+    it('el costo empresa es haberes + previsional del empleador + AFC del empleador', () => {
+        const r = base({ parameters: PARAMS_AGO_2026 });
+        expect(r.employerCost).toBe(
+            r.totalEarnings + r.employerSis + r.employerPension + r.employerUnemployment,
+        );
+    });
+
+    it('se calcula sobre el imponible TOPADO, no sobre la renta completa', () => {
+        // Renta muy sobre el tope de 90 UF: el aporte se congela en el tope.
+        const r = base({
+            contract: contract({ baseSalary: 20000000 }),
+            parameters: PARAMS_AGO_2026,
+        });
+        expect(r.cappedTaxableBase).toBe(Math.round(90 * UF));
+        expect(r.employerPension).toBe(Math.round(90 * UF * 0.035));
+    });
+
+    it('una paramétrica vieja sin las columnas cae al SIS del catálogo, no a cero', () => {
+        // Un cero silencioso en el costo empresa haría mentir al margen sin avisar.
+        const r = base({ parameters: PARAMS });
+        expect(r.employerSis).toBe(Math.round(r.cappedTaxableBase * 0.0153));
+        expect(r.employerCost).toBeGreaterThan(r.totalEarnings);
+    });
+});
+
+describe('IMM de la gratificación separado del sueldo mínimo — ADR-011', () => {
+    it('usa el IMM del ejercicio (31-dic), no el sueldo mínimo del mes', () => {
+        // Con sueldo alto la gratificación siempre topa, así que el tope es
+        // observable directamente.
+        const r = base({ parameters: PARAMS_AGO_2026 });
+        expect(r.gratification).toBe(Math.round((4.75 * 529000) / 12));  // $209.396
+        // Si hubiera usado el sueldo mínimo de mayo ($553.553) daría $219.114:
+        expect(r.gratification).not.toBe(Math.round((4.75 * 553553) / 12));
+    });
+
+    it('sin el campo nuevo cae al sueldo mínimo (paramétricas anteriores)', () => {
+        expect(gratificationAmount(50000000, { ...PARAMS, gratificationImm: null }))
+            .toBe(Math.round((4.75 * 529000) / 12));
+    });
+
+    it('el campo nuevo manda por sobre el sueldo mínimo', () => {
+        const params = { ...PARAMS, minimumWage: 553553, gratificationImm: 529000 };
+        expect(gratificationAmount(50000000, params)).toBe(Math.round((4.75 * 529000) / 12));
+    });
+});
+
+// =============================================================================
+// ISAPRE — mecánica verificada contra normativa (NO anclada a un documento real)
+//
+// El plan de Isapre se pacta en UF y el 7% legal es solo el PISO: si el plan vale
+// más, la diferencia ("adicional") la paga el trabajador. Es el único camino donde
+// la cotización de salud se despega del porcentaje fijo, y por eso el que más
+// formas tiene de fallar.
+// =============================================================================
+
+describe('ISAPRE — cotización de salud', () => {
+    const isapre = (planUf: number, over: Partial<EmploymentContract> = {}) =>
+        contract({ healthSystem: 'isapre', healthPlanUf: planUf, ...over });
+
+    it('plan más caro que el 7%: se cotiza el plan y el exceso es del trabajador', () => {
+        // Sueldo 1.500.000 → imponible 1.500.000 + 209.396 de gratificación.
+        const r = base({ contract: isapre(4.5, { baseSalary: 1500000 }), parameters: PARAMS_AGO_2026 });
+        const septimo = Math.round(r.cappedTaxableBase * 0.07);
+        const plan = Math.round(4.5 * UF);
+        expect(plan).toBeGreaterThan(septimo);
+        expect(r.healthAmount).toBe(septimo);              // el 7% legal, informado aparte
+        expect(r.healthAdditional).toBe(plan - septimo);   // lo que excede
+        // Lo que efectivamente se le descuenta es el plan completo:
+        expect(r.healthAmount + r.healthAdditional).toBe(plan);
+    });
+
+    it('plan más barato que el 7%: manda el piso legal, no el plan', () => {
+        const r = base({ contract: isapre(1.0, { baseSalary: 1500000 }), parameters: PARAMS_AGO_2026 });
+        expect(r.healthAdditional).toBe(0);
+        expect(r.healthAmount).toBe(Math.round(r.cappedTaxableBase * 0.07));
+    });
+
+    it('plan exactamente igual al 7%: sin adicional', () => {
+        const cappedBase = 1000000;
+        const septimo = 70000;
+        const planUf = septimo / UF;
+        const h = healthContribution(cappedBase, PARAMS_AGO_2026, 'isapre', planUf, UF);
+        expect(h.additional).toBe(0);
+        expect(h.total).toBe(septimo);
+    });
+
+    it('🔴 renta sobre el tope: el 7% se topa pero el plan NO — el adicional crece', () => {
+        // El caso que nadie revisa. El 7% legal se calcula sobre el imponible
+        // topado (90 UF), pero el plan es un monto pactado en UF que se paga
+        // completo: mientras más alta la renta, más grande el adicional.
+        const r = base({ contract: isapre(9, { baseSalary: 8000000 }), parameters: PARAMS_AGO_2026 });
+        const topeEnPesos = Math.round(90 * UF);
+        expect(r.cappedTaxableBase).toBe(topeEnPesos);
+        expect(r.healthAmount).toBe(Math.round(topeEnPesos * 0.07));  // 6,3 UF
+        expect(r.healthAdditional).toBe(Math.round(9 * UF) - r.healthAmount);
+        expect(r.healthAdditional).toBeGreaterThan(0);
+    });
+
+    it('el adicional REBAJA la base tributable: paga menos impuesto que en Fonasa', () => {
+        const conIsapre = base({ contract: isapre(4.5, { baseSalary: 1500000 }), parameters: PARAMS_AGO_2026 });
+        const conFonasa = base({ contract: contract({ baseSalary: 1500000 }), parameters: PARAMS_AGO_2026 });
+        expect(conIsapre.totalLegalDeductions).toBeGreaterThan(conFonasa.totalLegalDeductions);
+        expect(conIsapre.taxableIncomeForTax).toBeLessThan(conFonasa.taxableIncomeForTax);
+        expect(conIsapre.incomeTax).toBeLessThan(conFonasa.incomeTax);
+    });
+
+    it('Isapre sin plan pactado avisa y cotiza solo el 7% (no calcula 0 en silencio)', () => {
+        const r = base({
+            contract: contract({ healthSystem: 'isapre', healthPlanUf: null }),
+            parameters: PARAMS_AGO_2026,
+        });
+        expect(r.healthAmount).toBe(Math.round(r.cappedTaxableBase * 0.07));
+        expect(r.healthAdditional).toBe(0);
+        expect(r.warnings.some((w) => w.includes('Isapre sin plan'))).toBe(true);
+    });
+
+    it('el plan se convierte con la UF del PERÍODO, no con una fija', () => {
+        const ufAlta = 45000;
+        const r = base({
+            contract: isapre(4.5, { baseSalary: 1500000 }),
+            parameters: PARAMS_AGO_2026, ufValue: ufAlta,
+        });
+        expect(r.healthAmount + r.healthAdditional).toBe(Math.round(4.5 * ufAlta));
+    });
+
+    it('el costo empresa NO cambia por el sistema de salud: el adicional lo paga el trabajador', () => {
+        const conIsapre = base({ contract: isapre(4.5, { baseSalary: 1500000 }), parameters: PARAMS_AGO_2026 });
+        const conFonasa = base({ contract: contract({ baseSalary: 1500000 }), parameters: PARAMS_AGO_2026 });
+        expect(conIsapre.employerCost).toBe(conFonasa.employerCost);
+        expect(conIsapre.netPay).toBeLessThan(conFonasa.netPay);
+    });
+});
+
+describe('topes imponibles 2026 verificados', () => {
+    it('AFP y salud se topan en 90 UF', () => {
+        const r = base({ contract: contract({ baseSalary: 10000000 }), parameters: PARAMS_AGO_2026 });
+        expect(r.cappedTaxableBase).toBe(Math.round(90 * UF));
+        expect(r.pensionAmount).toBe(Math.round(90 * UF * 0.10));
+        expect(r.warnings.some((w) => w.includes('supera el tope imponible'))).toBe(true);
+    });
+
+    it('la cesantía tiene su PROPIO tope, más alto (135,2 UF)', () => {
+        // Entre ambos topes: AFP ya topada, AFC todavía no.
+        const sueldo = Math.round(100 * UF);
+        const r = base({ contract: contract({ baseSalary: sueldo }), parameters: PARAMS_AGO_2026 });
+        expect(r.cappedTaxableBase).toBe(Math.round(90 * UF));
+        expect(r.unemploymentAmount).toBe(Math.round(r.totalTaxable * 0.006));
+        expect(r.unemploymentAmount).toBeGreaterThan(Math.round(90 * UF * 0.006));
+    });
+
+    it('los topes de 2026 son MAYORES que los de 2025: cotiza más quien gana más', () => {
+        const sueldo = 5000000;
+        const con2025 = base({ contract: contract({ baseSalary: sueldo }), parameters: PARAMS });
+        const con2026 = base({ contract: contract({ baseSalary: sueldo }), parameters: PARAMS_AGO_2026 });
+        expect(con2026.cappedTaxableBase).toBeGreaterThan(con2025.cappedTaxableBase);
+        expect(con2026.pensionAmount).toBeGreaterThan(con2025.pensionAmount);
+    });
+});
+
+describe('asignación familiar 2026 verificada', () => {
+    it('tramo A (mayo 2026): $22.601 por carga', () => {
+        const r = base({
+            contract: contract({ baseSalary: 500000, familyCharges: 2 }),
+            parameters: PARAMS_AGO_2026,
+        });
+        expect(r.totalTaxable).toBeLessThanOrEqual(649039);
+        expect(r.familyAllowance).toBe(22601 * 2);
+    });
+
+    it('el corte de tramo se movió: una renta que antes caía en B ahora cae en A', () => {
+        // 640.000 está sobre el corte viejo (631.976) y bajo el nuevo (649.039).
+        const brackets2026 = PARAMS_AGO_2026.familyAllowanceBrackets;
+        expect(familyAllowance(640000, 1, brackets2026)).toBe(22601);
+        // Con los tramos que traía la semilla habría caído al tramo siguiente:
+        expect(familyAllowance(640000, 1, PARAMS.familyAllowanceBrackets)).toBe(13505);
+    });
+
+    it('sobre el último corte no hay derecho a pago', () => {
+        const r = base({
+            contract: contract({ baseSalary: 2000000, familyCharges: 3 }),
+            parameters: PARAMS_AGO_2026,
+        });
+        expect(r.familyAllowance).toBe(0);
+    });
+});

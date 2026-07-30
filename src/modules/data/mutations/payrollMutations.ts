@@ -162,6 +162,9 @@ export async function fetchPayrollParameters(date: string): Promise<PayrollParam
         id: data.id,
         effectiveFrom: data.effective_from,
         minimumWage: Number(data.minimum_wage) || 0,
+        // Sin `|| 0`: la ausencia de la columna debe distinguirse de un cero, para
+        // que el motor pueda caer al sueldo mínimo en vez de calcular un tope 0.
+        gratificationImm: data.gratification_imm == null ? null : Number(data.gratification_imm),
         capPensionUf: Number(data.cap_pension_uf) || 0,
         capUnemploymentUf: Number(data.cap_unemployment_uf) || 0,
         pensionRate: Number(data.pension_rate) || 10,
@@ -169,6 +172,8 @@ export async function fetchPayrollParameters(date: string): Promise<PayrollParam
         afcIndefiniteWorker: Number(data.afc_indefinite_worker) || 0,
         afcIndefiniteEmployer: Number(data.afc_indefinite_employer) || 0,
         afcFixedEmployer: Number(data.afc_fixed_employer) || 0,
+        employerPensionRate: Number(data.employer_pension_rate) || 0,
+        employerSisRate: Number(data.employer_sis_rate) || 0,
         gratificationRate: Number(data.gratification_rate) || 25,
         gratificationCapImm: Number(data.gratification_cap_imm) || 4.75,
         familyAllowanceBrackets: data.family_allowance_brackets || [],

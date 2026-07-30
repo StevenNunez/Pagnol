@@ -15,13 +15,58 @@ const nextConfig = {
       },
     ],
   },
-  // Security headers base. CSP completa se deja para una fase posterior
-  // (requiere inventariar inline scripts de Next + websockets Supabase + Gemini).
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: [
+          // ── CSP en modo REPORT-ONLY ──────────────────────────────────────
+          // Report-Only NO bloquea nada: solo reporta violaciones en la consola
+          // del navegador. Es deliberado — una CSP estricta activada a ciegas
+          // rompe la app en producción, y acá hay tres consumidores difíciles de
+          // inventariar por lectura de código (hidratación de Next, el websocket
+          // de Supabase Realtime y el modelo de reconocimiento facial).
+          //
+          // CÓMO PROMOVERLA A ENFORCEMENT: navegar la app completa —login,
+          // dashboard, biometría en `pagnol/movimientos`, generación de PDF,
+          // asistente de IA— con la consola abierta, anotar cada violación,
+          // ajustar las directivas, y recién ahí renombrar la cabecera a
+          // `Content-Security-Policy`. Mientras tanto no protege, pero tampoco
+          // puede romper nada.
+          {
+            key: 'Content-Security-Policy-Report-Only',
+            value: [
+              "default-src 'self'",
+              // 'unsafe-inline': Next inyecta scripts de hidratación sin nonce.
+              // Quitarlo exige nonces por request vía middleware — tarea aparte.
+              // 'unsafe-eval' + 'wasm-unsafe-eval': los exige @vladmandic/face-api
+              // (TensorFlow.js compila kernels en runtime) para la biometría.
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+              // Tailwind y Radix inyectan estilos inline (animaciones, posicionamiento
+              // de popovers). Sin 'unsafe-inline' se cae medio sistema de diseño.
+              "style-src 'self' 'unsafe-inline'",
+              // data:/blob: → previsualización de fotos y PDF generados en el cliente.
+              // supabase.co → fotos de activos y logos (buckets públicos).
+              // unsplash → imagen del hardware pack en la landing (ver PENDIENTES).
+              "img-src 'self' data: blob: https://*.supabase.co https://images.unsplash.com",
+              // next/font self-hostea Inter en el build: no hace falta gstatic.
+              "font-src 'self' data:",
+              // wss:// es Supabase Realtime; pwnedpasswords lo consulta el registro
+              // y el cambio de clave desde el cliente (k-anonymity, no envía la clave).
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.pwnedpasswords.com",
+              // Service worker (offline + push) y los workers de face-api.
+              "worker-src 'self' blob:",
+              "manifest-src 'self'",
+              // Cámara para biometría y lector QR.
+              "media-src 'self' blob:",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+              // Redundante con X-Frame-Options, pero es la directiva moderna.
+              "frame-ancestors 'none'",
+              'upgrade-insecure-requests',
+            ].join('; '),
+          },
           // Nadie puede embeber Pagnol en un iframe (clickjacking del login)
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },

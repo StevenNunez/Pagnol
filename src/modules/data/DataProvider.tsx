@@ -38,6 +38,7 @@ import * as budgetMutations from './mutations/budgetMutations';
 import * as periodMutations from './mutations/periodMutations';
 import * as payrollMutations from './mutations/payrollMutations';
 import * as payrollRunMutations from './mutations/payrollRunMutations';
+import * as severanceMutations from './mutations/severanceMutations';
 import * as rfqMutations from './mutations/rfqMutations';
 import * as receptionMutations from './mutations/receptionMutations';
 import * as costCenterMutations from './mutations/costCenterMutations';
@@ -553,6 +554,12 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         closePayrollRun: bindContext(payrollRunMutations.closePayrollRun),
         markPayrollRunPaid: bindContext(payrollRunMutations.markPayrollRunPaid),
         deletePayrollRun: bindContext(payrollRunMutations.deletePayrollRun),
+        proposeSeverance: bindContext(severanceMutations.proposeSeverance),
+        saveSeveranceDraft: bindContext(severanceMutations.saveSeveranceDraft),
+        recalculateSeveranceDraft: bindContext(severanceMutations.recalculateSeveranceDraft),
+        closeSeverance: bindContext(severanceMutations.closeSeverance),
+        markSeverancePaid: bindContext(severanceMutations.markSeverancePaid),
+        deleteSeveranceDraft: bindContext(severanceMutations.deleteSeveranceDraft),
         closePeriod: bindContext(periodMutations.closePeriod),
         reopenPeriod: bindContext(periodMutations.reopenPeriod),
 

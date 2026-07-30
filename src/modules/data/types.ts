@@ -9,6 +9,7 @@ import {
   EmploymentContract,
   PayrollRun,
   PayrollParameters,
+  Severance,
   AfpRate,
   MaterialRequest,
   ReturnRequest,
@@ -82,6 +83,8 @@ import {
 } from '../core/lib/data';
 import type { PayrollProposal, PayrollLineInput } from './mutations/payrollRunMutations';
 import type { PayrollResult } from './mutations/payrollMath';
+import type { SeveranceProposal, SeveranceDraftInput } from './mutations/severanceMutations';
+import type { SeveranceResult } from './mutations/severanceMath';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 
 export interface AppDataState {
@@ -255,6 +258,18 @@ export interface AppStateContextType extends AppDataState {
   closePayrollRun: (runId: string, parameters: PayrollParameters) => Promise<PayrollRun>;
   markPayrollRunPaid: (runId: string, paymentDate: string) => Promise<PayrollRun>;
   deletePayrollRun: (runId: string) => Promise<void>;
+  // Remuneraciones F5 — finiquitos (ADR-012)
+  proposeSeverance: (userId: string, endDate: string) => Promise<SeveranceProposal>;
+  saveSeveranceDraft: (
+    input: SeveranceDraftInput,
+  ) => Promise<{ severance: Severance; result: SeveranceResult }>;
+  recalculateSeveranceDraft: (
+    id: string,
+    input: SeveranceDraftInput,
+  ) => Promise<{ severance: Severance; result: SeveranceResult }>;
+  closeSeverance: (id: string) => Promise<Severance>;
+  markSeverancePaid: (id: string, paymentDate: string) => Promise<Severance>;
+  deleteSeveranceDraft: (id: string) => Promise<void>;
   closePeriod: (data: { month: string; reason?: string }) => Promise<FinancePeriodEvent>;
   reopenPeriod: (data: { month: string; reason: string }) => Promise<FinancePeriodEvent>;
 

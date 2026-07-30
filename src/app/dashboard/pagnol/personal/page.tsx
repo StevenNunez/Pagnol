@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EnrollmentWizard } from '@/components/enrollment-wizard';
+import { SecureFileLink } from '@/components/secure-file-link';
 
 // Cuentas de plataforma que no son "personal de faena": se ocultan de Gestión de Personal
 // para todos salvo super-admin (que ve todo).
@@ -728,11 +729,11 @@ export default function PersonalPage() {
                   )}
                   {/* Descargar si existe documento generado */}
                   {existingEA?.fileUrl && (
-                    <a href={existingEA.fileUrl} target="_blank" rel="noreferrer">
-                      <Button className="h-9 px-4 rounded-xl bg-success hover:bg-success/90 text-success-foreground text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
+                    <SecureFileLink stored={existingEA.fileUrl}>
+                      <span className="h-9 px-4 rounded-xl bg-success hover:bg-success/90 text-success-foreground text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
                         <Download size={14} /> Descargar Acta
-                      </Button>
-                    </a>
+                      </span>
+                    </SecureFileLink>
                   )}
                   {/* Confirmar envío a DT */}
                   {existingEA && (
@@ -857,11 +858,11 @@ export default function PersonalPage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           {doc.fileUrl && (
-                            <a href={doc.fileUrl} target="_blank" rel="noreferrer">
-                              <Button size="sm" className="h-8 px-3 rounded-xl bg-success hover:bg-success/90 text-success-foreground text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                            <SecureFileLink stored={doc.fileUrl}>
+                              <span className="h-8 px-3 rounded-xl bg-success hover:bg-success/90 text-success-foreground text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
                                 <Download size={12} /> Descargar
-                              </Button>
-                            </a>
+                              </span>
+                            </SecureFileLink>
                           )}
                           {doc.status === 'generated' && doc.fileUrl && (
                             <Button

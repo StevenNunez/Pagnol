@@ -18,21 +18,22 @@ export const generateEADocument = async (
 
     if (uploadError) throw new Error(`Error al subir el documento: ${uploadError.message}`);
 
-    const { data: { publicUrl } } = supabase.storage.from('contracts').getPublicUrl(filePath);
-
+    // El bucket es privado: se guarda el PATH y quien muestre el documento firma
+    // la URL en el momento (<SecureFileLink>). Una URL firmada expira, así que
+    // persistirla la dejaría muerta a los minutos.
     const { error } = await supabase.from('ea_documents').insert({
         tenant_id: tenantId,
         employee_id: employeeId,
         employee_name: employeeName,
         file_path: filePath,
-        file_url: publicUrl,
+        file_url: filePath,
         status: 'generated',
         generated_by: user.id,
     });
 
     if (error) throw new Error(`Error al guardar registro EA: ${error.message}`);
 
-    return publicUrl;
+    return filePath;
 };
 
 export const confirmEASentToDT = async (

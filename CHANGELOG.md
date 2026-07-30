@@ -18,6 +18,256 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Seguridad — `npm audit fix` aplicado (P0)
+
+**86 → 79 vulnerabilidades** (−4 high, −2 moderate, −1 low). Solo cambió `package-lock.json`;
+`package.json` quedó intacto. 270 tests verdes, `tsc` limpio, build OK.
+
+El audit destapó dos cosas que el backlog no registraba: **`vitest` tiene una vulnerabilidad
+crítica** (vía `vite`) que nadie había detectado, y **buena parte de la cadena
+`@genkit-ai`/`@opentelemetry` ya tenía arreglo disponible** — el pendiente decía "revisar cuando
+Genkit publique una versión", y esa versión ya existía.
+
+Lo que queda son cambios mayores que rompen API y necesitan prueba dedicada: `jspdf` (crítica, 15
+archivos la usan), `vitest` (crítica) y la cadena de `exceljs`. Detalle en `PENDIENTES.md`.
+
+### Seguridad — Content-Security-Policy en modo Report-Only (P0)
+
+Los headers base ya estaban; faltaba la CSP. Se añade en `next.config.js` como
+**`Content-Security-Policy-Report-Only`**: no bloquea nada, solo reporta violaciones en la consola
+del navegador. Es deliberado — activar una CSP estricta a ciegas rompe la app en producción, y
+había tres consumidores imposibles de inventariar solo leyendo código: la hidratación de Next, el
+websocket de Supabase Realtime y el modelo de reconocimiento facial.
+
+Lo que el inventario determinó: `'unsafe-eval'` + `'wasm-unsafe-eval'` son necesarios porque
+`@vladmandic/face-api` compila kernels de TensorFlow.js en runtime · `'unsafe-inline'` en estilos
+porque Tailwind y Radix inyectan estilos inline · `wss://*.supabase.co` para Realtime ·
+`api.pwnedpasswords.com` porque el registro y el cambio de clave lo consultan desde el cliente ·
+`blob:` en `worker-src` y `media-src` para el service worker y la cámara · `next/font` self-hostea
+Inter en el build, así que no hace falta `fonts.gstatic.com`.
+
+**Para promoverla a enforcement:** navegar la app completa (login, dashboard, biometría, PDF,
+asistente de IA) con la consola abierta, anotar cada violación, ajustar y recién ahí renombrar la
+cabecera a `Content-Security-Policy`. Mientras tanto no protege, pero tampoco puede romper nada.
+
+### Seguridad — 🔴 El bucket `contracts` era público y ahora es privado (P0)
+
+**Migración `20260803000000_contracts_bucket_private.sql` — APLICADA y verificada (2026-07-30).**
+Sondeo posterior: `public=false` y un objeto real devuelve **HTTP 400 sin autenticación**. Los
+otros seis buckets con datos personales ya eran privados; `contracts` era el único expuesto.
+Quedan públicos solo `tenant-logos` y `asset-photos`, que no llevan datos personales.
+
+El bucket estaba en `public=true`: sus objetos se servían **sin autenticación** a cualquiera con
+la URL. Guarda las actas de entrega/devolución **firmadas** de `pagnol/movimientos` —nombre, RUT y
+la firma del trabajador capturada en el cierre biométrico—, las fotos de evidencia de devolución y
+los documentos EA de la Dirección del Trabajo. Son datos personales de trabajadores
+identificables: el Art. 1 (aislamiento por tenant) no sirve de nada si el archivo se sirve sin auth.
+
+**Cómo se cerró, sin migrar datos:**
+
+- `src/modules/core/lib/storage.ts` — `getContractsSignedUrl()` firma con expiración de 5 minutos
+  y acepta **indistintamente el path nuevo o la URL pública que guardaron las filas antiguas**
+  (extrae el path de la URL antes de firmar), así que no hay que reescribir nada de lo ya guardado.
+- `<SecureFileLink>` — reemplaza los `<a href={url} target="_blank">` en los 5 puntos donde se
+  abría un archivo. Firma **en el clic**: una URL firmada expira, así que persistirla la dejaría
+  muerta a los minutos.
+- Los 3 puntos de subida (actas de entrega, evidencia de devolución, documentos EA) ahora guardan
+  el **path** en vez de la URL pública.
+- La vista previa de la foto de evidencia pasa a mostrar el archivo local: un path no sirve como
+  `src` de una imagen. De paso se corrigió que, al fallar la subida, ya no se persiste un path
+  inexistente.
+- Políticas de `storage.objects` para que un usuario autenticado pueda leer, subir y borrar.
+
+⚠️ **Deuda consciente:** el alcance de lectura es "cualquier usuario autenticado", no "del tenant
+dueño del archivo", porque los paths **no son uniformemente tenant-scoped** (`ea-docs/` lleva el
+tenant; `contracts/direct/…` y `return-evidence/…` no). Acotarlo exige migrar la convención de
+rutas y reescribir los paths guardados — queda en `PENDIENTES.md`. Aun así el salto es grande:
+de "cualquiera en internet con la URL" a "un usuario autenticado de la plataforma".
+
+### Cambiado — PENDIENTES.md verificado contra el estado real (2026-07-30)
+
+Se auditó el backlog ítem por ítem sondeando la base, las dependencias y el código, en vez de
+darlo por bueno. **Cerrados y eliminados del archivo:**
+
+- Migración `20260718000000_client_supply_sent_email.sql` — **estaba aplicada**
+  (`purchase_requests.sent_to_client_email` existe).
+- Migración `20260720000000_materials_soft_delete.sql` — **estaba aplicada**
+  (`materials.deleted_at/deleted_by/deletion_reason` existen).
+- Migración del bucket privado de work-reports — **aplicada**: `work-report-pdfs` y
+  `work-report-photos` están en `public=false`.
+- Drift de safety (`20260612000004`) — las tablas existen (`daily_talks`, `assigned_checklists`,
+  `checklist_templates`, `safety_inspections`, `behavior_observations`).
+- Dark mode de `construction-control` — **0 usos** de paleta cruda.
+
+🔴 **Hallazgo nuevo al verificar: el bucket `contracts` es PÚBLICO** (`public=true`). Guarda los
+PDF de entrega/devolución **firmados** de `pagnol/movimientos` —con nombre, RUT y firma del
+trabajador— y los documentos de Estados de Avance, y el código usa `getPublicUrl()`: son
+accesibles sin autenticación por quien tenga la URL. El pendiente anterior lo describía solo como
+"permite listar", que subestimaba el problema. Elevado a P0.
+
+Las mediciones de deuda se actualizaron con los números reales (dark mode por módulo, adopción de
+`EmptyState`/`LoadingState`), y se incorporó la mantención recurrente que deja Remuneraciones: el
+aporte del empleador sube cada agosto hasta 2033 y los festivos hay que sembrarlos cada año.
+
+### Agregado — Remuneraciones F5: finiquitos persistentes (ADR-012)
+
+**Migración `20260802000000_severances.sql` — APLICADA (2026-07-30). Verificado E2E 19/19.**
+
+El E2E corre con **service role** a propósito: prueba que el Art. 2 lo impone la BASE y no el
+cliente. Quedó comprobado que un finiquito cerrado rechaza cambiar montos, volver a borrador y ser
+eliminado, y que `cerrado → pagado` es la única transición admitida. También el borde exacto del
+art. 163 (fracción de exactamente 6 meses **no** suma un año) y los 15 feriados sembrados.
+
+Última fase del RFC-003. `attendance/severance` calculaba en `useState`, imprimía un PDF y no
+guardaba nada — el hallazgo 3 del RFC aplicado al documento con más consecuencias legales.
+**Ya se había usado en el tenant real**: existe un finiquito generado el 14-07-2026 cuyo único
+registro es el PDF que quedó en una carpeta de Descargas (fue una prueba, no se entregó).
+
+**Cuatro defectos de cálculo corregidos**, verificados contra normativa:
+
+- 🔴 **El feriado proporcional se pagaba corto.** La ley lo define en días **hábiles** (art. 67),
+  el sábado es **siempre inhábil** (art. 69), y al liquidarlo hay que proyectarlo desde el día
+  siguiente al término sumando los sábados, domingos y festivos que atraviese. La calculadora
+  hacía `(días/365) × 15` y los pagaba como corridos — siempre en contra del trabajador, y más
+  mientras más largo el período.
+- 🔴 **No existía el tope de 90 UF** del art. 172 sobre la base de indemnización.
+- 🟠 **`fracción >= 6 meses`** daba un año completo; el art. 163 exige fracción **superior** a
+  seis meses.
+- 🟠 **Faltaba el feriado progresivo** (art. 68).
+
+**Piezas:** `severanceMath.ts` puro (41 tests) · tabla `severances` append-only con snapshot
+inmutable y Art. 2 **por trigger en la base** · `public_holidays` nacional (15 feriados de 2026
+verificados) · `severanceLedger.ts` · páginas `/dashboard/rrhh/finiquitos` + `[id]` · PDF formal
+que cita la causal legal y detalla el feriado en días hábiles **y** corridos.
+
+**Lo que ahora sale del sistema en vez de digitarse:** antigüedad y base de cálculo del contrato
+laboral, vacaciones tomadas de la asistencia, anticipos pendientes, y el líquido del último mes
+tomado de la planilla. El feriado progresivo se **declara** (el art. 68 exige acreditar 10 años
+con empleadores anteriores que este sistema no conoce; calcularlo sería inventarlo).
+
+🔴 **La trampa que la fase evitó:** el finiquito incluye el líquido del último mes, pero **ese
+monto ya lo emitió la planilla al ledger** con su propio costo y payable. Emitirlo de nuevo
+habría duplicado el costo de personal del mes. Al ledger va solo `ledgerAmount()` — los conceptos
+propios del finiquito. Mismo patrón que en F4 obligó a apartar los meses liquidados del cron de MO.
+
+⚠️ **VERIFICADO, NO ANCLADO:** no hubo finiquito real de un tercero disponible. Los tests fijan la
+mecánica según la ley, pero validan la interpretación, no a un emisor real — la misma distinción
+que dejó pasar la hora extra 4× sobrestimada. `describe.todo` reservado.
+
+**270 tests** (+41), `tsc` limpio.
+
+### Eliminado — La calculadora vieja de finiquitos (ADR-012)
+
+`attendance/severance` sale del sidebar, igual que `monthly-report`. La ruta se conserva con un
+aviso que dirige al módulo nuevo.
+
+### Corregido — Paramétrica legal verificada contra normativa (ADR-011)
+
+**Migración `20260801000000_payroll_legal_rates_2026.sql` — APLICADA (2026-07-30).**
+
+**Verificado E2E 37/37 contra la base viva**, con el motor alimentado por los parámetros que
+devuelve Postgres (no por los del test): las 5 versiones resuelven por fecha · el corte de agosto
+sube el costo empresa **sin mover un peso del líquido del trabajador** · la gratificación topa con
+$529.000 aunque el sueldo mínimo de esa misma fila diga $553.553 · el tope de 90 UF y el aviso
+correspondiente · Isapre sobre el tope (el 7% se topa, el plan no) · y la advertencia de jornada.
+
+Cierra la deuda que F1 dejó advertida: las tasas, topes y tramos sembrados eran **valores de
+referencia sin verificar**, y mientras no se contrastaran contra normativa el sistema no podía
+emitir una liquidación real. Verificado contra SII, Superintendencia de Pensiones, Dirección del
+Trabajo, ChileAtiende, Ley 21.751 y Ley 21.735.
+
+**La mecánica estaba bien; los valores con fecha, no.** La tabla del impuesto único coincide **al
+decimal** con el SII (8 tramos, factores y rebajas en UTM), y de paso validó que la serie UTM del
+cron es correcta. Todo lo demás con vigencia estaba atrasado:
+
+- **Topes imponibles**: 87,8 → **90,0 UF** (AFP/salud) y 131,9 → **135,2 UF** (cesantía), desde
+  las remuneraciones de febrero de 2026. Con el tope viejo se **subcotiza** a las rentas altas.
+- **IMM**: 529.000 → **539.000** (enero, Ley 21.751) → **553.553** (mayo).
+- **Asignación familiar**: tramos de 2025 → los de enero de 2026, y nuevos montos y tramos desde
+  mayo ($22.601 / $13.870 / $4.382).
+- **SIS**: 1,53 → **1,62%** desde las remuneraciones de abril (licitación pública).
+- **Comisión AFP Uno**: 0,49 → **0,46%**. Las otras seis estaban correctas.
+
+**Ninguna liquidación se había emitido a un trabajador real** (las 6 planillas de la base están en
+tenants de prueba), así que no hay documentos entregados que rehacer.
+
+La paramétrica queda con **5 versiones para 2026**, una por cada fecha en que la ley cambió algo:
+liquidar un mes pasado con las tasas de ese mes sale gratis. Es el primer uso serio del versionado
+que construyó F1.
+
+### Agregado — Cotización de cargo del empleador: Ley 21.735 (ADR-011)
+
+🔴 **Faltaba entera una cotización que existe desde agosto de 2025.** La reforma previsional creó
+un aporte de cargo del empleador —1% del imponible entonces, **3,5% desde las remuneraciones de
+agosto de 2026**, subiendo hasta 8,5% en 2033— que el modelo no tenía dónde guardar.
+
+No se le descuenta al trabajador, pero **es costo empresa**: sin él, el costo real que F4 emite al
+ledger estaba subestimado en ~1,9 puntos del imponible, y con eso el **margen por contrato y la
+desviación de presupuesto de personal**. En una faena de 50 personas son más de $1M mensuales de
+costo invisible.
+
+- Dos columnas nuevas (`employer_pension_rate`, `employer_sis_rate`) porque hasta julio de 2026 el
+  SIS y el aporte **se suman**, y desde agosto el SIS queda **absorbido** dentro del 3,5% — el
+  patronal es 3,5%, no 3,5% + 1,62%. Un solo número no puede representar ese corte.
+- El SIS sale del catálogo de AFP (`afp_rates.sis_rate` queda obsoleta): se licita en conjunto, es
+  el mismo para las siete, y tenerlo repetido solo invitaba a que se desincronizaran.
+- `payroll_lines.employer_pension` es columna nueva en vez de reinterpretar `employer_sis`: las
+  líneas emitidas son snapshots inmutables y no pueden cambiar de significado a posteriori.
+
+### Corregido — El tope de gratificación usaba el IMM equivocado (ADR-011)
+
+**Actualizar el sueldo mínimo a ciegas habría introducido un error.** La Dirección del Trabajo
+determina el tope de 4,75 IMM del art. 50 con el **ingreso mínimo vigente al 31 de diciembre del
+ejercicio comercial**, no con el del mes liquidado: para todo 2026 son **$529.000**, aunque el
+sueldo mínimo ya vaya en $553.553.
+
+O sea que la semilla de F1 tenía el valor **correcto para la gratificación** y equivocado como
+sueldo mínimo — un solo campo sirviendo dos conceptos con reglas de vigencia distintas. Se separan
+(`gratification_imm` y `minimum_wage`). El anclaje contra las 3 liquidaciones reales de Steven
+sigue reproduciéndolas al peso: **usaban $529.000 y estaban bien**.
+
+### Agregado — Advertencia de jornada sobre el máximo legal (Ley 21.561)
+
+La jornada ordinaria bajó de 44 a **42 horas el 26 de abril de 2026** (y a 40 en abril de 2028).
+Los contratos de la base seguían en 44.
+
+Importa porque el valor de la hora extra es `(sueldo/30) × (7/jornada) × 1,5`: **a menor jornada,
+mayor valor hora** — y la ley prohíbe expresamente rebajar la remuneración al reducir la jornada.
+Un contrato que siga diciendo 44 paga cada hora extra **4,8% más barata** de lo que corresponde.
+
+El motor **advierte, no altera montos** (manda siempre lo pactado), y evalúa con el último día del
+período porque abril de 2026 es un mes partido. Los contratos existentes no se reescriben: son
+append-only y un contrato con 44 horas es correcto para su época — se corrigen con un anexo. El
+default del esquema pasa a 42.
+
+### Agregado — ISAPRE: mecánica verificada contra normativa (ADR-011)
+
+Tests del camino Isapre, el único donde la cotización de salud se despega del 7% fijo: plan en UF,
+7% como piso, adicional de cargo del trabajador, conversión con la UF del período, y el caso que
+nadie revisa — **con renta sobre el tope, el 7% se topa pero el plan no**, así que el adicional
+crece. También que el adicional rebaja la base tributable (menos impuesto) y que el costo empresa
+**no** cambia por el sistema de salud.
+
+⚠️ **VERIFICADO, NO ANCLADO.** Estos tests verifican la lectura de la normativa, no el
+comportamiento de un emisor real. La distinción no es teórica: el anclaje de Fonasa destapó que la
+hora extra estaba **4× sobrestimada**, y ningún test sintético lo habría detectado porque todos se
+derivaban de la misma constante equivocada. **Basta una liquidación real con Isapre para
+cerrarlo.**
+
+### Eliminado — La calculadora vieja de liquidación (ADR-011)
+
+`attendance/monthly-report` seguía publicada en el sidebar como "Liquidación de Sueldo" —más
+visible que el módulo nuevo— y emitía un PDF con aspecto de liquidación desde constantes quemadas
+(`SUELDO_MINIMO = 460000`, valor de 2023), sin tope imponible, impuesto único, asignación
+familiar, AFC por tipo de contrato ni plan de Isapre, y sin descontar las ausencias.
+
+Construir el módulo nuevo y dejar esa puerta abierta era el riesgo legal más directo que quedaba
+en pie. La ruta se conserva con un aviso que dirige a Remuneraciones (quien tenga el enlace
+guardado necesita entender qué pasó, no un 404); el sidebar y el hub de Asistencia ahora apuntan
+al módulo nuevo.
+
+**229 tests** (+32), `tsc` limpio.
+
 ### Agregado — Remuneraciones F1: fundación de datos (RFC-003)
 
 **Migración `20260727000000_payroll_foundation.sql` — APLICADA (2026-07-29).**

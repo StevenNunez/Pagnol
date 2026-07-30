@@ -86,6 +86,7 @@ export function mapPayrollLine(l: any): PayrollLine {
         totalDeductions: n(l.total_deductions),
         netPay: n(l.net_pay),
         employerSis: n(l.employer_sis),
+        employerPension: n(l.employer_pension),
         employerUnemployment: n(l.employer_unemployment),
         employerCost: n(l.employer_cost),
         inputSnapshot: l.input_snapshot || null,
@@ -382,6 +383,8 @@ export async function savePayrollDraft(
             advances: line.advancesAmount || 0,
             otherDeductions: line.otherDeductions || [],
             overtimeHourValue: line.overtimeHourValue ?? null,
+            // Solo para la advertencia de jornada sobre el máximo legal (ADR-011).
+            periodMonth: run.period_month,
         });
         results[line.userId] = result;
 
@@ -410,6 +413,7 @@ export async function savePayrollDraft(
             total_deductions: result.totalDeductions,
             net_pay: result.netPay,
             employer_sis: result.employerSis,
+            employer_pension: result.employerPension,
             employer_unemployment: result.employerUnemployment,
             employer_cost: result.employerCost,
             // Snapshot: permite reproducir exactamente lo que se emitió (ADR-009 §4)

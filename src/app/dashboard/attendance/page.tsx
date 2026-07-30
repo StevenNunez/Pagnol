@@ -324,8 +324,8 @@ export default function AttendancePage() {
           { label: 'Vista General',      icon: Globe,         href: '/dashboard/attendance/overview',       color: 'text-blue-600 dark:text-blue-300' },
           { label: 'Reporte Semanal',    icon: BarChart2,     href: '/dashboard/attendance/report',         color: 'text-violet-600 dark:text-violet-300' },
           { label: 'Horas Extras',       icon: Zap,           href: '/dashboard/attendance/overtime',       color: 'text-amber-500 dark:text-amber-300' },
-          { label: 'Liquidación',        icon: FileSpreadsheet, href: '/dashboard/attendance/monthly-report', color: 'text-green-600 dark:text-green-300' },
-          { label: 'Finiquito',          icon: FileText,      href: '/dashboard/attendance/severance',      color: 'text-red-500 dark:text-red-300' },
+          { label: 'Liquidación',        icon: FileSpreadsheet, href: '/dashboard/rrhh/remuneraciones',       color: 'text-green-600 dark:text-green-300' },
+          { label: 'Finiquito',          icon: FileText,      href: '/dashboard/rrhh/finiquitos',           color: 'text-red-500 dark:text-red-300' },
         ].map(({ label, icon: Icon, href, color }) => (
           <button
             key={href}

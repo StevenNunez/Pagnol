@@ -149,9 +149,13 @@ const getAttendanceNavItems = () => [
   { href: '/dashboard/attendance/shifts', icon: RotateCcw, label: 'Turnos' },
   { href: '/dashboard/attendance/import', icon: FileUp, label: 'Importar Planilla' },
   { href: '/dashboard/attendance/report', icon: FileBarChart, label: 'Reporte Semanal' },
-  { href: '/dashboard/attendance/monthly-report', icon: FileSpreadsheet, label: 'Liquidación de Sueldo' },
+  // "Liquidación de Sueldo" apuntaba acá a una calculadora con valores legales
+  // quemados y desactualizados (ADR-011). Liquidar es del módulo Remuneraciones.
+  { href: '/dashboard/rrhh/remuneraciones', icon: FileSpreadsheet, label: 'Liquidación de Sueldo' },
   { href: '/dashboard/attendance/overtime', icon: Zap, label: 'Horas Extras' },
-  { href: '/dashboard/attendance/severance', icon: HandCoins, label: 'Finiquitos' },
+  // Igual que "Liquidación de Sueldo": la calculadora vieja de finiquitos quedó
+  // retirada (ADR-012). Emitir finiquitos es del módulo RRHH.
+  { href: '/dashboard/rrhh/finiquitos', icon: HandCoins, label: 'Finiquitos' },
 ];
 
 const getPaymentsNavItems = () => [
@@ -225,6 +229,7 @@ const getRrhhNavItems = (can: (p: Permission) => boolean) => [
   ] : []),
   ...(can('hr_employees:edit') ? [
     { href: '/dashboard/rrhh/remuneraciones', icon: Wallet, label: 'Remuneraciones' },
+    { href: '/dashboard/rrhh/finiquitos', icon: HandCoins, label: 'Finiquitos' },
   ] : []),
   ...(can('contracts:manage') ? [
     { href: '/dashboard/rrhh/contratos', icon: Briefcase, label: 'Contratos' },

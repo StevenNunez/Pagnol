@@ -197,7 +197,11 @@ export interface IncomeTaxBracket { from_utm: number; to_utm: number | null; fac
 export interface PayrollParameters {
     id: string;
     effectiveFrom: string;
+    /** Sueldo mínimo del período. Para el tope de gratificación, `gratificationImm`. */
     minimumWage: number;
+    /** IMM al 31-dic del ejercicio comercial: base del tope de 4,75 IMM del art. 50.
+     *  Distinto del sueldo mínimo del mes (ADR-011). */
+    gratificationImm?: number | null;
     capPensionUf: number;
     capUnemploymentUf: number;
     pensionRate: number;
@@ -205,6 +209,12 @@ export interface PayrollParameters {
     afcIndefiniteWorker: number;
     afcIndefiniteEmployer: number;
     afcFixedEmployer: number;
+    /** Aporte previsional de cargo del empleador (Ley 21.735), % del imponible
+     *  topado. No se le descuenta al trabajador: es costo empresa. */
+    employerPensionRate?: number | null;
+    /** SIS de cargo del empleador cuando se cotiza aparte. 0 desde ago-2026:
+     *  queda absorbido por `employerPensionRate`. */
+    employerSisRate?: number | null;
     gratificationRate: number;
     gratificationCapImm: number;
     familyAllowanceBrackets: FamilyAllowanceBracket[];
@@ -276,12 +286,78 @@ export interface PayrollLine {
     totalDeductions: number;
     netPay: number;
     employerSis: number;
+    /** Aporte previsional de cargo del empleador (Ley 21.735). Separado del SIS,
+     *  que desde ago-2026 va en 0 por quedar absorbido (ADR-011). */
+    employerPension: number;
     employerUnemployment: number;
     employerCost: number;
     /** Entrada exacta del motor: permite reproducir el cálculo tal como se emitió. */
     inputSnapshot?: any;
     resultSnapshot?: any;
     warnings?: string[];
+    createdAt: string;
+}
+
+// ─── Remuneraciones F5: finiquitos (ADR-012) ────────────────────────────────
+// borrador → cerrado → pagado, con snapshot inmutable y Art. 2 por trigger,
+// igual que la planilla. Un finiquito es de UN trabajador: la cabecera es el
+// documento, sin líneas.
+
+export type SeveranceStatus = 'borrador' | 'cerrado' | 'pagado';
+
+/** Feriado legal nacional, para proyectar el feriado proporcional en calendario. */
+export interface PublicHoliday {
+    holidayDate: string;
+    name: string;
+    isIrrenunciable: boolean;
+}
+
+export interface Severance {
+    id: string;
+    tenantId: string;
+    userId: string;
+    userName: string;
+    employmentContractId?: string | null;
+    status: SeveranceStatus;
+    /** Ingreso a la empresa, no el inicio del anexo vigente. */
+    startDate: string;
+    endDate: string;
+    cause: string;
+    noticeGiven: boolean;
+    /** Base del art. 172 (sin topar; el tope de 90 UF se aplica al calcular). */
+    lastRemuneration: number;
+    ufValue?: number | null;
+    vacationDaysTaken: number;
+    /** Feriado progresivo acreditado por el trabajador (art. 68). Declarado. */
+    progressiveDays: number;
+    deductions: { name: string; amount: number }[];
+    /** Planilla de la que se tomó el líquido del último mes, si se integró. */
+    lastPayrollRunId?: string | null;
+    lastPayrollNet: number;
+    yearsOfService: number;
+    indemnifiableYears: number;
+    cappedBase: number;
+    indemnityYears: number;
+    indemnityNotice: number;
+    vacationDaysHabiles: number;
+    vacationDaysCorridos: number;
+    vacationPay: number;
+    totalEarnings: number;
+    totalDeductions: number;
+    totalSeverance: number;
+    inputSnapshot?: any;
+    resultSnapshot?: any;
+    warnings?: string[];
+    closedAt?: string | null;
+    closedBy?: string | null;
+    closedByName?: string | null;
+    paidAt?: string | null;
+    paymentDate?: string | null;
+    paidBy?: string | null;
+    paidByName?: string | null;
+    notes?: string | null;
+    createdBy?: string | null;
+    createdByName?: string | null;
     createdAt: string;
 }
 

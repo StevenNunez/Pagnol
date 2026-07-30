@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Clock, MapPin, ImageIcon } from 'lucide-react';
 import type { ReturnRequest } from '@/modules/core/lib/data';
 import { ReturnStatusBadge, ConditionBadge, formatDateTime } from '@/components/pagnol-requests/request-shared';
+import { SecureFileLink } from '@/components/secure-file-link';
 
 export function ReturnHistoryCard({ req }: { req: ReturnRequest }) {
     return (
@@ -37,11 +38,11 @@ export function ReturnHistoryCard({ req }: { req: ReturnRequest }) {
                     <Badge variant="outline" className="text-[9px] h-5 px-1.5 font-black uppercase tracking-widest">Recepcionó: {req.handlerName}</Badge>
                 )}
                 {req.evidenceUrl && (
-                    <a href={req.evidenceUrl} target="_blank" rel="noopener noreferrer">
+                    <SecureFileLink stored={req.evidenceUrl}>
                         <Badge variant="outline" className="text-[9px] h-5 px-1.5 border-info/30 text-info font-black uppercase tracking-widest gap-1 hover:bg-info-subtle transition-colors">
                             <ImageIcon className="h-3 w-3" /> Ver evidencia
                         </Badge>
-                    </a>
+                    </SecureFileLink>
                 )}
             </div>
 

@@ -52,6 +52,45 @@ export const OVERTIME_SURCHARGE = 1.5;
 /** Decimales del factor publicado. Reproduce el redondeo de la liquidación real. */
 export const OVERTIME_FACTOR_DECIMALS = 7;
 
+/**
+ * Jornada ordinaria máxima legal, por tramo de vigencia (Ley 21.561, "40 horas").
+ *
+ * Va acá y no en `payroll_parameters` porque su calendario cambia en una FECHA
+ * EXACTA (26 de abril), no al inicio de un mes como el resto de la paramétrica:
+ * modelarla como una versión mensual más habría dado un falso positivo a quien
+ * liquide abril de 2026, que es un mes partido.
+ *
+ * Solo se usa para ADVERTIR: la jornada que manda en el cálculo es siempre la
+ * pactada en el contrato. Un contrato que quedó en 44 h después del 26-04-2026
+ * paga la hora extra un 4,8% más barata de lo que debería —la ley prohíbe rebajar
+ * la remuneración al reducir la jornada—, y eso es plata del trabajador.
+ */
+export const LEGAL_MAX_WEEKLY_HOURS: ReadonlyArray<{ from: string; hours: number }> = [
+    { from: '0000-01-01', hours: 45 },
+    { from: '2024-04-26', hours: 44 },
+    { from: '2026-04-26', hours: 42 },
+    { from: '2028-04-26', hours: 40 },
+];
+
+/** Jornada máxima legal vigente en una fecha `YYYY-MM-DD`. */
+export function legalMaxWeeklyHours(date: string): number {
+    let hours = LEGAL_MAX_WEEKLY_HOURS[0].hours;
+    for (const tramo of LEGAL_MAX_WEEKLY_HOURS) {
+        if (date >= tramo.from) hours = tramo.hours;
+    }
+    return hours;
+}
+
+/** Último día del período (`YYYY-MM` o `YYYY-MM-DD` → `YYYY-MM-DD`). */
+export function endOfPeriod(period: string): string {
+    const m = /^(\d{4})-(\d{2})/.exec(period || '');
+    if (!m) return period;
+    // Día 0 del mes siguiente = último del mes pedido (el mes va 1-indexed acá y
+    // 0-indexed en Date.UTC, así que pasarlo tal cual ya apunta al siguiente).
+    const last = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
+    return `${m[1]}-${m[2]}-${String(last).padStart(2, '0')}`;
+}
+
 // ── Entradas ────────────────────────────────────────────────────────────────
 
 export interface PayrollEarning {
@@ -96,6 +135,10 @@ export interface PayrollInput {
     otherDeductions?: PayrollEarning[];
     /** Valor de la hora extra pactado, si difiere del legal. */
     overtimeHourValue?: number | null;
+    /** Mes liquidado (`YYYY-MM` o `YYYY-MM-DD`). Opcional y usado SOLO para
+     *  advertencias normativas con fecha —hoy, la jornada máxima legal—: ningún
+     *  monto depende de él, así que omitirlo no cambia el cálculo. */
+    periodMonth?: string | null;
 }
 
 // ── Salida ──────────────────────────────────────────────────────────────────
@@ -132,7 +175,10 @@ export interface PayrollResult {
     totalDeductions: number;
     netPay: number;
     // Costo empleador (insumo de F4: el costo REAL que reemplaza la estimación)
+    /** SIS cuando se cotiza por separado. 0 desde ago-2026: va dentro del aporte. */
     employerSis: number;
+    /** Aporte previsional de cargo del empleador (Ley 21.735). */
+    employerPension: number;
     employerUnemployment: number;
     employerCost: number;
     /** Datos incompletos o supuestos que el usuario debe ver. No son errores:
@@ -208,14 +254,25 @@ export function overtimeHourValue(
  * La base NUNCA se incluye a sí misma (ADR-008 §1): con base `imponible` es
  * sueldo proporcional + extras + haberes imponibles, y la gratificación se suma
  * después. Incluirla haría que el resultado dependiera del orden de evaluación.
+ *
+ * ⚠️ El IMM del tope NO es el sueldo mínimo del mes (ADR-011). La Dirección del
+ * Trabajo lo determina con el ingreso mínimo vigente al 31 de DICIEMBRE del
+ * ejercicio comercial, porque es ahí donde se cierra el ejercicio y se determinan
+ * las utilidades: durante todo 2026 son $529.000, aunque el sueldo mínimo del mes
+ * ya vaya en $553.553. Usar el del mes inflaría el tope y pagaría de más.
+ * `minimumWage` queda como respaldo solo para paramétricas anteriores a la
+ * separación de los campos.
  */
 export function gratificationAmount(
     base: number,
-    params: Pick<PayrollParameters, 'gratificationRate' | 'gratificationCapImm' | 'minimumWage'>,
+    params: Pick<PayrollParameters, 'gratificationRate' | 'gratificationCapImm' | 'minimumWage' | 'gratificationImm'>,
 ): number {
     if (!Number.isFinite(base) || base <= 0) return 0;
     const raw = base * (params.gratificationRate / 100);
-    const monthlyCap = (params.gratificationCapImm * params.minimumWage) / 12;
+    const imm = params.gratificationImm && params.gratificationImm > 0
+        ? params.gratificationImm
+        : params.minimumWage;
+    const monthlyCap = (params.gratificationCapImm * imm) / 12;
     return round(Math.min(raw, monthlyCap));
 }
 
@@ -352,6 +409,21 @@ export function calculatePayroll(input: PayrollInput): PayrollResult {
     if (contract.healthSystem === 'isapre' && !contract.healthPlanUf)
         warnings.push('Isapre sin plan en UF: se cotizó solo el 7% legal.');
 
+    // Jornada sobre el máximo legal: no altera ningún monto —manda lo pactado—
+    // pero abarata la hora extra, así que el usuario tiene que verlo. Se evalúa
+    // con el ÚLTIMO día del período: la jornada bajó el 26 de abril, a mitad de
+    // mes, y avisar por abril completo sería un falso positivo.
+    if (input.periodMonth) {
+        const finDePeriodo = endOfPeriod(input.periodMonth);
+        const maxLegal = legalMaxWeeklyHours(finDePeriodo);
+        if (contract.weeklyHours > maxLegal) {
+            warnings.push(
+                `La jornada del contrato (${contract.weeklyHours} h) supera el máximo legal vigente (${maxLegal} h): `
+                + 'la hora extra queda por debajo de lo que corresponde. Requiere anexo de contrato.',
+            );
+        }
+    }
+
     // ── 1-3. Haberes imponibles del período
     const baseSalaryEarned = earnedBaseSalary(contract.baseSalary, contract.salaryMode, attendance.workedDays);
 
@@ -408,9 +480,27 @@ export function calculatePayroll(input: PayrollInput): PayrollResult {
     if (netPay < 0) warnings.push('El líquido resultó negativo: revisa anticipos y otros descuentos.');
 
     // Costo empresa: insumo del reemplazo de la estimación del ledger en F4.
-    // El SIS lo paga el EMPLEADOR (por eso no está en los descuentos).
-    const employerSis = afp?.sisRate ? round(cappedTaxableBase * (afp.sisRate / 100)) : 0;
-    const employerCost = totalEarnings + employerSis + afc.employer;
+    // Nada de esto se le descuenta al trabajador (no aparece en su liquidación),
+    // pero es plata que sale de la empresa y por eso alimenta el margen por
+    // contrato y la desviación de presupuesto de personal.
+    //
+    // Dos cotizaciones distintas que se suman hasta jul-2026, y desde ago-2026
+    // una sola: la reforma previsional (Ley 21.735) subió el aporte del empleador
+    // de 1% a 3,5% ABSORBIENDO al SIS —el patronal es 3,5%, no 3,5% + 1,62%—, y
+    // seguirá subiendo hasta 8,5% en 2033. Por eso vienen de la paramétrica
+    // versionada y no de una constante.
+    //
+    // Respaldo al SIS del catálogo de AFP solo para paramétricas anteriores a
+    // ADR-011: sin él, una versión vieja dejaría el costo empresa en 0 —y un cero
+    // silencioso en el ledger es justo el error que no queremos.
+    const paramSisRate = Number(parameters.employerSisRate) || 0;
+    const paramPensionRate = Number(parameters.employerPensionRate) || 0;
+    const sinParametrica = paramSisRate <= 0 && paramPensionRate <= 0;
+    const sisRate = sinParametrica ? (Number(afp?.sisRate) || 0) : paramSisRate;
+
+    const employerSis = round(cappedTaxableBase * (sisRate / 100));
+    const employerPension = round(cappedTaxableBase * (paramPensionRate / 100));
+    const employerCost = totalEarnings + employerSis + employerPension + afc.employer;
 
     return {
         baseSalaryEarned,
@@ -443,6 +533,7 @@ export function calculatePayroll(input: PayrollInput): PayrollResult {
         totalDeductions,
         netPay,
         employerSis,
+        employerPension,
         employerUnemployment: afc.employer,
         employerCost,
         warnings,

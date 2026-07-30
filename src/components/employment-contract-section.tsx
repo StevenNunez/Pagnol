@@ -27,6 +27,7 @@ import {
 import { useToast } from '@/modules/core/hooks/use-toast';
 import type {
     EmploymentContract, AfpRate, EmploymentContractType, SalaryMode, HealthSystem,
+    GratificationBase,
 } from '@/modules/core/lib/data';
 import { FileSignature, PlusCircle, Loader2, History, AlertTriangle } from 'lucide-react';
 
@@ -66,6 +67,7 @@ export function EmploymentContractSection({ userId, canEdit }: { userId: string;
         healthPlanUf: string;
         familyCharges: string;
         hasGratification: boolean;
+        gratificationBase: GratificationBase;
         notes: string;
     }
     const empty: FormState = {
@@ -81,6 +83,7 @@ export function EmploymentContractSection({ userId, canEdit }: { userId: string;
         healthPlanUf: '',
         familyCharges: '0',
         hasGratification: true,
+        gratificationBase: 'imponible',
         notes: '',
     };
     const [form, setForm] = useState<FormState>(empty);
@@ -119,6 +122,7 @@ export function EmploymentContractSection({ userId, canEdit }: { userId: string;
                 healthPlanUf: form.healthSystem === 'isapre' ? Number(form.healthPlanUf) : null,
                 familyCharges: Number(form.familyCharges) || 0,
                 hasGratification: form.hasGratification,
+                gratificationBase: form.gratificationBase,
                 notes: form.notes || null,
             });
             toast({
@@ -275,6 +279,18 @@ export function EmploymentContractSection({ userId, canEdit }: { userId: string;
                                 <option value="no">No aplica</option>
                             </select>
                         </Field>
+                        {form.hasGratification && (
+                            <Field label="Base de la gratificación">
+                                <select value={form.gratificationBase} onChange={(e) => setForm({ ...form, gratificationBase: e.target.value as GratificationBase })}
+                                    className="h-11 w-full rounded-xl border bg-background px-3 text-sm">
+                                    <option value="imponible">Total imponible (sueldo + extras + bonos)</option>
+                                    <option value="sueldo_base">Solo sueldo base</option>
+                                </select>
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                    Lo pactado en este contrato. Solo cambia el monto mientras el 25% no llegue al tope.
+                                </p>
+                            </Field>
+                        )}
                         <Field label="Notas" full>
                             <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="rounded-xl" placeholder="Ej: anexo por reajuste anual" />
                         </Field>

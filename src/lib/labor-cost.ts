@@ -10,7 +10,9 @@ import {
     type LaborDayLog,
     type LaborLiveEntry,
 } from '@/modules/data/mutations/financeMath';
-import { fetchClosedMonths, splitByClosedPeriod } from './finance-periods';
+import {
+    fetchClosedMonths, splitByClosedPeriod, fetchLiquidatedMonths, splitByLiquidatedMonth,
+} from './finance-periods';
 
 // Materializador del costo de mano de obra (Dominio Financiero F1 — ADR-003).
 //
@@ -41,6 +43,11 @@ export interface LaborMaterializeStats {
      *  panel los muestra hasta que alguien reabra el período o los asuma. */
     blocked: number;
     blockedMonths: string[]; // 'YYYY-MM' afectados, para el mensaje de la UI
+    /** Días-persona que NO se emitieron porque su mes ya tiene planilla cerrada:
+     *  ese costo de personal es el REAL y re-emitir la estimación lo duplicaría
+     *  (F4 / ADR-010). No es un error — es el reemplazo funcionando. */
+    skippedLiquidated: number;
+    liquidatedMonths: string[];
 }
 
 /** Hoy en America/Santiago (nunca se materializa un día aún abierto). */
@@ -204,12 +211,21 @@ export async function materializeLaborForTenant(
         }
     }
 
+    // 🔴 Meses ya liquidados (F4 / ADR-010): su costo de personal es el REAL de la
+    // planilla cerrada. Re-emitir acá la estimación lo duplicaría y el margen por
+    // contrato mentiría todos los días. Pasa justo con el mes recién cerrado, que
+    // sigue dentro de la ventana de 35 días — el caso normal, no el borde.
+    // Se filtra por el día trabajado (sufijo del source_id), no por entry_date.
+    const liquidatedMonths = await fetchLiquidatedMonths(admin, tenant.id);
+    const { insertable: notLiquidated, skipped, skippedMonths } =
+        splitByLiquidatedMonth(rows, liquidatedMonths);
+
     // Cierre de período (F4.1): un hecho fechado en un mes cerrado sería
     // rechazado por el trigger y, como el INSERT va en lotes, tumbaría el lote
     // entero. Se apartan ANTES y se reportan — no se pierden en silencio ni
     // bloquean al resto (decisión D1 del RFC-002-F4-Plan).
     const closedMonths = await fetchClosedMonths(admin, tenant.id);
-    const { insertable, blocked, blockedMonths } = splitByClosedPeriod(rows, closedMonths);
+    const { insertable, blocked, blockedMonths } = splitByClosedPeriod(notLiquidated, closedMonths);
 
     const BATCH = 500;
     for (let i = 0; i < insertable.length; i += BATCH) {
@@ -227,5 +243,7 @@ export async function materializeLaborForTenant(
         noContractDays,
         blocked: blocked.length,
         blockedMonths,
+        skippedLiquidated: skipped.length,
+        liquidatedMonths: skippedMonths,
     };
 }

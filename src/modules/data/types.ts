@@ -7,6 +7,9 @@ import {
   FinanceBudgetEntry,
   FinancePeriodEvent,
   EmploymentContract,
+  PayrollRun,
+  PayrollParameters,
+  AfpRate,
   MaterialRequest,
   ReturnRequest,
   PurchaseRequest,
@@ -77,6 +80,8 @@ import {
   WorkOrder,
   WorkWeeklyReport,
 } from '../core/lib/data';
+import type { PayrollProposal, PayrollLineInput } from './mutations/payrollRunMutations';
+import type { PayrollResult } from './mutations/payrollMath';
 import { ROLES as ROLES_DEFAULT, Permission, PLANS } from '@/modules/core/lib/permissions';
 
 export interface AppDataState {
@@ -233,6 +238,23 @@ export interface AppStateContextType extends AppDataState {
   annulPaymentState: (id: string, reason: string) => Promise<void>;
   addBudgetEntry: (data: { contractId: string; category: Exclude<FinanceCategory, 'revenue'>; amountNet: number; reason: string }) => Promise<FinanceBudgetEntry>;
   addEmploymentContract: (data: Omit<EmploymentContract, 'id' | 'tenantId' | 'createdBy' | 'createdByName' | 'createdAt'>) => Promise<EmploymentContract>;
+  // Remuneraciones F3 — planilla persistente (ADR-009)
+  proposePayrollLines: (month: string) => Promise<PayrollProposal>;
+  createPayrollRun: (month: string) => Promise<PayrollRun>;
+  savePayrollDraft: (
+    runId: string,
+    input: {
+      lines: PayrollLineInput[];
+      parameters: PayrollParameters;
+      afps: AfpRate[];
+      contracts: Record<string, EmploymentContract | null>;
+      ufValue: number;
+      utmValue: number;
+    },
+  ) => Promise<{ run: PayrollRun; results: Record<string, PayrollResult> }>;
+  closePayrollRun: (runId: string, parameters: PayrollParameters) => Promise<PayrollRun>;
+  markPayrollRunPaid: (runId: string, paymentDate: string) => Promise<PayrollRun>;
+  deletePayrollRun: (runId: string) => Promise<void>;
   closePeriod: (data: { month: string; reason?: string }) => Promise<FinancePeriodEvent>;
   reopenPeriod: (data: { month: string; reason: string }) => Promise<FinancePeriodEvent>;
 

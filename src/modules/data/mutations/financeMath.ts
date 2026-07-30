@@ -274,7 +274,11 @@ export function budgetExecutionPct(accrued: number, budget: number): number | nu
  * Si se agrega un emisor nuevo, esta lista decide si su costo consume
  * presupuesto — revísala al escribir el emisor (addendum a ADR-005).
  */
-export const UNCOMMITTED_SOURCES = ['labor_day', 'material_request', 'stock_transfer'] as const;
+// `payroll_run` se suma en F4 de remuneraciones (ADR-010): el costo real de la
+// planilla nace DEVENGADO, sin compromiso previo, igual que labor_day. Sin esto el
+// presupuesto volvería a mostrar "ejecutado" junto a "100% disponible" para el
+// mayor costo de una faena — el bug que destapó el E2E de F3.
+export const UNCOMMITTED_SOURCES = ['labor_day', 'material_request', 'stock_transfer', 'payroll_run'] as const;
 
 /**
  * Cuánto presupuesto consume realmente la ejecución de un contrato/categoría.

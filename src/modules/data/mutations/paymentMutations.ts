@@ -233,8 +233,12 @@ export async function addSalaryAdvanceRequest(
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
+  // La columna de la base es `user_id`, no `worker_id`: escribir el segundo
+  // hacía fallar TODA solicitud de anticipo con PGRST204 (drift #6, reparado en
+  // la migración 20260730010000). El tipo TS la expone como `workerId`, que es
+  // justo lo que enmascaró el bug.
   const { error } = await supabase.from('salary_advances').insert({
-    worker_id: data.workerId,
+    user_id: data.workerId,
     worker_name: data.workerName,
     amount: data.amount,
     status: 'pending',

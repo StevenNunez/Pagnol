@@ -142,6 +142,10 @@ export type EmploymentContractType = 'indefinido' | 'plazo_fijo' | 'por_obra';
 /** Dotación mixta: administrativos mensual, terreno por día trabajado. */
 export type SalaryMode = 'monthly' | 'daily';
 export type HealthSystem = 'fonasa' | 'isapre';
+/** Base del 25% del art. 50, pactada por contrato (ADR-008). `imponible` =
+ *  sueldo proporcional + extras + haberes imponibles (sin incluirse a sí misma);
+ *  `sueldo_base` = solo el sueldo proporcional. */
+export type GratificationBase = 'imponible' | 'sueldo_base';
 
 export interface EmploymentContract {
     id: string;
@@ -165,6 +169,8 @@ export interface EmploymentContract {
     healthPlanUf?: number | null;
     familyCharges: number;
     hasGratification: boolean;
+    /** Sobre qué base se aplica el 25% del art. 50 (ADR-008). */
+    gratificationBase: GratificationBase;
     notes?: string | null;
     createdBy?: string | null;
     createdByName?: string | null;
@@ -204,6 +210,79 @@ export interface PayrollParameters {
     familyAllowanceBrackets: FamilyAllowanceBracket[];
     incomeTaxBrackets: IncomeTaxBracket[];
     notes?: string | null;
+}
+
+// ─── Remuneraciones F3: planilla persistente (ADR-009) ───────────────────────
+// borrador → cerrada → pagada. Cerrada congela el snapshot (Art. 2): corregir es
+// una planilla nueva. Pagada es la transición que emitirá el hecho `paid` en F4.
+
+export type PayrollRunStatus = 'borrador' | 'cerrada' | 'pagada';
+
+export interface PayrollRun {
+    id: string;
+    tenantId: string;
+    /** Primer día del mes liquidado. */
+    periodMonth: string;
+    status: PayrollRunStatus;
+    /** Paramétrica usada, copiada al cerrar. */
+    parametersSnapshot?: PayrollParameters | null;
+    ufValue?: number | null;
+    utmValue?: number | null;
+    totalTaxable: number;
+    totalEarnings: number;
+    totalDeductions: number;
+    totalNet: number;
+    /** Costo empresa (incluye SIS y AFC del empleador): insumo del ledger en F4. */
+    totalEmployerCost: number;
+    workerCount: number;
+    closedAt?: string | null;
+    closedBy?: string | null;
+    closedByName?: string | null;
+    paidAt?: string | null;
+    /** Fecha de pago real, la que verá el flujo de caja. */
+    paymentDate?: string | null;
+    paidBy?: string | null;
+    paidByName?: string | null;
+    notes?: string | null;
+    createdBy?: string | null;
+    createdByName?: string | null;
+    createdAt: string;
+}
+
+export interface PayrollLine {
+    id: string;
+    tenantId: string;
+    runId: string;
+    userId: string;
+    /** Congelado: si el perfil cambia, la liquidación emitida no miente. */
+    userName: string;
+    employmentContractId?: string | null;
+    workedDays: number;
+    overtimeHours: number;
+    baseSalaryEarned: number;
+    overtimeAmount: number;
+    gratification: number;
+    totalTaxable: number;
+    familyAllowance: number;
+    totalNonTaxable: number;
+    totalEarnings: number;
+    pensionAmount: number;
+    pensionCommission: number;
+    healthAmount: number;
+    healthAdditional: number;
+    unemploymentAmount: number;
+    incomeTax: number;
+    advancesAmount: number;
+    totalDeductions: number;
+    netPay: number;
+    employerSis: number;
+    employerUnemployment: number;
+    employerCost: number;
+    /** Entrada exacta del motor: permite reproducir el cálculo tal como se emitió. */
+    inputSnapshot?: any;
+    resultSnapshot?: any;
+    warnings?: string[];
+    createdAt: string;
 }
 
 export type HRDocumentType = 'contract' | 'certificate' | 'license' | 'exam' | 'other';

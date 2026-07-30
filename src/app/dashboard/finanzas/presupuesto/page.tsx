@@ -15,7 +15,8 @@ import { useAuth, useAppState } from "@/modules/core/contexts/app-provider";
 import { supabase } from "@/modules/core/lib/supabase";
 import { fetchBudgetEntries } from "@/modules/data/mutations/budgetMutations";
 import { budgetRollup, budgetExecutionPct, budgetConsumption } from "@/modules/data/mutations/financeMath";
-import { Card, CardContent } from "@/components/ui/card";
+import { budgetDeviation } from "@/modules/data/mutations/payrollLedgerMath";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,7 +28,7 @@ import { useToast } from "@/modules/core/hooks/use-toast";
 import type { FinanceBudgetEntry, FinanceCategory, FinanceContractSummaryRow } from "@/modules/core/lib/data";
 import {
     ArrowLeft, ChevronDown, ChevronRight, ClipboardList, FileUp, Loader2,
-    PlusCircle, ShieldAlert, History,
+    PlusCircle, ShieldAlert, History, TrendingUp, TrendingDown,
 } from "lucide-react";
 
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
@@ -238,6 +239,91 @@ export default function PresupuestoPage() {
                 </>
             }
         >
+            {/* Gastos de personal: la desviación en lenguaje directo (F4 / ADR-010).
+                El presupuesto de planilla se carga HOLGADO a propósito, así que lo
+                útil no es el % de ejecución sino la diferencia con signo, dicha en
+                castellano. Va arriba porque es la pregunta que se hace primero. */}
+            {(() => {
+                const labor = rows.reduce(
+                    (acc, r) => {
+                        const cat = r.cats.find((c) => c.category === "labor");
+                        return {
+                            budget: acc.budget + (cat?.budget || 0),
+                            actual: acc.actual + (cat?.real.consumed || 0),
+                        };
+                    },
+                    { budget: 0, actual: 0 },
+                );
+                const dev = budgetDeviation(labor.budget, labor.actual);
+                if (!dev.hasBudget && !dev.actual) return null;
+
+                const tone = !dev.hasBudget
+                    ? "border-border"
+                    : dev.direction === "exceso"
+                        ? "border-destructive/40 bg-destructive/5"
+                        : "border-success/40 bg-success-subtle";
+                const Icon = dev.direction === "exceso" ? TrendingUp : TrendingDown;
+
+                // Detalle por contrato, solo los que tienen algo que decir
+                const detalle = rows
+                    .map((r) => {
+                        const cat = r.cats.find((c) => c.category === "labor");
+                        return { name: r.name, dev: budgetDeviation(cat?.budget || 0, cat?.real.consumed || 0) };
+                    })
+                    .filter((d) => d.dev.hasBudget || d.dev.actual > 0);
+
+                return (
+                    <Card className={`rounded-[1.5rem] ${tone}`}>
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base">Gastos de personal</CardTitle>
+                            <CardDescription>
+                                Presupuesto de mano de obra vs lo que realmente costó, según las
+                                planillas cerradas y la estimación de los meses aún sin liquidar.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex flex-wrap items-end gap-8">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Presupuestado</p>
+                                    <p className="text-2xl font-bold">{dev.hasBudget ? CLP.format(dev.budget) : "—"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Gasto real</p>
+                                    <p className="text-2xl font-bold">{CLP.format(dev.actual)}</p>
+                                </div>
+                                {dev.hasBudget && (
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Diferencia</p>
+                                        <p className={`flex items-center gap-2 text-2xl font-bold ${dev.direction === "exceso" ? "text-destructive" : "text-success-subtle-foreground"}`}>
+                                            <Icon className="h-5 w-5" />
+                                            {CLP.format(dev.magnitude)}
+                                            <span className="text-sm font-medium">({Math.abs(dev.pct)}%)</span>
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                            <p className={`text-sm font-medium ${dev.direction === "exceso" ? "text-destructive" : ""}`}>
+                                {dev.message}
+                            </p>
+                            {detalle.length > 1 && (
+                                <div className="space-y-1 border-t pt-3">
+                                    {detalle.map((d) => (
+                                        <div key={d.name} className="flex justify-between text-xs">
+                                            <span className="text-muted-foreground">{d.name}</span>
+                                            <span className={d.dev.direction === "exceso" ? "text-destructive font-medium" : ""}>
+                                                {d.dev.hasBudget
+                                                    ? `${d.dev.direction === "exceso" ? "+" : "−"}${CLP.format(d.dev.magnitude)}`
+                                                    : `${CLP.format(d.dev.actual)} sin presupuesto`}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                );
+            })()}
+
             <Card className="rounded-[1.5rem]">
                 <CardContent className="p-0">
                     {loading ? (

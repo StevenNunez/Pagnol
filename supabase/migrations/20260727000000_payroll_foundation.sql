@@ -138,7 +138,35 @@ INSERT INTO public.payroll_parameters (
     'Semilla inicial F1 — VALORES DE REFERENCIA, verificar contra normativa vigente antes de emitir liquidaciones reales.'
 ) ON CONFLICT (effective_from) DO NOTHING;
 
--- ── 4. Contrato laboral ──────────────────────────────────────────────────────
+-- ── 4. Quién administra RRHH ─────────────────────────────────────────────────
+-- Misma cadena que can(): super-admin → bypass admin/soporte → permiso otorgado
+-- en el perfil → fila de rol por tenant. `hr_employees:edit` ya existe y lo trae
+-- el rol recursos-humanos por defecto (ROLES_DEFAULT), por eso se incluye la
+-- rama del rol.
+--
+-- ⚠️ VA ANTES de employment_contracts A PROPÓSITO: las políticas RLS de esa
+-- tabla la invocan, y Postgres exige que la función exista al crear la política.
+-- Definirla después aborta la migración completa (el editor SQL corre todo en
+-- una transacción, así que un error tardío revierte hasta las tablas).
+CREATE OR REPLACE FUNCTION public.can_manage_hr()
+RETURNS boolean AS $$
+  SELECT EXISTS(
+    SELECT 1
+    FROM public.profiles p
+    LEFT JOIN public.roles r
+      ON r.id = p.role AND r.tenant_id = p.tenant_id
+    WHERE p.id = auth.uid()
+      AND (
+            p.role IN ('super-admin', 'administrador', 'soporte-pagnol', 'recursos-humanos')
+         OR to_jsonb(p.granted_permissions) ? 'hr_employees:edit'
+         OR to_jsonb(r.permissions)         ? 'hr_employees:edit'
+      )
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+ALTER FUNCTION public.can_manage_hr() SET search_path = public, extensions;
+GRANT EXECUTE ON FUNCTION public.can_manage_hr() TO authenticated;
+
+-- ── 5. Contrato laboral ──────────────────────────────────────────────────────
 -- ⚠️ VOCABULARIO: en Pagnol `contracts` son CONTRATOS DE OBRA con el cliente y
 -- `contract_workers` asigna trabajadores a esas obras. Esta tabla es el
 -- CONTRATO LABORAL del trabajador — cosa distinta. Por eso el nombre explícito
@@ -220,33 +248,25 @@ WITH CHECK (
 -- Art. 2: sin UPDATE/DELETE. Corregir un contrato = anexo con nueva vigencia.
 GRANT SELECT, INSERT ON public.employment_contracts TO authenticated;
 
--- ── 5. Quién administra RRHH ─────────────────────────────────────────────────
--- Misma cadena que can(): super-admin → bypass admin/soporte → permiso otorgado
--- en el perfil → fila de rol por tenant. `hr_employees:edit` ya existe y lo trae
--- el rol recursos-humanos por defecto (ROLES_DEFAULT), por eso se incluye la
--- rama del rol.
-CREATE OR REPLACE FUNCTION public.can_manage_hr()
-RETURNS boolean AS $$
-  SELECT EXISTS(
-    SELECT 1
-    FROM public.profiles p
-    LEFT JOIN public.roles r
-      ON r.id = p.role AND r.tenant_id = p.tenant_id
-    WHERE p.id = auth.uid()
-      AND (
-            p.role IN ('super-admin', 'administrador', 'soporte-pagnol', 'recursos-humanos')
-         OR to_jsonb(p.granted_permissions) ? 'hr_employees:edit'
-         OR to_jsonb(r.permissions)         ? 'hr_employees:edit'
-      )
-  );
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
-ALTER FUNCTION public.can_manage_hr() SET search_path = public, extensions;
-GRANT EXECUTE ON FUNCTION public.can_manage_hr() TO authenticated;
-
 -- ── 6. Contrato vigente de un trabajador en una fecha ────────────────────────
 -- La regla "el de mayor effective_from <= fecha" en un solo lugar: la usarán el
 -- motor de cálculo (F2), la planilla (F3) y la UI. Duplicarla es pedir que
 -- diverjan.
+--
+-- ⚠️ SECURITY INVOKER (el default) A PROPÓSITO, no por omisión.
+-- Esta función devuelve la FILA COMPLETA del contrato —sueldo, AFP, plan de
+-- salud, cargas— indexada por un `p_user` que elige quien llama. Con
+-- SECURITY DEFINER habría puenteado la política de SELECT de más arriba y
+-- cualquier usuario autenticado podría haber leído el sueldo de otro: los uuid
+-- de perfiles del propio tenant son visibles para todo miembro
+-- (`profiles_select_tenant`), así que bastaba con pasar el id de un compañero.
+--
+-- Como INVOKER, la RLS de la tabla se aplica y la respuesta ya está acotada a
+-- "el propio contrato, o cualquiera del tenant si can_manage_hr()". La regla de
+-- acceso vive en UN solo lugar (la política), no replicada acá.
+--
+-- El motor de F2 no pierde nada: corre server-side con service role, que hace
+-- bypass de RLS por su cuenta.
 CREATE OR REPLACE FUNCTION public.employment_contract_at(p_user uuid, p_date date)
 RETURNS public.employment_contracts AS $$
   SELECT *
@@ -255,7 +275,7 @@ RETURNS public.employment_contracts AS $$
      AND effective_from <= p_date
    ORDER BY effective_from DESC
    LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$ LANGUAGE sql STABLE;
 ALTER FUNCTION public.employment_contract_at(uuid, date) SET search_path = public, extensions;
 GRANT EXECUTE ON FUNCTION public.employment_contract_at(uuid, date) TO authenticated;
 

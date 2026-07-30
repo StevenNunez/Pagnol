@@ -37,6 +37,7 @@ import * as paymentStateMutations from './mutations/paymentStateMutations';
 import * as budgetMutations from './mutations/budgetMutations';
 import * as periodMutations from './mutations/periodMutations';
 import * as payrollMutations from './mutations/payrollMutations';
+import * as payrollRunMutations from './mutations/payrollRunMutations';
 import * as rfqMutations from './mutations/rfqMutations';
 import * as receptionMutations from './mutations/receptionMutations';
 import * as costCenterMutations from './mutations/costCenterMutations';
@@ -545,6 +546,13 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         annulPaymentState: bindContext(paymentStateMutations.annulPaymentState),
         addBudgetEntry: bindContext(budgetMutations.addBudgetEntry),
         addEmploymentContract: bindContext(payrollMutations.addEmploymentContract),
+        // Remuneraciones F3 — planilla persistente (ADR-009)
+        proposePayrollLines: bindContext(payrollRunMutations.proposePayrollLines),
+        createPayrollRun: bindContext(payrollRunMutations.createPayrollRun),
+        savePayrollDraft: bindContext(payrollRunMutations.savePayrollDraft),
+        closePayrollRun: bindContext(payrollRunMutations.closePayrollRun),
+        markPayrollRunPaid: bindContext(payrollRunMutations.markPayrollRunPaid),
+        deletePayrollRun: bindContext(payrollRunMutations.deletePayrollRun),
         closePeriod: bindContext(periodMutations.closePeriod),
         reopenPeriod: bindContext(periodMutations.reopenPeriod),
 

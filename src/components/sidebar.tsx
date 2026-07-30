@@ -223,6 +223,9 @@ const getRrhhNavItems = (can: (p: Permission) => boolean) => [
   ...(can('hr_employees:view') ? [
     { href: '/dashboard/rrhh/empleados', icon: Users, label: 'Ficha de Empleados' },
   ] : []),
+  ...(can('hr_employees:edit') ? [
+    { href: '/dashboard/rrhh/remuneraciones', icon: Wallet, label: 'Remuneraciones' },
+  ] : []),
   ...(can('contracts:manage') ? [
     { href: '/dashboard/rrhh/contratos', icon: Briefcase, label: 'Contratos' },
   ] : []),

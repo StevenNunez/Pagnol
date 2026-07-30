@@ -20,7 +20,15 @@ Cambios en el árbol de trabajo, aún sin commit/push.
 
 ### Agregado — Remuneraciones F1: fundación de datos (RFC-003)
 
-**Migración `20260727000000_payroll_foundation.sql` — PENDIENTE DE APLICAR.**
+**Migración `20260727000000_payroll_foundation.sql` — APLICADA (2026-07-29).**
+
+**Verificado E2E 56/56 (tenant DEMO, mutaciones reales).** Cubrió: la regla de vigencia en 7
+fechas incluidos los bordes exactos, comparando `contractAt` (TS) contra
+`employment_contract_at` (SQL) para que la duplicación no diverja · los 5 guards de la
+mutación más los CHECK de la base saltándose la mutación · Art. 1 (aislamiento por tenant),
+Art. 2 (UPDATE/DELETE rechazados) y Art. 5 (autoría) · la **regresión del fix de seguridad**
+con un usuario rol `operador` real · catálogos y paramétrica resueltos por fecha · la serie
+UTM llegando de verdad por el cron (31 tasas, UTM de julio $71.649).
 
 Hasta ahora "remuneraciones" era una calculadora: el sueldo se **digitaba a mano** aunque
 `profiles.base_salary` existiera, `afp` era texto libre (convivían `'Habitat'`, `''` y
@@ -46,7 +54,8 @@ debería ser dinámico). Esta fase crea la materia prima; **el motor de cálculo
   UF de F0 en vez de crear otro: es el mismo proveedor y el mismo patrón. **Si la UTM falla,
   la UF igual se actualiza** — sostiene arriendos y topes que ya están en producción.
 - **`can_manage_hr()`** con la misma cadena que `can()`, y **`employment_contract_at()`**
-  para que la regla "el vigente en una fecha" exista en un solo lugar.
+  para que la regla "el vigente en una fecha" exista en un solo lugar (con `SECURITY
+  INVOKER`, ver Seguridad más abajo).
 - UI dentro del `UserPanel` (superficie única de edición): estado del contrato vigente,
   alta de anexos con **selector de AFP** en vez de texto libre, e historial de versiones.
 
@@ -54,6 +63,280 @@ debería ser dinámico). Esta fase crea la materia prima; **el motor de cálculo
 la normativa vigente antes de emitir liquidaciones reales.** Están versionados justamente
 para corregirlos sin tocar código. Los campos legacy de `profiles` se conservan intactos:
 el costo de MO del ledger los sigue usando y romperlos dejaría la asistencia sin devengar.
+
+### Agregado — Remuneraciones F2: motor de liquidación (RFC-003 / ADR-008)
+
+**Migración `20260729000000_payroll_gratification_base.sql` — APLICADA (2026-07-29).**
+`payrollMath.ts` puro y testeado (57 tests; 129 en total), patrón `financeMath.ts`.
+
+Reemplaza la aritmética de `attendance/monthly-report`, que además de no persistir nada
+tenía **conceptos legales ausentes** —tope imponible, impuesto único, asignación familiar,
+AFC diferenciado por tipo de contrato, plan de Isapre— y **errores en lo que sí calculaba**:
+`SUELDO_MINIMO = 460000` desactualizado alimentando el tope de gratificación, gratificación
+sobre sueldo base, jornada hardcodeada en `sueldo / 180`, y el 10% previsional mezclado con
+la comisión de AFP en un único porcentaje.
+
+- **Las ausencias descuentan.** Era el error más caro de la calculadora: `absentDays` se
+  calculaba, se pintaba en rojo en pantalla y no entraba al cálculo — el sueldo se pagaba
+  íntegro. El motor proporcionaliza con **el criterio del ledger** (marcas P/ATR/MJ, divisor
+  30) para que la desviación que F4 va a medir sea plata y no diferencia de criterio.
+- **Base de la gratificación pactada por contrato** (`gratification_base`, decisión de
+  Steven): `imponible` o `sueldo_base`. Nunca se incluye a sí misma — sería circular.
+  Hallazgo de los tests: para sueldos altos la elección es indiferente porque manda el tope.
+- **Topes imponibles en UF**, con el suyo propio para el AFC (más alto que el de AFP/salud).
+- **Salud: el 7% es piso.** Con Isapre, si el plan en UF vale más, se cobra el plan y la
+  diferencia se muestra como "adicional".
+- **AFC según tipo de contrato**: a plazo fijo y por obra el trabajador **no** aporta — la
+  calculadora anterior le descontaba 0,6% igual.
+- **Impuesto único** por tramos en UTM, calculado sobre la renta **menos** cotizaciones.
+- **Asignación familiar** por tramo y carga, tratada como **haber** no imponible.
+- **Costo empleador** (SIS + AFC de cargo del empleador) como salida propia: es el insumo
+  que en F4 reemplazará la estimación `sueldo/30 × 1,35` del ledger.
+- El motor recibe **UF y UTM ya resueltas**, no una fecha: liquidar marzo con las tasas de
+  marzo es responsabilidad de quien llama, y así los tests son reproducibles.
+
+### Agregado — Remuneraciones F4: el costo real reemplaza la estimación (RFC-003 / ADR-010)
+
+**Migración `20260731000000_payroll_ledger_f4.sql` — APLICADA (2026-07-29).**
+**Verificado E2E 34/34** (tenant DEMO, mutaciones reales + el cron de MO de verdad).
+
+Es la fase que entrega el requisito que ordenaba la iniciativa: leer *"en gastos de personal
+este mes te ahorraste $150.000"*. Hasta ahora el ledger devengaba una **estimación**
+(`labor_day` = sueldo/30 × 1,35) y la planilla real de F3 no llegaba al dominio financiero: la
+desviación comparaba el presupuesto contra un proxy.
+
+- **Al cerrar la planilla**, la estimación del mes se reversa y la reemplaza el **costo empresa
+  real** (haberes + SIS + AFC del empleador), imputado a cada obra **en la misma proporción de
+  días** que tenía la estimación. Verificado con 12 días en una obra y 8 en otra: 60/40 exacto.
+- **El reemplazo es selectivo por trabajador**: quien no entró en la planilla conserva su
+  estimación, porque no se le calculó un costo real que se le pueda asignar.
+- Los hechos se fechan en el **último día del mes liquidado**, no hoy — si no, el margen mensual
+  mentiría en dos meses a la vez. De ahí el guard: `finance_reverse_labor_month` rechaza un mes
+  contablemente cerrado, y `finance_period_precheck` gana un chequeo que avisa de planillas sin
+  cerrar para que el orden correcto (planilla → período) sea el evidente.
+- **Ciclo de caja completo**: al cerrar nace un `payable` por el desembolso total; al pagar se
+  apaga por reverso y nace el `paid` fechado en la fecha de pago real. El `payable` va sin
+  vencimiento, igual que los EP en F4.2 — al cerrar no hay fecha comprometida.
+- **`payroll_run` entra en `UNCOMMITTED_SOURCES`**: nace devengado, así que sin eso el
+  presupuesto volvería a mostrar "ejecutado" junto a "100% disponible" para el mayor costo de la
+  faena (el bug que destapó el E2E de F3).
+- **Desviación en `/finanzas/presupuesto`** con signo, color y frase en castellano, más el
+  desglose por contrato. Sin presupuesto cargado **no** inventa un 100% de ahorro: lo dice.
+
+### Corregido — 🔴 El cron de mano de obra habría duplicado el costo del mes liquidado
+
+Detectado al diseñar F4; no estaba en el RFC. `labor-cost.ts` reconcilia una **ventana móvil de
+35 días** y re-emite lo que falta. Cerrar la planilla de julio el 1 de agosto deja esos días
+dentro de la ventana: **el cron del día siguiente habría revivido la estimación** que el cierre
+acababa de apagar, dejando el mes con costo estimado *más* real y el margen por contrato
+mintiendo a diario. Y es el caso normal, no un borde: la planilla se cierra justo después del
+mes que liquida.
+
+Fix: `fetchLiquidatedMonths` + `splitByLiquidatedMonth` apartan esos días **antes** de armar el
+lote, reutilizando el patrón de `splitByClosedPeriod` (ADR-006) en vez de reaccionar al error —
+el INSERT va en lotes de 500 y una sola fila conflictiva abortaría la reconciliación completa
+del tenant. Se filtra por el **día trabajado** (sufijo del `source_id`), no por `entry_date`,
+porque un hecho reconciliado se emite en otra fecha. Verificado corriendo el cron tres veces
+después del cierre: la estimación siguió en cero.
+
+### Corregido — 🔴 Sin UF del período, el tope imponible quedaba desactivado
+
+Destapado por el E2E de F3. `uf_rates` solo cubre ~45 días hacia atrás (es lo que entrega
+mindicador.cl: la serie parte el 2026-06-16), así que **liquidar cualquier mes anterior dejaba
+`ufValue = 0`**. Con UF en 0, `taxableCap()` devuelve `Infinity` y el tope imponible **no se
+aplica**: AFP y salud se calculan sobre la renta completa en vez del tope.
+
+El error va en la dirección más costosa — **le descuenta de más al trabajador** — y afecta
+justamente a las rentas altas, que son las que topan. Un aviso no alcanza para eso.
+
+Dos correcciones: (1) si no hay UF del período se usa **la más antigua conocida** como
+aproximación y se declara explícitamente en los avisos, porque un tope aproximado (la UF se
+mueve del orden de 0,3% al mes) es infinitamente mejor que ningún tope; (2) **`closePayrollRun`
+rechaza cerrar sin UF**, porque una planilla cerrada es inmutable y emitiría liquidaciones que
+descuentan de más.
+
+### Corregido — 🔴 Drift #6: el módulo Wallet nunca funcionó
+
+**Migración `20260730010000_wallet_drift_repair.sql` — PENDIENTE DE APLICAR.**
+
+Descubierto al aplicar la migración de F3. El código de producción escribía y leía **cuatro
+columnas que no existen** en `salary_advances`:
+
+| Función | Columna inexistente | Efecto |
+|---|---|---|
+| `addSalaryAdvanceRequest` | `worker_id`, `worker_name` | pedir un anticipo fallaba con PGRST204 |
+| `approveSalaryAdvance` | `approver_name` | aprobar fallaba |
+| `rejectSalaryAdvance` | `approver_name`, `rejection_reason` | rechazar fallaba |
+| `mappers.salary_advances` | `worker_id` | `workerId` siempre `undefined` |
+
+El esquema real es `id, tenant_id, user_id, amount, reason, status, approver_id, requested_at,
+processed_at`. **Evidencia de que nunca funcionó: `salary_advances` tenía 0 filas en los cuatro
+tenants**, incluido producción. Sexto caso del mismo patrón de drift en este proyecto.
+
+Lo que enmascaró el bug: el tipo TypeScript expone la columna como `workerId`, así que el
+nombre `worker_id` parecía obvio — y `tsc` no valida nombres de columna. Es también cómo se
+colaba en mi propia migración de F3, que fue lo que lo destapó.
+
+**Criterio de reparación**: la **clave** la manda la base (se mantiene `user_id` y se adapta el
+código, porque es el nombre que usa el resto del esquema); los **nombres congelados** sí se
+agregan como columnas, porque son convención del proyecto (`contract_name`, `supplier_name`,
+`created_by_name`) y tienen valor real: si el perfil cambia luego, el anticipo aprobado no debe
+mentir sobre quién lo pidió ni quién lo autorizó. La tabla está vacía, así que no hay backfill.
+
+Verificado de paso que `behavior_observations` —el otro consumidor de `worker_id` en el
+código— **sí** tiene sus columnas: ese módulo está sano.
+
+### Agregado — Remuneraciones F3: planilla persistente (RFC-003 / ADR-009)
+
+**Migración `20260730000000_payroll_runs.sql` — APLICADA (2026-07-29), verificada 15/15
+incluidos los triggers de Art. 2.**
+
+Páginas nuevas: **`/dashboard/rrhh/remuneraciones`** (listado con líquido emitido y costo
+empresa) y **`/dashboard/rrhh/remuneraciones/[id]`** (armado del borrador con días, horas extra
+y anticipos precargados; cierre; marca de pago). Entrada en el sidebar de RRHH bajo
+`hr_employees:edit`.
+
+**PDF de liquidación** (`src/lib/liquidacion-pdf.ts`): replica la estructura del documento que
+el trabajador reconoce —HABERES AFECTOS / OTROS HABERES / ASIGNACIONES VARIAS / DESCUENTOS
+LEGALES, totales, monto en palabras, "Recibí Conforme"— y se dibuja **desde el snapshot**, no
+recalculando: el documento dice lo que se emitió aunque las tasas hayan cambiado después.
+Incluye `numero-a-palabras.ts` (10 tests) anclado contra los montos textuales de las
+liquidaciones reales. Verificado generando el PDF de febrero 2026: reproduce el documento al
+peso (totales 1.634.227 / 565.494, líquido 1.068.733).
+
+**Verificado E2E 45/45** (tenant DEMO, mutaciones reales con sesión de usuario y RLS activa):
+propuesta (contrato vigente, 20 días de 23 marcas porque las ausencias no devengan, anticipos
+precargados) · UNIQUE por mes con mensaje claro · cálculo y **recálculo idempotente** (una
+línea, no dos) · **el anticipo se amarra y deja de ofrecerse** · eliminar el borrador **lo
+libera** y vuelve a estar disponible · cierre congelando la paramétrica · Art. 2 vía
+mutaciones (recalcular, eliminar y cerrar dos veces: rechazados) · pago · plazo fijo sin AFC
+del trabajador · asignación familiar por cargas · Art. 1 aislamiento · RLS: un operador no ve
+la línea de otro ni las planillas ajenas.
+
+Hasta ahora la liquidación vivía en `useState` → PDF → se perdía (hallazgo 3 del RFC-003).
+
+- **`payroll_runs` + `payroll_lines`** con estados **borrador → cerrada → pagada** (decisión
+  de Steven). Cerrar congela el snapshot; `pagada` lleva fecha de pago real y es la transición
+  que emitirá el hecho `paid` al ledger en F4.
+- **Art. 2 garantizado por TRIGGER en la base**, no solo en el cliente: una planilla cerrada
+  no admite cambios de monto ni de período, solo el paso a pagada; solo los borradores se
+  eliminan; las líneas de una planilla no-borrador son intocables. Vale también para el
+  service role y para cualquier script — una liquidación emitida que se puede editar no es un
+  documento, es un borrador con otro nombre.
+- 🔴 **El doble descuento de anticipos pasa a ser imposible por esquema.**
+  `salary_advances` gana `payroll_line_id`: un anticipo con línea asignada no vuelve a
+  ofrecerse, y `ON DELETE SET NULL` lo libera solo si se elimina el borrador. Antes,
+  `SalaryAdvance` no tenía **ninguna** marca de haber sido descontado y un anticipo aprobado
+  el día 31 podía descontarse dos veces (hallazgo 2 del RFC-003). Se descartó filtrar por
+  rango de fechas justamente por eso.
+- **Haberes con prorrateo por días trabajados** (`prorate` por haber): reproduce las
+  liquidaciones reales, que prorratean movilización y colación (feb 30 días $69.920 → mar 16
+  días $37.291, exactamente ×16/30) pero **no** el desgaste de herramientas ni los bonos
+  ocasionales. Se captura el monto mensual y el sistema divide, en vez de pedir la división
+  hecha.
+- **`proposePayrollLines()` propone sin escribir**: resuelve contrato vigente, cuenta días con
+  el **criterio del ledger** (`laborDayPresence`, marcas P/ATR/MJ) y lista los anticipos
+  pendientes. Las horas extra quedan en 0 a propósito: requieren autorización, no salen de un
+  reloj — las tres liquidaciones reales muestran 27, 40 y 31 horas que alguien aprobó.
+- **Snapshot inmutable por línea** (entrada + resultado + avisos): la planilla no recalcula al
+  leerse, muestra lo que guardó. Recalcular marzo con los parámetros de julio lo falsearía.
+- Trabajadores con asistencia pero **sin contrato laboral vigente** se reportan aparte en vez
+  de liquidarse con datos incompletos.
+
+### Corregido — 🔴 El valor de la hora extra estaba 4× sobrestimado
+
+Detectado al anclar el motor contra liquidaciones reales. La fórmula implementada era
+`sueldo × 28 / (30 × jornada) × 1,5`; la correcta es **`(sueldo / 30) × (7 / jornada) × 1,5`**
+— un factor 4 de diferencia. Con sueldo 900.000 y jornada 44 h daba $28.636 la hora en vez de
+$7.159,05, que es lo que las tres liquidaciones reales pagaron.
+
+El factor se redondea a **7 decimales** porque así lo aplicó el emisor: sin ese redondeo el
+resultado se desvía 1-2 pesos por liquidación. Se validó contra 27, 40 y 31 horas extra en
+tres meses distintos.
+
+Es exactamente el riesgo que motivó dejarlas como constantes exportadas y no quemadas en el
+cálculo: el error estaba en el número, no en la mecánica, y ningún test sintético lo habría
+delatado porque los sintéticos se derivan de la misma constante equivocada.
+
+### Verificado — Anclaje del motor contra 3 liquidaciones reales
+
+Tres meses consecutivos del mismo trabajador (ene/feb/mar 2026) emitidos por un tercero, con
+su finiquito. El motor **reproduce los tres al peso** (±1 en un total, por redondeos del
+emisor): sueldo proporcional, horas extra, gratificación topada y sin topar, AFP, salud, base
+tributable, impuesto único, total de haberes, descuentos y líquido.
+
+El par es especialmente útil porque cubre casos opuestos: febrero es un mes completo con
+gratificación **topada** y anticipo; marzo es parcial (16 días) con gratificación **sin
+topar**. Entre ambos ejercitan proporcionalidad, tope e impuesto en dos tramos.
+
+**La evidencia real confirma buena parte de la paramétrica semilla**, que hasta ahora era
+"valor de referencia sin verificar": IMM $529.000 (deducido del tope de gratificación
+$209.396 = 4,75 × IMM / 12), tope de gratificación 4,75 IMM, cotización previsional 10%,
+salud 7%, comisión ProVida 1,45%, tramo de impuesto con factor 0,04 y rebaja 0,54 UTM, y que
+un contrato **por obra** no cotiza seguro de cesantía del trabajador. También confirma el
+divisor 30 para proporcionalizar y que la base de la gratificación es el imponible **sin
+incluirse a sí misma** (ADR-008 §1).
+
+⚠️ **Sigue sin validar**: los topes imponibles en UF (la renta nunca se les acercó), los
+tramos altos del impuesto, la asignación familiar (el caso tiene 0 cargas) y **todo el camino
+Isapre** — el único donde el plan en UF puede superar al 7% legal. Cerrar Isapre sigue siendo
+condición de salida a producción del RFC-003 (`describe.todo` reservado).
+
+### Corregido — 🔴 La migración de F1 no podía aplicarse (orden de declaración)
+
+`can_manage_hr()` se definía **después** de las políticas RLS de `employment_contracts` que
+la invocan. Postgres exige que la función exista al crear la política, así que la migración
+abortaba con *"function public.can_manage_hr() does not exist"* — y como el editor SQL de
+Supabase corre el lote en una transacción, el error tardío revertía **todo**, incluidas las
+tablas ya creadas. Resultado: la migración parecía haberse ejecutado y la base quedaba
+exactamente igual que antes. La función se promovió a sección 4, delante de sus consumidores.
+
+**Por qué no lo vio nadie:** `tsc` y `npm run build` no leen SQL, y la migración se había
+dado por aplicada sin verificarlo contra la base. Una migración que nunca se ejecutó es
+código sin probar, aunque el resto de la fase compile y pase los tests.
+
+### Seguridad — 🔴 `employment_contract_at()` habría expuesto los sueldos de todo el tenant
+
+Detectado al auditar la migración **antes de aplicarla**, en el sondeo previo al E2E.
+
+La función se escribió con `SECURITY DEFINER` y `GRANT EXECUTE ... TO authenticated`,
+devolviendo la **fila completa** del contrato (sueldo, AFP, sistema de salud, plan en UF,
+cargas) indexada por un `p_user` que elige quien llama. `SECURITY DEFINER` ejecuta con los
+privilegios del dueño, así que la función **puenteaba por completo** la política de `SELECT`
+de `employment_contracts` —escrita justamente para que un contrato lo vea solo su titular o
+alguien con `can_manage_hr()`.
+
+Era explotable dentro del tenant, no en teoría: `profiles_select_tenant` permite a cualquier
+miembro autenticado leer todos los perfiles de su tenant, `id` incluido. Con el uuid de un
+compañero —o de un jefe— a mano, una sola llamada RPC devolvía su remuneración. Al no
+filtrar tampoco por `tenant_id`, un uuid de otro inquilino habría funcionado igual.
+
+**Corregido antes de que la migración llegara a la base**: la función pasa a `SECURITY
+INVOKER` (el default), de modo que la RLS de la tabla se aplica y la regla de acceso vive en
+**un solo lugar** —la política— en vez de replicarse dentro de la función. Se descartó la
+alternativa de mantener `DEFINER` con validación propia por eso mismo: ya arrastramos una
+duplicación consciente (`is_period_closed` en SQL vs `closedMonthsFromEvents` en TS) que hay
+que mantener sincronizada a mano, y una tercera copia de "quién puede ver un sueldo" se paga
+en bugs. El motor de F2 no pierde nada: corre server-side con service role, que hace bypass
+de RLS por su cuenta.
+
+**Patrón a seguir**: en este proyecto `SECURITY DEFINER` se reserva para funciones que
+devuelven un **veredicto** (`is_period_closed`, los helpers `can_*`/`is_*`) o que validan el
+tenant del solicitante por dentro (`finance_reverse_source`). Una función `DEFINER` que
+recibe un identificador del llamador y le devuelve una fila sensible es un agujero de RLS.
+
+### Trampa conocida para F2 — `employment_contract_at()` no devuelve `NULL` cuando no hay contrato
+
+Detectada en el E2E. Al ser `RETURNS public.employment_contracts` (un tipo compuesto, no
+`SETOF`), un trabajador **sin** contrato laboral no produce "nada": produce una **fila con
+todas las columnas en `NULL`**. Consecuencia para el motor de F2: un `if (contrato)` da
+`true` con un contrato vacío y `Number(fila.base_salary)` cae silenciosamente en `0` — se
+liquidaría un sueldo cero en vez de fallar.
+
+Mientras la firma no cambie, **el consumidor debe chequear `fila?.id != null`**, no la
+verdad del objeto. El arreglo de raíz es `RETURNS SETOF public.employment_contracts` (0 filas
+cuando no hay match), pero exige `DROP FUNCTION` + `CREATE` porque no se puede cambiar el
+tipo de retorno con `CREATE OR REPLACE`: queda como decisión para el plan de F2.
 
 ### Agregado — Dominio Financiero F4.2: flujo de caja proyectado (RFC-002-F4-Plan / ADR-007)
 

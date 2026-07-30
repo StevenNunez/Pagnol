@@ -43,6 +43,49 @@ export async function fetchClosedMonths(
     return closedMonthsFromEvents(data || []);
 }
 
+/**
+ * Meses cuya planilla de remuneraciones ya está cerrada o pagada (F4 / ADR-010).
+ *
+ * El materializador de MO usa esto para NO tocar esos meses: su costo de personal
+ * ya es el real de la planilla, y re-emitir la estimación lo duplicaría. Sin este
+ * filtro, cerrar la planilla de julio el 1 de agosto deja esos días dentro de la
+ * ventana de 35 días y el cron del día siguiente revive la estimación.
+ */
+export async function fetchLiquidatedMonths(
+    admin: SupabaseClient,
+    tenantId: string,
+): Promise<Set<string>> {
+    const { data, error } = await admin
+        .from('payroll_runs')
+        .select('period_month, status')
+        .eq('tenant_id', tenantId)
+        .in('status', ['cerrada', 'pagada']);
+    if (error) throw error;
+    return new Set((data || []).map((r: any) => String(r.period_month).slice(0, 7)));
+}
+
+/**
+ * Aparta los días-persona que caen en un mes ya liquidado. Se filtra por el
+ * SUFIJO del source_id (`{userId}:{yyyy-MM-dd}` = el día trabajado), no por
+ * entry_date: un hecho reconciliado pudo emitirse en otro mes.
+ */
+export function splitByLiquidatedMonth<T extends { source_id?: string | null }>(
+    rows: T[],
+    liquidatedMonths: Set<string>,
+): { insertable: T[]; skipped: T[]; skippedMonths: string[] } {
+    if (!liquidatedMonths.size) return { insertable: rows, skipped: [], skippedMonths: [] };
+    const insertable: T[] = [];
+    const skipped: T[] = [];
+    const months = new Set<string>();
+    for (const r of rows) {
+        const sid = String(r.source_id ?? '');
+        const month = sid.length >= 10 ? sid.slice(-10, -3) : '';
+        if (month && liquidatedMonths.has(month)) { skipped.push(r); months.add(month); }
+        else insertable.push(r);
+    }
+    return { insertable, skipped, skippedMonths: [...months].sort() };
+}
+
 /** Aparta las filas cuya fecha contable cae en un mes cerrado. */
 export function splitByClosedPeriod<T extends { entry_date: string }>(
     rows: T[],

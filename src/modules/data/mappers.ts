@@ -685,7 +685,9 @@ export const mappers = {
     }),
     salary_advances: (item: any): SalaryAdvance => ({
         id: item.id,
-        workerId: item.worker_id,
+        // La columna real es `user_id` (drift #6). Se acepta `worker_id` como
+        // fallback por si alguna fila legacy lo trajera.
+        workerId: item.user_id ?? item.worker_id,
         workerName: item.worker_name,
         amount: item.amount,
         requestedAt: item.requested_at ? new Date(item.requested_at) : new Date(),

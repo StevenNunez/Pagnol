@@ -1813,11 +1813,24 @@ export interface SalaryAdvance {
   workerName: string;
   amount: number;
   requestedAt: Date;
-  status: 'pending' | 'approved' | 'rejected';
+  /** `approved` = autorizado; `paid` = transferido de verdad. No son lo mismo. */
+  status: 'pending' | 'approved' | 'rejected' | 'paid';
   processedAt?: Date;
   approverId?: string;
   approverName?: string;
   rejectionReason?: string;
+  paidAt?: Date;
+  /** Fecha real de la transferencia, no la de aprobación. */
+  paymentDate?: string | null;
+  paymentMethod?: string | null;
+  paidById?: string | null;
+  paidByName?: string | null;
+  /**
+   * Línea de liquidación que ya lo descontó (F3/ADR-009). `null` = deuda
+   * vigente: es lo que la planilla volverá a descontar y lo que ocupa cupo en
+   * la billetera. Nunca derivar "ya cobrado" de la fecha.
+   */
+  payrollLineId?: string | null;
   tenantId: string;
 }
 

@@ -237,16 +237,19 @@ export async function addSalaryAdvanceRequest(
   // hacía fallar TODA solicitud de anticipo con PGRST204 (drift #6, reparado en
   // la migración 20260730010000). El tipo TS la expone como `workerId`, que es
   // justo lo que enmascaró el bug.
-  const { error } = await supabase.from('salary_advances').insert({
+  const { data: rows, error } = await supabase.from('salary_advances').insert({
     user_id: data.workerId,
     worker_name: data.workerName,
     amount: data.amount,
     status: 'pending',
     requested_at: new Date().toISOString(),
     tenant_id: tenantId,
-  });
+  }).select('id');
 
   if (error) throw error;
+  if (!rows || rows.length === 0) {
+    throw new Error('No se pudo registrar la solicitud de anticipo (RLS).');
+  }
 }
 
 export async function approveSalaryAdvance(
@@ -255,14 +258,89 @@ export async function approveSalaryAdvance(
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
-  const { error } = await supabase.from('salary_advances').update({
+  // `.select()` obligatorio: un UPDATE que la RLS no deja pasar devuelve 0 filas
+  // SIN error (feedback_rls_silent_update). Desde la migración 20260804000000
+  // aprobar exige `can_manage_advances()`, así que sin esta guarda un usuario
+  // sin permiso vería el toast "Adelanto Aprobado" sobre una fila intacta.
+  const { data: rows, error } = await supabase.from('salary_advances').update({
     status: 'approved',
     processed_at: new Date().toISOString(),
     approver_id: user.id,
     approver_name: user.name,
-  }).eq('id', advanceId).eq('tenant_id', tenantId);
+  }).eq('id', advanceId).eq('tenant_id', tenantId).select('id, amount, user_id, worker_name');
 
   if (error) throw error;
+  if (!rows || rows.length === 0) {
+    throw new Error('No se pudo aprobar el anticipo: no tienes permiso para autorizarlo.');
+  }
+
+  await emitAdvancePayable(rows[0], { user, tenantId });
+}
+
+/**
+ * Obligación de caja del anticipo aprobado (ADR-013).
+ *
+ * `payable` y NO `cost`: el costo de esta plata lo devenga la planilla del mes
+ * —el anticipo es un descuento del líquido, no una rebaja de los haberes—, así
+ * que emitirlo como costo lo contaría dos veces. Lo que falta en el ledger es la
+ * CAJA: el desembolso ocurre al aprobarlo, semanas antes de que exista la
+ * liquidación.
+ *
+ * Sin `dueDate`: al aprobar no hay fecha comprometida y estimarla sería
+ * inventarla (misma decisión que los EP y la planilla en F4.2).
+ */
+async function emitAdvancePayable(
+  adv: { id: string; amount: number; user_id: string; worker_name?: string | null },
+  { user, tenantId }: Context,
+) {
+  const monto = Math.round(Number(adv.amount) || 0);
+  if (monto <= 0) return;
+  await emitFinanceEntries([{
+    nature: 'payable',
+    stage: 'committed',
+    category: 'labor',
+    amountNet: monto,
+    dueDate: null,
+    sourceType: 'salary_advance',
+    sourceId: adv.id,
+    counterpartyType: 'worker',
+    counterpartyId: adv.user_id,
+    counterpartyName: adv.worker_name || null,
+    notes: `Anticipo de sueldo aprobado · por transferir a ${adv.worker_name || 'el trabajador'}`,
+  }], { user, tenantId });
+}
+
+/**
+ * Registra la transferencia real. Apaga la obligación por REVERSO (Art. 2, nunca
+ * UPDATE) y no emite hecho de costo: el costo es de la planilla.
+ */
+export async function markSalaryAdvancePaid(
+  advanceId: string,
+  details: { paymentDate: string; paymentMethod: string },
+  { user, tenantId }: Context,
+) {
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  if (!details.paymentDate) throw new Error('La fecha de pago es obligatoria.');
+
+  const { data: rows, error } = await supabase.from('salary_advances').update({
+    status: 'paid',
+    paid_at: new Date().toISOString(),
+    payment_date: details.paymentDate,
+    payment_method: details.paymentMethod || null,
+    paid_by: user.id,
+    paid_by_name: user.name,
+  }).eq('id', advanceId).eq('tenant_id', tenantId).eq('status', 'approved').select('id');
+
+  if (error) throw error;
+  if (!rows || rows.length === 0) {
+    throw new Error('No se pudo registrar el pago: el anticipo no está aprobado o no tienes permiso.');
+  }
+
+  await reverseEntriesForSource(
+    'salary_advance', advanceId,
+    `Anticipo transferido el ${details.paymentDate} por ${user.name || 'usuario'}`,
+    { user, tenantId },
+  );
 }
 
 export async function rejectSalaryAdvance(
@@ -272,13 +350,16 @@ export async function rejectSalaryAdvance(
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
-  const { error } = await supabase.from('salary_advances').update({
+  const { data: rows, error } = await supabase.from('salary_advances').update({
     status: 'rejected',
     processed_at: new Date().toISOString(),
     approver_id: user.id,
     approver_name: user.name,
     rejection_reason: rejectionReason || null,
-  }).eq('id', advanceId).eq('tenant_id', tenantId);
+  }).eq('id', advanceId).eq('tenant_id', tenantId).select('id');
 
   if (error) throw error;
+  if (!rows || rows.length === 0) {
+    throw new Error('No se pudo rechazar el anticipo: no tienes permiso para resolverlo.');
+  }
 }

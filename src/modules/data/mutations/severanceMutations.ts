@@ -173,14 +173,22 @@ export async function proposeSeverance(
     const vacationDaysTaken = new Set((vac || []).map((v: any) => v.date)).size;
 
     // Anticipos vigentes que aún no se descontaron en una planilla.
-    const { data: advances } = await supabase
+    // 🔴 Esta consulta estaba rota de dos maneras y devolvía SIEMPRE vacío, así
+    // que el finiquito no descontaba ningún anticipo pendiente —el trabajador se
+    // iba con plata ya adelantada—: la columna es `requested_at` (no
+    // `request_date`, que no existe: PostgREST respondía 400 y el error se
+    // descartaba) y el estado es `'approved'` en inglés, como lo escribe
+    // `approveSalaryAdvance` y como lo lee la planilla. Ambos nombres salieron
+    // del tipo TS en vez del esquema real (el patrón del drift #6).
+    const { data: advances, error: advErr } = await supabase
         .from('salary_advances')
-        .select('id, amount, request_date, status, payroll_line_id')
+        .select('id, amount, requested_at, status, payroll_line_id')
         .eq('tenant_id', tenantId).eq('user_id', userId)
-        .eq('status', 'aprobado')
+        .eq('status', 'approved')
         .is('payroll_line_id', null);
+    if (advErr) throw advErr;
     const pendingAdvances = (advances || []).map((a: any) => ({
-        name: `Anticipo ${String(a.request_date || '').slice(0, 10)}`,
+        name: `Anticipo ${String(a.requested_at || '').slice(0, 10)}`,
         amount: n(a.amount),
     }));
 

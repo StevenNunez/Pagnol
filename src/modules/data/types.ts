@@ -402,6 +402,10 @@ export interface AppStateContextType extends AppDataState {
   addSalaryAdvanceRequest: (data: { workerId: string; workerName: string; amount: number; }) => Promise<void>;
   approveSalaryAdvance: (advanceId: string) => Promise<void>;
   rejectSalaryAdvance: (advanceId: string, rejectionReason: string) => Promise<void>;
+  markSalaryAdvancePaid: (
+    advanceId: string,
+    details: { paymentDate: string; paymentMethod: string },
+  ) => Promise<void>;
 
   // Permissions
   updateRolePermissions: (role: UserRole, permission: Permission, checked: boolean) => Promise<void>;

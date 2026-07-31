@@ -108,6 +108,28 @@ export async function fetchPayrollRuns(tenantId: string): Promise<PayrollRun[]> 
     return (data || []).map(mapPayrollRun);
 }
 
+/**
+ * Las liquidaciones del trabajador que consulta, con la cabecera de su planilla.
+ *
+ * `payroll_runs!inner` es deliberado: la RLS deja al trabajador ver la cabecera
+ * SOLO si la planilla ya no es borrador, así que el INNER JOIN descarta en la
+ * base las líneas de un borrador en ajuste. El filtro lo hace Postgres, no un
+ * `if` del cliente — un número que todavía puede cambiar no es una liquidación.
+ */
+export async function fetchMyPayrollLines(
+    userId: string,
+): Promise<{ line: PayrollLine; run: PayrollRun }[]> {
+    const { data, error } = await supabase
+        .from('payroll_lines')
+        .select('*, run:payroll_runs!inner(*)')
+        .eq('user_id', userId);
+    if (error) throw error;
+    return (data || [])
+        .filter((l: any) => l.run)
+        .map((l: any) => ({ line: mapPayrollLine(l), run: mapPayrollRun(l.run) }))
+        .sort((a, b) => b.run.periodMonth.localeCompare(a.run.periodMonth));
+}
+
 export async function fetchPayrollLines(runId: string): Promise<PayrollLine[]> {
     const { data, error } = await supabase
         .from('payroll_lines')

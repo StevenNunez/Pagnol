@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    splitCostByContract, monthOfLaborSourceId, budgetDeviation,
+    splitCostByContract, monthOfLaborSourceId, budgetDeviation, payrollPayableAmount,
     type LaborDayFact,
 } from './payrollLedgerMath';
 
@@ -132,5 +132,41 @@ describe('budgetDeviation — el número que hay que poder leer', () => {
         expect(d.budget).toBe(1000001);
         expect(d.actual).toBe(999999);
         expect(d.delta).toBe(2);
+    });
+});
+
+describe('payrollPayableAmount — la obligación de caja neta de anticipos', () => {
+    it('sin anticipos proyecta el costo empresa completo', () => {
+        expect(payrollPayableAmount(1_200_000, 0)).toBe(1_200_000);
+    });
+
+    it('descuenta lo ya entregado como anticipo', () => {
+        expect(payrollPayableAmount(1_200_000, 200_000)).toBe(1_000_000);
+    });
+
+    it('los dos payables suman el desembolso real, sin duplicar caja', () => {
+        // Es la invariante que justifica el cambio: el payable del anticipo
+        // ($200.000) más el de la planilla tienen que dar el costo empresa.
+        const costoEmpresa = 1_200_000;
+        const anticipo = 200_000;
+        expect(anticipo + payrollPayableAmount(costoEmpresa, anticipo)).toBe(costoEmpresa);
+    });
+
+    it('un anticipo igual al costo empresa deja la planilla sin obligación', () => {
+        expect(payrollPayableAmount(500_000, 500_000)).toBe(0);
+    });
+
+    it('nunca proyecta un pago al revés si el dato viene inconsistente', () => {
+        expect(payrollPayableAmount(500_000, 900_000)).toBe(0);
+        expect(payrollPayableAmount(500_000, -100_000)).toBe(500_000);
+    });
+
+    it('sin costo empresa no hay obligación que proyectar', () => {
+        expect(payrollPayableAmount(0, 50_000)).toBe(0);
+        expect(payrollPayableAmount(-10, 0)).toBe(0);
+    });
+
+    it('redondea a peso', () => {
+        expect(payrollPayableAmount(1_000_000.6, 200_000.4)).toBe(800_001);
     });
 });

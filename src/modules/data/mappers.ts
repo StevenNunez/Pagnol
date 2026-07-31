@@ -109,6 +109,12 @@ export const mappers = {
         registrarName: item.registrar_name || '',
         date: item.date || (item.timestamp ? item.timestamp.split('T')[0] : ''),
         contractId: item.contract_id || null,
+        // El tipo declaraba `markType` desde siempre pero el mapper nunca lo
+        // traía: llegaba `undefined` a TODOS los consumidores, así que las
+        // marcas especiales (LM, PSG, V, PP, D) eran invisibles para la app
+        // —el tablero diario nunca mostraba "licencia médica" ni "vacaciones"—
+        // y `laborDayPresence` contaba una ausencia como día trabajado.
+        markType: item.mark_type ?? null,
         originalTimestamp: item.original_timestamp ? new Date(item.original_timestamp) : null,
         modifiedAt: item.modified_at ? new Date(item.modified_at) : null,
         modifiedBy: item.modified_by || null,
@@ -696,6 +702,12 @@ export const mappers = {
         approverId: item.approver_id,
         approverName: item.approver_name,
         rejectionReason: item.rejection_reason,
+        payrollLineId: item.payroll_line_id ?? null,
+        paidAt: item.paid_at ? new Date(item.paid_at) : undefined,
+        paymentDate: item.payment_date ?? null,
+        paymentMethod: item.payment_method ?? null,
+        paidById: item.paid_by ?? null,
+        paidByName: item.paid_by_name ?? null,
         tenantId: item.tenant_id,
     }),
     assigned_checklists: (item: any): AssignedSafetyTask => ({

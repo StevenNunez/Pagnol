@@ -139,3 +139,26 @@ export function budgetDeviation(budget: number, actual: number): Deviation {
 
     return { budget: b, actual: a, delta, magnitude, direction, pct, message, hasBudget };
 }
+
+/**
+ * Obligación de caja que deja una liquidación al cerrarse (ADR-013).
+ *
+ * Es el costo empresa MENOS lo que el trabajador ya recibió como anticipo. El
+ * anticipo descuenta del líquido pero NO rebaja los haberes, así que
+ * `employerCost` incluye esa plata: proyectarla entera la contaría dos veces
+ * —una en el `payable` del propio anticipo y otra acá— y el flujo de caja diría
+ * que falta por pagar algo que ya salió del banco.
+ *
+ * Los dos payables se reparten el mismo desembolso: el del anticipo se apaga al
+ * transferirlo, éste al pagar la planilla. Sumados dan el costo empresa completo,
+ * ocurran en el orden que ocurran.
+ *
+ * Nunca negativo: si los anticipos superan al costo empresa —dato inconsistente,
+ * no un caso de negocio— la obligación es cero, no un pago al revés.
+ */
+export function payrollPayableAmount(employerCost: number, advancesAmount: number): number {
+    const cost = Math.round(Number(employerCost) || 0);
+    const advanced = Math.round(Number(advancesAmount) || 0);
+    if (cost <= 0) return 0;
+    return Math.max(0, cost - Math.max(0, advanced));
+}

@@ -2,7 +2,7 @@ import { supabase } from '@/modules/core/lib/supabase';
 import type { MutationContext as Context } from './context';
 import type { PayrollRun, PayrollLine } from '@/modules/core/lib/data';
 import { emitFinanceEntries, reverseEntriesForSource } from './financeLedger';
-import { splitCostByContract, type LaborDayFact } from './payrollLedgerMath';
+import { splitCostByContract, payrollPayableAmount, type LaborDayFact } from './payrollLedgerMath';
 
 // Remuneraciones F4 — emisores del costo REAL de personal (ADR-010).
 //
@@ -129,24 +129,42 @@ export async function emitPayrollCost(
             totalCost += s.amount;
         }
 
-        // Obligación de caja: el desembolso total de la planilla (líquidos +
-        // cotizaciones). SIN due_date: al cerrar no hay fecha comprometida y
-        // estimarla sería inventarla (misma decisión que los EP en F4.2).
-        entries.push({
-            entryDate,
-            nature: 'payable' as const,
-            stage: 'committed' as const,
-            category: 'labor' as const,
-            amountNet: cost,
-            dueDate: null,
-            sourceType: 'payroll_run_payable',
-            sourceId: payrollSourceId(run.id, line.userId),
-            sourceCode: `PLANILLA-${run.periodMonth.slice(0, 7)}`,
-            counterpartyType: 'worker',
-            counterpartyId: line.userId,
-            counterpartyName: line.userName,
-            notes: `Por pagar · planilla ${run.periodMonth.slice(0, 7)}`,
-        });
+        // Obligación de caja: el desembolso que TODAVÍA falta (líquidos +
+        // cotizaciones), NETO DE LOS ANTICIPOS ya entregados (ADR-013).
+        //
+        // 🔴 `employerCost` incluye la plata que el trabajador ya recibió como
+        // anticipo —el anticipo descuenta del líquido, no rebaja los haberes—,
+        // así que proyectarlo entero contaba dos veces esa caja: una en el
+        // `payable` del anticipo y otra acá. Estuvo latente mientras Wallet no
+        // funcionó (`advancesAmount` era siempre 0) y se activó al repararlo.
+        //
+        // Los dos payables se reparten el mismo desembolso: el del anticipo se
+        // apaga al transferirlo, éste al pagar la planilla. Sumados dan el costo
+        // empresa completo, en el orden que ocurran.
+        //
+        // SIN due_date: al cerrar no hay fecha comprometida y estimarla sería
+        // inventarla (misma decisión que los EP en F4.2).
+        const anticipado = Math.round(Number(line.advancesAmount) || 0);
+        const porPagar = payrollPayableAmount(cost, anticipado);
+        if (porPagar > 0) {
+            entries.push({
+                entryDate,
+                nature: 'payable' as const,
+                stage: 'committed' as const,
+                category: 'labor' as const,
+                amountNet: porPagar,
+                dueDate: null,
+                sourceType: 'payroll_run_payable',
+                sourceId: payrollSourceId(run.id, line.userId),
+                sourceCode: `PLANILLA-${run.periodMonth.slice(0, 7)}`,
+                counterpartyType: 'worker',
+                counterpartyId: line.userId,
+                counterpartyName: line.userName,
+                notes: anticipado > 0
+                    ? `Por pagar · planilla ${run.periodMonth.slice(0, 7)} · neto de $${anticipado.toLocaleString('es-CL')} ya anticipados`
+                    : `Por pagar · planilla ${run.periodMonth.slice(0, 7)}`,
+            });
+        }
     }
 
     await emitFinanceEntries(entries, { user, tenantId } as Context);

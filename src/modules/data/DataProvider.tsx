@@ -591,6 +591,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         addSalaryAdvanceRequest: bindContext(paymentMutations.addSalaryAdvanceRequest),
         approveSalaryAdvance: bindContext(paymentMutations.approveSalaryAdvance),
         rejectSalaryAdvance: bindContext(paymentMutations.rejectSalaryAdvance),
+        markSalaryAdvancePaid: bindContext(paymentMutations.markSalaryAdvancePaid),
 
         // Permissions
         updateRolePermissions: bindContext(genericMutations.updateRolePermissions),

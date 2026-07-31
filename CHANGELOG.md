@@ -18,6 +18,156 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado — Wallet: sistema de diseño y verificación visual en navegador
+
+Cierra la auditoría del módulo. **Verificado renderizando de verdad** (puppeteer + Chrome, sesión
+real), no por grep: billetera, adelantos y bandeja de aprobación en **dark y light**, más el
+diálogo de registrar pago y la billetera en viewport de celular.
+
+- **Tokens en vez de paleta cruda** en las tres pantallas: `slate/amber/green/blue/yellow` →
+  `bg-card`, `bg-muted`, `warning-*`, `info-*`, `success-*`, `destructive`. La tarjeta principal
+  pasa a `bg-pagnol-dark`, que es oscura en **ambos** temas — por eso los `text-white/X` y los
+  acentos claros de su interior se mantienen: son intencionales, no deuda.
+- **`bg-pagnol-orange` → `bg-primary`** (son el mismo naranja: `--primary` es `#F97316`), y los
+  botones vuelven a las variantes de `<Button>` en vez de clases de color a mano.
+- **`/wallet/advances` reescrita sobre los componentes compartidos**: `PageShell` + `DataTable`
+  (con su `EmptyState` integrado) en vez de una `<table>` armada a mano y tres tarjetas de KPI
+  duplicadas. Suma una columna «Descontado», que es lo que el trabajador quiere saber.
+- **Corregido al mirar la captura**: el guion de «sin descuentos» se pintaba en `text-destructive`
+  y se leía como un monto descontado; ahora va en muted.
+
+Sin desbordes horizontales en 390 px. La única superposición en celular es el botón flotante
+«Reportar error», que es global y precede a este trabajo.
+
+### Agregado — Wallet: el anticipo se paga de verdad y existe para el flujo de caja (ADR-013)
+
+Migración **`20260805000000_salary_advances_paid.sql`** aplicada. E2E `run-e2e-wallet-p2.cjs`
+**18/18** con las mutaciones reales bajo sesión de usuario; regresión de los bloques anteriores
+verde tras reemplazar el trigger (seguridad 21/21, liquidación real 15/15, planilla 6/6).
+
+Un anticipo terminaba su vida en `approved` y ahí se quedaba: sin fecha de transferencia, sin
+medio de pago, sin autoría, y **sin existir para el dominio financiero**. La UI le promete al
+trabajador una transferencia en 24 horas hábiles y no había con qué respaldarla.
+
+- **Estado `pagado` con el respaldo de una factura**: fecha, medio y autoría congelada. Un trigger
+  impide reescribirlo después — es el respaldo del trabajador, no un campo editable. `approved →
+  paid` es la única transición válida desde un estado resuelto, y el `status` pasó a tener `CHECK`
+  (no lo tenía: cualquier texto entraba, verificado insertando `'cobrado'`).
+- **Aprobar emite una obligación de caja** (`payable`/`committed`/`labor`, `source_type
+  salary_advance`); registrar el pago **la apaga por reverso** (Art. 2). No se emite hecho de
+  costo: ese lo devenga la planilla del mes, y emitirlo acá lo contaría dos veces.
+- **La bandeja de Adelantos separa "aprobados pendientes de transferir"**, que antes se mezclaban
+  con el historial y no eran trabajo visible para nadie.
+- **El rechazo pide motivo**: la columna `rejection_reason` existía desde la reparación del drift
+  #6 y la UI le pasaba `''`. El trabajador veía "Rechazado" sin saber por qué.
+
+🔴 **Corregido de paso — el `payable` de la planilla sobreproyectaba la caja.** `emitPayrollCost`
+(ADR-010) emitía como obligación el `employerCost` completo, que incluye la plata ya entregada
+como anticipo: el anticipo descuenta del líquido pero no rebaja los haberes. Pasa a ser
+`payrollPayableAmount(employerCost, advancesAmount)` — función pura con 7 tests nuevos. La
+invariante: **el payable del anticipo más el de la planilla suman el costo empresa completo, en
+cualquier orden en que ocurran**, sin contar dos veces la misma caja. El error estuvo dormido
+mientras Wallet no funcionó (`advancesAmount` era siempre 0) y **repararlo lo activó**.
+
+### Cambiado — Wallet: la billetera muestra la liquidación REAL, no una inventada
+
+**Sin migración.** E2E `run-e2e-wallet-p1.cjs` **15/15** contra la base viva, sin residuos.
+
+"Mis Liquidaciones" fabricaba `sueldo/30 × días − anticipos` y lo presentaba como liquidación: sin
+AFP, sin salud, sin impuesto único, sin gratificación ni topes imponibles. Era **la calculadora
+que se retiró por riesgo legal (ADR-011/012) sobreviviendo en la única pantalla que el trabajador
+cree**. Ahora lee sus `payroll_lines` reales (F3) con el estado de la planilla y **descarga el PDF
+de su liquidación**, dibujado desde el snapshot igual que en RRHH.
+
+- **Los borradores no se muestran.** `payroll_lines?select=*,run:payroll_runs!inner(*)`: la RLS de
+  `payroll_lines` sí le deja ver su línea mientras la planilla está en ajuste — lo único que la
+  esconde es el INNER JOIN contra `payroll_runs`, cuya política exige `status <> 'borrador'`. El
+  filtro lo hace Postgres. **Verificado sembrando una línea en un borrador real**: la ve por la
+  tabla directa y no la ve por el query de la billetera. Era el supuesto que no se podía razonar
+  desde el código.
+- **El sueldo sale del contrato laboral vigente** (`employment_contracts`, F1), no de
+  `profiles.base_salary`: ese campo legacy no se mueve al firmar un anexo, así que el cupo se
+  calculaba sobre un sueldo viejo. Sin contrato ya no hay cupo — no existiría liquidación de la
+  cual descontar el adelanto — y la alerta dice qué pedirle a RRHH.
+- **Los días se cuentan con `laborDayPresence`**, el criterio del ledger y de la planilla. Antes
+  cualquier marca sumaba: licencias, vacaciones y permisos entraban como días trabajados e
+  inflaban el cupo. El devengado usa `earnedBaseSalary`, la misma función del motor (respeta el
+  modo mensual/por día del contrato).
+- **El cupo se descuenta contra la deuda vigente**, no contra el mes calendario: todo anticipo con
+  `payroll_line_id` nulo, sea de cuando sea. Antes, uno de un mes anterior que nunca entró en una
+  planilla no ocupaba cupo y se podía volver a pedir sobre la misma plata.
+- **"Mi Finiquito" era un callejón sin salida** (ruta retirada → módulo que el trabajador no puede
+  abrir): ahora es su historial de adelantos.
+- El saldo del mes en curso se mantiene —es el único mes que por definición no tiene liquidación—
+  pero **rotulado**: sueldo base por días trabajados, antes de descuentos.
+
+### Corregido — `mark_type` nunca llegaba desde el mapper de asistencia
+
+El tipo `AttendanceLog` declara `markType` desde siempre, pero `mappers.attendance_logs` no lo
+traía: llegaba `undefined` a **todos** los consumidores del estado global. Consecuencias más allá
+de Wallet: el tablero diario de Asistencia nunca detectaba las marcas especiales (LM, PSG, V, PP,
+D), `attendance/overview` nunca veía una licencia médica, y el panel de Finanzas contaba una
+ausencia como día trabajado al pasar los logs por `laborDayPresence`.
+
+### Seguridad — Wallet: control de acceso de los anticipos de sueldo (P0)
+
+Migración **`20260804000000_salary_advances_rls.sql`** aplicada. E2E `run-e2e-wallet-sec.cjs`
+**21/21** (8/21 antes del fix: los 13 rojos eran el agujero).
+
+`salary_advances` había entrado en el barrido genérico de la migración consolidada
+(`20260612000001`): una sola política `FOR ALL` con `tenant_id = mi tenant`. Para casi todas las
+tablas eso alcanza; para ésta no, porque el sujeto del dato es el trabajador y la operación mueve
+plata. **Verificado explotando el agujero contra la base viva** con una sesión real de rol
+`operador` (E2E `run-e2e-wallet-sec.cjs`, 8/21 antes del fix):
+
+- **Se auto-aprobó su propio anticipo** con un `PATCH` a `/rest/v1/salary_advances` — HTTP 200,
+  la fila quedó `approved`. Desde F3 un anticipo aprobado se descuenta solo en la planilla.
+- **Leyó los anticipos de sus compañeros** (nombre, monto, quién aprobó). Es información de
+  sueldo, del mismo orden que `payroll_lines`, que sí filtra por `user_id = auth.uid()`.
+- **Insertó un anticipo ya aprobado** por $999.999 en un solo POST, sin pasar por nadie.
+- **Pidió un anticipo a nombre de un compañero** y **borró el anticipo de otro**.
+
+No hubo explotación posible antes porque el módulo nunca funcionó (drift #6, reparado el
+2026-07-29) y la tabla estaba vacía. Se cierra antes de que se use.
+
+**Lo aplicado:**
+- Políticas **por operación** (patrón de `payroll_runs`/`payroll_lines`): el trabajador ve y pide
+  **lo suyo**; ver el resto, aprobar, rechazar y borrar exige `can_manage_advances()`.
+- `can_manage_advances()` **preserva exactamente quién aprueba hoy** (la pantalla vive en Pagos ⇒
+  `module_payments:view`) y suma RRHH, que desde F3 descuenta los anticipos en la planilla y los
+  liquida en el finiquito. A propósito **no se inventó un permiso nuevo**: los roles por-tenant
+  congelan sus permisos y un permiso recién creado habría dejado sin aprobar a tenants que hoy
+  aprueban.
+- El `INSERT` obliga a **nacer pendiente y sin aprobador** — sin eso, auto-aprobarse en el mismo
+  POST deja la política de `UPDATE` sin nada que revisar.
+- **Cuatro ojos**: `approver_id <> user_id`. Ni el administrador aprueba su propia solicitud (el
+  super-admin sí, control total, y queda con su nombre estampado).
+- **Trigger `salary_advances_guard`**: un anticipo resuelto no cambia de monto, de trabajador ni
+  de fecha, no vuelve a `pending`, y uno ya descontado no se reasigna a otra liquidación. Vale
+  **también para el service role** — probado con él a propósito.
+
+### Corregido — el finiquito no descontaba los anticipos pendientes
+
+`severanceMutations.ts` buscaba los anticipos por `request_date` (columna que **no existe**:
+PostgREST respondía 400 y el error se descartaba) y por `status = 'aprobado'` en español, cuando
+`approveSalaryAdvance` escribe `'approved'`. La consulta devolvía **siempre vacío**, así que el
+finiquito no descontaba ningún anticipo vigente: el trabajador se iba con plata ya adelantada.
+Ambos nombres salieron del tipo TS en vez del esquema real — el mismo patrón del drift #6. Ahora
+además el error se propaga en vez de tragarse.
+
+### Eliminado — el flujo de adelantos duplicado del home de Trabajador
+
+`/dashboard/worker` era una copia de `/dashboard/wallet` con la lógica financiera duplicada, y la
+copia tenía el candado suelto: `advancesTaken` estaba fijo en `0` con un comentario
+`// Placeholder`, así que el cupo del 50% **ignoraba lo ya solicitado** — se podía pedir el máximo
+tantas veces como se quisiera desde ahí, mientras la billetera (la misma tabla, el mismo
+trabajador) sí lo descontaba. La página ahora enlaza a la billetera: el saldo, el cupo y los
+adelantos se calculan en **un solo lugar**.
+
+Se retiró también la lista "Últimas Liquidaciones" de esa página: eran **dos montos inventados en
+el código** (Enero 2024 $850.000, Diciembre 2023 $820.000) con un botón de descarga que no
+descargaba nada.
+
 ### Seguridad — `npm audit fix` aplicado (P0)
 
 **86 → 79 vulnerabilidades** (−4 high, −2 moderate, −1 low). Solo cambió `package-lock.json`;

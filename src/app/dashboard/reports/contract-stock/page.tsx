@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { PageShell } from "@/components/page-shell";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
+import { LoadingState } from "@/components/loading-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import type { Contract, Material, MaterialStock, StockMovement, Warehouse } from "@/modules/core/lib/data";
@@ -39,7 +40,7 @@ const MOVEMENT_TYPE_LABEL: Record<string, string> = {
 };
 
 export default function ContractStockReportPage() {
-    const { materialStocks, contracts, warehouses, materials, stockMovements } = useAppState();
+    const { materialStocks, contracts, warehouses, materials, stockMovements, isLoading } = useAppState();
     const { toast } = useToast();
 
     const [clientFilter, setClientFilter] = useState(CC_ALL);
@@ -583,11 +584,20 @@ export default function ContractStockReportPage() {
                 </TabsList>
 
                 <TabsContent value="matrix">
-                    {matrixRows.length === 0 ? (
+                    {/* Cargando y vacío NO son lo mismo: mientras el DataProvider
+                        trae sus colecciones, `ledger` está vacío, y esta página
+                        llegó a afirmar "No hay existencias registradas" teniendo
+                        137 filas. Ahora `isLoading` es fiable (el hook expone
+                        `hasLoaded`), así que se distingue de verdad. */}
+                    {isLoading && matrixRows.length === 0 ? (
+                        <LoadingState label="Cargando existencias…" />
+                    ) : matrixRows.length === 0 ? (
                         <EmptyState
                             icon={<Package size={22} />}
                             title={searchTerm ? "Sin resultados" : "No hay existencias registradas en el desglose"}
-                            description={searchTerm ? `No se encontró "${searchTerm}".` : "Cuando entre stock (compras, ingresos, devoluciones) aparecerá aquí desglosado."}
+                            description={searchTerm
+                                ? `No se encontró "${searchTerm}".`
+                                : "Cuando entre stock (compras, ingresos, devoluciones) aparecerá aquí desglosado."}
                         />
                     ) : (
                         <DataTable

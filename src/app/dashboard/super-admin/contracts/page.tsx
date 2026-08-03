@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
+import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,16 +52,23 @@ export default function ContractsPage() {
   const handleToggle = async (tenantId: string, current: boolean) => {
     setToggling(tenantId);
     const newVal = !current;
-    const { error } = await supabase
+    // `.select()`: un UPDATE que la RLS no matchea devuelve 0 filas sin error, y
+    // esta auditoría marcaría contratos como firmados sin haberlo guardado.
+    const { data: rows, error } = await supabase
       .from("tenants")
       .update({
         contract_signed: newVal,
         contract_signed_at: newVal ? new Date().toISOString() : null,
       })
-      .eq("id", tenantId);
+      .eq("id", tenantId)
+      .select("id");
 
-    if (error) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+    if (error || !rows || rows.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo actualizar el contrato",
+        description: error?.message ?? "La base de datos rechazó el cambio. Sólo un super-admin puede marcar el contrato.",
+      });
     } else {
       setTenants((prev) =>
         prev.map((t) =>
@@ -77,26 +85,28 @@ export default function ContractsPage() {
   const signed = tenants.filter((t) => t.contract_signed).length;
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader title="Contratos de Responsabilidad" description="Auditoría de contratos firmados por cada empresa." />
+    <PageShell
+      title="Contratos de Responsabilidad"
+      description="Auditoría de contratos firmados por cada empresa."
+    >
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-4">
-        <Card className="rounded-[2rem] border-none shadow bg-slate-100 dark:bg-card">
+        <Card className="rounded-[1.5rem] bg-card">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-2xl text-green-600"><CheckCircle2 size={22} /></div>
+            <div className="p-3 bg-success-subtle rounded-2xl text-success-subtle-foreground"><CheckCircle2 size={22} /></div>
             <div>
               <p className="text-2xl font-black">{signed}</p>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Contratos firmados</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Contratos firmados</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="rounded-[2rem] border-none shadow bg-slate-100 dark:bg-card">
+        <Card className="rounded-[1.5rem] bg-card">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-2xl text-red-500"><XCircle size={22} /></div>
+            <div className="p-3 bg-destructive/10 rounded-2xl text-destructive"><XCircle size={22} /></div>
             <div>
               <p className="text-2xl font-black">{tenants.length - signed}</p>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Pendientes</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Pendientes</p>
             </div>
           </CardContent>
         </Card>
@@ -105,7 +115,7 @@ export default function ContractsPage() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="rounded-[2rem] border-none shadow animate-pulse bg-slate-100 dark:bg-slate-800 h-24" />
+            <Card key={i} className="rounded-[1.5rem] animate-pulse bg-muted h-24 border-none" />
           ))}
         </div>
       ) : (
@@ -113,27 +123,23 @@ export default function ContractsPage() {
           {tenants.map((t) => (
             <Card
               key={t.id}
-              className={`rounded-[2rem] border shadow bg-slate-100 dark:bg-card transition-all ${
-                t.contract_signed
-                  ? "border-green-200 dark:border-green-800/40"
-                  : "border-slate-100 dark:border-white/5"
-              }`}
+              className={`rounded-[1.5rem] bg-card transition-all ${t.contract_signed ? "border-success/30" : ""}`}
             >
               <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                <div className={`p-3 rounded-2xl shrink-0 ${t.contract_signed ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : 'bg-slate-100 dark:bg-white/5 text-muted-foreground'}`}>
+                <div className={`p-3 rounded-2xl shrink-0 ${t.contract_signed ? "bg-success-subtle text-success-subtle-foreground" : "bg-muted text-muted-foreground"}`}>
                   <FileText size={18} />
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-black uppercase">{t.name}</p>
-                    <Badge className={`text-[8px] font-black uppercase rounded-lg border-none ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    <p className="text-sm font-bold">{t.name}</p>
+                    <Badge className={`text-[9px] font-black uppercase rounded-xl border-none ${t.is_active ? "badge-success" : "bg-destructive/10 text-destructive"}`}>
                       {t.is_active ? "Activa" : "Inactiva"}
                     </Badge>
                   </div>
                   <p className="text-[10px] text-muted-foreground font-mono">{t.tenant_id}</p>
                   {t.contract_signed && t.contract_signed_at && (
-                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-green-600 dark:text-green-400">
+                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-success">
                       <Calendar size={10} />
                       <span>Firmado el {new Date(t.contract_signed_at).toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" })}</span>
                     </div>
@@ -142,7 +148,7 @@ export default function ContractsPage() {
 
                 <div className="flex items-center gap-3 shrink-0">
                   {toggling === t.id
-                    ? <Loader2 className="animate-spin text-pagnol-orange" size={16} />
+                    ? <Loader2 className="animate-spin text-primary" size={16} />
                     : (
                       <Switch
                         checked={t.contract_signed ?? false}
@@ -151,7 +157,7 @@ export default function ContractsPage() {
                     )
                   }
                   <Link href={`/dashboard/super-admin/tenants/${t.id}`}>
-                    <Button size="sm" variant="ghost" className="rounded-xl h-9 text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:text-pagnol-orange">
+                    <Button size="sm" variant="ghost" className="rounded-xl h-9 text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary">
                       <ArrowRight size={14} />
                     </Button>
                   </Link>
@@ -161,6 +167,6 @@ export default function ContractsPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

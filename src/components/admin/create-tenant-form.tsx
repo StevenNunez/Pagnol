@@ -24,7 +24,7 @@ const FormSchema = z.object({
 
 type FormData = z.infer<typeof FormSchema>;
 
-export function CreateTenantForm() {
+export function CreateTenantForm({ onCreated }: { onCreated?: () => void } = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -84,6 +84,7 @@ export function CreateTenantForm() {
         description: `"${data.tenantName}" creada. Se envió invitación a ${data.adminEmail}.`,
       });
       reset();
+      onCreated?.();
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -96,22 +97,22 @@ export function CreateTenantForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre Empresa</Label>
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Nombre Empresa</Label>
         <div className="relative">
-          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
           <Input {...register('tenantName')} placeholder="Minera Norte S.A." className="pl-9 h-10 rounded-xl text-sm" />
         </div>
         {errors.tenantName && <p className="text-xs text-destructive">{errors.tenantName.message}</p>}
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">RUT Empresa</Label>
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">RUT Empresa</Label>
         <Input {...register('tenantRut')} placeholder="76.123.456-7" className="h-10 rounded-xl text-sm" />
         {errors.tenantRut && <p className="text-xs text-destructive">{errors.tenantRut.message}</p>}
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Plan</Label>
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Plan</Label>
         <Controller
           name="plan"
           control={control}
@@ -132,21 +133,21 @@ export function CreateTenantForm() {
         {errors.plan && <p className="text-xs text-destructive">{errors.plan.message}</p>}
       </div>
 
-      <div className="h-px bg-slate-100 dark:bg-white/5 my-2" />
+      <div className="h-px bg-border my-2" />
 
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre Administrador</Label>
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Nombre Administrador</Label>
         <div className="relative">
-          <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
           <Input {...register('adminName')} placeholder="Juan Pérez" className="pl-9 h-10 rounded-xl text-sm" />
         </div>
         {errors.adminName && <p className="text-xs text-destructive">{errors.adminName.message}</p>}
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Correo Administrador</Label>
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Correo Administrador</Label>
         <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
           <Input {...register('adminEmail')} type="email" placeholder="admin@empresa.cl" className="pl-9 h-10 rounded-xl text-sm" />
         </div>
         {errors.adminEmail && <p className="text-xs text-destructive">{errors.adminEmail.message}</p>}
@@ -155,7 +156,7 @@ export function CreateTenantForm() {
       <Button
         type="submit"
         disabled={isSubmitting}
-        className="w-full h-10 bg-pagnol-orange hover:bg-orange-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] mt-2"
+        className="w-full h-10 rounded-xl font-black uppercase tracking-widest text-[10px] mt-2"
       >
         {isSubmitting ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
         {isSubmitting ? 'Creando...' : 'Crear y Enviar Invitación'}

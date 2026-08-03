@@ -51,7 +51,7 @@ import { QRWithPagnolLogo } from '@/components/qr-with-pagnol-logo';
 import { ContractStockBreakdown } from '@/components/contract-stock-breakdown';
 import { ClientContractFilter, contractIdsOfClient } from '@/components/client-contract-filter';
 import { useToast } from '@/modules/core/hooks/use-toast';
-import { generateStrategicReport } from '@/actions/ask-ferro';
+import { generateStrategicReport } from '@/actions/ai-actions';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as ExcelJS from 'exceljs';

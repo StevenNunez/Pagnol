@@ -661,7 +661,10 @@ export default function MovimientosPagnolPage() {
       };
       reader.readAsDataURL(file);
 
-      const path = `return-evidence/${Date.now()}-${assetId}.jpg`;
+      // El tenant va EN LA RUTA para que la política de storage pueda acotar por
+      // empresa: sin él, el objeto sólo se puede proteger como "cualquier usuario
+      // autenticado" (ver migración 20260806040000).
+      const path = `return-evidence/${currentTenant?.id}/${Date.now()}-${assetId}.jpg`;
       const stored = await uploadWithTimeout(path, file);
       if (stored) {
         setReturnPhotos(prev => ({ ...prev, [assetId]: stored }));
@@ -797,7 +800,8 @@ export default function MovimientosPagnolPage() {
             logoUrl: currentTenant?.logoUrl,
           });
 
-          const path = `contracts/direct/${filename}`;
+          // El tenant va EN LA RUTA: ver la nota de `return-evidence` más arriba.
+          const path = `contracts/direct/${currentTenant?.id}/${filename}`;
           contractUrl = await uploadWithTimeout(path, blob);
         } catch (err) {
           console.error("Error generating direct contract PDF:", err);

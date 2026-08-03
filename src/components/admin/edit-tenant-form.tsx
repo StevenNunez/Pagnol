@@ -45,12 +45,17 @@ export function EditTenantForm({ tenant, onSaved }: EditTenantFormProps) {
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     try {
-      const { error } = await supabase
+      // `.select()`: un UPDATE que la RLS no matchea devuelve 0 filas SIN error.
+      const { data: rows, error } = await supabase
         .from('tenants')
         .update({ name: data.name, plan: data.plan, is_active: data.is_active })
-        .eq('id', tenant.id);
+        .eq('id', tenant.id)
+        .select('id');
 
       if (error) throw error;
+      if (!rows || rows.length === 0) {
+        throw new Error('No se guardó: el plan y el estado de una empresa sólo los cambia un super-admin.');
+      }
 
       toast({ title: 'Empresa actualizada', description: `Los datos de "${data.name}" fueron guardados.` });
       onSaved?.();
@@ -62,18 +67,18 @@ export function EditTenantForm({ tenant, onSaved }: EditTenantFormProps) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre de la Empresa</Label>
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Nombre de la Empresa</Label>
         <Input {...register('name')} className="h-10 rounded-xl text-sm" />
         {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">RUT (no editable)</Label>
-        <Input value={tenant.tenantId} disabled className="h-10 rounded-xl text-sm bg-slate-50 dark:bg-white/5" />
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">RUT (no editable)</Label>
+        <Input value={tenant.tenantId} disabled className="h-10 rounded-xl text-sm bg-muted" />
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Plan</Label>
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Plan</Label>
         <Controller
           name="plan"
           control={control}
@@ -93,7 +98,7 @@ export function EditTenantForm({ tenant, onSaved }: EditTenantFormProps) {
         {errors.plan && <p className="text-xs text-destructive">{errors.plan.message}</p>}
       </div>
 
-      <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-white/5 px-4 py-3">
+      <div className="flex items-center justify-between rounded-xl bg-muted px-4 py-3">
         <Label className="text-xs font-bold uppercase tracking-widest cursor-pointer">Empresa Activa</Label>
         <Controller
           name="is_active"
@@ -107,7 +112,7 @@ export function EditTenantForm({ tenant, onSaved }: EditTenantFormProps) {
       <Button
         type="submit"
         disabled={isSubmitting}
-        className="w-full h-10 bg-pagnol-orange hover:bg-orange-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px]"
+        className="w-full h-10 rounded-xl font-black uppercase tracking-widest text-[10px]"
       >
         {isSubmitting ? <Loader2 className="animate-spin mr-2" size={14} /> : <Save size={14} className="mr-2" />}
         Guardar Cambios

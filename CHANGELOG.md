@@ -18,6 +18,364 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Seguridad — 🔴 P0: cualquier trabajador podía reescribir los datos comerciales de su empresa
+
+**Verificado explotándolo contra la base viva ANTES de escribir el fix** (E2E 18/32), con un
+usuario de rol `operador` real y peticiones `PATCH` a `/rest/v1/tenants`.
+
+La política `tenants_update_own` (migración `20260612000001`) decía
+`FOR UPDATE USING (is_super_admin() OR id = get_my_tenant_id())`: **cualquier miembro
+autenticado del tenant, sin importar su rol**. El operador logró, todo con HTTP 200:
+
+| Lo que hizo | Consecuencia |
+|---|---|
+| Cambiarse el **plan de suscripción** | Fraude directo al modelo de negocio |
+| Marcar el **contrato de responsabilidad como firmado** | La auditoría de contratos deja de ser evidencia |
+| **Asignarse hardware** (escáner QR + impresora) | Falsea el control de equipos entregados |
+| **Desactivar su propia empresa** (`is_active=false`) | — |
+| **Renombrar la empresa** y cambiarle el **RUT** | — |
+| Alterar **`labor_cost_factor`** | Falsea el margen por contrato de toda la faena |
+| Bajar **`criticality_settings`** | Se salta las aprobaciones de clase A/B/C en compras |
+
+Lo más grave no es cada campo por separado: son **exactamente los datos que administra la
+consola de super-admin**. La plataforma gobernaba información que el propio cliente podía
+reescribir por debajo.
+
+- **Migración `20260806000000_tenants_platform_guard.sql` (PENDIENTE DE APLICAR).**
+  Trigger `trg_prevent_tenant_platform_escalation` que congela las columnas **por nivel**,
+  siguiendo el patrón que ya existía para `profiles`
+  (`prevent_profile_privilege_escalation`):
+  - **Plataforma** (`plan`, `is_active`, `contract_signed*`, `hardware_assigned`, `tenant_id`,
+    `id`) → sólo super-admin. **Ni el administrador del propio tenant**: son la relación
+    comercial entre Pagnol y su cliente, no configuración de la empresa.
+  - **Configuración** (nombre, RUT comercial, representante legal, dirección, faenas, logo,
+    geocerca, correlativos, umbrales de criticidad, factor de costo laboral) → sólo quien
+    administra esa empresa, vía el helper nuevo `can_manage_tenant_settings()`.
+  - El **service role sigue sin restricción** (`auth.uid()` es NULL): crons de UF y costo
+    laboral, `/api/tenant/geofence` y el registro de empresas no se ven afectados.
+- **Se cerró el INSERT libre**: `tenants_insert_authenticated` dejaba a cualquier usuario
+  autenticado crear empresas ilimitadas. El alta real ocurre server-side con service role, así
+  que la política pasa a `is_super_admin()` sin romper el registro.
+- **Por qué un trigger y no estrechar la RLS:** una política no puede comparar `OLD` contra
+  `NEW` — sólo permite o niega la fila entera, y aquí hay que distinguir *qué columna* cambia.
+  La política de UPDATE queda intacta, así que ningún flujo pierde acceso a la fila.
+- **No se creó ningún permiso nuevo**, a propósito: `can()` resuelve
+  `dynamicRoles[rol] ?? ROLES_DEFAULT[rol]`, así que un permiso recién inventado es invisible
+  para todo tenant con filas propias en `roles` (la misma razón por la que en Wallet se
+  descartó `module_wallet:view`).
+- **Carga Masiva**: el panel de umbrales de criticidad ahora se oculta a quien no administra la
+  empresa (`can('module_settings:view')`), para no ofrecer un botón que la base va a rechazar.
+
+### Corregido — Cinco controles del módulo super-admin que confirmaban cambios que no ocurrían
+
+Mismo patrón en toda la consola: `UPDATE`/`DELETE` bloqueados por RLS **no devuelven error**,
+devuelven 0 filas. Ninguna de estas pantallas lo comprobaba.
+
+- **El botón "Eliminar empresa" mentía.** No existe política de `DELETE` sobre `tenants`:
+  verificado con un super-admin real contra un tenant desechable, la petición responde
+  **HTTP 200, 0 filas y ningún error**. La UI mostraba "Empresa eliminada", quitaba la fila de
+  la lista, y al recargar la empresa seguía ahí. Ahora borra de verdad (ver más abajo).
+- **`handleToggleContract`** (`tenants/[tenantId]`) no miraba `error` **en absoluto**: siempre
+  cantaba éxito. Ahora revierte el switch y avisa si no se guardó.
+- Se añadió la misma comprobación al guardado de hardware en `tenants/[tenantId]` y en
+  `super-admin/hardware`, y al toggle de contratos en `super-admin/contracts`.
+
+### Agregado — Borrado real de empresas (herramienta de limpieza para la fase de pruebas)
+
+Mientras el alta es abierta, el super-admin necesita poder limpiar empresas de prueba. Añadir
+una política de `DELETE` **no habría bastado**: verificado sembrando un tenant desechable con
+usuarios y datos, el borrado falla con `23503: still referenced from table "profiles"`.
+
+- **Migración `20260806010000_super_admin_delete_tenant.sql` (PENDIENTE DE APLICAR).**
+  Función `super_admin_delete_tenant(uuid)` que **descubre dinámicamente** las tablas con
+  columna `tenant_id` (una lista quemada quedaría desactualizada en silencio según crece el
+  esquema, dejando datos huérfanos invisibles), borra en **varias pasadas** porque entre ellas
+  hay claves foráneas, y **desactiva los guards de inmutabilidad del Artículo 2** — que
+  rechazan el borrado incluso con service role — reactivándolos siempre, incluso si algo falla.
+  Sólo `service_role` puede ejecutarla: una operación irreversible no debe quedar a un `POST`
+  de distancia desde el navegador.
+- **Ruta `POST /api/admin/delete-tenant`**: verifica el bearer token contra
+  `profiles.role = 'super-admin'`, exige el **nombre exacto de la empresa** como confirmación,
+  impide borrar la empresa propia, elimina las cuentas de Auth (si no, quedarían huérfanas y
+  **seguirían pudiendo iniciar sesión**), y comprueba que la empresa desapareció en vez de
+  confiar en la ausencia de error.
+- **UI**: el doble clic se reemplaza por un diálogo donde hay que escribir el nombre de la
+  empresa, con el detalle de lo que se va a destruir y el conteo real de lo borrado al terminar.
+
+> ⚠️ **Es deliberadamente destructivo**: arrastra el ledger financiero, las planillas cerradas y
+> los finiquitos pagados. Sirve para borrar empresas de **prueba**, no para dar de baja a un
+> cliente. **Cuando exista pricing con accesos de pago hay que retirar la función, la ruta y el
+> botón** — anotado en `PENDIENTES.md`.
+
+**Verificación (E2E 33/33 + 10/10 + 13/13, todo sobre tenants desechables):**
+
+- El E2E de seguridad se corrió **ANTES del fix y dio 18/32**: los 14 agujeros quedaron probados
+  como hechos y no como opinión, y las regresiones (el administrador conserva su configuración,
+  el super-admin gobierna la plataforma, el service role no se ve afectado) ya pasaban antes, así
+  que se sabía exactamente qué no romper.
+- 🔴 **Dos bugs propios que el E2E destapó antes de que llegaran a usarse:**
+  1. **La función de borrado reventaba con `operator does not exist: text = uuid`.** El barrido
+     descubre tablas por tener una columna `tenant_id`… y **`tenants` tiene una columna
+     `tenant_id` que es el RUT, de tipo TEXT**. Corregido exigiendo `data_type = 'uuid'` y
+     excluyendo `tenants`. La causa de fondo era tener la misma consulta **repetida en cuatro
+     bucles**: al corregir el filtro sólo cambiaron dos. Ahora se calcula una vez en un array.
+  2. **El primer sondeo dio "7 cerrados / 0 abiertos" y era mentira**: el `INSERT` del perfil de
+     prueba chocaba con el trigger `handle_new_user` (409) y el sujeto quedaba sin `tenant_id`,
+     así que la RLS no matcheaba **nada** y todo parecía protegido. Se añadieron checks de
+     sanidad que abortan si el sujeto no está bien montado. *Un "cerrado" sin comprobar que la
+     prueba muerde es indistinguible de un "no probé".*
+- **El check que más importaba** no era que borrara, sino que **los guards de inmutabilidad
+  quedaran reactivados**: la función los desactiva en todas las tablas con `tenant_id`, así que
+  dejarlos apagados habría tumbado el Artículo 2 **para todos los tenants**. Se verificó con un
+  tenant **testigo** que conserva un hecho inmutable, comprobado antes y después del borrado.
+- El borrado se llevó **8 `material_categories` que nadie sembró** — las crea un trigger al dar
+  de alta la empresa. Es justo lo que una lista de tablas escrita a mano habría dejado huérfano.
+- La ruta se probó **contra el servidor real**: sin token → 401, administrador de tenant → 401,
+  nombre mal escrito → 400 sin borrar, empresa inexistente → 404, y en el borrado real las
+  cuentas de Auth desaparecen y **el usuario ya no puede iniciar sesión**.
+
+### Seguridad — CSP promovida a ENFORCEMENT
+
+Estaba en `Content-Security-Policy-Report-Only` desde el 2026-07-30: reportaba, no bloqueaba. Se
+promovió **después de comprobar que no rompe nada**, no por confianza en la lectura del código.
+
+- **15 rutas** (públicas y del dashboard) → **0 violaciones**.
+- **Los flujos que cargan librerías pesadas**, que eran el riesgo real → **0 violaciones**:
+  exportar Excel (`exceljs` + blob), el asistente de IA, la **biometría con cámara**
+  (`face-api`: `wasm-eval` + workers, con cámara falsa de Chrome) y la credencial QR.
+- **El detector se validó primero**: se provocó una violación deliberada de `img-src` y se
+  comprobó que la capturaba. *Cero hallazgos con un detector que no mide se lee igual que cero
+  hallazgos reales* — la lección que esta sesión repitió varias veces.
+- **Y se volvió a verificar TODO con la política ya bloqueando**, no sólo en Report-Only: en
+  Report-Only el navegador no impide nada, así que "0 violaciones" ahí no prueba que la app
+  funcione cuando sí bloquea.
+
+⚠️ La verificación corrió en **dev**. Si algo fallara en producción el síntoma sería un recurso
+que no carga (imagen, fuente, worker), y revertir es cambiar una línea de `next.config.js`.
+Sigue pendiente quitar `'unsafe-inline'` de `script-src` con nonces por request.
+
+### Corregido — Los estados vacíos ya no mienten mientras cargan (extensión de ADR-014)
+
+`EmptyState` ahora consulta la carga del estado global y muestra el spinner en su lugar. Se
+resolvió **en el componente**, no en cada página: son **54** las que pintan un vacío sin mirar
+`isLoading`, y `DataTable` delega su estado vacío en este mismo componente — así que un solo
+cambio las cubre a todas.
+
+- Para leerlo sin romper nada se añadió `AppLoadingContext`, un contexto mínimo aparte del estado
+  tracked: `useTrackedState` **lanza** fuera del provider y `EmptyState` también se usa fuera del
+  dashboard, mientras que `useContext` devuelve su default sin romper. Además su valor cambia una
+  sola vez (`true → false`), así que no arrastra re-renders.
+- Prop de escape `ignoreAppLoading` para listas que no salen de `useAppState()` (filtros locales).
+- **Verificado renderizando en 6 páginas**: ninguna afirma vacío mientras carga y —lo que más
+  importaba— **ninguna se queda pegada en el spinner**.
+
+### Corregido — 🔴 Ninguna página distinguía "cargando" de "vacío" (ADR-014)
+
+`/dashboard/reports/contract-stock` **afirmaba "No hay existencias registradas" teniendo 137 filas
+en el ledger**. No era un defecto de esa página: era estructural, y afectaba a toda la app.
+
+Dos causas que se sumaban:
+- `useSupabaseCollection` devolvía **sólo el array**, sin señal de si ya hizo su primer fetch.
+- `isLoading` del `DataProvider` **no servía de sustituto**: comprobaba `data !== undefined` y el
+  hook **nunca devuelve `undefined`** (arranca en `[]`), así que se apagaba en el primer render
+  con todas las colecciones aún vacías.
+
+- **El hook devuelve `hasLoaded` adjunto al array** (`LoadableArray<T>`), no enumerable. Se
+  descartó `{ data, hasLoaded }` porque el cambio de firma rompería las **40+ llamadas** de golpe;
+  así los consumidores siguen usándolo como array y sólo quien necesita la distinción lee la marca.
+- Se marca **después del fetch aunque venga vacío o falle** —significa "ya se intentó"—; si se
+  marcara sólo con datos, una colección legítimamente vacía se quedaría en el spinner para siempre.
+- **Se resetea al cambiar de tenant** (TenantSwitcher del super-admin): sin eso, la UI presentaría
+  el array del tenant anterior como ya cargado. En un refresh manual no, para evitar parpadeos.
+- `isLoading` de `useAppState()` **ahora es fiable** y Stock por Contrato ya separa los tres
+  estados. **El resto de páginas sigue sin distinguirlos**: queda como trabajo pendiente.
+- ⚠️ Un primer intento usó `isLoading` tal cual en la página; **se comprobó renderizando que NO
+  funcionaba y se revirtió** antes de darlo por bueno.
+
+**Verificado renderizando** sobre la ruta ya compilada: a los ~3,5 s muestra "Cargando
+existencias…", a los ~5,9 s los datos, y **en ningún instante** afirma que no hay existencias.
+
+### Verificado — Solicitud de compra normal: aprobar ajustando cantidad y recibir
+
+E2E **16/16** en Minera Demo con las mutaciones reales y RLS activa. Aprobar recortando la
+cantidad (100 → 60) **ya no lanza el error** que aparecía; conserva la cantidad original pedida
+para trazabilidad del recorte, registra quién aprobó, el stock sube exactamente lo recibido, el
+kardex lo registra y el doble clic en Recibir se rechaza sin volver a sumar.
+
+- `updatePurchaseRequestStatus` guardaba **sin comprobar filas afectadas**: se le añadió
+  `.select()` y un error explícito, para que una aprobación bloqueada por RLS no se confirme.
+- ⚠️ El invariante del ledger falló al principio **por la siembra del test**, no por el código: el
+  material se creó por REST sin pasar por `addToLedger`, y medir el TOTAL arrastraba ese desfase.
+  Se corrigió a medir el **delta** y se reparó el dato en DEMO. *Cuarta vez que aparece el patrón:
+  cuando un check de ledger falla, sospechar primero del check.*
+
+### Seguridad — Bucket `contracts` acotado por tenant (cierra la deuda del P0 anterior)
+
+La migración `20260803000000` sacó el bucket de público pero dejó la lectura como "cualquier
+usuario autenticado", porque los paths no eran uniformemente tenant-scoped.
+
+- **Migración `20260806040000` (PENDIENTE DE APLICAR).** `can_read_contract_object()` deriva el
+  tenant del propio path cuando está (`ea-docs/<tenant>/…` y las rutas nuevas) y lo **cruza contra
+  la solicitud** cuando el path sólo trae su id (`contracts/<uuid>/…`). **Sin mover archivos.**
+- **Sondeado, no supuesto:** de las 10 carpetas con forma de uuid, **9 corresponden a una fila viva
+  de `material_requests`** y una quedó huérfana. Los objetos cuyo tenant **no** se puede derivar
+  (los antiguos de `direct/` y `return-evidence/`, y la huérfana) siguen accesibles a usuarios
+  autenticados **a propósito**: negarlos rompería enlaces a actas laborales ya firmadas, que es
+  peor que la exposición entre tenants de la misma plataforma.
+- **La cola deja de crecer:** los archivos nuevos ya nacen con el tenant en la ruta
+  (`return-evidence/<tenant>/…`, `contracts/direct/<tenant>/…`).
+- **Verificado con la migración aplicada (8/8 + 9/9)**, y lo que se probó primero fue que **NO
+  rompiera**: un acta que deja de abrirse es peor que la exposición que se cierra.
+  · El administrador **real** de Minero Teo Labs abre sus **9 actas firmadas** (9/9).
+  · Un usuario de otra empresa **no** puede firmar la URL de esas actas.
+  · Los documentos antiguos sin tenant derivable siguen accesibles, y el super-admin ve todo.
+  · En las rutas nuevas, un archivo de otro tenant se rechaza.
+  ⚠️ La primera corrida dio **0/9** y parecía que había roto el acceso a documentos legales: era
+  la URL de firma mal construida en el script de prueba. *Quinta vez en la sesión que el check
+  falla y el código está bien — con service role el mismo path daba `Invalid Compact JWS`, que era
+  la pista de que el problema era la petición, no el permiso.*
+
+### Corregido — `npm run lint` llevaba tiempo roto: el proyecto estaba SIN linter
+
+El script era `next lint`, que Next 16 eliminó, y no existía `eslint.config.js` (ESLint 9 exige
+flat config). Fallaba entero, así que **ningún lint se estaba ejecutando**.
+
+- `eslint.config.mjs` nuevo + `"lint": "eslint ."`. Se conserva `next/core-web-vitals`, la config
+  que ya había: el objetivo era recuperar la herramienta, no cambiar reglas.
+- **No hace falta `FlatCompat`** (revienta con esta versión por una referencia circular en sus
+  plugins): `eslint-config-next` 16 ya exporta flat config nativa.
+- Se ignora `.claude/**`: había un **worktree de git** ahí dentro y el linter estaba analizando esa
+  copia, lo que inflaba el recuento con errores de archivos que no son del proyecto.
+- `react/no-unescaped-entities` se apaga: la app está en español y los apóstrofes en texto JSX son
+  constantes — esa regla sola aportaba **108 de los 138 errores** y hacía inútil el resultado.
+- **Estado real: 93 problemas (11 errores, 82 warnings)** en código vivo. Deuda preexistente que
+  ahora es visible; varios errores son patrones legítimos que marca el plugin nuevo de React.
+
+### Corregido — Reporte Semanal: el turno nocturno quedaba partido en dos días
+
+Con turno nocturno la jornada cruza la medianoche (20:00 → 08:00), pero este reporte agrupaba las
+marcas por **día calendario**: la entrada quedaba en un día sin salida y la salida de madrugada
+aparecía en el día siguiente sin entrada, así que las horas no cuadraban. El reporte mensual y la
+liquidación ya lo hacían bien —parean por **sesión**—; el semanal se había quedado con el criterio
+viejo (tiene su propia copia de `calculateDailySummary`).
+
+Ahora, cuando el turno es nocturno, agrupa por sesión (entrada → salida siguiente, máximo 26 h,
+atribuida al día de la **entrada**): el mismo algoritmo ya probado del hook mensual. Se cambió sólo
+**cómo se agrupan** las marcas, sin tocar el cálculo de horas, para no arriesgar el caso diurno.
+
+⚠️ **`tsc` limpio y build OK, pero no ejercitado con marcas nocturnas reales**: no hay en Minera
+Demo un trabajador con turno nocturno y marcas cruzando medianoche.
+
+### Cambiado — Deuda de estructura y normativa
+
+- **`employment_contract_at()` → `RETURNS SETOF`** (migración `20260806020000`, **PENDIENTE**).
+  Devolvía un tipo compuesto, así que un trabajador **sin contrato** no daba `NULL` sino **una fila
+  con todas las columnas en NULL**: `if (fila)` daba true y `Number(base_salary)` daba **0 en
+  silencio** — o sea, liquidar sueldo cero en vez de fallar. Ahora devuelve cero filas. Verificado
+  que **ningún código llama a esa RPC** (sólo se la menciona en un comentario), así que el cambio
+  de firma no rompe consumidores.
+- **Feriados 2027 sembrados** (migración `20260806030000`, **PENDIENTE**). Sin ellos el feriado
+  proporcional del finiquito se calcula corto y **le paga de menos al trabajador**.
+  ⚠️ Las fechas están **calculadas**, no copiadas de fuente oficial: Semana Santa por algoritmo de
+  Pascua y los traslados por la Ley 19.973 (el 29-jun y el 12-oct caen martes en 2027 → se corren
+  al lunes). **Verificar antes de emitir un finiquito con fechas de 2027** — misma lección que
+  ADR-011: una cifra legal deducida no es una cifra legal verificada.
+- **Dark mode**: `permissions` y `estado-pago` tokenizados por completo (0 usos de paleta cruda,
+  0 clases pegadas). Al hacerlo aparecieron **pares `dark:` huérfanos** — el reemplazo automático
+  cambia la mitad clara y deja `dark:bg-blue-900/20` colgando; se cerraron a mano.
+- **SQL huérfano**: `src/lib/migrations/` (3 archivos que nadie importaba) → `scripts/legacy-sql/`.
+- **Timestamp de migración duplicado** resuelto: `work_reports_daily_ots` pasa a `20260617005000`
+  (el hueco intermedio; `20260617010000` ya estaba ocupado por `work_reports_header`). Verificado
+  que **no queda ningún timestamp repetido** en todo el directorio.
+
+### Verificado — Suministros del cliente (comodato), end-to-end
+
+Pendiente desde el lote de julio. Ejercitado con las mutaciones reales bajo sesión con RLS activa
+en Minera Demo: **16/16**. Flujo completo: solicitud al cliente (correlativo `SCL`) → gate del ADC
+→ envío → recepción en pañol.
+
+**El punto de integridad, comprobado con datos:** existiendo un material propio *"Cemento Portland
+25 kg"* con 120 sacos, se recibieron 40 del cliente **pasando a propósito el material propio como
+"existente"**, tal como podría hacer la UI. El propio **quedó intacto en 120** y las unidades
+fueron a una **fila espejo `ownership='cliente'`**. Una segunda recepción de 40 se **acumuló en la
+misma fila espejo** (40 → 80) sin crear una duplicada. Además: el kardex apunta a la fila espejo y
+dice de quién es el material, se cumple `sum(material_stocks) == materials.stock`, y el **doble
+clic en Recibir se rechaza** sin volver a sumar stock (el bug VALAR-SCL-0001).
+
+**La valorización excluye el comodato**, verificado **en pantalla** con el dato real: el contrato
+que recibió el suministro muestra **$0** con la leyenda *"80 unidad(es) · 80 del cliente"*, y el
+total advierte *"80 unidad(es) del cliente (comodato) — excluidas de la valorización"*.
+
+### Corregido — Stock por Contrato afirmaba "No hay existencias registradas" mientras cargaba
+
+Con **137 filas en el ledger**, la página mostraba su estado vacío durante los primeros segundos.
+En faena con mala señal eso se lee como "perdimos el stock".
+
+La causa es transversal y no se puede arreglar desde la página: `useSupabaseCollection` devuelve
+**sólo el array**, sin señal de si ya hizo su primer fetch, e `isLoading` del `DataProvider` **ya
+es `false`** para entonces (el efecto que lo apaga corre en su primera pasada, con las colecciones
+todavía vacías) — se intentó ese guard y **no funcionó**, así que se descartó en vez de dejar un
+arreglo aparente. Mitigación: el texto ya no afirma que no haya existencias. **El arreglo de raíz
+—que el hook exponga `hasLoaded`— queda en `PENDIENTES.md`: toca 40+ llamadas.**
+
+### Corregido — Finiquitos (F5): el pago podía dejar el ledger inconsistente para siempre
+
+Verificación pendiente desde el 2026-07-30: el E2E de F5 cubrió base y motor con service role,
+pero **no el emisor del ledger**, que corre client-side al cerrar y al pagar.
+
+Se ejercitó con las mutaciones reales bajo **sesión de RRHH con RLS activa** (bundle esbuild del
+código de cliente), montando un trabajador con contrato indefinido: **18/18**.
+
+- 🔴 **`markSeverancePaid` marcaba `pagado` ANTES de emitir al ledger.** `pagado` es un estado
+  **inmutable** —lo impone un trigger, incluso para el service role—, así que si la emisión
+  fallaba después, el finiquito quedaba pagado para siempre **con la obligación viva en el ledger
+  y sin el hecho `paid`**, sin forma de arreglarlo desde la aplicación. Ahora emite primero, como
+  ya hacía `closeSeverance` justamente por esta razón: si falla la emisión, el finiquito sigue
+  `cerrado` y se puede reintentar.
+- **Lo que quedó probado** (verificando el **neto** por fuente, no la ausencia de filas — en un
+  ledger append-only el reverso *es* una fila espejo): el costo emitido es exactamente
+  `ledgerAmount()`; la obligación de caja coincide; los hechos se fechan en la **fecha de
+  término** (no hoy, o el margen mentiría en dos meses); el pago se fecha el día que salió la
+  plata; la obligación se salda **por reverso** con una fila nueva y queda en **neto 0**; y el
+  líquido del último mes **no se emite dos veces** (lo emite la planilla — la trampa de ADR-012).
+- La UI de finiquitos se verificó **renderizando** en dark y light: lista, estados y montos.
+
+### Cambiado — Super-admin: una sola consola en vez de dos a medias
+
+`/dashboard/subscriptions` y `/dashboard/super-admin/tenants` listaban **las mismas empresas**,
+pero cada una tenía **la mitad de las acciones**: en una se creaba y se editaba el plan, en la
+otra se borraba y se gestionaban hardware y contrato. Había que saber en cuál estaba cada cosa.
+
+- **Una lista** (`/super-admin/tenants`) con búsqueda, alta en diálogo, baja y acceso al detalle.
+- **Un detalle** (`/super-admin/tenants/[tenantId]`) que absorbe la edición de nombre, plan y
+  estado que sólo existía en `/subscriptions/[id]`, junto al hardware, el contrato y los usuarios.
+- `/subscriptions` y `/subscriptions/[id]` quedan como **redirecciones**, para no romper enlaces
+  guardados. `plans` y `feedback` se conservan: no estaban duplicadas.
+- 🔴 **Las etiquetas del sidebar estaban cruzadas**: `/subscriptions` (lista de empresas) se
+  rotulaba "Planes y Clientes" y `/subscriptions/plans` (gestión de planes) se rotulaba "Gestión
+  de Tenants". Ahora dicen lo que son.
+- **El conteo de usuarios ya no miente**: se hacía con un `count` por empresa contra `profiles`,
+  que la RLS filtra — devolvía **0** para cualquiera que no fuera super-admin, además de una
+  consulta por fila. Ahora usa la ruta admin que ya existía para eso.
+- `EditTenantForm` guardaba sin comprobar filas afectadas: se le añadió `.select()` y un mensaje
+  explícito cuando la base rechaza el cambio.
+
+### Cambiado — Super-admin: sistema de diseño (cierra los 44 usos de paleta cruda del backlog)
+
+Las 6 pantallas del módulo pasan a tokens y componentes compartidos: `PageShell`, `DataTable`,
+`EmptyState` y `LoadingState` en vez de `Loader2` y textos de estado vacío escritos a mano.
+Radios de marca (`rounded-[1.5rem]`), badges por token (`badge-success`, `info-subtle`) y mapas
+de color **estáticos** —las clases construidas con template strings se purgan en producción—.
+
+- La peor era **Feedback**: usaba `bg-white` y `text-slate-800` **fijos**, sin variante oscura.
+- **Verificado renderizando** (puppeteer + Chrome, sesión minteada por API) en **dark, light y
+  celular a 390 px**, con un super-admin temporal que se crea y se borra en el propio script.
+- ⚠️ **Dos capturas iniciales salieron en blanco y el escáner no reportó nada** — que se lee
+  igual que "todo bien". Primero por capturar el spinner, y después porque el Panel Global no
+  escribe "Cargando" sino que pinta *skeletons*. Al ampliar la espera, el `animate-pulse`
+  **permanente** del indicador "EN LÍNEA" del header hacía que no terminara nunca; hubo que
+  acotarla a skeletons con tamaño de panel. **Mirar el PNG es el paso que no se salta.**
+
 ### Cambiado — Wallet: sistema de diseño y verificación visual en navegador
 
 Cierra la auditoría del módulo. **Verificado renderizando de verdad** (puppeteer + Chrome, sesión

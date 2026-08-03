@@ -395,7 +395,16 @@ export async function closeSeverance(
     return mapSeverance(data);
 }
 
-/** Marca el pago: apaga la obligación y emite el hecho `paid`. */
+/**
+ * Marca el pago: apaga la obligación y emite el hecho `paid`.
+ *
+ * El ledger va PRIMERO, por la misma razón que en `closeSeverance`: `pagado` es
+ * un estado inmutable (lo impone el trigger de la base, incluso para el service
+ * role). Si se marcara primero y la emisión fallara después, el finiquito
+ * quedaría pagado para siempre con la obligación viva en el ledger y sin el
+ * hecho `paid` — sin forma de arreglarlo desde la aplicación. Al revés, si falla
+ * la emisión el finiquito sigue `cerrado` y se puede reintentar.
+ */
 export async function markSeverancePaid(
     id: string,
     paymentDate: string,
@@ -407,6 +416,13 @@ export async function markSeverancePaid(
     if (rErr) throw rErr;
     if (row.status !== 'cerrado')
         throw new Error(`Solo un finiquito cerrado se puede marcar como pagado (está ${row.status}).`);
+
+    // La fecha de pago aún no está en la fila: el emisor la necesita para fechar
+    // el hecho el día que salió la plata.
+    await emitSeverancePayment(
+        { ...mapSeverance(row), paymentDate },
+        { user, tenantId } as Context,
+    );
 
     const { data, error } = await supabase
         .from('severances')
@@ -422,7 +438,6 @@ export async function markSeverancePaid(
         .single();
     if (error) throw error;
 
-    await emitSeverancePayment(mapSeverance(data), { user, tenantId } as Context);
     return mapSeverance(data);
 }
 

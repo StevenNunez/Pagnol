@@ -244,6 +244,50 @@ export default function AttendanceReportPage() {
       (log: AttendanceLog) => log.userId === selectedUserId
     );
 
+    // ── Turno nocturno ────────────────────────────────────────────────────
+    // La jornada cruza la medianoche (20:00 → 08:00), así que agrupar por día
+    // CALENDARIO parte la sesión en dos: la entrada quedaba en un día sin
+    // salida y la salida en el día siguiente sin entrada. El detalle diario
+    // mostraba la salida de madrugada en el día equivocado y las horas no
+    // cuadraban. (El mensual y la liquidación ya lo hacían bien: parean por
+    // SESIÓN — este reporte se quedó con el pareo viejo.)
+    //
+    // Se replica el criterio del hook mensual: entrada → salida siguiente
+    // (máximo 26 h) y la sesión se atribuye al día de la ENTRADA.
+    const isNight = !!workerShift?.shift?.isNightShift;
+
+    if (isNight) {
+      const sorted = [...userLogs].sort(
+        (a: AttendanceLog, b: AttendanceLog) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+
+      const byEntryDay = new Map<string, AttendanceLog[]>();
+      for (let i = 0; i < sorted.length; i++) {
+        const cur = sorted[i];
+        if (cur.type !== "in") continue; // salidas sueltas: sin entrada que parear
+        const inDate = new Date(cur.timestamp);
+        const key = format(inDate, "yyyy-MM-dd");
+        const bucket = byEntryDay.get(key) ?? [];
+        const next = sorted[i + 1];
+        if (next?.type === "out") {
+          const outDate = new Date(next.timestamp);
+          if (outDate.getTime() - inDate.getTime() <= 26 * 3600000) {
+            bucket.push(cur, next);
+            byEntryDay.set(key, bucket);
+            i++; // la salida quedó consumida por esta sesión
+            continue;
+          }
+        }
+        bucket.push(cur); // entrada sin salida: se muestra, no suma horas
+        byEntryDay.set(key, bucket);
+      }
+
+      return weekDays.map((day) =>
+        calculateDailySummary(byEntryDay.get(format(day, "yyyy-MM-dd")) ?? [], day)
+      );
+    }
+
     return weekDays.map((day) => {
       const dayString = format(day, "yyyy-MM-dd");
       const logsForDay = userLogs
@@ -254,7 +298,7 @@ export default function AttendanceReportPage() {
         );
       return calculateDailySummary(logsForDay, day);
     });
-  }, [selectedUserId, weekDays, attendanceLogs, users, calculateDailySummary]);
+  }, [selectedUserId, weekDays, attendanceLogs, users, calculateDailySummary, workerShift]);
 
   const formatHoursDecimal = (decimalHours: number) => {
     if (typeof decimalHours !== "number" || isNaN(decimalHours)) {

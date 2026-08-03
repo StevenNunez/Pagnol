@@ -16,9 +16,9 @@ import { useToast } from "@/modules/core/hooks/use-toast";
 type GroupedPermissions = { [group: string]: { key: string; label: string }[] };
 
 const roleColors: Partial<Record<UserRole, string>> = {
-  'super-admin': 'bg-red-100 text-red-700 border-red-200',
+  'super-admin': 'bg-destructive/10 text-destructive border-destructive/20',
   'administrador': 'bg-pagnol-orange/10 text-pagnol-orange border-pagnol-orange/20',
-  'director-faena': 'bg-blue-100 text-blue-700 border-blue-200',
+  'director-faena': 'bg-info-subtle text-info-subtle-foreground border-info/20',
   'supervisor': 'bg-violet-100 text-violet-700 border-violet-200',
 };
 
@@ -43,11 +43,11 @@ function RoleCard({
 
   const totalPerms = Object.values(groupedPermissions).flat().length;
   const activePerms = capabilities.length;
-  const colorClass = roleColors[role] ?? 'bg-slate-100 text-slate-600 border-slate-200';
+  const colorClass = roleColors[role] ?? 'bg-muted text-muted-foreground border-border';
 
   return (
     <AccordionItem value={role} className="border-none">
-      <Card className="rounded-[2rem] border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden mb-3">
+      <Card className="rounded-[1.5rem] border shadow-sm overflow-hidden mb-3">
         <AccordionTrigger className="hover:no-underline px-6 py-5 [&>svg]:text-muted-foreground [&>svg]:shrink-0">
           <div className="flex items-center gap-4 flex-1 text-left">
             <div className={`p-2.5 rounded-2xl border ${colorClass}`}>
@@ -67,7 +67,7 @@ function RoleCard({
         <AccordionContent>
           <div className="px-6 pb-6 space-y-6">
             {!isEditable && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-slate-50 dark:bg-white/5 rounded-xl px-4 py-2.5">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted rounded-xl px-4 py-2.5">
                 <Lock size={12} /> Solo lectura — sin permisos de edición
               </div>
             )}
@@ -80,7 +80,7 @@ function RoleCard({
                   {groupedPermissions[groupName].map(({ key, label: permLabel }) => {
                     const hasCapability = capabilities.includes(key);
                     return (
-                      <div key={key} className="flex items-center gap-3 rounded-xl bg-slate-50 dark:bg-white/5 px-3 py-2.5">
+                      <div key={key} className="flex items-center gap-3 rounded-xl bg-muted px-3 py-2.5">
                         <Switch
                           id={`${role}-${key}`}
                           checked={hasCapability}
@@ -190,10 +190,10 @@ export default function PermissionsPage() {
       />
 
       {!can('permissions:manage') && user?.role !== 'super-admin' && (
-        <Card className="rounded-[2rem] border-none shadow bg-amber-50 dark:bg-amber-900/20">
+        <Card className="rounded-[1.5rem] border-none shadow bg-warning-subtle">
           <CardContent className="p-5 flex items-center gap-3">
-            <Lock size={16} className="text-amber-500 shrink-0" />
-            <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">
+            <Lock size={16} className="text-warning shrink-0" />
+            <p className="text-xs font-bold text-warning-subtle-foreground uppercase tracking-widest">
               Modo solo lectura — necesitas el permiso &quot;Gestionar Permisos&quot; para editar.
             </p>
           </CardContent>

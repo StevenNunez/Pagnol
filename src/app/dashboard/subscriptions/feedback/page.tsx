@@ -3,7 +3,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from "@/modules/core/lib/supabase";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
+import { EmptyState } from "@/components/empty-state";
+import { LoadingState } from "@/components/loading-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -95,24 +97,20 @@ export default function FeedbackPage() {
     };
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-700">
-            <PageHeader
-                title="Centro de Feedback y Errores"
-                description="Panel de control para gestionar reportes técnicos y sugerencias de la plataforma"
-            />
+        <PageShell
+            title="Centro de Feedback y Errores"
+            description="Panel de control para gestionar reportes técnicos y sugerencias de la plataforma"
+        >
 
             <div className="grid grid-cols-1 gap-6">
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center py-20 opacity-50">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pagnol-orange mb-4"></div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cargando reportes...</p>
-                    </div>
+                    <LoadingState label="Cargando reportes…" />
                 ) : feedbacks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-40 text-slate-300">
-                        <MessageSquare size={100} className="mb-6 opacity-10" />
-                        <p className="font-black uppercase text-sm tracking-widest text-muted-foreground">Sin reportes activos</p>
-                        <p className="text-[10px] font-black uppercase opacity-40 mt-2">No se han recibido errores o feedback todavía.</p>
-                    </div>
+                    <EmptyState
+                        icon={<MessageSquare size={36} />}
+                        title="Sin reportes activos"
+                        description="No se han recibido errores o feedback todavía."
+                    />
                 ) : (
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                         {feedbacks.map((item) => (
@@ -122,12 +120,12 @@ export default function FeedbackPage() {
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                             >
-                                <Card className={`rounded-[2.5rem] border-none shadow-xl shadow-slate-200/50 bg-white overflow-hidden transition-all ${item.status === 'resolved' ? 'opacity-60 grayscale-[0.5]' : ''}`}>
+                                <Card className={`rounded-[1.5rem] bg-card shadow-lg overflow-hidden transition-all ${item.status === 'resolved' ? 'opacity-60 grayscale-[0.5]' : ''}`}>
                                     <div className="p-8 space-y-6">
                                         <div className="flex flex-wrap items-start justify-between gap-4">
                                             <div className="space-y-1">
                                                 <div className="flex items-center gap-3">
-                                                    <Badge className={`border-none font-black text-[9px] uppercase px-3 py-1 rounded-full ${item.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                                                    <Badge className={`border-none font-black text-[9px] uppercase px-3 py-1 rounded-full ${item.status === 'pending' ? 'badge-warning' : 'badge-success'}`}>
                                                         {item.status === 'pending' ? 'Pendiente' : 'Resuelto'}
                                                     </Badge>
                                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
@@ -135,7 +133,7 @@ export default function FeedbackPage() {
                                                         {format(item.createdAt, "PPP p", { locale: es })}
                                                     </span>
                                                 </div>
-                                                <h3 className="text-sm font-black text-slate-800 uppercase leading-snug mt-2">
+                                                <h3 className="text-sm font-black text-foreground uppercase leading-snug mt-2">
                                                     {item.description.length > 100 ? item.description.substring(0, 100) + "..." : item.description}
                                                 </h3>
                                             </div>
@@ -144,7 +142,7 @@ export default function FeedbackPage() {
                                                     onClick={() => resolveFeedback(item.id)}
                                                     variant="outline"
                                                     size="sm"
-                                                    className="rounded-full bg-green-50 text-green-700 border-green-100 hover:bg-green-100 font-black text-[10px] uppercase"
+                                                    className="rounded-xl badge-success border-success/20 hover:bg-success/20 font-black text-[10px] uppercase"
                                                 >
                                                     <CheckCircle2 size={14} className="mr-2" /> Marcar Resuelto
                                                 </Button>
@@ -152,16 +150,16 @@ export default function FeedbackPage() {
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
-                                                <div className="flex items-center gap-3 text-slate-600">
-                                                    <div className="p-2 bg-white rounded-xl shadow-sm"><User size={14} /></div>
+                                            <div className="p-4 bg-muted rounded-2xl border space-y-3">
+                                                <div className="flex items-center gap-3 text-foreground">
+                                                    <div className="p-2 bg-card rounded-xl shadow-sm"><User size={14} /></div>
                                                     <div className="flex flex-col">
                                                         <span className="text-[10px] font-black uppercase">{item.userName}</span>
                                                         <span className="text-[8px] font-bold opacity-60">{item.userEmail}</span>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-3 text-slate-600">
-                                                    <div className="p-2 bg-white rounded-xl shadow-sm"><Building2 size={14} /></div>
+                                                <div className="flex items-center gap-3 text-foreground">
+                                                    <div className="p-2 bg-card rounded-xl shadow-sm"><Building2 size={14} /></div>
                                                     <div className="flex flex-col">
                                                         <span className="text-[10px] font-black uppercase">Tenant ID</span>
                                                         <span className="text-[8px] font-bold opacity-60 tracking-widest truncate max-w-[150px]">{item.tenantId}</span>
@@ -169,7 +167,7 @@ export default function FeedbackPage() {
                                                 </div>
                                             </div>
 
-                                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 relative group overflow-hidden">
+                                            <div className="bg-muted p-4 rounded-2xl border relative group overflow-hidden">
                                                 {item.image ? (
                                                     <div className="relative h-full min-h-[100px] cursor-pointer" onClick={() => setSelectedImage(item.image)}>
                                                         <img src={item.image} alt="Report attachment" className="absolute inset-0 w-full h-full object-cover rounded-xl" />
@@ -186,11 +184,11 @@ export default function FeedbackPage() {
                                             </div>
                                         </div>
 
-                                        <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                                        <div className="pt-4 border-t flex items-center justify-between">
                                             <p className="text-[11px] font-medium text-muted-foreground whitespace-pre-wrap flex-1">{item.description}</p>
                                         </div>
 
-                                        <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
+                                        <div className="flex items-center gap-2 p-2 bg-muted rounded-xl border overflow-hidden">
                                             <ExternalLink size={12} className="text-muted-foreground shrink-0" />
                                             <span className="text-[8px] font-mono text-muted-foreground truncate">{item.url}</span>
                                         </div>
@@ -225,6 +223,6 @@ export default function FeedbackPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div>
+        </PageShell>
     );
 }

@@ -78,7 +78,7 @@ import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { cn } from '@/lib/utils';
 import { UserRole } from '@/modules/core/lib/data';
 import type { Permission } from '@/modules/core/lib/permissions';
-import { TenantSwitcher } from '@/components/TenantSwitcher';
+import { TenantSwitcher } from '@/components/tenant-switcher';
 import { Button } from '@/components/ui/button';
 
 const getPanolNavItems = (can: (p: Permission) => boolean) => [
@@ -254,9 +254,13 @@ const getUsersNavItems = () => [
   { href: '/dashboard/permissions', icon: ShieldCheck, label: 'Gestión de Permisos' },
 ];
 
+// Las dos primeras etiquetas estaban CRUZADAS: `/subscriptions` (lista de
+// empresas) decía "Planes y Clientes" y `/subscriptions/plans` (gestión de
+// planes) decía "Gestión de Tenants". La lista de empresas se unificó en
+// `/super-admin/tenants`, así que aquí sólo quedan las pantallas propias.
 const getSubscriptionsNavItems = () => [
-  { href: '/dashboard/subscriptions', icon: Crown, label: 'Planes y Clientes' },
-  { href: '/dashboard/subscriptions/plans', icon: Building2, label: 'Gestión de Tenants' },
+  { href: '/dashboard/super-admin/tenants', icon: Building2, label: 'Empresas' },
+  { href: '/dashboard/subscriptions/plans', icon: Crown, label: 'Planes y Permisos' },
   { href: '/dashboard/subscriptions/feedback', icon: ShieldAlert, label: 'Feedback de Usuarios' },
 ];
 
@@ -285,10 +289,12 @@ const getSettingsNavItems = () => [
 ];
 
 const getSuperAdminNavItems = () => [
-  { href: '/dashboard/super-admin',           icon: LayoutDashboard, label: 'Panel Global'      },
-  { href: '/dashboard/super-admin/tenants',   icon: Building2,       label: 'Empresas'          },
-  { href: '/dashboard/super-admin/hardware',  icon: HardDrive,       label: 'Hardware'          },
-  { href: '/dashboard/super-admin/contracts', icon: FileText,        label: 'Contratos'         },
+  { href: '/dashboard/super-admin',             icon: LayoutDashboard, label: 'Panel Global'         },
+  { href: '/dashboard/super-admin/tenants',     icon: Building2,       label: 'Empresas'             },
+  { href: '/dashboard/super-admin/hardware',    icon: HardDrive,       label: 'Hardware'             },
+  { href: '/dashboard/super-admin/contracts',   icon: FileText,        label: 'Contratos'            },
+  { href: '/dashboard/subscriptions/plans',     icon: Crown,           label: 'Planes y Permisos'    },
+  { href: '/dashboard/subscriptions/feedback',  icon: ShieldAlert,     label: 'Feedback de Usuarios' },
 ];
 
 interface SidebarProps {

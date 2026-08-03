@@ -190,8 +190,17 @@ export async function updatePurchaseRequestStatus(
     updateData.rejection_reason = data.notes || "Rechazado en gestión de OC";
   }
 
-  const { error } = await supabase.from('purchase_requests').update(updateData).eq('id', requestId);
+  // `.select()`: un UPDATE que la RLS no matchea devuelve 0 filas SIN error, y la
+  // pantalla confirmaría una aprobación que nunca se guardó.
+  const { data: updated, error } = await supabase
+    .from('purchase_requests')
+    .update(updateData)
+    .eq('id', requestId)
+    .select('id');
   if (error) throw error;
+  if (!updated || updated.length === 0) {
+    throw new Error('No se pudo guardar el cambio de estado: no tienes permiso sobre esta solicitud.');
+  }
 }
 
 export async function receivePurchaseRequest(

@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { useAppIsLoading } from '@/modules/data/DataProvider';
+import { LoadingState } from '@/components/loading-state';
 
 interface EmptyStateProps {
     /** Ícono (p. ej. `<Box size={24} />`). Opcional. */
@@ -11,13 +13,31 @@ interface EmptyStateProps {
     /** Acción opcional (p. ej. un `<Button>` para crear el primer registro). */
     action?: React.ReactNode;
     className?: string;
+    /**
+     * Pinta el vacío aunque el estado global aún esté cargando. Sólo para listas
+     * que NO salen de `useAppState()` (filtros locales, datos propios del
+     * componente), donde "cargando" no aplica.
+     */
+    ignoreAppLoading?: boolean;
 }
 
 /**
  * Estado vacío estándar. Reemplaza los bloques "No hay datos" hechos a mano en
  * cada página. Usa solo tokens (dark-mode safe) y el radio de marca Pagnol.
+ *
+ * **Mientras el estado global carga, muestra el spinner en vez del vacío**
+ * (ADR-014): "todavía no llegaron los datos" y "no hay datos" se ven idénticos
+ * —una lista vacía— y afirmar lo segundo es mentir la mitad de las veces. En
+ * faena con mala señal, un "No hay existencias" se lee como "perdimos el stock".
+ * Se resuelve aquí, y no en cada página, porque son 54 las que pintan vacíos y
+ * `DataTable` delega su estado vacío en este mismo componente.
  */
-export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, className, ignoreAppLoading }: EmptyStateProps) {
+    const appIsLoading = useAppIsLoading();
+    if (appIsLoading && !ignoreAppLoading) {
+        return <LoadingState className={className} />;
+    }
+
     return (
         <div
             className={cn(

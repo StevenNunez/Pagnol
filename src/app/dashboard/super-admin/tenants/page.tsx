@@ -1,17 +1,25 @@
-﻿"use client";
+"use client";
 
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { PageHeader } from "@/components/page-header";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { PageShell } from "@/components/page-shell";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Building2, ArrowRight, Search, CheckCircle2, XCircle, Users, QrCode, Printer, Trash2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import {
+  Building2, Search, CheckCircle2, XCircle, Users, QrCode, Printer,
+  Trash2, AlertTriangle, Loader2, Plus,
+} from "lucide-react";
 import { supabase } from "@/modules/core/lib/supabase";
 import { useAuth } from "@/modules/core/contexts/app-provider";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/modules/core/hooks/use-toast";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { CreateTenantForm } from "@/components/admin/create-tenant-form";
 
 interface Tenant {
   id: string;
@@ -25,10 +33,11 @@ interface Tenant {
   user_count: number;
 }
 
-const planColors: Record<string, string> = {
-  enterprise: "bg-pagnol-orange/10 text-pagnol-orange border-pagnol-orange/20",
-  professional: "bg-blue-100 text-blue-700 border-blue-200",
-  starter: "bg-slate-100 text-slate-600 border-slate-200",
+// Mapa estático: las clases construidas con template strings se purgan en producción.
+const planBadge: Record<string, string> = {
+  enterprise: "bg-primary/10 text-primary border-primary/20",
+  professional: "bg-info-subtle text-info-subtle-foreground border-info/20",
+  starter: "bg-muted text-muted-foreground border-border",
 };
 
 export default function TenantsPage() {
@@ -38,148 +47,287 @@ export default function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  // El borrado es irreversible y arrastra usuarios y datos, así que se confirma
+  // escribiendo el nombre exacto — no con un segundo clic.
+  const [tenantToDelete, setTenantToDelete] = useState<Tenant | null>(null);
+  const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (user && user.role !== "super-admin") router.replace("/dashboard");
   }, [user, router]);
 
-  useEffect(() => {
-    const loadTenants = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("tenants")
-        .select("id, name, tenant_id, plan, is_active, created_at, hardware_assigned, contract_signed")
-        .order("created_at", { ascending: false });
+  const loadTenants = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("tenants")
+      .select("id, name, tenant_id, plan, is_active, created_at, hardware_assigned, contract_signed")
+      .order("created_at", { ascending: false });
 
-      if (!data) { setLoading(false); return; }
+    if (!data) { setTenants([]); setLoading(false); return; }
 
-      const enriched = await Promise.all(
-        data.map(async (t) => {
-          const { count } = await supabase
-            .from("profiles")
-            .select("id", { count: "exact", head: true })
-            .eq("tenant_id", t.id);
-          return { ...t, user_count: count ?? 0 };
-        })
-      );
-      setTenants(enriched);
-      setLoading(false);
-    };
+    // El conteo va por la ruta admin (service role): contar `profiles` desde el
+    // cliente devuelve 0 para quien no sea super-admin, y hacía una consulta por
+    // empresa.
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
 
-    loadTenants();
-
-    const channel = supabase
-      .channel(`super-admin-tenants-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => {
-        loadTenants();
+    const enriched = await Promise.all(
+      data.map(async (t) => {
+        try {
+          const res = await fetch(`/api/admin/tenant-users?tenantId=${t.id}&countOnly=true`, { headers });
+          if (res.ok) return { ...t, user_count: (await res.json()).count ?? 0 };
+        } catch { /* el conteo es informativo: no debe tumbar la lista */ }
+        return { ...t, user_count: 0 };
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-        loadTenants();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    );
+    setTenants(enriched);
+    setLoading(false);
   }, []);
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (confirmDeleteId !== id) { setConfirmDeleteId(id); return; }
+  useEffect(() => {
+    loadTenants();
+    const channel = supabase
+      .channel(`super-admin-tenants-${Date.now()}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tenants" }, () => loadTenants())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [loadTenants]);
+
+  // El borrado NO puede hacerse desde el cliente: `tenants` no tiene política de
+  // DELETE y, aunque la tuviera, falla por las claves foráneas de `profiles`.
+  // La ruta server-side borra cuentas de Auth, datos y empresa, en ese orden.
+  const handleDelete = async () => {
+    if (!tenantToDelete) return;
     setDeleting(true);
-    const { error } = await supabase.from("tenants").delete().eq("id", id);
-    setDeleting(false);
-    setConfirmDeleteId(null);
-    if (error) {
-      toast({ title: "Error al eliminar", description: error.message, variant: "destructive" });
-    } else {
-      setTenants(prev => prev.filter(t => t.id !== id));
-      toast({ title: "Empresa eliminada" });
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error("Sesión expirada. Vuelve a iniciar sesión.");
+
+      const res = await fetch("/api/admin/delete-tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: tenantToDelete.id, confirmName: confirmText.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "No se pudo eliminar la empresa.");
+
+      setTenants((prev) => prev.filter((t) => t.id !== tenantToDelete.id));
+      toast({
+        title: "Empresa eliminada",
+        description: `"${json.tenantName}": ${json.usersDeleted} usuario(s) y ${json.rowsDeleted} registro(s) borrados.`,
+      });
+      setTenantToDelete(null);
+      setConfirmText("");
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "No se eliminó la empresa", description: err.message });
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const filtered = tenants.filter(
-    (t) =>
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.tenant_id.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return tenants.filter((t) => t.name.toLowerCase().includes(q) || t.tenant_id.toLowerCase().includes(q));
+  }, [tenants, search]);
+
+  const columns: DataTableColumn<Tenant>[] = [
+    {
+      key: "name",
+      header: "Empresa",
+      cell: (t) => (
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-sm shrink-0">
+            {t.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold truncate">{t.name}</p>
+            <p className="text-[10px] text-muted-foreground font-mono">{t.tenant_id}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "plan",
+      header: "Plan",
+      cell: (t) => (
+        <Badge className={`text-[9px] font-black uppercase rounded-xl border ${planBadge[t.plan] ?? planBadge.starter}`}>
+          {t.plan}
+        </Badge>
+      ),
+    },
+    {
+      key: "estado",
+      header: "Estado",
+      cell: (t) => (
+        <Badge className={`text-[9px] font-black uppercase rounded-xl border-none ${t.is_active ? "badge-success" : "bg-destructive/10 text-destructive"}`}>
+          {t.is_active ? "Activa" : "Inactiva"}
+        </Badge>
+      ),
+    },
+    {
+      key: "usuarios",
+      header: "Usuarios",
+      cell: (t) => (
+        <span className="flex items-center gap-1.5 text-sm font-bold">
+          <Users size={13} className="text-muted-foreground" />
+          {t.user_count}
+        </span>
+      ),
+    },
+    {
+      key: "entrega",
+      header: "Hardware / Contrato",
+      cell: (t) => (
+        <div className="flex items-center gap-2.5">
+          <QrCode size={14} className={t.hardware_assigned?.qr_scanner ? "text-success" : "text-muted-foreground/40"} />
+          <Printer size={14} className={t.hardware_assigned?.thermal_printer ? "text-success" : "text-muted-foreground/40"} />
+          {t.contract_signed
+            ? <CheckCircle2 size={14} className="text-info" />
+            : <XCircle size={14} className="text-muted-foreground/40" />}
+        </div>
+      ),
+    },
+    {
+      key: "acciones",
+      header: "",
+      headerClassName: "w-10",
+      cell: (t) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={(e) => { e.stopPropagation(); setTenantToDelete(t); setConfirmText(""); }}
+          className="rounded-xl h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          title="Eliminar empresa"
+        >
+          <Trash2 size={14} />
+        </Button>
+      ),
+    },
+  ];
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader title="Gestión de Empresas" description="Listado completo de todas las empresas registradas en Pagnol." />
+    <PageShell
+      title="Gestión de Empresas"
+      description="Alta, edición y baja de las empresas registradas en Pagnol."
+      toolbar={
+        <>
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+            <Input
+              placeholder="Buscar por nombre o RUT..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-11 h-11 rounded-xl"
+            />
+          </div>
+          <Button
+            onClick={() => setCreating(true)}
+            className="rounded-[1.5rem] gap-2 shadow-lg shadow-primary/10 hover:scale-105 active:scale-95 transition-transform font-black uppercase tracking-widest text-[10px]"
+          >
+            <Plus size={14} /> Nueva empresa
+          </Button>
+        </>
+      }
+    >
+      <DataTable
+        columns={columns}
+        data={filtered}
+        rowKey={(t) => t.id}
+        isLoading={loading}
+        onRowClick={(t) => router.push(`/dashboard/super-admin/tenants/${t.id}`)}
+        minWidth="820px"
+        empty={{
+          icon: <Building2 size={36} />,
+          title: search ? "Sin resultados" : "Sin empresas registradas",
+          description: search
+            ? "Ninguna empresa coincide con la búsqueda."
+            : "Crea la primera con «Nueva empresa».",
+        }}
+      />
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-        <Input
-          placeholder="Buscar por nombre o RUT..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-11 h-11 bg-slate-100 dark:bg-card border-slate-200 dark:border-white/10 rounded-xl"
-        />
-      </div>
-
-      {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i} className="rounded-[2rem] border-none shadow animate-pulse bg-slate-100 dark:bg-slate-800 h-24" />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((t) => (
-            <Link key={t.id} href={`/dashboard/super-admin/tenants/${t.id}`}>
-              <Card className="rounded-[2rem] border border-slate-100 dark:border-white/5 shadow hover:shadow-lg transition-all cursor-pointer bg-slate-100 dark:bg-card group">
-                <CardContent className="p-5 flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-2xl bg-pagnol-teal/10 flex items-center justify-center text-pagnol-teal font-black text-lg shrink-0">
-                    {t.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-black uppercase truncate group-hover:text-pagnol-orange transition-colors">{t.name}</p>
-                      <Badge className={`text-[8px] font-black uppercase rounded-lg border ${planColors[t.plan] ?? planColors.starter}`}>
-                        {t.plan}
-                      </Badge>
-                      <Badge className={`text-[8px] font-black uppercase rounded-lg border-none ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {t.is_active ? "Activa" : "Inactiva"}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-4 mt-1 text-[10px] text-muted-foreground">
-                      <span className="font-mono">{t.tenant_id}</span>
-                      <span className="flex items-center gap-1"><Users size={10} /> {t.user_count} usuarios</span>
-                      <span className="flex items-center gap-1.5">
-                        <QrCode size={10} className={t.hardware_assigned?.qr_scanner ? 'text-green-500' : 'text-slate-300'} />
-                        <Printer size={10} className={t.hardware_assigned?.thermal_printer ? 'text-green-500' : 'text-slate-300'} />
-                        {t.contract_signed
-                          ? <CheckCircle2 size={10} className="text-blue-500" />
-                          : <XCircle size={10} className="text-slate-300" />}
-                      </span>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => handleDelete(t.id, e)}
-                    disabled={deleting && confirmDeleteId === t.id}
-                    className={`shrink-0 rounded-xl h-8 w-8 transition-colors ${confirmDeleteId === t.id ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}
-                    title={confirmDeleteId === t.id ? "Clic de nuevo para confirmar" : "Eliminar empresa"}
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                  <ArrowRight size={16} className="text-slate-300 group-hover:text-pagnol-orange transition-colors shrink-0" />
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-
-          {filtered.length === 0 && (
-            <div className="text-center py-16 text-muted-foreground">
-              <Building2 size={36} className="mx-auto mb-3 opacity-30" />
-              <p className="font-bold uppercase tracking-widest text-sm">Sin resultados</p>
+      {/* Alta de empresa */}
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogContent className="rounded-[1.5rem] sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary shrink-0">
+                <Building2 size={18} />
+              </div>
+              <DialogTitle className="text-base font-black uppercase tracking-tight">
+                Nueva empresa
+              </DialogTitle>
             </div>
-          )}
-        </div>
-      )}
-    </div>
+            <DialogDescription className="pt-2 text-left">
+              Se crea la empresa y se envía una invitación por correo a su administrador.
+            </DialogDescription>
+          </DialogHeader>
+          <CreateTenantForm onCreated={() => { setCreating(false); loadTenants(); }} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Baja de empresa */}
+      <Dialog
+        open={tenantToDelete !== null}
+        onOpenChange={(open) => { if (!open && !deleting) { setTenantToDelete(null); setConfirmText(""); } }}
+      >
+        <DialogContent className="rounded-[1.5rem] sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-destructive/10 text-destructive shrink-0">
+                <AlertTriangle size={18} />
+              </div>
+              <DialogTitle className="text-base font-black uppercase tracking-tight">
+                Eliminar empresa
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-left">
+              Esto borra <strong className="text-foreground">{tenantToDelete?.name}</strong> por
+              completo: sus {tenantToDelete?.user_count ?? 0} usuario(s) y todos sus datos —
+              activos, movimientos, asistencia, liquidaciones y registros financieros.
+              <span className="block mt-2 font-bold text-destructive">No se puede deshacer.</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirm-tenant-name" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+              Escribe <span className="text-foreground">{tenantToDelete?.name}</span> para confirmar
+            </Label>
+            <Input
+              id="confirm-tenant-name"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={tenantToDelete?.name ?? ""}
+              autoComplete="off"
+              className="rounded-xl"
+            />
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setTenantToDelete(null); setConfirmText(""); }}
+              disabled={deleting}
+              className="rounded-xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting || confirmText.trim() !== tenantToDelete?.name}
+              className="rounded-xl gap-2"
+            >
+              {deleting
+                ? <><Loader2 size={14} className="animate-spin" /> Eliminando…</>
+                : <><Trash2 size={14} /> Eliminar definitivamente</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </PageShell>
   );
 }

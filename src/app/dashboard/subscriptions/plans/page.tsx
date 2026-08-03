@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import React, { useMemo } from "react";
-import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useAuth, useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { AlertCircle, Crown, ShieldCheck } from "lucide-react";
@@ -9,10 +9,11 @@ import { EditPlanForm } from "@/components/admin/edit-plan-form";
 import { SubscriptionPlan } from "@/modules/core/lib/data";
 import { PLANS } from "@/modules/core/lib/permissions";
 
+// Mapa estático: las clases construidas con template strings se purgan en producción.
 const planColors: Record<string, { bg: string; icon: string; border: string }> = {
-  starter: { bg: "bg-slate-100 dark:bg-slate-800", icon: "text-muted-foreground", border: "border-slate-200 dark:border-white/10" },
-  professional: { bg: "bg-blue-50 dark:bg-blue-900/20", icon: "text-blue-500", border: "border-blue-200 dark:border-blue-800/40" },
-  enterprise: { bg: "bg-pagnol-orange/5", icon: "text-pagnol-orange", border: "border-pagnol-orange/20" },
+  starter: { bg: "bg-muted", icon: "text-muted-foreground", border: "border-border" },
+  professional: { bg: "bg-info-subtle", icon: "text-info-subtle-foreground", border: "border-info/20" },
+  enterprise: { bg: "bg-primary/5", icon: "text-primary", border: "border-primary/20" },
 };
 
 export default function SubscriptionPlansPage() {
@@ -37,11 +38,10 @@ export default function SubscriptionPlansPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Gestión de Planes"
-        description="Define qué permisos están disponibles en cada plan de suscripción."
-      />
+    <PageShell
+      title="Planes y Permisos"
+      description="Define qué permisos están disponibles en cada plan de suscripción."
+    >
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {plans.map((plan) => {
@@ -49,11 +49,11 @@ export default function SubscriptionPlansPage() {
           return (
             <Card
               key={plan.id}
-              className={`rounded-[2rem] border shadow-lg bg-slate-100 dark:bg-card overflow-hidden ${colors.border}`}
+              className={`rounded-[1.5rem] border bg-card overflow-hidden ${colors.border}`}
             >
               <CardHeader className={`p-6 pb-4 ${colors.bg}`}>
                 <div className="flex items-center gap-3">
-                  <div className={`p-2.5 rounded-2xl bg-white dark:bg-black/20 shadow-sm ${colors.icon}`}>
+                  <div className={`p-2.5 rounded-2xl bg-card shadow-sm ${colors.icon}`}>
                     <Crown size={18} />
                   </div>
                   <div>
@@ -71,6 +71,6 @@ export default function SubscriptionPlansPage() {
           );
         })}
       </div>
-    </div>
+    </PageShell>
   );
 }

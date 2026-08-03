@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/modules/core/lib/supabase";
 
 interface Options<T> {
@@ -12,17 +12,39 @@ interface Options<T> {
 }
 
 /**
+ * Array de la colección con la marca de si ya resolvió su PRIMER fetch.
+ *
+ * Es una propiedad adjunta al propio array (no enumerable, así que no aparece en
+ * `JSON.stringify`, `Object.keys` ni en un spread) en vez de cambiar el retorno a
+ * `{ data, hasLoaded }`: el hook tiene más de 40 llamadas y ese cambio de firma
+ * las rompería todas de golpe. Los consumidores siguen usándolo como un array
+ * normal; sólo quien necesita distinguir "cargando" de "vacío" lee la marca.
+ */
+export type LoadableArray<T> = T[] & { readonly hasLoaded: boolean };
+
+function markLoaded<T>(arr: T[], loaded: boolean): LoadableArray<T> {
+    Object.defineProperty(arr, 'hasLoaded', { value: loaded, enumerable: false, configurable: true });
+    return arr as LoadableArray<T>;
+}
+
+/**
  * Generic hook to manage Supabase collections with:
  * 1. Recursive pagination (bypassing 1000 row limit)
  * 2. Incremental Realtime updates
  * 3. Tenant isolation
  * 4. Custom mapping and column selection
+ *
+ * Devuelve el array con `hasLoaded` adjunto: hasta que el primer fetch responde,
+ * el array está vacío y es **indistinguible de "no hay datos"**. Sin esa marca,
+ * las páginas afirmaban cosas falsas mientras cargaban (Stock por Contrato decía
+ * "No hay existencias registradas" con 137 filas en el ledger).
  */
 export function useSupabaseCollection<T>(
     table: string,
     options: Options<T> = {}
-) {
+): LoadableArray<T> {
     const [data, setData] = useState<T[]>([]);
+    const [hasLoaded, setHasLoaded] = useState(false);
     const {
         tenantId,
         orderBy,
@@ -32,6 +54,18 @@ export function useSupabaseCollection<T>(
         version,
         softDelete = false,
     } = options;
+
+    // Al cambiar de empresa (TenantSwitcher del super-admin) o de tabla, lo ya
+    // cargado deja de valer: sin este reset, `hasLoaded` seguiría en true y la UI
+    // presentaría el array del tenant ANTERIOR como si fuera el nuevo, ya cargado.
+    // No se resetea en un simple refresh (`version`), para no provocar un parpadeo
+    // de "cargando" cada vez que se refrescan los datos.
+    const scopeKey = `${table}::${tenantId ?? ''}`;
+    const lastScope = useRef(scopeKey);
+    if (lastScope.current !== scopeKey) {
+        lastScope.current = scopeKey;
+        if (hasLoaded) setHasLoaded(false);
+    }
 
     useEffect(() => {
         // tenantId null/undefined means auth is loading or no tenant selected
@@ -76,6 +110,11 @@ export function useSupabaseCollection<T>(
 
             const mapped = mapper ? allResults.map(mapper) : allResults;
             setData(mapped as T[]);
+            // Se marca DESPUÉS del fetch, incluso si vino vacío o falló: lo que
+            // significa es "ya se intentó", que es justo lo que necesita la UI
+            // para dejar de decir "cargando". Si se marcara sólo con datos, una
+            // colección legítimamente vacía se quedaría en el spinner para siempre.
+            setHasLoaded(true);
         };
 
         fetchData();
@@ -130,5 +169,5 @@ export function useSupabaseCollection<T>(
         };
     }, [table, tenantId, enabled, orderBy?.column, orderBy?.ascending, version]);
 
-    return data;
+    return markLoaded(data, hasLoaded);
 }

@@ -21,10 +21,10 @@ const formatCurrency = (v: number) =>
 type WorkItemStatus = WorkItem['status'];
 
 const statusConfig: Record<WorkItemStatus, { label: string; bg: string; text: string; Icon: React.ComponentType<any> }> = {
-  'in-progress': { label: 'En Ejecución', bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', Icon: Clock },
-  'pending-quality-review': { label: 'Rev. Calidad', bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', Icon: AlertCircle },
-  'completed': { label: 'Completado', bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', Icon: CheckCircle2 },
-  'rejected': { label: 'Rechazado', bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', Icon: AlertCircle },
+  'in-progress': { label: 'En Ejecución', bg: 'bg-info-subtle', text: 'text-info-subtle-foreground', Icon: Clock },
+  'pending-quality-review': { label: 'Rev. Calidad', bg: 'bg-warning-subtle', text: 'text-warning-subtle-foreground', Icon: AlertCircle },
+  'completed': { label: 'Completado', bg: 'bg-success-subtle', text: 'text-success-subtle-foreground', Icon: CheckCircle2 },
+  'rejected': { label: 'Rechazado', bg: 'bg-destructive/10', text: 'text-destructive', Icon: AlertCircle },
 };
 
 const calcContractTotals = (rootId: string, allItems: WorkItem[]) => {
@@ -126,7 +126,7 @@ export default function MisContratosPage() {
 
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
                         <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-md text-blue-600 shrink-0">
+                          <div className="p-1.5 bg-info-subtle rounded-md text-info shrink-0">
                             <DollarSign className="h-3.5 w-3.5" />
                           </div>
                           <div>
@@ -136,12 +136,12 @@ export default function MisContratosPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-md text-green-600 shrink-0">
+                          <div className="p-1.5 bg-success-subtle rounded-md text-success shrink-0">
                             <TrendingUp className="h-3.5 w-3.5" />
                           </div>
                           <div>
                             <p className="text-[10px] uppercase text-muted-foreground font-bold leading-tight">Valor Ganado</p>
-                            <p className="text-sm font-bold text-green-600">{formatCurrency(earnedValue)}</p>
+                            <p className="text-sm font-bold text-success">{formatCurrency(earnedValue)}</p>
                           </div>
                         </div>
 
@@ -150,7 +150,7 @@ export default function MisContratosPage() {
                           <div className="flex items-center gap-2">
                             <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                               <div
-                                className={cn('h-full rounded-full transition-all', progress >= 100 ? 'bg-green-500' : 'bg-blue-500')}
+                                className={cn('h-full rounded-full transition-all', progress >= 100 ? 'bg-success' : 'bg-info')}
                                 style={{ width: `${Math.min(100, progress)}%` }}
                               />
                             </div>

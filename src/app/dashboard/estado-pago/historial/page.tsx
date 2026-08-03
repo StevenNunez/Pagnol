@@ -106,7 +106,7 @@ export default function PaymentHistoryPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <Card>
                         <CardContent className="p-4 flex items-center gap-3">
-                            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-md text-blue-600 shrink-0">
+                            <div className="p-2 bg-info-subtle rounded-md text-info shrink-0">
                                 <ReceiptText className="h-4 w-4" />
                             </div>
                             <div>
@@ -117,7 +117,7 @@ export default function PaymentHistoryPage() {
                     </Card>
                     <Card>
                         <CardContent className="p-4 flex items-center gap-3">
-                            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-md text-yellow-600 shrink-0">
+                            <div className="p-2 bg-warning-subtle rounded-md text-warning shrink-0">
                                 <Clock className="h-4 w-4" />
                             </div>
                             <div>
@@ -128,7 +128,7 @@ export default function PaymentHistoryPage() {
                     </Card>
                     <Card>
                         <CardContent className="p-4 flex items-center gap-3">
-                            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-md text-green-600 shrink-0">
+                            <div className="p-2 bg-success-subtle rounded-md text-success shrink-0">
                                 <TrendingUp className="h-4 w-4" />
                             </div>
                             <div>
@@ -139,12 +139,12 @@ export default function PaymentHistoryPage() {
                     </Card>
                     <Card>
                         <CardContent className="p-4 flex items-center gap-3">
-                            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-md text-blue-600 shrink-0">
+                            <div className="p-2 bg-info-subtle rounded-md text-info shrink-0">
                                 <DollarSign className="h-4 w-4" />
                             </div>
                             <div>
                                 <p className="text-[10px] font-bold uppercase text-muted-foreground">Total Pagado</p>
-                                <p className="text-sm font-bold text-green-600">{formatCurrency(summary.paid)}</p>
+                                <p className="text-sm font-bold text-success">{formatCurrency(summary.paid)}</p>
                             </div>
                         </CardContent>
                     </Card>

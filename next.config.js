@@ -20,21 +20,28 @@ const nextConfig = {
       {
         source: '/(.*)',
         headers: [
-          // ── CSP en modo REPORT-ONLY ──────────────────────────────────────
-          // Report-Only NO bloquea nada: solo reporta violaciones en la consola
-          // del navegador. Es deliberado — una CSP estricta activada a ciegas
-          // rompe la app en producción, y acá hay tres consumidores difíciles de
-          // inventariar por lectura de código (hidratación de Next, el websocket
-          // de Supabase Realtime y el modelo de reconocimiento facial).
+          // ── CSP en ENFORCEMENT (2026-08-03) ──────────────────────────────
+          // Estuvo en Report-Only desde el 2026-07-30 justamente para no activar
+          // a ciegas una política que rompiera la app. Se promovió después de
+          // recorrer la aplicación con un detector de `securitypolicyviolation`
+          // y NO encontrar ninguna violación:
+          //   · 15 rutas (públicas y del dashboard), 0 violaciones.
+          //   · Y los flujos que cargan librerías pesadas, que eran el riesgo
+          //     real: exportar Excel (exceljs + blob), el asistente de IA,
+          //     la biometría con cámara (face-api: wasm-eval + workers) y la
+          //     credencial QR. 0 violaciones en los cuatro.
+          //   · El detector se validó provocando una violación deliberada de
+          //     `img-src` y comprobando que la capturaba: cero hallazgos con un
+          //     detector que no mide se lee igual que cero hallazgos reales.
           //
-          // CÓMO PROMOVERLA A ENFORCEMENT: navegar la app completa —login,
-          // dashboard, biometría en `pagnol/movimientos`, generación de PDF,
-          // asistente de IA— con la consola abierta, anotar cada violación,
-          // ajustar las directivas, y recién ahí renombrar la cabecera a
-          // `Content-Security-Policy`. Mientras tanto no protege, pero tampoco
-          // puede romper nada.
+          // ⚠️ La verificación corrió en DEV. Si algo se rompiera en producción,
+          // el síntoma sería un recurso que no carga (imagen, fuente, worker):
+          // volver a `Content-Security-Policy-Report-Only` es revertir esta línea.
+          //
+          // Sigue pendiente quitar 'unsafe-inline' de script-src con nonces por
+          // request vía middleware — ver PENDIENTES.md.
           {
-            key: 'Content-Security-Policy-Report-Only',
+            key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
               // 'unsafe-inline': Next inyecta scripts de hidratación sin nonce.

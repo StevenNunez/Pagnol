@@ -135,14 +135,14 @@ const WorkItemNode = ({
                 className={cn(
                     'flex items-center gap-2 py-2 px-2 rounded-lg cursor-pointer transition-all duration-200 border border-transparent',
                     isSelected
-                        ? 'bg-blue-50 border-blue-200 shadow-sm dark:bg-blue-900/20 dark:border-blue-800'
+                        ? 'bg-info-subtle border-info/20 shadow-sm'
                         : 'hover:bg-muted/50'
                 )}
                 style={{ marginLeft: `${level * 1.2}rem` }}
             >
                 {/* Línea guía visual para la jerarquía */}
                 {level > 0 && (
-                    <div className="absolute left-0 top-0 bottom-0 border-l border-dashed border-gray-300 dark:border-gray-700" style={{ left: `${(level * 1.2) - 0.6}rem` }} />
+                    <div className="absolute left-0 top-0 bottom-0 border-l border-dashed border-border" style={{ left: `${(level * 1.2) - 0.6}rem` }} />
                 )}
 
                 <button
@@ -158,19 +158,19 @@ const WorkItemNode = ({
                 <div className="flex-grow min-w-0 grid gap-1">
                     <div className="flex items-center justify-between gap-2">
                         <span className="font-medium text-sm truncate text-foreground flex items-center gap-2" title={node.name}>
-                            <Badge variant="outline" className="font-mono text-[10px] px-1 py-0 h-5 text-muted-foreground border-gray-300">{node.path}</Badge>
+                            <Badge variant="outline" className="font-mono text-[10px] px-1 py-0 h-5 text-muted-foreground border-border">{node.path}</Badge>
                             {node.name}
                         </span>
                     </div>
                     {/* Barra de progreso mini */}
                     <div className="flex items-center gap-2">
-                        <Progress value={progress} className="h-1.5 flex-grow bg-gray-200 dark:bg-gray-700" indicatorClassName={progress >= 100 ? "bg-green-500" : "bg-blue-600"} />
+                        <Progress value={progress} className="h-1.5 flex-grow bg-muted" indicatorClassName={progress >= 100 ? "bg-success" : "bg-info"} />
                     </div>
                 </div>
 
                 <span className={cn(
                     "text-[10px] font-mono font-bold w-10 text-right shrink-0",
-                    progress >= 100 ? "text-green-600" : "text-muted-foreground"
+                    progress >= 100 ? "text-success" : "text-muted-foreground"
                 )}>
                     {progress.toFixed(0)}%
                 </span>
@@ -382,7 +382,7 @@ export default function ContractorContractDetailPage() {
             toast({
                 title: 'Estado de Pago Generado',
                 description: 'El documento PDF se descargó y el registro fue guardado en el historial.',
-                className: 'border-green-500',
+                className: 'border-success',
             });
             router.push('/dashboard/estado-pago/historial');
         } catch (err: any) {
@@ -469,7 +469,7 @@ export default function ContractorContractDetailPage() {
                 <Button
                     onClick={handleGenerateEP}
                     disabled={isGeneratingEP || financialKPIs.earnedValue === 0}
-                    className="bg-green-600 hover:bg-green-700 shrink-0"
+                    className="bg-success hover:bg-success shrink-0"
                 >
                     {isGeneratingEP
                         ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -481,9 +481,9 @@ export default function ContractorContractDetailPage() {
 
             {/* --- KPI CARDS (Resumen Financiero) --- */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card className="bg-blue-50/50 border-blue-100 dark:bg-blue-900/10 dark:border-blue-800">
+                <Card className="bg-info-subtle/50 border-info/20">
                     <CardContent className="p-4 flex items-center gap-4">
-                        <div className="p-3 bg-blue-100 dark:bg-blue-800 rounded-full text-blue-600 dark:text-blue-100 shadow-sm">
+                        <div className="p-3 bg-info-subtle rounded-full text-info-subtle-foreground shadow-sm">
                             <DollarSign className="h-5 w-5" />
                         </div>
                         <div>
@@ -492,9 +492,9 @@ export default function ContractorContractDetailPage() {
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-green-50/50 border-green-100 dark:bg-green-900/10 dark:border-green-800">
+                <Card className="bg-success-subtle/50 border-success/20">
                     <CardContent className="p-4 flex items-center gap-4">
-                        <div className="p-3 bg-green-100 dark:bg-green-800 rounded-full text-green-600 dark:text-green-100 shadow-sm">
+                        <div className="p-3 bg-success-subtle rounded-full text-success-subtle-foreground shadow-sm">
                             <TrendingUp className="h-5 w-5" />
                         </div>
                         <div>
@@ -505,7 +505,7 @@ export default function ContractorContractDetailPage() {
                 </Card>
                 <Card>
                     <CardContent className="p-4 flex items-center gap-4">
-                        <div className="p-3 bg-purple-100 dark:bg-purple-800 rounded-full text-purple-600 dark:text-purple-100 shadow-sm">
+                        <div className="p-3 bg-primary/10 rounded-full text-primary shadow-sm">
                             <Briefcase className="h-5 w-5" />
                         </div>
                         <div>
@@ -523,13 +523,13 @@ export default function ContractorContractDetailPage() {
                     <CardContent className="p-4 flex items-center gap-4">
                         <div className={cn(
                             "p-3 rounded-full shadow-sm",
-                            spi >= 1 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                            spi >= 1 ? "bg-success-subtle text-success" : "bg-destructive/10 text-destructive"
                         )}>
                             {spi >= 1 ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
                         </div>
                         <div>
                             <p className="text-xs font-medium text-muted-foreground uppercase">SPI (Eficiencia)</p>
-                            <h3 className={cn("text-xl font-bold", spi >= 1 ? "text-green-700" : "text-red-700")}>
+                            <h3 className={cn("text-xl font-bold", spi >= 1 ? "text-success-subtle-foreground" : "text-destructive")}>
                                 {spi.toFixed(2)}x
                             </h3>
                             <p className="text-[10px] text-muted-foreground">
@@ -544,7 +544,7 @@ export default function ContractorContractDetailPage() {
                 <div className="lg:col-span-4 space-y-6">
                     <Card className="flex flex-col border-l-4 border-l-blue-500 shadow-sm h-[600px]">
                         <CardHeader className="pb-4">
-                            <CardTitle className="flex items-center gap-2 text-lg"><FolderTree className="h-5 w-5 text-blue-500" /> Estructura WBS</CardTitle>
+                            <CardTitle className="flex items-center gap-2 text-lg"><FolderTree className="h-5 w-5 text-info" /> Estructura WBS</CardTitle>
                             <CardDescription>Haz doble clic para registrar avance.</CardDescription>
                         </CardHeader>
                         <CardContent className="p-0 flex-1 overflow-hidden">
@@ -571,7 +571,7 @@ export default function ContractorContractDetailPage() {
                                             Precio Unitario: <span className="font-mono font-medium text-foreground">${selectedItem.unitPrice?.toLocaleString()}</span> • Cantidad: {selectedItem.quantity.toLocaleString()} {selectedItem.unit}
                                         </CardDescription>
                                     </div>
-                                    <Button onClick={() => setIsProgressModalOpen(true)} className="bg-green-600 hover:bg-green-700">
+                                    <Button onClick={() => setIsProgressModalOpen(true)} className="bg-success hover:bg-success">
                                         <CalendarCheck className="mr-2 h-4 w-4" /> Registrar Avance
                                     </Button>
                                 </div>
@@ -580,11 +580,11 @@ export default function ContractorContractDetailPage() {
                                 <div className="p-6 bg-muted/10 grid grid-cols-3 gap-4 text-center border-b">
                                     <div>
                                         <p className="text-xs uppercase text-muted-foreground font-bold">Avance Actual</p>
-                                        <p className="text-2xl font-bold text-green-600">{selectedItem.progress || 0}%</p>
+                                        <p className="text-2xl font-bold text-success">{selectedItem.progress || 0}%</p>
                                     </div>
                                     <div>
                                         <p className="text-xs uppercase text-muted-foreground font-bold">Por Ejecutar</p>
-                                        <p className="text-2xl font-bold text-blue-600">{100 - (selectedItem.progress || 0)}%</p>
+                                        <p className="text-2xl font-bold text-info">{100 - (selectedItem.progress || 0)}%</p>
                                     </div>
                                     <div>
                                         <p className="text-xs uppercase text-muted-foreground font-bold">Valor Ejecutado</p>
@@ -613,7 +613,7 @@ export default function ContractorContractDetailPage() {
                                                     selectedItemLogs.map(log => (
                                                         <TableRow key={log.id}>
                                                             <TableCell className="font-mono text-xs w-28">{formatDate(log.date)}</TableCell>
-                                                            <TableCell className="text-right font-bold text-green-600 w-24">+{log.quantity.toLocaleString()}</TableCell>
+                                                            <TableCell className="text-right font-bold text-success w-24">+{log.quantity.toLocaleString()}</TableCell>
                                                             <TableCell className="text-xs text-muted-foreground">{log.userName}</TableCell>
                                                             <TableCell className="text-xs text-muted-foreground italic truncate max-w-[200px]">{log.observations || "-"}</TableCell>
                                                         </TableRow>
@@ -645,7 +645,7 @@ export default function ContractorContractDetailPage() {
                 <Card className="shadow-md">
                     <CardHeader>
                         <div className="flex items-center justify-between">
-                            <CardTitle className="flex items-center gap-2"><GanttChartSquare className="h-5 w-5 text-purple-500" /> Cronograma Maestro</CardTitle>
+                            <CardTitle className="flex items-center gap-2"><GanttChartSquare className="h-5 w-5 text-primary" /> Cronograma Maestro</CardTitle>
                             <div className="flex gap-1 bg-muted p-1 rounded-md">
                                 <Button variant={viewMode === ViewMode.Day ? 'secondary' : 'ghost'} size="sm" className="h-6 text-xs px-2" onClick={() => setViewMode(ViewMode.Day)}>Día</Button>
                                 <Button variant={viewMode === ViewMode.Week ? 'secondary' : 'ghost'} size="sm" className="h-6 text-xs px-2" onClick={() => setViewMode(ViewMode.Week)}>Sem</Button>
@@ -678,7 +678,7 @@ export default function ContractorContractDetailPage() {
 
                 <Card className="shadow-md">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-blue-500" /> Curva S de Valor Ganado</CardTitle>
+                        <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-info" /> Curva S de Valor Ganado</CardTitle>
                         <CardDescription>Evolución financiera: Planificado vs Ejecutado Real.</CardDescription>
                     </CardHeader>
                     <CardContent>

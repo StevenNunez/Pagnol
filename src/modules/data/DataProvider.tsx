@@ -309,7 +309,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, goodsReceiptsData, costCentersData, supplierPaymentsData,
             salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
             checklistTemplatesData, behaviorObservationsData, stockMovementsData,
-            subscriptionPlansData, workItemsData, progressLogsData, dynamicRolesData, paymentStatesData,
+            workItemsData, progressLogsData, paymentStatesData,
             dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
             protocolTemplatesData, protocolsData,
             shiftSchedulesData, clientsData, contractsData, contractWorkersData,
@@ -319,7 +319,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             workReportsData, leaveRequestsData, hrDocumentsData,
             workReportAreasData, workReportSpecialtiesData, workReportMilestonesData, workReportCatalogsData,
             workOrdersData, workWeeklyReportsData,
-        ].every(data => data !== undefined);
+            // `dynamicRolesData` y `subscriptionPlansData` no entran: no son
+            // arrays del hook (se transforman a objeto) y no tienen `hasLoaded`.
+        ].every(data => (data as any)?.hasLoaded === true);
 
         if (!allDataLoaded) {
             dispatch({ type: 'SET_LOADING', payload: true });
@@ -739,5 +741,35 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
 // cambio de cualquier colección).
 const { Provider, useTrackedState } = createContainer(useAppValue);
 
-export const DataProvider = Provider;
+/**
+ * Contexto mínimo con la carga inicial del provider.
+ *
+ * Existe aparte del estado tracked por dos razones:
+ *  1. `useTrackedState` **lanza** si se usa fuera del provider, y esto lo consume
+ *     `<EmptyState>`, que también se renderiza fuera del dashboard. `useContext`
+ *     sobre un contexto sin provider devuelve su default y no rompe nada.
+ *  2. Su valor cambia una sola vez (true → false), así que no arrastra
+ *     re-renders como lo haría leer el estado completo.
+ *
+ * Sirve para que los estados vacíos no afirmen "no hay datos" mientras cargan
+ * (ADR-014).
+ */
+export const AppLoadingContext = React.createContext<boolean | undefined>(undefined);
+
+/** `true` sólo si estamos dentro del provider Y todavía carga. */
+export function useAppIsLoading(): boolean {
+    return React.useContext(AppLoadingContext) === true;
+}
+
+function DataProviderWithLoading({ children }: { children: React.ReactNode }) {
+    return <Provider><LoadingBridge>{children}</LoadingBridge></Provider>;
+}
+
+/** Publica `isLoading` del estado tracked en el contexto ligero. */
+function LoadingBridge({ children }: { children: React.ReactNode }) {
+    const { isLoading } = useTrackedState();
+    return <AppLoadingContext.Provider value={isLoading}>{children}</AppLoadingContext.Provider>;
+}
+
+export const DataProvider = DataProviderWithLoading;
 export const useAppStateTracked = useTrackedState;

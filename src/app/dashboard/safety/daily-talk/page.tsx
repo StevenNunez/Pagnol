@@ -24,7 +24,7 @@ import Image from "next/image";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { User } from "@/modules/core/lib/data";
-import { suggestMiningSafetyTalkTopic } from "@/actions/ask-ferro";
+import { suggestMiningSafetyTalkTopic } from "@/actions/ai-actions";
 
 const attendeeSchema = z.object({
   id: z.string(),

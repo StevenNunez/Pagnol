@@ -111,8 +111,13 @@ export default function CargaMasivaPage() {
     const [erpConnectionStatus, setErpConnectionStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { currentTenantId, user: currentUser } = useAuth();
+    const { currentTenantId, user: currentUser, can } = useAuth();
     const router = useRouter();
+    // Los umbrales de criticidad deciden qué compra necesita aprobación de clase
+    // A/B/C, así que son configuración de empresa: la base sólo deja guardarlos a
+    // quien la administra (trigger trg_prevent_tenant_platform_escalation). Se
+    // ocultan aquí para no ofrecer un botón que va a fallar.
+    const canManageSettings = can('module_settings:view');
 
     const formatCLP = (amount: number) => {
         return new Intl.NumberFormat('es-CL', {
@@ -746,7 +751,7 @@ export default function CargaMasivaPage() {
 
                     {/* Configuración de Criticidad */}
                     <AnimatePresence>
-                        {showCriticalityConfig && (
+                        {showCriticalityConfig && canManageSettings && (
                             <motion.div
                                 initial={{ opacity: 0, y: -20 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -814,7 +819,7 @@ export default function CargaMasivaPage() {
                         )}
                     </AnimatePresence>
 
-                    {!showCriticalityConfig && (
+                    {!showCriticalityConfig && canManageSettings && (
                         <div className="flex justify-end mb-4">
                             <Button
                                 variant="outline"

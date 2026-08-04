@@ -1,6 +1,6 @@
 
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 declare module 'jspdf' {
     interface jsPDF {
@@ -94,7 +94,7 @@ export async function generateContractPDF(data: ContractData) {
         item.condition || 'N/A'
     ]);
 
-    (doc as any).autoTable({
+    autoTable(doc, {
         startY: y,
         head: [['#', 'Nombre del Activo', 'ID Corto', 'Estado']],
         body: tableBody,

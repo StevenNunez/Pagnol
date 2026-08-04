@@ -50,8 +50,8 @@
     "genkit": "^1.0.0",
     "handlebars": "^4.7.9",
     "html5-qrcode": "^2.3.8",
-    "jspdf": "^2.5.1",
-    "jspdf-autotable": "^3.8.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.400.0",
     "nanoid": "^5.0.7",
     "next": "^16.2.10",
@@ -95,7 +95,7 @@
     "tsx": "^4.19.2",
     "typescript": "^5.5.2",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "zod-to-json-schema": "3.23.0"

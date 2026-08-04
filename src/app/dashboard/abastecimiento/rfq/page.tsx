@@ -86,7 +86,7 @@ export default function RfqPage() {
                 <EmptyState
                     icon={<ListChecks size={24} />}
                     title="Sin cotizaciones"
-                    description="Crea una RFQ a partir de solicitudes de compra aprobadas e invita a tus proveedores."
+                    description="Crea una RFQ a partir de requerimientos aprobados e invita a tus proveedores."
                 />
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -412,7 +412,7 @@ function ManageRfqDialog({ rfq, onClose }: { rfq: QuoteRequest; onClose: () => v
                             <AlertDialogContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>¿Eliminar la RFQ {rfq.internalCode}?</AlertDialogTitle>
-                                    <AlertDialogDescription>Se eliminará la RFQ y sus cotizaciones. Las solicitudes de compra no se ven afectadas.</AlertDialogDescription>
+                                    <AlertDialogDescription>Se eliminará la RFQ y sus cotizaciones. Los requerimientos no se ven afectados.</AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Cancelar</AlertDialogCancel>

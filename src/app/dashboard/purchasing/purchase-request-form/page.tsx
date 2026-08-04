@@ -376,7 +376,7 @@ export default function PurchaseRequestFormPage() {
 
   return (
     <PageShell
-      title="Solicitud de Compra"
+      title="Nuevo Requerimiento (RQ)"
       description="Gestiona la adquisición de materiales externos o sin stock en el pañol."
     >
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
@@ -664,7 +664,7 @@ export default function PurchaseRequestFormPage() {
             <EmptyState
               icon={<Search size={24} />}
               title={search ? 'Sin resultados' : 'No se encontraron solicitudes'}
-              description={search ? `No se encontró "${search}".` : 'Tus solicitudes de compra aparecerán aquí una vez enviadas.'}
+              description={search ? `No se encontró "${search}".` : 'Tus requerimientos aparecerán aquí una vez enviados.'}
             />
           ) : (
             <>

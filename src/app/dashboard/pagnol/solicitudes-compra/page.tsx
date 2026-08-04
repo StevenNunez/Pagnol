@@ -305,7 +305,7 @@ export default function AdminPurchaseRequestsPage() {
     setIsExporting(true);
     try {
       const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Solicitudes de Compra");
+      const ws = wb.addWorksheet("Requerimientos");
       const header = { font: { bold: true }, fill: { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFEFEFEF" } } };
       ws.columns = [
         { header: "Código", key: "code", width: 16 },
@@ -432,7 +432,7 @@ export default function AdminPurchaseRequestsPage() {
 
   return (
     <PageShell
-      title="Solicitudes de Compra"
+      title="Requerimientos (RQ)"
       description="Revisa, gestiona y registra el ingreso de materiales aprobados al pañol."
       toolbar={
         <>
@@ -551,7 +551,7 @@ export default function AdminPurchaseRequestsPage() {
             icon: <ShoppingCart className="h-8 w-8" />,
             title: searchTerm || applicantFilter || statusFilter !== "all" || dateFrom || dateTo
               ? "No hay solicitudes para los filtros aplicados."
-              : "Aún no hay solicitudes de compra registradas.",
+              : "Aún no hay requerimientos registrados.",
           }}
         />
 

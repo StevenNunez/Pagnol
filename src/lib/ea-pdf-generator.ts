@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import type { Material, User } from '@/modules/core/lib/data';
 
 declare module 'jspdf' {
@@ -164,7 +164,7 @@ export async function generateEAPDF(data: EAGeneratorData): Promise<Blob> {
         `$${(a.unitCost || 0).toLocaleString('es-CL')}`,
     ]);
 
-    doc.autoTable({
+    autoTable(doc, {
         startY: y,
         head: [['N°', 'Descripcion del Activo', 'Marca/Modelo', 'N° Serie', 'Clase', 'Tipo Uso', 'Valor Ref.']],
         body: tableRows.length > 0 ? tableRows : [['—', 'Sin activos entregados registrados', '', '', '', '', '']],

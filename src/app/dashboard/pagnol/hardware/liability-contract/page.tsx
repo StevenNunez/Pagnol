@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTable from 'jspdf-autotable';
 
 const LiabilityContractPage: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -115,7 +115,7 @@ const LiabilityContractPage: React.FC = () => {
       doc.line(margin, y, pageW - margin, y);
       y += 4;
 
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: y,
         head: [["Dispositivo", "Costo (USD)", "Prima Anual", "%", "Deducible"]],
         body: costStructure.map(r => [

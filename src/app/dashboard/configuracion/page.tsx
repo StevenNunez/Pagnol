@@ -27,7 +27,7 @@ const MICRO_LABEL = "text-[10px] font-black uppercase tracking-widest text-muted
 const DOCUMENT_TYPES: { type: string; label: string; semanticDefault?: string }[] = [
   { type: "TX", label: "Solicitud de material" },
   { type: "RET", label: "Retiro / devolución de material" },
-  { type: "PRQ", label: "Solicitud de compra" },
+  { type: "RQ", label: "Requerimiento (RQ)" },
   { type: "SCL", label: "Solicitud de suministro (cliente)" },
   { type: "PUR", label: "Orden de compra" },
   { type: "RFQ", label: "Cotización de compra" },

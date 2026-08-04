@@ -1,6 +1,6 @@
 
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { SafetyInspection, User } from '@/modules/core/lib/data';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -137,7 +137,7 @@ function addInspectionInfo(doc: jsPDF, inspection: SafetyInspection, supervisor:
     ['Nivel de Riesgo:', getRiskInSpanish(inspection.riskLevel), '', ''],
   ];
 
-  doc.autoTable({
+  autoTable(doc, {
     body: tableData,
     startY: y,
     theme: 'grid',

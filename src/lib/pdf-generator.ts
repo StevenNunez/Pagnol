@@ -1,6 +1,6 @@
 
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import type { PurchaseOrder as PurchaseOrderType, PurchaseRequest, Client, Supplier } from '@/modules/core/lib/data';
 
 declare module 'jspdf' {
@@ -81,7 +81,7 @@ export async function generatePurchaseOrderPDF(order: PurchaseOrderType, supplie
   const orderDate = getDate(order.createdAt || new Date());
   
   // Right-aligned info table for Order Number and Date
-  (doc as any).autoTable({
+  autoTable(doc, {
     body: [
         [{ content: 'SOLICITUD N°:', styles: { fontStyle: 'bold', halign: 'right' } }, { content: String(orderIndex).padStart(3, '0'), styles: { halign: 'left' } }],
         [{ content: 'FECHA:', styles: { fontStyle: 'bold', halign: 'right' } }, { content: orderDate.toLocaleDateString('es-CL'), styles: { halign: 'left' } }],
@@ -126,7 +126,7 @@ export async function generatePurchaseOrderPDF(order: PurchaseOrderType, supplie
     item.totalQuantity ? item.totalQuantity.toLocaleString('es-CL') : '0',
   ]);
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     head: [tableColumn],
     body: tableRows,
     startY: y,
@@ -240,7 +240,7 @@ export async function generateClientSupplyPDF(
   if (tenant?.rut) doc.text(`RUT: ${tenant.rut}`, margin, y + LINE_HEIGHT - 2);
   if (tenant?.address) doc.text(tenant.address, margin, y + (LINE_HEIGHT * 2) - 4);
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     body: [
       [{ content: 'SOLICITUD N°:', styles: { fontStyle: 'bold', halign: 'right' } }, { content: docCode, styles: { halign: 'left' } }],
       [{ content: 'FECHA:', styles: { fontStyle: 'bold', halign: 'right' } }, { content: docDate.toLocaleDateString('es-CL'), styles: { halign: 'left' } }],
@@ -287,7 +287,7 @@ export async function generateClientSupplyPDF(
   doc.line(margin, y, pageWidth - margin, y);
   y += LINE_HEIGHT;
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     head: [['Ítem', 'Material', 'Unidad', 'Cantidad']],
     body: requests.map((r, i) => [
       i + 1,

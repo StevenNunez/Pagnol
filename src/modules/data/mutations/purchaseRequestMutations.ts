@@ -37,7 +37,7 @@ async function insertPurchaseRequestRow(payload: Record<string, any>, required: 
     }
     throw error;
   }
-  throw new Error('No se pudo insertar la solicitud de compra.');
+  throw new Error('No se pudo insertar el requerimiento.');
 }
 
 export async function addPurchaseRequest(
@@ -48,12 +48,18 @@ export async function addPurchaseRequest(
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
   // 'client' = suministro del cliente del contrato (correlativo propio SCL);
-  // 'supplier' = compra normal (histórico, PRQ).
+  // 'supplier' = requerimiento normal (RQ).
+  //
+  // CORTE LIMPIO (RFC-004 D5): los nuevos nacen como `RQ`; los ya emitidos
+  // conservan su `PRQ` porque son referencia en documentos entregados y el
+  // Artículo 2 no admite reescribirlos. Verificado que ningún tenant tenía un
+  // prefijo propio configurado para 'PRQ', así que el cambio de tipo no deja
+  // ninguna configuración huérfana.
   const isClientSupply = data.requestTarget === 'client';
   if (isClientSupply && !data.clientId) {
     throw new Error('El contrato seleccionado no tiene un cliente asociado — asócialo en Configuración → Clientes antes de solicitar un suministro.');
   }
-  const requestId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'PRQ');
+  const requestId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'RQ');
 
   // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
   const preAuthorized = userCan(user, 'purchase_requests:authorize');
@@ -127,7 +133,7 @@ export async function authorizePurchaseRequest(requestId: string, context: Conte
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
   if (!userCan(user, 'purchase_requests:authorize'))
-    throw new Error('No tienes permiso para autorizar solicitudes de compra.');
+    throw new Error('No tienes permiso para autorizar requerimientos.');
 
   const { error } = await supabase
     .from('purchase_requests')
@@ -154,7 +160,7 @@ export async function updatePurchaseRequestStatus(
   // cualquier usuario autenticado del tenant podía llamar esta mutación
   // directamente sin pasar por la UI que sí lo verificaba.
   if ((status === 'approved' || status === 'rejected') && !userCan(user, 'purchase_requests:approve')) {
-    throw new Error('No tienes permiso para aprobar o rechazar solicitudes de compra.');
+    throw new Error('No tienes permiso para aprobar o rechazar requerimientos.');
   }
 
   // Gate ADC: la cola de Abastecimiento ya oculta las pendientes sin
@@ -305,9 +311,9 @@ export async function receivePurchaseRequest(
   // arriba (transición atómica) — en el caso parcial falta crear la fila de
   // historial "recibido" para esta porción.
   if (isPartial) {
-    const newPrqId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'PRQ');
+    const newRqId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'RQ');
     await insertPurchaseRequestRow({
-      internal_code: newPrqId,
+      internal_code: newRqId,
       material_name: request.material_name,
       quantity: receivedQuantity,
       original_quantity: requestedQuantity,

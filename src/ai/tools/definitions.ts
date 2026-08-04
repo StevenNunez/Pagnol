@@ -200,7 +200,7 @@ const solicitudesMaterialPendientes: ToolDef = {
 // ─────────────────────────────────────────────────────────────────────────
 const solicitudesCompraPendientes: ToolDef = {
     name: 'solicitudesCompraPendientes',
-    description: 'Lista solicitudes de compra (materiales que no hay en pañol y deben comprarse), opcionalmente filtradas por estado.',
+    description: 'Lista requerimientos (RQ): productos o servicios que se piden porque no están en pañol. Opcionalmente filtrados por estado.',
     zodInput: z.object({
         estado: z.string().optional().describe("Ej: 'pending', 'approved', 'ordered', 'received'. Omitir para todas."),
         limite: LIMIT(50, 20),
@@ -211,7 +211,7 @@ const solicitudesCompraPendientes: ToolDef = {
         let q = ctx.admin.from('purchase_requests').select('*').eq('tenant_id', ctx.tenantId);
         if (input.estado) q = q.eq('status', input.estado);
         const { data, error } = await q.order('created_at', { ascending: false }).limit(input.limite);
-        if (error) throw new Error(`Error consultando solicitudes de compra: ${error.message}`);
+        if (error) throw new Error(`Error consultando requerimientos: ${error.message}`);
         return (data ?? []).map(mappers.purchase_requests).map(pr => ({
             codigo: pr.internalCode ?? pr.id, estado: pr.status, material: pr.materialName,
             cantidad: pr.quantity, unidad: pr.unit, area: pr.area, contrato: pr.contractName,

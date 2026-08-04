@@ -1,7 +1,7 @@
 
 'use client';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { AssignedSafetyTask, User } from '@/modules/core/lib/data';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -174,7 +174,7 @@ export async function generateChecklistPDF(checklist: AssignedSafetyTask, users:
     return [i + 1, item.element, respuesta, responsable, formatDate(item.completionDate)];
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     head: [['#', 'Elementos que inspeccionar', 'Resp.', 'Responsable Ejecución', 'Fecha']],
     body: tableRows,
     startY: y + 3,

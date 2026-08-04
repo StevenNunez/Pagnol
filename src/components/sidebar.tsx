@@ -89,7 +89,7 @@ const getPanolNavItems = (can: (p: Permission) => boolean) => [
   { href: '/dashboard/pagnol/mantenimiento', icon: Wrench, label: 'Mantenimiento (OT)' },
   { href: '/dashboard/pagnol/ingreso-stock', icon: PackagePlus, label: 'Ingreso Manual' },
   { href: '/dashboard/pagnol/panoles', icon: Warehouse, label: 'Pañoles' },
-  { href: '/dashboard/pagnol/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes Compra' },
+  { href: '/dashboard/pagnol/solicitudes-compra', icon: ShoppingCart, label: 'Requerimientos' },
   { href: '/dashboard/pagnol/catalogos', icon: FolderTree, label: 'Catálogos' },
   { href: '/dashboard/pagnol/reports', icon: BarChart3, label: 'Informes y Reportes' },
   { href: '/dashboard/pagnol/personal', icon: Users, label: 'Gestión de Personal' },
@@ -206,7 +206,7 @@ const getWorkReportsNavItems = () => [
 
 const getAbastecimientoNavItems = () => [
   { href: '/dashboard/abastecimiento', icon: LayoutDashboard, label: 'Panel de Control' },
-  { href: '/dashboard/abastecimiento/solicitudes', icon: ShoppingCart, label: 'Solicitudes de Compra' },
+  { href: '/dashboard/abastecimiento/solicitudes', icon: ShoppingCart, label: 'Requerimientos (RQ)' },
   { href: '/dashboard/abastecimiento/lotes', icon: PackagePlus, label: 'Lotes de Compra' },
   { href: '/dashboard/abastecimiento/rfq', icon: Search, label: 'Cotizaciones (RFQ)' },
   { href: '/dashboard/abastecimiento/comparador', icon: ListChecks, label: 'Comparador' },

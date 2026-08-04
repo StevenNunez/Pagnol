@@ -124,7 +124,7 @@ export default function AuthorizationsPage() {
             typeLabel="Compra"
             typeBadgeClass="badge-success"
             lineIcon={<ShoppingCart className="h-3.5 w-3.5" />}
-            emptyTitle="Sin solicitudes de compra por autorizar"
+            emptyTitle="Sin requerimientos por autorizar"
             emptyDescription="Cuando terreno pida una compra, aparecerá aquí para tu visto bueno."
             onApprove={(id) => authorizePurchaseRequest(id)}
             onReject={(id, reason) => updatePurchaseRequestStatus(id, 'rejected', { notes: reason })}

@@ -20,32 +20,30 @@ const nextConfig = {
       {
         source: '/(.*)',
         headers: [
-          // ── CSP en ENFORCEMENT (2026-08-03) ──────────────────────────────
-          // Estuvo en Report-Only desde el 2026-07-30 justamente para no activar
-          // a ciegas una política que rompiera la app. Se promovió después de
-          // recorrer la aplicación con un detector de `securitypolicyviolation`
-          // y NO encontrar ninguna violación:
-          //   · 15 rutas (públicas y del dashboard), 0 violaciones.
-          //   · Y los flujos que cargan librerías pesadas, que eran el riesgo
-          //     real: exportar Excel (exceljs + blob), el asistente de IA,
-          //     la biometría con cámara (face-api: wasm-eval + workers) y la
-          //     credencial QR. 0 violaciones en los cuatro.
-          //   · El detector se validó provocando una violación deliberada de
-          //     `img-src` y comprobando que la capturaba: cero hallazgos con un
-          //     detector que no mide se lee igual que cero hallazgos reales.
+          // ── CSP en ENFORCEMENT ───────────────────────────────────────────
+          // Añadida en Report-Only el 2026-07-30 y promovida a enforcement el
+          // 2026-08-03, tras recorrer la app con un detector de
+          // `securitypolicyviolation` sin encontrar violaciones: 15 rutas más los
+          // flujos pesados (Excel, IA, biometría con cámara, QR), y re-verificado
+          // con la política ya bloqueando.
           //
-          // ⚠️ La verificación corrió en DEV. Si algo se rompiera en producción,
-          // el síntoma sería un recurso que no carga (imagen, fuente, worker):
-          // volver a `Content-Security-Policy-Report-Only` es revertir esta línea.
-          //
-          // Sigue pendiente quitar 'unsafe-inline' de script-src con nonces por
-          // request vía middleware — ver PENDIENTES.md.
+          // 🔴 NO INTENTAR "quitar 'unsafe-inline' con nonces por middleware":
+          // se probó el 2026-08-03 y ROMPE LA APLICACIÓN. Next sólo estampa el
+          // nonce en páginas que renderiza por request, y acá 168 de 226 son
+          // prerenderizadas: su HTML sale de build con los `<script>` ya escritos
+          // y SIN nonce. Como `'strict-dynamic'` anula `'self'`, el navegador
+          // bloquea los propios chunks de `/_next/static/` — verificado contra un
+          // build de producción: 20-32 violaciones por ruta y el dashboard sin
+          // hidratar (72 caracteres en pantalla).
+          // Para que el nonce sirva habría que forzar TODA la app a dinámica
+          // (`force-dynamic`), perdiendo el prerender: es una decisión de
+          // arquitectura con costo real, no un ajuste de cabecera. Ver PENDIENTES.
           {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // 'unsafe-inline': Next inyecta scripts de hidratación sin nonce.
-              // Quitarlo exige nonces por request vía middleware — tarea aparte.
+              // 'unsafe-inline': Next inyecta scripts de hidratación sin nonce y,
+              // con prerender estático, no hay forma de dárselo (ver arriba).
               // 'unsafe-eval' + 'wasm-unsafe-eval': los exige @vladmandic/face-api
               // (TensorFlow.js compila kernels en runtime) para la biometría.
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
@@ -53,13 +51,11 @@ const nextConfig = {
               // de popovers). Sin 'unsafe-inline' se cae medio sistema de diseño.
               "style-src 'self' 'unsafe-inline'",
               // data:/blob: → previsualización de fotos y PDF generados en el cliente.
-              // supabase.co → fotos de activos y logos (buckets públicos).
-              // unsplash → imagen del hardware pack en la landing (ver PENDIENTES).
+              // supabase.co → fotos de activos y logos. unsplash → landing.
               "img-src 'self' data: blob: https://*.supabase.co https://images.unsplash.com",
-              // next/font self-hostea Inter en el build: no hace falta gstatic.
               "font-src 'self' data:",
               // wss:// es Supabase Realtime; pwnedpasswords lo consulta el registro
-              // y el cambio de clave desde el cliente (k-anonymity, no envía la clave).
+              // y el cambio de clave (k-anonymity, no envía la clave).
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.pwnedpasswords.com",
               // Service worker (offline + push) y los workers de face-api.
               "worker-src 'self' blob:",
@@ -69,7 +65,6 @@ const nextConfig = {
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",
-              // Redundante con X-Frame-Options, pero es la directiva moderna.
               "frame-ancestors 'none'",
               'upgrade-insecure-requests',
             ].join('; '),

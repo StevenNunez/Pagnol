@@ -65,17 +65,17 @@ export const ALL_PERMISSIONS = {
 
     // Etapa previa: el Administrador de Contratos (ADC) autoriza antes de Abastecimiento.
     'material_requests:authorize': { label: 'Autorizar Solicitudes de Material (ADC)', group: 'Autorizaciones (ADC)' },
-    'purchase_requests:authorize': { label: 'Autorizar Solicitudes de Compra (ADC)', group: 'Autorizaciones (ADC)' },
+    'purchase_requests:authorize': { label: 'Autorizar Requerimientos (ADC)', group: 'Autorizaciones (ADC)' },
     'rentals:authorize': { label: 'Autorizar Solicitudes de Arriendo (ADC)', group: 'Autorizaciones (ADC)' },
 
     'return_requests:create': { label: 'Crear Devoluciones', group: 'Devoluciones' },
     'return_requests:approve': { label: 'Aprobar Devoluciones', group: 'Devoluciones' },
     'return_requests:view_all': { label: 'Ver Todas las Devoluciones', group: 'Devoluciones' },
 
-    'purchase_requests:create': { label: 'Crear Solicitudes de Compra', group: 'Compras' },
-    'purchase_requests:approve': { label: 'Aprobar Solicitudes de Compra', group: 'Compras' },
-    'purchase_requests:view_all': { label: 'Ver Solicitudes de Compra', group: 'Compras' },
-    'purchase_requests:delete': { label: 'Eliminar Solicitudes de Compra', group: 'Compras' },
+    'purchase_requests:create': { label: 'Crear Requerimientos', group: 'Compras' },
+    'purchase_requests:approve': { label: 'Aprobar Requerimientos', group: 'Compras' },
+    'purchase_requests:view_all': { label: 'Ver Requerimientos', group: 'Compras' },
+    'purchase_requests:delete': { label: 'Eliminar Requerimientos', group: 'Compras' },
     'lots:create': { label: 'Crear Lotes de Compra', group: 'Compras' },
     'lots:assign': { label: 'Asignar Solicitudes a Lotes', group: 'Compras' },
     'lots:delete': { label: 'Eliminar Lotes', group: 'Compras' },
@@ -498,7 +498,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             // Bodega fusionada en Pagnol: se mantiene module_bodega por roles
             // por-tenant que aún lo referencian, y se agrega el módulo destino.
             'module_warehouse:view', 'module_bodega:view', 'module_pagnol:view',
-            // Solicitudes de Compra (ciclo completo)
+            // Requerimientos (ciclo completo)
             'purchase_requests:create', 'purchase_requests:view_all',
             'purchase_requests:approve', 'purchase_requests:delete',
             // Solicitudes de material (oficina: elige cualquier contrato)

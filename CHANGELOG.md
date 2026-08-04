@@ -18,6 +18,93 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado — Solicitudes de Compra pasan a ser **Requerimientos (RQ)** (RFC-004, F0)
+
+Primer paso de la iniciativa que convierte el módulo en la **puerta única del gasto** — productos
+y servicios— en vez de sólo "cosas que se guardan en el pañol". Decisiones y fases completas en
+`docs/research/RFC-004-Requerimientos.md`.
+
+- **23 textos renombrados**: títulos de página, sidebar, diálogos, estados vacíos, exportación a
+  Excel, mensajes de error de las mutaciones, la descripción de la herramienta del asistente de IA
+  y las **etiquetas** de los permisos.
+- **Correlativo nuevo `RQ`** con **corte limpio**: los códigos ya emitidos conservan su `PRQ`
+  porque son referencia en documentos entregados y el Artículo 2 no admite reescribirlos.
+  Verificado antes de cambiarlo que **ningún tenant tenía un prefijo propio configurado para
+  `PRQ`** (Valar sólo redefine `TX` y `PUR`), así que no queda ninguna configuración huérfana.
+- **Lo que NO se tocó, a propósito:** nombres de tablas, columnas y rutas (romperían datos y
+  enlaces guardados) y las **claves** de permiso `purchase_requests:*` — cambiarlas escondería
+  funciones en todo tenant con filas propias en `roles`, el mismo drift que ya obligó a descartar
+  `module_wallet:view`. Sólo cambian las etiquetas visibles.
+
+**Verificado contra la base**: el flujo completo de un requerimiento sigue funcionando de punta a
+punta (E2E 16/16) y el primer código emitido con el corte fue **`MDS-RQ-0001`**.
+
+### Investigado y DESCARTADO — nonces por request para quitar `'unsafe-inline'`
+
+Era el último ítem accionable del P0 de seguridad. **Se implementó, se probó contra un build de
+producción, ROMPIÓ LA APLICACIÓN y se revirtió.**
+
+**Por qué no es viable hoy:** Next sólo estampa el nonce en páginas que renderiza **por request**,
+y en Pagnol **168 de 226 son prerenderizadas**. Su HTML sale del build con los `<script>` ya
+escritos y sin nonce. Como `'strict-dynamic'` **anula** `'self'`, el navegador terminó bloqueando
+los propios chunks de `/_next/static/`.
+
+Medido, no supuesto: **20 a 32 violaciones por ruta** y el dashboard **sin hidratar** — 72
+caracteres en pantalla contra los ~6.000 normales. El login seguía respondiendo (es más simple),
+que es justo por qué una prueba superficial habría dado el visto bueno.
+
+Para que el nonce sirva habría que forzar toda la app a `force-dynamic` y perder el prerender: es
+una **decisión de arquitectura con costo real** (rendimiento y facturación), no un ajuste de
+cabecera. Queda documentado en `next.config.js` y en `PENDIENTES.md` para que nadie lo reintente a
+ciegas.
+
+Tras revertir se verificó que la app quedó **sana**: 5 rutas, 0 violaciones, contenido completo.
+
+### Seguridad — P0 de dependencias: `jspdf` 4, `jspdf-autotable` 5 y `vitest` 4
+
+**79 → 56 vulnerabilidades, y CERO críticas** (antes 1 crítica en `jspdf` por ReDoS).
+
+**`jspdf` 2.5.1 → 4.2.1 + `jspdf-autotable` 3.8 → 5.0.8.** El backlog lo marcaba como el pendiente
+más grande —15 archivos, "generar los 15 PDF uno por uno"— pero al revisarlo el riesgo era menor:
+**ningún generador usa `.html()`**, que es donde jspdf 3/4 rompió más fuerte (y de donde viene la
+dependencia de `canvg`). Todos usan la API imperativa más `autoTable`.
+
+- **El cambio que sí rompía:** `jspdf-autotable` v5 **eliminó el estilo `doc.autoTable({...})`**
+  (el que se instalaba en el prototipo con `import 'jspdf-autotable'`). Convivían las dos formas:
+  15 llamadas ya usaban la funcional y **13 usaban la vieja**, en 8 archivos. Migradas todas a
+  `autoTable(doc, {...})` con su import por defecto.
+- **`doc.lastAutoTable.finalY` sigue existiendo en v5** — verificado ejecutándolo, porque si
+  hubiera quedado `undefined` los `finalY` habrían encimado el texto **en silencio**, que es
+  justo el fallo que un `tsc` limpio no detecta.
+
+**Verificación objetiva, no "compila y listo":** se generaron los PDF **antes** de migrar como
+línea base y **después**, con datos de prueba fijos, y se compararon número de páginas, tamaño de
+página, fragmentos de texto y **coordenadas de cada elemento**.
+
+- **7 de 15 se capturan automáticamente** (los que devuelven el documento o un Blob), incluidos
+  **los cuatro de consecuencia legal**: liquidación, finiquito, acta de entrega y documento EA.
+- **Resultado: idénticos.** La única diferencia era la **hora de emisión** que los propios PDF
+  imprimen ("4:57 p.m." vs "5:17 p.m."), no la migración.
+- ⚠️ **Los 8 restantes no se pueden capturar así**: llaman `doc.save()` por dentro, y en jsPDF
+  `save` es propiedad de la **instancia**, no del prototipo, así que no se puede interceptar desde
+  fuera. Son estado de pago, checklist, inspección, charla diaria, observación de conducta, y las
+  3 pantallas que generan el PDF en línea (reportes de abastecimiento, etiquetas, contrato de
+  responsabilidad). **Hay que mirarlos desde la app.**
+
+**`vitest` → 4.1.10** (era la otra vulnerabilidad crítica, sólo de entorno de desarrollo): 277
+tests siguen verdes.
+
+**`exceljs` ya estaba en 4.4.0**, la última publicada; su cadena (`archiver`, `zip-stream`,
+`glob`) **dejó de aparecer** al actualizarse el árbol de dependencias. Queda como `moderate` por
+otra vía, sin versión que lo arregle.
+
+**Lo que queda son 48 moderate + 7 high de la cadena `@genkit-ai` / `@opentelemetry`**, que
+dependen de que Genkit publique versiones nuevas. `npm audit fix --force` las tocaría rompiendo
+la IA, así que no se aplica.
+
+`transpilePackages: ['jspdf','canvg','core-js']` se deja intacto: ambos siguen presentes como
+dependencias transitivas y el build funciona.
+
 ### Seguridad — 🔴 P0: cualquier trabajador podía reescribir los datos comerciales de su empresa
 
 **Verificado explotándolo contra la base viva ANTES de escribir el fix** (E2E 18/32), con un

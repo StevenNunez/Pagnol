@@ -121,7 +121,7 @@ export function EditPurchaseRequestForm({ request, isOpen, onClose }: EditPurcha
     <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-4xl" onInteractOutside={(e) => { e.preventDefault(); }}>
             <DialogHeader>
-                <DialogTitle>Gestionar Solicitud de Compra</DialogTitle>
+                <DialogTitle>Gestionar Requerimiento</DialogTitle>
                 <DialogDescription>
                     Revisa, ajusta y aprueba o rechaza la solicitud de compra. Los cambios se guardarán con la acción que elijas.
                 </DialogDescription>

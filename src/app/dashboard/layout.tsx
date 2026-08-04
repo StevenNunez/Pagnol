@@ -438,7 +438,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                         <Link href="/dashboard/purchasing/purchase-requests">
                           <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-cyan-50/50 dark:hover:bg-cyan-950/40">
                             <div className="p-2 bg-cyan-100 dark:bg-cyan-900/50 rounded-lg mr-3"><ShoppingCart className="h-4 w-4 text-cyan-600 dark:text-cyan-400" /></div>
-                            <span className="text-[11px] font-bold uppercase tracking-tight">{pendingPurchaseRequests} Solicitudes de Compra</span>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{pendingPurchaseRequests} Requerimientos</span>
                           </DropdownMenuItem>
                         </Link>
                       )}

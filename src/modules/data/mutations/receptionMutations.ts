@@ -199,9 +199,22 @@ export async function receiveGoodsReceipt(
     const contractMaps = await resolveContractRefs(po);
     const prices = priceMaps(po);
 
+    // RFC-004 F2: una OC de servicio se RECIBE como conformidad de ejecución.
+    // No hay nada que guardar en el pañol, así que no se crea material, no se
+    // suma stock, no se escribe kardex y no se retroalimenta el catálogo. Si
+    // se hiciera, quedaría un activo fantasma ("mantención de compresor",
+    // stock 1) que además entraría en la valorización del inventario.
+    const isServiceOrder = po.order_type === 'servicio';
+
     // Ingreso de stock + resolución de materialId definitivo por ítem.
     const ingestedItems: ReceiptItem[] = [];
     for (const it of toReceive) {
+        if (isServiceOrder) {
+            // Sin materialId: el reverso de la recepción también salta estos
+            // ítems, así que un servicio nunca devuelve stock que nunca entró.
+            ingestedItems.push({ ...it, materialId: undefined });
+            continue;
+        }
         const contract = itemContract(contractMaps, it);
         const materialId = await ingestStock(it, poCode, contract, { user, tenantId });
         ingestedItems.push({ ...it, materialId });
@@ -245,11 +258,21 @@ export async function receiveGoodsReceipt(
             price = Number(mat?.unit_cost) || 0;
             priceNote = ' — precio de catálogo (OC sin valorizar)';
         }
-        if (!price) continue; // sin precio conocible: no se inventa un hecho
+        // Un producto sin precio conocible no inventa un hecho: queda en el
+        // stock igual y el costo se puede corregir después. Un SERVICIO sin
+        // precio no deja rastro de ninguna clase —no hay stock que lo
+        // evidencie—, así que desaparecería del margen del contrato en
+        // silencio. Por eso ahí se corta en vez de continuar.
+        if (!price && isServiceOrder) {
+            throw new Error(
+                `El servicio "${it.name}" no tiene precio en la OC ${poCode}. Sin monto no queda registrado el gasto: valoriza la orden antes de dar la conformidad.`,
+            );
+        }
+        if (!price) continue;
         financeEntries.push({
             nature: 'cost',
             stage: 'accrued',
-            category: 'materials',
+            category: isServiceOrder ? 'services' : 'materials',
             amountNet: price * (it.receivedQuantity || 0),
             contractId: contract.contractId,
             contractName: contract.contractName,
@@ -259,7 +282,9 @@ export async function receiveGoodsReceipt(
             counterpartyType: 'supplier',
             counterpartyId: po.supplier_id,
             counterpartyName: po.supplier_name || null,
-            notes: `Recepción OC ${poCode} — ${it.name} × ${it.receivedQuantity}${priceNote}`,
+            notes: isServiceOrder
+                ? `Conformidad de servicio — OC ${poCode} — ${it.name}${priceNote}`
+                : `Recepción OC ${poCode} — ${it.name} × ${it.receivedQuantity}${priceNote}`,
         });
     }
     await emitFinanceEntries(financeEntries, { user, tenantId });

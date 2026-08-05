@@ -655,6 +655,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         deleteRentalCategory: bindContext(rentalRequestMutations.deleteRentalCategory),
         // Solicitudes de Arriendo + RFQ de arriendo
         addRentalRequest: bindContext(rentalRequestMutations.addRentalRequest),
+        // RFC-004 F3: el requerimiento de arriendo crea la solicitud del flujo
+        // de arriendos y se enlaza a ella, compartiendo un solo código.
+        addRentalRequirement: bindContext(purchaseRequestMutations.addRentalRequirement),
         updateRentalRequestStatus: bindContext(rentalRequestMutations.updateRentalRequestStatus),
         authorizeRentalRequest: bindContext(rentalRequestMutations.authorizeRentalRequest),
         deleteRentalRequest: bindContext(rentalRequestMutations.deleteRentalRequest),

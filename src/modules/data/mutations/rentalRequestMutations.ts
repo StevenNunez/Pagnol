@@ -68,9 +68,16 @@ export async function addRentalRequest(
     area?: string;
     justification?: string;
     supervisorId?: string;
+    /**
+     * Código heredado del requerimiento que la origina (RFC-004 F3). Cuando
+     * viene, la solicitud NO emite su propio correlativo: comparte el del RQ,
+     * para que haya UN solo número desde que se pide hasta la OC. Las que se
+     * crean por su cuenta siguen emitiendo SOLPED-ARR como siempre.
+     */
+    internalCode?: string;
   },
   { user, tenantId }: Context
-): Promise<void> {
+): Promise<string> {
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
   const items = (data.items || [])
@@ -79,13 +86,13 @@ export async function addRentalRequest(
   if (items.length === 0) throw new Error('La solicitud necesita al menos un equipo.');
   const first = items[0];
 
-  const internalCode = await nextInternalCode(tenantId, 'ARR', 'SOLPED');
+  const internalCode = data.internalCode || await nextInternalCode(tenantId, 'ARR', 'SOLPED');
 
   // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
   const preAuthorized = userCan(user, 'rentals:authorize');
   const now = new Date().toISOString();
 
-  const { error } = await supabase.from('rental_requests').insert({
+  const { data: created, error } = await supabase.from('rental_requests').insert({
     tenant_id: tenantId,
     internal_code: internalCode,
     items,
@@ -105,12 +112,14 @@ export async function addRentalRequest(
     adc_authorized_at: preAuthorized ? now : null,
     adc_authorized_by: preAuthorized ? user.id : null,
     created_at: now,
-  });
+  }).select('id').single();
 
   if (error) throw new Error(`Error al crear solicitud de arriendo: ${error.message}`);
 
   // Push al ADC solo si quedó pendiente de autorización.
   if (!preAuthorized) notifyAuthorizers('rental', { tenantId, code: internalCode, requesterName: user.name || 'Usuario' });
+
+  return created.id;
 }
 
 /**

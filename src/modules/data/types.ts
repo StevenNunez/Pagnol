@@ -341,7 +341,19 @@ export interface AppStateContextType extends AppDataState {
   addRentalCategory: (name: string) => Promise<void>;
   updateRentalCategory: (id: string, name: string) => Promise<void>;
   deleteRentalCategory: (id: string) => Promise<void>;
-  addRentalRequest: (data: { items: { name: string; category: RentalAssetCategory; quantity: number }[]; startDate?: string | null; endDate?: string | null; billingCycleEstimate: RentalBillingCycle; contractId?: string | null; contractName?: string | null; area?: string; justification?: string; supervisorId?: string; }) => Promise<void>;
+  // Devuelve el id de la solicitud creada: el requerimiento de arriendo (F3)
+  // necesita enlazarse a ella. `internalCode` permite heredar el código del RQ
+  // en vez de emitir un SOLPED-ARR nuevo — un solo número para toda la cadena.
+  addRentalRequest: (data: { items: { name: string; category: RentalAssetCategory; quantity: number }[]; startDate?: string | null; endDate?: string | null; billingCycleEstimate: RentalBillingCycle; contractId?: string | null; contractName?: string | null; area?: string; justification?: string; supervisorId?: string; internalCode?: string; }) => Promise<string>;
+  addRentalRequirement: (data: {
+    items: { name: string; category: RentalAssetCategory; quantity: number }[];
+    startDate?: string | null; endDate?: string | null; billingCycleEstimate: RentalBillingCycle;
+    contractId?: string | null; contractName?: string | null; area?: string; justification?: string;
+    category: string;
+    urgency?: PurchaseRequest['urgency']; urgencyReason?: string | null;
+    expenseKind?: PurchaseRequest['expenseKind']; itemDescription?: string | null;
+    suggestedSupplierId?: string | null; suggestedSupplierName?: string | null;
+  }) => Promise<{ code: string; rentalRequestId: string }>;
   updateRentalRequestStatus: (requestId: string, status: 'approved' | 'rejected' | 'quoting', reason?: string) => Promise<void>;
   authorizeRentalRequest: (requestId: string) => Promise<void>;
   deleteRentalRequest: (requestId: string) => Promise<void>;

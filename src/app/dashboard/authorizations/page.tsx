@@ -53,7 +53,10 @@ export default function AuthorizationsPage() {
 
   const purchaseItems: ApprovableRequest[] = useMemo(() =>
     (purchaseRequests || [])
-      .filter((r: any) => r.status === 'pending' && !r.adcAuthorizedAt)
+      // Un requerimiento de arriendo ya viaja en la pestaña "Arriendo" a través
+      // de su solicitud: si apareciera también acá, el ADC vería el mismo
+      // pedido dos veces y lo autorizaría dos veces (RFC-004 F3).
+      .filter((r: any) => r.status === 'pending' && !r.adcAuthorizedAt && !r.rentalRequestId)
       .map((r: any) => ({
         id: r.id,
         code: r.internalCode || r.id,
@@ -61,16 +64,32 @@ export default function AuthorizationsPage() {
         contractName: r.contractName,
         date: r.createdAt,
         justification: r.justification,
+        // RFC-004 F1: urgencia, tipo de gasto y proveedor sugerido viajan al
+        // inbox para que el ADC autorice con el contexto completo a la vista.
+        meta: r,
         lines: [{
           label: r.materialName,
           qty: r.quantity,
           // Deja explícito cuando el destino es el CLIENTE del contrato (el
           // cliente proporciona el material) — el ADC autoriza sabiendo qué firma.
-          meta: r.requestTarget === 'client'
-            ? `${r.unit} · Suministro del cliente ${r.clientName || ''}`.trim()
-            : r.unit,
+          // La partida es la otra mitad del CeCo: sin ella no se sabe de qué
+          // bolsillo sale lo que se está autorizando.
+          meta: [
+            r.itemDescription,
+            r.requestTarget === 'client'
+              ? `${r.unit} · Suministro del cliente ${r.clientName || ''}`.trim()
+              : r.unit,
+            r.category,
+          ].filter(Boolean).join(' · '),
         }],
-      })),
+      }))
+      // Lo más urgente arriba: primero lo atrasado, después por fecha requerida.
+      // Sin esto la urgencia sería un adjetivo que no cambia nada de la bandeja.
+      .sort((a: any, b: any) => {
+        const av = a.meta?.neededBy || '9999-12-31';
+        const bv = b.meta?.neededBy || '9999-12-31';
+        return av.localeCompare(bv);
+      }),
   [purchaseRequests, userMap]);
 
   const rentalItems: ApprovableRequest[] = useMemo(() =>

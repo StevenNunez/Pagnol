@@ -3,10 +3,11 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Clock, MapPin, AlertTriangle, Building2, Mail } from 'lucide-react';
-import type { PurchaseRequest } from '@/modules/core/lib/data';
-import { resolvePurchaseStage, isClientSupply, STAGE_META, CLIENT_STAGE_HINT, PurchaseStage } from './purchase-pipeline';
+import { Clock, MapPin, AlertTriangle, Building2, Mail, Truck } from 'lucide-react';
+import type { PurchaseRequest, RentalRequest } from '@/modules/core/lib/data';
+import { resolvePurchaseStage, isClientSupply, isRentalDerived, resolveRentalStage, STAGE_META, CLIENT_STAGE_HINT, PurchaseStage } from './purchase-pipeline';
 import { PurchaseStageBadge } from './purchase-stage-badge';
+import { UrgencyBadge, ExpenseKindBadge, ItemSpec, SuggestedSupplier, UrgencyReason, ServiceBadge } from '@/components/operations/request-meta';
 
 const formatDate = (date: any): string => {
     if (!date) return 'N/A';
@@ -80,12 +81,21 @@ function SendToClientButton({ items, onSendToClient }: { items: PurchaseRequest[
 interface CardProps {
     items: PurchaseRequest[];
     onSendToClient?: (items: PurchaseRequest[]) => void;
+    /** Estado real de las solicitudes de arriendo derivadas, por id. La etapa se
+     *  PROYECTA desde aquí en vez de copiarse a la fila (RFC-004 F3). */
+    rentalStatusById?: Map<string, RentalRequest['status']>;
+}
+
+/** Etapa a mostrar: la propia, o la del arriendo cuando el requerimiento derivó. */
+function stageOf(req: PurchaseRequest, rentalStatusById?: Map<string, RentalRequest['status']>): PurchaseStage {
+    if (isRentalDerived(req)) return resolveRentalStage(rentalStatusById?.get(req.rentalRequestId!));
+    return resolvePurchaseStage(req);
 }
 
 /** Una solicitud suelta (sin batch, o grupo de un solo ítem). */
-function SingleCard({ items, onSendToClient }: CardProps) {
+function SingleCard({ items, onSendToClient, rentalStatusById }: CardProps) {
     const req = items[0];
-    const stage = resolvePurchaseStage(req);
+    const stage = stageOf(req, rentalStatusById);
     return (
         <div className={cn(
             'bg-card rounded-[1.5rem] border shadow-sm p-6 space-y-4 transition-all hover:shadow-lg',
@@ -96,7 +106,12 @@ function SingleCard({ items, onSendToClient }: CardProps) {
                 <div className="min-w-0 space-y-1">
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">{req.internalCode || `REF ${req.id.slice(0, 8).toUpperCase()}`}</p>
                     <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{req.contractName || '—'}</p>
-                    <ClientBadge req={req} />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <ClientBadge req={req} />
+                        <ServiceBadge req={req} />
+                        <UrgencyBadge req={req} />
+                        <ExpenseKindBadge req={req} />
+                    </div>
                 </div>
                 <div className="flex flex-col items-end gap-1.5 shrink-0">
                     <PurchaseStageBadge stage={stage} />
@@ -110,11 +125,24 @@ function SingleCard({ items, onSendToClient }: CardProps) {
                 <div className="flex justify-between items-center gap-2">
                     <div className="min-w-0">
                         <p className="text-sm font-bold uppercase tracking-tight truncate">{req.materialName}</p>
+                        <ItemSpec req={req} />
                         <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{req.category || 'General'}</p>
                     </div>
                     <span className="font-mono text-xs font-black text-muted-foreground shrink-0">{req.quantity} {req.unit}</span>
                 </div>
             </div>
+
+            {isRentalDerived(req) && (
+                <a
+                    href="/dashboard/abastecimiento/arriendos"
+                    className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-[11px] font-medium text-foreground hover:bg-primary/10 transition-colors"
+                >
+                    <Truck className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span>Se gestiona en <b>Arriendos</b>: cotización, comparación de ofertas y calendario de pagos.</span>
+                </a>
+            )}
+            <UrgencyReason req={req} />
+            <SuggestedSupplier req={req} />
 
             {req.area && (
                 <Badge variant="outline" className="text-[9px] h-5 px-1.5 font-black uppercase tracking-widest gap-1 w-fit">
@@ -135,7 +163,7 @@ function SingleCard({ items, onSendToClient }: CardProps) {
 /** Pedido con varios ítems que se enviaron juntos (mismo batchId). Cada ítem
  * conserva su propia etapa — Abastecimiento puede aprobar/rechazar por ítem,
  * así que un solo badge de grupo mentiría si divergen. */
-function GroupCard({ items, onSendToClient }: CardProps) {
+function GroupCard({ items, onSendToClient, rentalStatusById }: CardProps) {
     const anchor = items[0];
     return (
         <div className="bg-card rounded-[1.5rem] border shadow-sm p-6 space-y-4 transition-all hover:shadow-lg">
@@ -145,7 +173,12 @@ function GroupCard({ items, onSendToClient }: CardProps) {
                         {anchor.internalCode || `REF ${anchor.id.slice(0, 8).toUpperCase()}`} <span className="text-muted-foreground normal-case font-medium">+ {items.length - 1} ítem{items.length - 1 > 1 ? 's' : ''} más</span>
                     </p>
                     <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{anchor.contractName || '—'}</p>
-                    <ClientBadge req={anchor} />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <ClientBadge req={anchor} />
+                        <ServiceBadge req={anchor} />
+                        <UrgencyBadge req={anchor} />
+                        <ExpenseKindBadge req={anchor} />
+                    </div>
                 </div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap flex items-center gap-1 shrink-0">
                     <Clock className="h-3 w-3" /> {formatDate(anchor.createdAt)}
@@ -154,12 +187,13 @@ function GroupCard({ items, onSendToClient }: CardProps) {
 
             <div className="space-y-2">
                 {items.map(req => {
-                    const stage = resolvePurchaseStage(req);
+                    const stage = stageOf(req, rentalStatusById);
                     return (
                         <div key={req.id} className="bg-muted/40 p-4 rounded-2xl space-y-2">
                             <div className="flex justify-between items-center gap-2">
                                 <div className="min-w-0">
                                     <p className="text-sm font-bold uppercase tracking-tight truncate">{req.materialName}</p>
+                                    <ItemSpec req={req} />
                                     <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{req.category || 'General'}</p>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
@@ -181,12 +215,14 @@ function GroupCard({ items, onSendToClient }: CardProps) {
             {anchor.justification && (
                 <p className="text-xs text-muted-foreground font-medium italic border-l-2 border-border pl-3">{anchor.justification}</p>
             )}
+            <UrgencyReason req={anchor} />
+            <SuggestedSupplier req={anchor} />
             <SendToClientButton items={items} onSendToClient={onSendToClient} />
         </div>
     );
 }
 
-export function PurchaseHistoryCard({ items, onSendToClient }: CardProps) {
-    if (items.length === 1) return <SingleCard items={items} onSendToClient={onSendToClient} />;
-    return <GroupCard items={items} onSendToClient={onSendToClient} />;
+export function PurchaseHistoryCard({ items, onSendToClient, rentalStatusById }: CardProps) {
+    if (items.length === 1) return <SingleCard items={items} onSendToClient={onSendToClient} rentalStatusById={rentalStatusById} />;
+    return <GroupCard items={items} onSendToClient={onSendToClient} rentalStatusById={rentalStatusById} />;
 }

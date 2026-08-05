@@ -11,6 +11,7 @@ import {
 import { EmptyState } from '@/components/empty-state';
 import { Check, X, Clock, Package, Loader2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/modules/core/hooks/use-toast';
+import { UrgencyBadge, ExpenseKindBadge, SuggestedSupplier, UrgencyReason, ServiceBadge, isOverdue, type RequestMeta } from './request-meta';
 
 // ── Forma normalizada de cualquier solicitud "autorizable" ────────────────────
 // Material / Compra / Arriendo se mapean a esto antes de pasar por el inbox, así
@@ -25,6 +26,10 @@ export type ApprovableRequest = {
   date?: Date | string | null;
   lines: ApprovableLine[];
   justification?: string;
+  /** RFC-004 F1: urgencia, fecha requerida, tipo de gasto y proveedor sugerido.
+   * Opcionales — las solicitudes de material y arriendo todavía no los tienen,
+   * y los requerimientos anteriores a la migración tampoco. */
+  meta?: RequestMeta;
 };
 
 interface AuthorizationInboxProps {
@@ -112,11 +117,14 @@ export function AuthorizationInbox({
           <Card key={req.id} className="rounded-[1.5rem]">
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {typeLabel && <Badge className={typeBadgeClass}>{typeLabel}</Badge>}
                   {req.code && (
                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{req.code}</span>
                   )}
+                  {req.meta && <ServiceBadge req={req.meta} />}
+                  {req.meta && <UrgencyBadge req={req.meta} />}
+                  {req.meta && <ExpenseKindBadge req={req.meta} />}
                 </div>
                 <span className="text-xs text-muted-foreground flex items-center">
                   <Clock className="h-3 w-3 mr-1" />{fmtDate(req.date)}
@@ -139,6 +147,8 @@ export function AuthorizationInbox({
                 {req.requesterName && <span><b>Solicita:</b> {req.requesterName}</span>}
               </div>
               {req.justification && <div className="text-xs text-muted-foreground italic">"{req.justification}"</div>}
+              {req.meta && <UrgencyReason req={req.meta} />}
+              {req.meta && <SuggestedSupplier req={req.meta} />}
 
               {canAuthorize && (
                 <div className="flex gap-2 pt-1">

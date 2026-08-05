@@ -59,7 +59,7 @@ const TYPE_ACCENT: Record<ActivityKind, { iconBg: string; icon: string; icon_cmp
   request: { iconBg: "bg-primary/10", icon: "text-primary", icon_cmp: Package, label: "Pañol", href: "/dashboard/supervisor/request" },
   purchase: { iconBg: "bg-info-subtle", icon: "text-info-subtle-foreground", icon_cmp: ShoppingCart, label: "Compra", href: "/dashboard/purchasing/purchase-request-form" },
   return: { iconBg: "bg-success-subtle", icon: "text-success-subtle-foreground", icon_cmp: RotateCcw, label: "Devolución", href: "/dashboard/supervisor/return-request" },
-  rental: { iconBg: "bg-warning-subtle", icon: "text-warning-subtle-foreground", icon_cmp: KeyRound, label: "Arriendo", href: "/dashboard/supervisor/rental-request" },
+  rental: { iconBg: "bg-warning-subtle", icon: "text-warning-subtle-foreground", icon_cmp: KeyRound, label: "Arriendo", href: "/dashboard/purchasing/purchase-request-form?tipo=arriendo" },
 };
 
 const FEED_FILTERS: { key: "all" | ActivityKind; label: string }[] = [
@@ -137,7 +137,7 @@ export default function SupervisorHubPage() {
     { label: "Listas para retiro", value: kpis.materialReady, icon: PackageCheck, iconCls: kpis.materialReady > 0 ? "bg-success-subtle text-success-subtle-foreground" : "bg-muted text-muted-foreground", href: "/dashboard/supervisor/request" },
     { label: "Compras en trámite", value: kpis.purchaseInProgress, icon: ShoppingCart, iconCls: "bg-info-subtle text-info", href: "/dashboard/purchasing/purchase-request-form" },
     { label: "Por devolver", value: kpis.returnPending, icon: RotateCcw, iconCls: kpis.returnPending > 0 ? "bg-warning-subtle text-warning" : "bg-muted text-muted-foreground", href: "/dashboard/supervisor/return-request" },
-    { label: "Arriendos en curso", value: kpis.rentalsActive, icon: KeyRound, iconCls: "bg-primary/10 text-primary", href: "/dashboard/supervisor/rental-request" },
+    { label: "Arriendos en curso", value: kpis.rentalsActive, icon: KeyRound, iconCls: "bg-primary/10 text-primary", href: "/dashboard/rentals/contracts" },
   ];
 
   // ================= ACTIVIDAD UNIFICADA (con la etapa REAL de cada tipo) =================
@@ -207,7 +207,7 @@ export default function SupervisorHubPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <QuickAction href="/dashboard/supervisor/request" icon={Package} title="Solicitar al Pañol" desc="Material disponible" accent="primary" arrow={ArrowUpRight} />
           <QuickAction href="/dashboard/purchasing/purchase-request-form" icon={ShoppingCart} title="Solicitar Compra" desc="Material sin stock" accent="info" arrow={ArrowUpRight} />
-          <QuickAction href="/dashboard/supervisor/rental-request" icon={KeyRound} title="Solicitar Arriendo" desc="Equipos de terceros" accent="warning" arrow={ArrowUpRight} />
+          <QuickAction href="/dashboard/purchasing/purchase-request-form?tipo=arriendo" icon={KeyRound} title="Solicitar Arriendo" desc="Equipos de terceros" accent="warning" arrow={ArrowUpRight} />
           <QuickAction href="/dashboard/supervisor/return-request" icon={RotateCcw} title="Devolver Material" desc="Retornar sobrantes" accent="success" arrow={ArrowDownLeft} />
         </div>
       </div>

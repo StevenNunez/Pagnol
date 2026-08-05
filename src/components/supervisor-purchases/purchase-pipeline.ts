@@ -1,4 +1,4 @@
-import type { PurchaseRequest } from '@/modules/core/lib/data';
+import type { PurchaseRequest, RentalRequest } from '@/modules/core/lib/data';
 
 // ── Pipeline desde el punto de vista del SOLICITANTE ────────────────────────
 // `status` ya trae más granularidad que material_requests (pending/approved/
@@ -14,6 +14,27 @@ export type PurchaseStage = 'waiting_adc' | 'in_review' | 'to_send' | 'approved'
 
 export function isClientSupply(req: PurchaseRequest): boolean {
     return req.requestTarget === 'client';
+}
+
+/** Requerimiento que derivó a una solicitud de arriendo (RFC-004 F3). */
+export function isRentalDerived(req: PurchaseRequest): boolean {
+    return !!req.rentalRequestId;
+}
+
+/**
+ * Etapa de un requerimiento de arriendo, PROYECTADA desde el estado de su
+ * solicitud de arriendo. No hay columna espejo que sincronizar: si Abastecimiento
+ * la rechaza, acá se ve rechazada en el mismo instante, porque el estado tiene un
+ * solo dueño. Copiarlo es lo que produce el drift.
+ */
+export function resolveRentalStage(rentalStatus: RentalRequest['status'] | undefined): PurchaseStage {
+    switch (rentalStatus) {
+        case 'rejected': return 'rejected';
+        case 'fulfilled': return 'received';   // el equipo ya está arrendado y operando
+        case 'approved': return 'ordered';     // adjudicada, con OC de arriendo en curso
+        case 'quoting': return 'approved';     // Abastecimiento está cotizando
+        default: return 'in_review';           // 'pending'
+    }
 }
 
 export function resolvePurchaseStage(req: PurchaseRequest): PurchaseStage {

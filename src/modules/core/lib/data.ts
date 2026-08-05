@@ -616,7 +616,82 @@ export interface PurchaseRequest {
   clientName?: string | null;
   sentToClientAt?: Date | string | null;
   sentToClientEmail?: string | null;
+  // ── RFC-004 F1 — datos del Requerimiento (RQ) ─────────────────────────────
+  // Qué se pide. 'servicio' NO debe tocar el inventario al recibirse (D3): el
+  // selector se habilita en F2, cuando la recepción sepa no crear el Material.
+  requestType?: RequestType;
+  // Presupuestado vs imprevisto (D4). Declarado por quien pide en v1.
+  expenseKind?: ExpenseKind | null;
+  // Urgencia declarada + la fecha concreta que se derivó de ella al crear.
+  urgency?: RequestUrgency | null;
+  neededBy?: string | null; // 'YYYY-MM-DD'
+  // Por qué se necesita para mañana. Obligatorio cuando `urgency` es 'alta' —
+  // lo exige un CHECK en la base, no sólo el formulario: si declarar urgencia
+  // no cuesta nada, en un mes todo el mundo pide todo para mañana.
+  urgencyReason?: string | null;
+  // Especificación de ESTA línea (marca, medida, modelo). `justification` es el
+  // motivo del lote; esto es el detalle del ítem.
+  itemDescription?: string | null;
+  // Subtipo cuando `requestType` es 'servicio'. El arriendo llega en F3: hasta
+  // entonces el dominio no lo admite, para que nadie cree por accidente un
+  // arriendo que el módulo de Arriendos no conoce.
+  serviceKind?: ServiceKind | null;
+  // Solicitud de arriendo derivada de este requerimiento (RFC-004 F3).
+  // Comparten código; el estado NO se copia, se proyecta desde ella.
+  rentalRequestId?: string | null;
+  // El id existe sólo si lo eligió de la lista; el nombre viaja siempre.
+  suggestedSupplierId?: string | null;
+  suggestedSupplierName?: string | null;
 }
+
+/** RFC-004: qué se está pidiendo. */
+export type RequestType = 'producto' | 'servicio';
+/**
+ * Subtipo de servicio (RFC-004 F2/F3). 'arriendo' NO se gestiona en el módulo
+ * de compras: deriva a la solicitud de arriendo, que ya tiene cotización por
+ * IA, comparador, calendario de ciclos y materialización del equipo como
+ * activo. El requerimiento aporta el CeCo, la urgencia y su motivo.
+ */
+export type ServiceKind = 'mantencion' | 'arriendo' | 'otro';
+
+export const SERVICE_KIND_LABELS: Record<ServiceKind, string> = {
+  mantencion: 'Mantención',
+  arriendo: 'Arriendo',
+  otro: 'Otro servicio',
+};
+
+/** Modalidades de cobro de un arriendo, en el orden en que se ofrecen. */
+export const RENTAL_CYCLE_LABELS: Record<RentalBillingCycle, string> = {
+  daily: 'Diario',
+  weekly: 'Semanal',
+  biweekly: 'Quincenal',
+  monthly: 'Mensual',
+  one_time: 'Pago único',
+};
+/** RFC-004 D4: ordinario = contemplado en el presupuesto; extraordinario = imprevisto. */
+export type ExpenseKind = 'ordinario' | 'extraordinario';
+export type RequestUrgency = 'alta' | 'media' | 'baja';
+
+/**
+ * Días que se suman a la fecha de creación para obtener `neededBy` según la
+ * urgencia declarada. Los definió Steven: alta = 1 día, media = 3, baja = +3
+ * (se toma una semana como el "+3 días" razonable).
+ */
+export const URGENCY_LEAD_DAYS: Record<RequestUrgency, number> = {
+  alta: 1,
+  media: 3,
+  baja: 7,
+};
+
+/** Mínimo de caracteres del motivo de urgencia — el mismo que exige el CHECK
+ * de la base (migración 20260808000000). Si cambia uno, cambia el otro. */
+export const URGENCY_REASON_MIN = 10;
+
+export const URGENCY_LABELS: Record<RequestUrgency, string> = {
+  alta: 'Alta — 1 día',
+  media: 'Media — 3 días',
+  baja: 'Baja — más de 3 días',
+};
 
 // Códigos de marcas de asistencia (estándar industria minera)
 export type AttendanceMark = 'P' | 'A' | 'D' | 'LM' | 'PSG' | 'V' | 'PP' | 'MJ' | 'ATR';
@@ -1409,6 +1484,11 @@ export interface PurchaseOrder {
   processedBy?: string;
   totalAmount?: number;
   costCenterId?: string | null; // Imputación de costo (F4)
+  // RFC-004 F2: una OC de servicio NO ingresa stock al recibirse y devenga en
+  // la categoría `services`. Se guarda en la OC —en vez de deducirlo de sus
+  // solicitudes— porque algunas OC calzan sus ítems por nombre, y la recepción
+  // no puede depender de que ese calce salga bien para no tocar el pañol.
+  orderType?: 'producto' | 'servicio';
   tenantId: string;
 }
 

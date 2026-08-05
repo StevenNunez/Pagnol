@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/page-shell";
 import { DataTable, DataTableColumn } from "@/components/data-table";
@@ -42,8 +42,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import * as ExcelJS from "exceljs";
-import { resolvePurchaseStage, STAGE_META, PurchaseStage } from "@/components/supervisor-purchases/purchase-pipeline";
+import { resolvePurchaseStage, resolveRentalStage, isRentalDerived, STAGE_META, PurchaseStage } from "@/components/supervisor-purchases/purchase-pipeline";
 import { PurchaseStageBadge, STAGE_ICON } from "@/components/supervisor-purchases/purchase-stage-badge";
+import { UrgencyBadge, ExpenseKindBadge, ItemSpec, SuggestedSupplier, CecoLine, UrgencyReason, ServiceBadge } from "@/components/operations/request-meta";
 
 interface ReceiveRequestDialogProps {
   request: PurchaseRequest | null;
@@ -195,7 +196,7 @@ const formatDate = (date: Date | string | null | undefined): string => {
 type DisplayFilter = "all" | "waiting_adc" | "managing" | "approved" | "ordered" | "received" | "rejected";
 
 export default function AdminPurchaseRequestsPage() {
-  const { purchaseRequests, users, receivePurchaseRequest, isLoading, materials, can } = useAppState();
+  const { purchaseRequests, rentalRequests, users, receivePurchaseRequest, isLoading, materials, can } = useAppState();
   const { toast } = useToast();
   const router = useRouter();
   const [statusFilter, setStatusFilter] = useState<DisplayFilter>("all");
@@ -217,9 +218,21 @@ export default function AdminPurchaseRequestsPage() {
   const getRequesterName = (req: PurchaseRequest) =>
     req.requesterName || supervisorMap.get(req.supervisorId) || "N/A";
 
+  // La etapa de un requerimiento de arriendo se PROYECTA desde su solicitud:
+  // acá no hay copia que sincronizar, así que no puede quedar desfasada. Se
+  // define antes de los KPI y los filtros porque todos deben contar lo mismo.
+  const rentalStatusById = useMemo(() => {
+    const m = new Map<string, any>();
+    ((rentalRequests || []) as any[]).forEach((r: any) => m.set(r.id, r.status));
+    return m;
+  }, [rentalRequests]);
+  const stageOf = useCallback((req: PurchaseRequest): PurchaseStage =>
+    isRentalDerived(req) ? resolveRentalStage(rentalStatusById.get(req.rentalRequestId!)) : resolvePurchaseStage(req),
+  [rentalStatusById]);
+
   const kpis = useMemo(() => {
     const all = purchaseRequests || [];
-    const stages = all.map((r) => resolvePurchaseStage(r));
+    const stages = all.map((r) => stageOf(r));
     const count = (pred: (s: PurchaseStage) => boolean) => stages.filter(pred).length;
     return {
       total: all.length,
@@ -230,7 +243,7 @@ export default function AdminPurchaseRequestsPage() {
       received: count((s) => s === "received"),
       rejected: count((s) => s === "rejected"),
     };
-  }, [purchaseRequests]);
+  }, [purchaseRequests, stageOf]);
 
   const KPI_DEFS: { key: DisplayFilter; label: string; count: number; icon: any; iconCls: string }[] = [
     { key: "all", label: "Todas", count: kpis.total, icon: ShoppingCart, iconCls: "bg-primary/10 text-primary" },
@@ -246,7 +259,7 @@ export default function AdminPurchaseRequestsPage() {
     let requests = purchaseRequests || [];
     if (statusFilter !== "all") {
       requests = requests.filter((req: PurchaseRequest) => {
-        const stage = resolvePurchaseStage(req);
+        const stage = stageOf(req);
         return statusFilter === "managing" ? (stage === "in_review" || stage === "to_send") : stage === statusFilter;
       });
     }
@@ -309,12 +322,21 @@ export default function AdminPurchaseRequestsPage() {
       const header = { font: { bold: true }, fill: { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFEFEFEF" } } };
       ws.columns = [
         { header: "Código", key: "code", width: 16 },
-        { header: "Material", key: "material", width: 34 },
+        { header: "Tipo", key: "type", width: 14 },
+        { header: "Material / Servicio", key: "material", width: 34 },
+        { header: "Descripción", key: "spec", width: 32 },
         { header: "Cantidad", key: "qty", width: 12 },
         { header: "Unidad", key: "unit", width: 10 },
         { header: "Justificación", key: "just", width: 40 },
         { header: "Solicitante", key: "req", width: 22 },
-        { header: "Contrato", key: "contract", width: 26 },
+        // CeCo = contrato (obra) × partida (categoría), los dos ejes juntos.
+        { header: "Contrato (CeCo)", key: "contract", width: 26 },
+        { header: "Partida (CeCo)", key: "ceco", width: 22 },
+        { header: "Urgencia", key: "urgency", width: 12 },
+        { header: "Requerido para", key: "neededBy", width: 16 },
+        { header: "Motivo de la urgencia", key: "urgencyReason", width: 40 },
+        { header: "Tipo de gasto", key: "expenseKind", width: 16 },
+        { header: "Proveedor sugerido", key: "supplier", width: 26 },
         { header: "Estado", key: "status", width: 18 },
         { header: "Fecha solicitud", key: "created", width: 16 },
         { header: "Fecha recepción", key: "received", width: 16 },
@@ -323,13 +345,23 @@ export default function AdminPurchaseRequestsPage() {
       for (const req of filteredRequests) {
         ws.addRow({
           code: req.internalCode || req.id.slice(0, 8).toUpperCase(),
+          type: req.requestType === "servicio" ? "Servicio" : "Producto",
           material: req.materialName,
+          spec: req.itemDescription || "",
           qty: req.quantity,
           unit: req.unit,
           just: req.justification || "",
           req: getRequesterName(req),
           contract: req.contractName || "—",
-          status: STAGE_META[resolvePurchaseStage(req)].label,
+          // Los requerimientos anteriores a la migración 20260807000000 no
+          // tienen estos datos: van vacíos, no se inventan.
+          ceco: req.category || "—",
+          urgency: req.urgency || "—",
+          neededBy: req.neededBy || "—",
+          urgencyReason: req.urgencyReason || "",
+          expenseKind: req.expenseKind || "—",
+          supplier: req.suggestedSupplierName || "—",
+          status: STAGE_META[stageOf(req)].label,
           created: formatDate(req.createdAt),
           received: req.receivedAt ? formatDate(req.receivedAt) : "—",
         });
@@ -360,11 +392,20 @@ export default function AdminPurchaseRequestsPage() {
       cell: (req) => (
         <div className="space-y-1.5">
           <p className="font-medium whitespace-pre-wrap break-words">{String(req.materialName ?? "")}</p>
-          {req.requestTarget === "client" && (
-            <Badge variant="outline" className="gap-1 border-info/40 bg-info-subtle text-info-subtle-foreground text-[9px] font-black uppercase tracking-widest w-fit">
-              <Building2 className="h-3 w-3" /> Cliente{req.clientName ? `: ${req.clientName}` : ""}
-            </Badge>
-          )}
+          <ItemSpec req={req} />
+          <CecoLine req={req} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            {req.requestTarget === "client" && (
+              <Badge variant="outline" className="gap-1 border-info/40 bg-info-subtle text-info-subtle-foreground text-[9px] font-black uppercase tracking-widest w-fit">
+                <Building2 className="h-3 w-3" /> Cliente{req.clientName ? `: ${req.clientName}` : ""}
+              </Badge>
+            )}
+            <ServiceBadge req={req} />
+            <UrgencyBadge req={req} />
+            <ExpenseKindBadge req={req} />
+          </div>
+          <UrgencyReason req={req} />
+          <SuggestedSupplier req={req} />
         </div>
       ),
     },
@@ -394,14 +435,19 @@ export default function AdminPurchaseRequestsPage() {
     { key: "requester", header: "Solicitante", cell: (req) => getRequesterName(req) },
     { key: "created", header: "Solicitud", className: "text-sm", cell: (req) => formatDate(req.createdAt) },
     { key: "received", header: "Recepción", className: "text-sm", cell: (req) => formatDate(req.receivedAt) },
-    { key: "status", header: "Estado", cell: (req) => <PurchaseStageBadge stage={resolvePurchaseStage(req)} /> },
+    { key: "status", header: "Estado", cell: (req) => <PurchaseStageBadge stage={stageOf(req)} /> },
     {
       key: "action",
       header: "Acción",
       headerClassName: "text-right",
       className: "text-right",
       cell: (req) => {
-        const stage = resolvePurchaseStage(req);
+        // Un arriendo derivado no se recibe ni se gestiona desde acá: su acción
+        // vive en el módulo de Arriendos (RFC-004 F3).
+        const stage = stageOf(req);
+        if (isRentalDerived(req)) {
+          return <span className="text-xs text-muted-foreground">Se gestiona en Arriendos</span>;
+        }
         if (stage === "waiting_adc") {
           return <span className="text-xs text-muted-foreground">Esperando autorización ADC</span>;
         }

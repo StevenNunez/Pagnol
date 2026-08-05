@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UrgencyBadge, ExpenseKindBadge, ItemSpec, SuggestedSupplier, CecoLine, UrgencyReason, ServiceBadge } from '@/components/operations/request-meta';
 import {
   Clock,
   Check,
@@ -103,9 +104,13 @@ export default function PurchaseRequestsManagementPage() {
   // Suministros del CLIENTE (requestTarget='client'): fuera de esta cola por
   // completo — su ciclo es supervisor → ADC → correo al cliente → recepción en
   // pañol; Abastecimiento no gestiona compra alguna para ellos.
+  // Los requerimientos de ARRIENDO (RFC-004 F3) también quedan fuera: su
+  // gestión completa —cotización, comparador, adjudicación, OC y calendario de
+  // ciclos— vive en el módulo de Arriendos. Aparecer acá invitaría a emitirles
+  // una orden de compra que duplicaría el costo que ya compromete el arriendo.
   const authorizedRequests = useMemo(
       () => (purchaseRequests || []).filter(r =>
-          r.requestTarget !== 'client' && !(r.status === 'pending' && !r.adcAuthorizedAt)),
+          r.requestTarget !== 'client' && !r.rentalRequestId && !(r.status === 'pending' && !r.adcAuthorizedAt)),
       [purchaseRequests],
   );
 
@@ -132,8 +137,16 @@ export default function PurchaseRequestsManagementPage() {
         );
       }
       
-      // Ordenar: Pendientes primero, luego por fecha más reciente
+      // En lo que sigue abierto manda la fecha requerida (RFC-004 F1): lo que
+      // vence primero va arriba, y lo que no la declaró queda al final. En el
+      // histórico ya cerrado esa fecha no significa nada, así que ahí se
+      // mantiene el orden por fecha más reciente.
+      const openTab = statusFilter === 'pending' || statusFilter === 'active';
       return filtered.sort((a, b) => {
+          if (openTab) {
+              const byNeeded = (a.neededBy || '9999-12-31').localeCompare(b.neededBy || '9999-12-31');
+              if (byNeeded !== 0) return byNeeded;
+          }
           const timeA = getDate(a.createdAt)?.getTime() || 0;
           const timeB = getDate(b.createdAt)?.getTime() || 0;
           return timeB - timeA;
@@ -258,11 +271,22 @@ export default function PurchaseRequestsManagementPage() {
                                             <TableCell>
                                                 <div className="flex flex-col gap-1">
                                                     <span className="font-medium text-sm">{req.materialName}</span>
+                                                    {/* La especificación de la línea es lo que evita llamar por
+                                                        teléfono antes de cotizar (RFC-004 F1). */}
+                                                    <ItemSpec req={req} className="truncate max-w-[220px]" />
                                                     {req.justification && (
                                                         <span className="text-[11px] text-muted-foreground truncate max-w-[200px]" title={req.justification}>
                                                             "{req.justification}"
                                                         </span>
                                                     )}
+                                                    <CecoLine req={req} />
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        <ServiceBadge req={req} />
+                                                        <UrgencyBadge req={req} />
+                                                        <ExpenseKindBadge req={req} />
+                                                    </div>
+                                                    <UrgencyReason req={req} />
+                                                    <SuggestedSupplier req={req} />
                                                 </div>
                                             </TableCell>
                                             <TableCell>

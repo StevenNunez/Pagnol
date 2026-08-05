@@ -18,10 +18,11 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useToast } from "@/modules/core/hooks/use-toast";
 import {
   Send, Loader2, Plus, Trash2, ShoppingCart, ChevronsUpDown, Search, AlertCircle, Package,
-  ChevronDown, Clock, CheckCircle2, Truck, PackageCheck, X as XIcon, Building2, Mail,
+  ChevronDown, Clock, CheckCircle2, Truck, PackageCheck, X as XIcon, Building2, Mail, Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Material, Contract, ContractWorker, PurchaseRequest, Client } from "@/modules/core/lib/data";
+import type { Material, Contract, ContractWorker, PurchaseRequest, Client, Supplier, RequestUrgency, ExpenseKind, ServiceKind, RentalCategory, RentalBillingCycle } from "@/modules/core/lib/data";
+import { URGENCY_LABELS, URGENCY_LEAD_DAYS, URGENCY_REASON_MIN, SERVICE_KIND_LABELS, RENTAL_CYCLE_LABELS, RENTAL_CATEGORY_DEFAULTS } from "@/modules/core/lib/data";
 import { supabase } from "@/modules/core/lib/supabase";
 import { generateClientSupplyPDF } from "@/lib/pdf-generator";
 import { PurchaseMaterialCombobox } from "@/components/supervisor-purchases/purchase-material-combobox";
@@ -40,10 +41,13 @@ interface CartItem {
   category: string;
   quantity: number;
   unit: string;
+  // RFC-004 F1: el QUÉ EXACTAMENTE de esta línea (marca, medida, modelo).
+  // Distinto de la justificación, que es el POR QUÉ y es común al pedido.
+  itemDescription: string;
 }
 
 export default function PurchaseRequestFormPage() {
-  const { purchaseRequests, materials, addPurchaseRequest, markClientRequestsSent, materialCategories, contracts, contractWorkers, clients, currentTenant, can } = useAppState();
+  const { purchaseRequests, materials, addPurchaseRequest, addRentalRequirement, markClientRequestsSent, materialCategories, rentalCategories, rentalRequests, contracts, contractWorkers, clients, suppliers, currentTenant, can } = useAppState();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
 
@@ -52,9 +56,43 @@ export default function PurchaseRequestFormPage() {
   const [commonArea, setCommonArea] = useState("");
   const [commonJustification, setCommonJustification] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Destino de la solicitud: compra a proveedor (histórico) o suministro del
-  // cliente del contrato (el cliente proporciona el material — caso Novandino).
-  const [target, setTarget] = useState<'supplier' | 'client'>('supplier');
+  // RFC-004 F1 — datos comunes al pedido: urgencia, tipo de gasto y a quién
+  // sugiere comprarle quien pide. Van al lote completo (el carrito se cotiza
+  // junto), replicados en cada fila porque la tabla es una fila por ítem.
+  const [urgency, setUrgency] = useState<RequestUrgency>('media');
+  const [urgencyReason, setUrgencyReason] = useState('');
+  const [expenseKind, setExpenseKind] = useState<ExpenseKind>('ordinario');
+  const [suggestedSupplier, setSuggestedSupplier] = useState<{ id: string | null; name: string }>({ id: null, name: '' });
+  const [supplierPopoverOpen, setSupplierPopoverOpen] = useState(false);
+  const [supplierQuery, setSupplierQuery] = useState('');
+  // Qué se necesita (RFC-004 D2 — idea de Steven: extender el selector que ya
+  // bifurcaba el comportamiento en vez de inventar otro eje):
+  //   supplier → comprar un producto a un proveedor
+  //   client   → pedírselo al cliente del contrato (SCL, comodato)
+  //   service  → contratar un servicio: genera gasto pero NO entra al pañol
+  const [target, setTarget] = useState<'supplier' | 'client' | 'service'>('supplier');
+  const [serviceKind, setServiceKind] = useState<ServiceKind>('mantencion');
+  const isService = target === 'service';
+  // Un arriendo NO se gestiona por el flujo de compras: deriva a la solicitud
+  // de arriendo, que ya tiene cotización por IA, comparador, calendario de
+  // ciclos y materialización del equipo como activo (RFC-004 D1/F3).
+  const isRental = isService && serviceKind === 'arriendo';
+  const [rentalStart, setRentalStart] = useState('');
+  const [rentalEnd, setRentalEnd] = useState('');
+  const [rentalCycle, setRentalCycle] = useState<RentalBillingCycle>('monthly');
+  const [rentalCategory, setRentalCategory] = useState('');
+  // La partida (CeCo) de un arriendo se elige UNA vez para el pedido: el
+  // requerimiento derivado es una sola fila y el detalle de equipos vive en la
+  // solicitud de arriendo, no duplicado acá.
+  const [rentalCeco, setRentalCeco] = useState('');
+  const [rentalCecoOpen, setRentalCecoOpen] = useState(false);
+  // Una solicitud al cliente NO gasta plata propia: el cliente del contrato
+  // entrega el material y el documento se le manda por correo. Por eso aquí no
+  // hay CeCo (no hay bolsillo del que salga el costo), ni urgencia, ni tipo de
+  // gasto, ni proveedor sugerido — sólo qué se necesita, de qué partida, para
+  // qué área y para qué se va a ocupar, que es lo que el cliente tiene que
+  // leer en el PDF. El contrato sí se pide: de ahí sale a QUIÉN se le solicita.
+  const isClientSupply = target === 'client';
 
   const activeContracts = useMemo(
     () => ((contracts || []) as Contract[]).filter((c) => c.status === "active").sort((a, b) => a.name.localeCompare(b.name)),
@@ -102,7 +140,20 @@ export default function PurchaseRequestFormPage() {
   const [currentCategory, setCurrentCategory] = useState("");
   const [currentQuantity, setCurrentQuantity] = useState("");
   const [currentUnit, setCurrentUnit] = useState("");
+  const [currentDescription, setCurrentDescription] = useState("");
   const [categoryPopoverOpen, setCategoryPopoverOpen] = useState(false);
+
+  // Prefill vía ?tipo=arriendo — es a donde llega quien entra por el enlace
+  // viejo de Arriendos → Solicitud (RFC-004 F3).
+  const rentalPrefillRef = useRef(false);
+  useEffect(() => {
+    if (rentalPrefillRef.current) return;
+    rentalPrefillRef.current = true;
+    if (new URLSearchParams(window.location.search).get('tipo') === 'arriendo') {
+      setTarget('service');
+      setServiceKind('arriendo');
+    }
+  }, []);
 
   // Prefill vía ?materialId= (botón "Reponer" del Centro de Reportes).
   const prefilledRef = useRef(false);
@@ -185,6 +236,27 @@ export default function PurchaseRequestFormPage() {
 
   const setHistoryFilterReset = (f: HistoryFilter) => { setHistoryFilter(f); setVisible(PAGE_SIZE); };
 
+  // Misma regla que aplica la mutación al guardar (URGENCY_LEAD_DAYS): se
+  // muestra antes de enviar para que la urgencia sea una fecha, no un adjetivo.
+  // Estado REAL de las solicitudes de arriendo derivadas: la tarjeta proyecta
+  // su etapa desde acá en vez de leer un espejo que habría que sincronizar.
+  const rentalStatusById = useMemo(() => {
+    const m = new Map<string, any>();
+    ((rentalRequests || []) as any[]).forEach((r) => m.set(r.id, r.status));
+    return m;
+  }, [rentalRequests]);
+
+  const rentalCategoryOptions = useMemo(() => {
+    const custom = ((rentalCategories || []) as RentalCategory[]).map((c) => ({ value: c.name, label: c.name }));
+    const seen = new Set(RENTAL_CATEGORY_DEFAULTS.map((d) => d.value));
+    return [...RENTAL_CATEGORY_DEFAULTS, ...custom.filter((c) => !seen.has(c.value))];
+  }, [rentalCategories]);
+
+  const neededByPreview = useMemo(() => {
+    const d = new Date(Date.now() + URGENCY_LEAD_DAYS[urgency] * 86400000);
+    return d.toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' });
+  }, [urgency]);
+
   const handleSelectMaterial = (material: Material) => {
     setCurrentMaterialId(material.id);
     setCurrentName(material.name);
@@ -201,8 +273,23 @@ export default function PurchaseRequestFormPage() {
       toast({ variant: "destructive", title: "Cantidad inválida", description: "Ingresa una cantidad positiva." });
       return;
     }
-    if (!currentUnit) {
+    if (!isService && !currentUnit) {
       toast({ variant: "destructive", title: "Falta unidad", description: "Selecciona una unidad de medida." });
+      return;
+    }
+    // En un arriendo la categoría del ítem es la del EQUIPO (maquinaria,
+    // andamios…), que es lo que la solicitud de arriendo necesita para
+    // cotizar; la partida del CeCo se elige una vez para el pedido completo.
+    if (isRental && !rentalCategory) {
+      toast({ variant: "destructive", title: "Falta el tipo de equipo", description: "Indica qué clase de equipo es: define cómo se cotiza el arriendo." });
+      return;
+    }
+    // La partida es la mitad del CeCo (contrato = de qué obra sale; partida =
+    // de qué bolsillo dentro de la obra). Antes caía a "General" en silencio,
+    // que es un CeCo vacío: el gasto quedaba fuera del presupuesto por
+    // contrato × categoría contra el que se va a comparar (RFC-004 D4).
+    if (!isRental && !currentCategory) {
+      toast({ variant: "destructive", title: "Falta la partida", description: "Elige la partida (categoría) del ítem: es de dónde sale el costo dentro del contrato." });
       return;
     }
 
@@ -210,14 +297,16 @@ export default function PurchaseRequestFormPage() {
       tempId: Math.random().toString(36).substr(2, 9),
       materialId: currentMaterialId || undefined,
       materialName: currentName,
-      category: currentCategory || "General",
+      category: isRental ? rentalCategory : currentCategory,
       quantity: Number(currentQuantity),
-      unit: currentUnit,
+      unit: isService ? 'global' : currentUnit,
+      itemDescription: currentDescription.trim(),
     }]);
 
     setCurrentMaterialId(null);
     setCurrentName("");
     setCurrentQuantity("");
+    setCurrentDescription("");
   };
 
   const handleRemoveItem = (id: string) => setCart(cart.filter(i => i.tempId !== id));
@@ -232,8 +321,21 @@ export default function PurchaseRequestFormPage() {
       toast({ variant: "destructive", title: "Faltan datos generales", description: "Debes seleccionar el contrato y la justificación." });
       return;
     }
+    if (!isClientSupply && urgency === 'alta' && urgencyReason.trim().length < URGENCY_REASON_MIN) {
+      toast({ variant: "destructive", title: "Falta el motivo de la urgencia", description: `Si lo necesitas para mañana, explica por qué (mínimo ${URGENCY_REASON_MIN} caracteres).` });
+      return;
+    }
     if (target === 'client' && !contractClient) {
       toast({ variant: "destructive", title: "El contrato no tiene cliente", description: "Asocia un cliente al contrato en Configuración → Clientes antes de solicitar un suministro." });
+      return;
+    }
+
+    if (isRental && !rentalCeco) {
+      toast({ variant: "destructive", title: "Falta la partida", description: "Elige de qué partida (CeCo) sale el arriendo." });
+      return;
+    }
+    if (isRental && rentalStart && rentalEnd && new Date(rentalEnd) < new Date(rentalStart)) {
+      toast({ variant: "destructive", title: "Fechas inválidas", description: "La fecha de término no puede ser anterior al inicio." });
       return;
     }
 
@@ -241,6 +343,47 @@ export default function PurchaseRequestFormPage() {
     // Un solo batchId para todo el carrito → el historial las agrupa como un pedido.
     const batchId = cart.length > 1 ? nanoid() : null;
     const contract = contractMap.get(contractId);
+
+    // ── Arriendo: deriva al flujo que ya existe ──────────────────────────────
+    // No se emite una orden de compra por este camino: nace la solicitud de
+    // arriendo (con el código de ESTE requerimiento) y sigue por cotización,
+    // comparador y calendario de ciclos, que es donde se compromete el costo.
+    if (isRental) {
+      try {
+        const { code } = await addRentalRequirement({
+          items: cart.map((it) => ({ name: it.materialName, category: it.category, quantity: it.quantity })),
+          startDate: rentalStart || null,
+          endDate: rentalEnd || null,
+          billingCycleEstimate: rentalCycle,
+          contractId,
+          contractName: contract?.name || null,
+          area: commonArea.trim(),
+          justification: commonJustification,
+          category: rentalCeco,
+          urgency,
+          urgencyReason: urgencyReason.trim() || null,
+          expenseKind,
+          itemDescription: cart.map((it) => it.itemDescription).filter(Boolean).join(' · ') || null,
+          suggestedSupplierId: suggestedSupplier.id,
+          suggestedSupplierName: suggestedSupplier.name.trim() || null,
+        });
+        toast({
+          title: 'Solicitud de arriendo enviada',
+          description: `${code} — ${cart.length} equipo(s). Sigue en Arriendos: Abastecimiento la cotiza y compara ofertas.`,
+        });
+        setCart([]);
+        setContractId(isFieldWorkerSingleContract ? myAssignedContracts[0].id : "");
+        setCommonArea(""); setCommonJustification("");
+        setUrgency('media'); setUrgencyReason(''); setExpenseKind('ordinario');
+        setSuggestedSupplier({ id: null, name: '' }); setSupplierQuery('');
+        setRentalStart(''); setRentalEnd(''); setRentalCycle('monthly'); setRentalCategory(''); setRentalCeco('');
+      } catch (error: any) {
+        toast({ variant: "destructive", title: "No se pudo enviar la solicitud", description: error?.message || "Error inesperado." });
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
 
     try {
       const results = await Promise.allSettled(cart.map(item => addPurchaseRequest({
@@ -254,6 +397,21 @@ export default function PurchaseRequestFormPage() {
         justification: commonJustification,
         supervisorId: authUser.id,
         batchId,
+        // RFC-004 F2: el tipo sale del selector. Un servicio viaja al mismo
+        // flujo de OC que un producto; lo que cambia es que su recepción no
+        // toca el pañol y devenga en la categoría `services`.
+        requestType: isService ? ('servicio' as const) : ('producto' as const),
+        serviceKind: isService ? serviceKind : null,
+        // En un suministro del cliente estos campos quedan fuera a propósito:
+        // no hay costo propio que clasificar ni urgencia que priorizar. Se
+        // anulan aquí (y no sólo se ocultan) porque el estado del formulario
+        // sobrevive al cambio de modo y si no, se colarían.
+        expenseKind: isClientSupply ? null : expenseKind,
+        urgency: isClientSupply ? null : urgency,
+        urgencyReason: isClientSupply ? null : (urgencyReason.trim() || null),
+        itemDescription: item.itemDescription || null,
+        suggestedSupplierId: suggestedSupplier.id,
+        suggestedSupplierName: suggestedSupplier.name.trim() || null,
         ...(target === 'client' ? {
           requestTarget: 'client' as const,
           clientId: contractClient!.id,
@@ -275,6 +433,11 @@ export default function PurchaseRequestFormPage() {
         setContractId(isFieldWorkerSingleContract ? myAssignedContracts[0].id : "");
         setCommonArea("");
         setCommonJustification("");
+        setUrgency('media');
+        setUrgencyReason('');
+        setExpenseKind('ordinario');
+        setSuggestedSupplier({ id: null, name: '' });
+        setSupplierQuery('');
       } else {
         // Envío parcial: los ítems que SÍ entraron ya están en la base — nunca
         // reintentar el carrito completo o se duplican. Solo dejamos en la
@@ -386,28 +549,36 @@ export default function PurchaseRequestFormPage() {
           <div className="bg-card rounded-[2rem] border shadow-sm p-8 space-y-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-2xl bg-primary/10 text-primary shrink-0">
-                {target === 'client' ? <Building2 size={20} /> : <ShoppingCart size={20} />}
+                {target === 'client' ? <Building2 size={20} /> : isService ? <Wrench size={20} /> : <ShoppingCart size={20} />}
               </div>
               <div>
-                <h3 className="text-lg font-black uppercase tracking-tight">{target === 'client' ? 'Suministro del Cliente' : 'Nueva Compra'}</h3>
+                <h3 className="text-lg font-black uppercase tracking-tight">
+                  {target === 'client' ? 'Suministro del Cliente' : isService ? 'Nuevo Servicio' : 'Nueva Compra'}
+                </h3>
                 <p className="text-xs text-muted-foreground font-medium">
                   {target === 'client'
                     ? 'El cliente del contrato proporciona los materiales. Ingresan como activos del cliente.'
-                    : 'Agrega múltiples ítems y envíalos en un solo pedido.'}
+                    : isService
+                      ? 'Un gasto que no entra al pañol: se ordena, se ejecuta y se conforma.'
+                      : 'Agrega múltiples ítems y envíalos en un solo pedido.'}
                 </p>
               </div>
             </div>
 
-            {/* Destino de la solicitud */}
-            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-muted/50 border">
-              {([['supplier', 'Comprar a proveedor', ShoppingCart], ['client', 'Solicitar al cliente', Building2]] as const).map(([value, label, Icon]) => (
+            {/* ¿Qué necesitas? (RFC-004 D2) */}
+            <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-muted/50 border">
+              {([
+                ['supplier', 'Comprar', ShoppingCart],
+                ['client', 'Pedir al cliente', Building2],
+                ['service', 'Contratar servicio', Wrench],
+              ] as const).map(([value, label, Icon]) => (
                 <button
                   key={value}
                   type="button"
                   disabled={isSubmitting}
                   onClick={() => setTarget(value)}
                   className={cn(
-                    'flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all',
+                    'flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all text-center leading-tight',
                     target === value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -415,6 +586,46 @@ export default function PurchaseRequestFormPage() {
                 </button>
               ))}
             </div>
+
+            {/* Subtipo del servicio. El arriendo no está: tiene su propio flujo
+                completo (cotización por IA, comparador, calendario) y el RQ debe
+                derivar hacia él en vez de reimplementarlo — eso llega en F3. */}
+            {isService && (
+              <div className="space-y-3 animate-in fade-in duration-300">
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.keys(SERVICE_KIND_LABELS) as ServiceKind[]).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => setServiceKind(k)}
+                      className={cn(
+                        'rounded-xl border px-3 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all',
+                        serviceKind === k ? 'border-primary bg-primary/10 text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                      )}
+                    >
+                      {SERVICE_KIND_LABELS[k]}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-start gap-2 p-3 rounded-xl border border-info/30 bg-info-subtle text-info-subtle-foreground text-xs font-medium">
+                  <Wrench className="h-4 w-4 shrink-0 mt-0.5" />
+                  {isRental ? (
+                    <span>
+                      El arriendo sigue su propio camino: al enviarlo se crea la <b>solicitud de arriendo</b> con
+                      este mismo código, y desde ahí Abastecimiento cotiza, compara ofertas y arma el calendario
+                      de pagos. Lo que agregas aquí —CeCo, urgencia y motivo— viaja con ella.
+                    </span>
+                  ) : (
+                    <span>
+                      Un servicio <b>no ingresa al pañol</b>: se ordena al proveedor y, cuando está ejecutado,
+                      Abastecimiento registra la conformidad contra su orden de compra. El gasto se imputa al
+                      CeCo que elijas.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {target === 'client' && contractId && (
               contractClient ? (
@@ -433,7 +644,9 @@ export default function PurchaseRequestFormPage() {
             <div className="space-y-4 p-5 border rounded-2xl bg-muted/30">
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">1. Detalle del ítem</Label>
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                    1. {isService ? 'Detalle del servicio' : 'Detalle del ítem'}
+                  </Label>
                   <button
                     type="button"
                     onClick={() => { setCurrentName(""); setCurrentMaterialId(null); }}
@@ -442,45 +655,105 @@ export default function PurchaseRequestFormPage() {
                     Limpiar
                   </button>
                 </div>
-                <PurchaseMaterialCombobox
-                  groupedMaterials={groupedMaterials}
-                  currentName={currentName}
-                  selectedId={currentMaterialId}
-                  onSelectMaterial={handleSelectMaterial}
-                  onFreeText={(text) => { setCurrentName(text); setCurrentMaterialId(null); }}
-                  disabled={isSubmitting}
-                />
+                {/* Un servicio no se elige del catálogo del pañol: no está ahí,
+                    y ofrecerlo invitaría a vincularlo a un material que no le
+                    corresponde. Se escribe. */}
+                {isRental ? (
+                  <Input
+                    className="h-12 rounded-xl bg-card"
+                    placeholder="¿Qué equipo? Ej: retroexcavadora CAT 420F"
+                    value={currentName}
+                    onChange={e => { setCurrentName(e.target.value); setCurrentMaterialId(null); }}
+                    disabled={isSubmitting}
+                  />
+                ) : isService ? (
+                  <Input
+                    className="h-12 rounded-xl bg-card"
+                    placeholder="¿Qué servicio? Ej: mantención preventiva compresor Atlas Copco"
+                    value={currentName}
+                    onChange={e => { setCurrentName(e.target.value); setCurrentMaterialId(null); }}
+                    disabled={isSubmitting}
+                  />
+                ) : (
+                  <PurchaseMaterialCombobox
+                    groupedMaterials={groupedMaterials}
+                    currentName={currentName}
+                    selectedId={currentMaterialId}
+                    onSelectMaterial={handleSelectMaterial}
+                    onFreeText={(text) => { setCurrentName(text); setCurrentMaterialId(null); }}
+                    disabled={isSubmitting}
+                  />
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Un servicio se cuenta en ejecuciones, no en unidades de pañol:
+                  la unidad queda fija en "global" para no pedir un dato que no
+                  significa nada y que además viajaría a la OC. */}
+              <div className={cn('grid gap-3', isService ? 'grid-cols-1' : 'grid-cols-2')}>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Cantidad</Label>
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                    {isService ? 'Cantidad de servicios' : 'Cantidad'}
+                  </Label>
                   <Input
                     type="number"
                     className="h-11 rounded-xl"
-                    placeholder="Ej: 10"
+                    placeholder={isService ? 'Ej: 1' : 'Ej: 10'}
                     value={currentQuantity}
                     onChange={e => setCurrentQuantity(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleAddItem()}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Unidad</Label>
-                  <Select value={currentUnit} onValueChange={setCurrentUnit}>
-                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Ud." /></SelectTrigger>
-                    <SelectContent>
-                      {PURCHASE_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {!isService && (
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Unidad</Label>
+                    <Select value={currentUnit} onValueChange={setCurrentUnit}>
+                      <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Ud." /></SelectTrigger>
+                      <SelectContent>
+                        {PURCHASE_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Categoría (opcional)</Label>
+                <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                  {isService ? 'Alcance del servicio' : 'Descripción del ítem'}{' '}
+                  <span className="font-normal normal-case tracking-normal">
+                    {isService ? '(qué incluye)' : '(marca, medida, modelo)'}
+                  </span>
+                </Label>
+                <Input
+                  className="h-11 rounded-xl"
+                  placeholder={isService ? 'Ej: cambio de filtros, aceite y prueba de carga' : 'Ej: cabritilla, talla 9, puño largo'}
+                  value={currentDescription}
+                  onChange={e => setCurrentDescription(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddItem()}
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              {isRental ? (
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                    Tipo de equipo <span className="text-destructive">*</span>
+                  </Label>
+                  <Select value={rentalCategory} onValueChange={setRentalCategory} disabled={isSubmitting}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Maquinaria, andamios, camiones…" /></SelectTrigger>
+                    <SelectContent>
+                      {rentalCategoryOptions.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                  {isClientSupply ? 'Partida' : 'Partida (CeCo)'} <span className="text-destructive">*</span>
+                </Label>
                 <Popover open={categoryPopoverOpen} onOpenChange={setCategoryPopoverOpen}>
                   <PopoverTrigger asChild>
                     <Button variant="outline" role="combobox" className="w-full justify-between h-11 rounded-xl font-normal">
-                      <span className="truncate">{currentCategory || "Seleccionar categoría…"}</span>
+                      <span className={cn("truncate", !currentCategory && "text-muted-foreground")}>{currentCategory || "¿De qué partida sale? (EPP, Herramientas…)"}</span>
                       <ChevronsUpDown className="ml-2 h-3.5 w-3.5 opacity-50" />
                     </Button>
                   </PopoverTrigger>
@@ -501,6 +774,7 @@ export default function PurchaseRequestFormPage() {
                   </PopoverContent>
                 </Popover>
               </div>
+              )}
 
               <Button className="w-full h-11 rounded-xl gap-2" variant="secondary" onClick={handleAddItem} disabled={!currentName || isSubmitting}>
                 <Plus className="h-4 w-4" /> Agregar a la lista
@@ -510,7 +784,9 @@ export default function PurchaseRequestFormPage() {
             {/* Carrito */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">2. Lista de pedido ({cart.length})</Label>
+                <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                  2. {isService ? 'Servicios a solicitar' : 'Lista de pedido'} ({cart.length})
+                </Label>
                 {cart.length > 0 && (
                   <button type="button" onClick={() => setCart([])} className="text-[10px] font-bold text-destructive hover:underline">
                     Borrar todo
@@ -528,6 +804,9 @@ export default function PurchaseRequestFormPage() {
                           </Badge>
                           <div className="min-w-0">
                             <p className="text-sm font-bold truncate">{item.materialName}</p>
+                            {item.itemDescription && (
+                              <p className="text-[11px] text-muted-foreground truncate">{item.itemDescription}</p>
+                            )}
                             <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{item.category} · <span className="text-foreground font-bold">{item.quantity} {item.unit}</span></p>
                           </div>
                         </div>
@@ -552,8 +831,13 @@ export default function PurchaseRequestFormPage() {
 
               <div className="space-y-1.5">
                 <Label className="text-[10px] font-bold text-muted-foreground">
-                  Contrato / Faena <span className="text-destructive">*</span>
+                  {isClientSupply ? 'Contrato / Faena' : 'Centro de costo (CeCo) · Contrato'} <span className="text-destructive">*</span>
                 </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  {isClientSupply
+                    ? <>Define <b>a qué cliente</b> se le solicita y aparece en el documento que recibe.</>
+                    : <>El CeCo son dos cosas: <b>de qué contrato</b> sale el costo y <b>de qué partida</b> dentro de él — la partida se elige por ítem, arriba.</>}
+                </p>
                 {isFieldWorkerSingleContract ? (
                   <div className="flex items-center gap-2 h-12 px-4 rounded-xl border bg-muted/40 text-sm">
                     <Package className="h-4 w-4 text-primary shrink-0" />
@@ -605,14 +889,208 @@ export default function PurchaseRequestFormPage() {
                 />
               </div>
 
+              {/* Datos que necesita la solicitud de arriendo. Se piden acá para
+                  que no haya que llenar dos formularios: al enviar, esta misma
+                  información crea la SOLPED con el código del requerimiento. */}
+              {isRental && (
+                <div className="space-y-4 animate-in fade-in duration-300">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold text-muted-foreground">Desde</Label>
+                      <Input type="date" className="h-11 rounded-xl" value={rentalStart} onChange={(e) => setRentalStart(e.target.value)} disabled={isSubmitting} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold text-muted-foreground">Hasta</Label>
+                      <Input type="date" className="h-11 rounded-xl" value={rentalEnd} onChange={(e) => setRentalEnd(e.target.value)} disabled={isSubmitting} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground">Modalidad de cobro estimada</Label>
+                    <Select value={rentalCycle} onValueChange={(v) => setRentalCycle(v as RentalBillingCycle)} disabled={isSubmitting}>
+                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(RENTAL_CYCLE_LABELS).map(([k, label]) => (
+                          <SelectItem key={k} value={k}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground">
+                      Partida (CeCo) <span className="text-destructive">*</span>
+                    </Label>
+                    <Popover open={rentalCecoOpen} onOpenChange={setRentalCecoOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" className="w-full justify-between h-11 rounded-xl font-normal" disabled={isSubmitting}>
+                          <span className={cn('truncate', !rentalCeco && 'text-muted-foreground')}>
+                            {rentalCeco || '¿De qué partida sale el arriendo?'}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0 rounded-xl">
+                        <Command>
+                          <CommandInput placeholder="Partida…" />
+                          <CommandList>
+                            <CommandEmpty>No encontrada.</CommandEmpty>
+                            <CommandGroup>
+                              {(materialCategories || []).map((cat: any) => (
+                                <CommandItem key={cat.id} value={`${cat.name} ${cat.id}`} onSelect={() => { setRentalCeco(cat.name); setRentalCecoOpen(false); }}>
+                                  {cat.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+              )}
+
+              {/* Urgencia — se guarda la etiqueta y la fecha que se deriva de ella.
+                  No aplica al suministro del cliente: ese documento va por correo
+                  y no compite por la bandeja de Abastecimiento. */}
+              {!isClientSupply && (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-bold text-muted-foreground">
+                  ¿Para cuándo? <span className="text-destructive">*</span>
+                </Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['alta', 'media', 'baja'] as const).map((u) => (
+                    <button
+                      key={u}
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => setUrgency(u)}
+                      className={cn(
+                        'rounded-xl border px-2 py-2.5 text-center transition-all',
+                        urgency === u ? 'border-primary bg-primary/10 text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                      )}
+                    >
+                      <span className="block text-[10px] font-black uppercase tracking-widest">{u}</span>
+                      <span className="block text-[10px] font-medium">{URGENCY_LABELS[u].split('—')[1]?.trim()}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Se necesita para el <b>{neededByPreview}</b>.
+                </p>
+              </div>
+              )}
+
+              {/* Pedir para mañana obliga a decir por qué: si declarar urgencia
+                  no cuesta nada, en un mes todo se pide para mañana y la
+                  bandeja vuelve a ordenarse por nada. */}
+              {!isClientSupply && urgency === 'alta' && (
+                <div className="space-y-1.5 animate-in fade-in duration-300">
+                  <Label className="text-[10px] font-bold text-muted-foreground">
+                    ¿Por qué lo necesitas para mañana? <span className="text-destructive">*</span>
+                  </Label>
+                  <Textarea
+                    placeholder="Ej: la excavadora está detenida y sin este repuesto no parte el turno de mañana."
+                    className="resize-none h-20 rounded-xl"
+                    value={urgencyReason}
+                    onChange={e => setUrgencyReason(e.target.value)}
+                    disabled={isSubmitting}
+                  />
+                  <p className={cn(
+                    'text-[11px]',
+                    urgencyReason.trim().length >= URGENCY_REASON_MIN ? 'text-muted-foreground' : 'text-warning-subtle-foreground',
+                  )}>
+                    {urgencyReason.trim().length >= URGENCY_REASON_MIN
+                      ? 'Lo verá quien autoriza y quien compra.'
+                      : `Faltan ${URGENCY_REASON_MIN - urgencyReason.trim().length} caracteres — el motivo es lo que hace que "alta" signifique algo.`}
+                  </p>
+                </div>
+              )}
+
+              {/* Ordinario vs extraordinario (RFC-004 D4). Un suministro del
+                  cliente no sale de tu presupuesto: la distinción no aplica. */}
+              {!isClientSupply && (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-bold text-muted-foreground">Tipo de gasto <span className="text-destructive">*</span></Label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-muted/50 border">
+                  {([['ordinario', 'Ordinario', 'Estaba presupuestado'], ['extraordinario', 'Extraordinario', 'Es un imprevisto']] as const).map(([value, label, hint]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => setExpenseKind(value)}
+                      className={cn(
+                        'rounded-lg px-3 py-2 transition-all text-center',
+                        expenseKind === value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      <span className="block text-[10px] font-black uppercase tracking-widest">{label}</span>
+                      <span className={cn('block text-[10px] font-medium', expenseKind === value ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              )}
+
+              {/* Proveedor sugerido — de la lista o escrito a mano */}
+              {target !== 'client' && (
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold text-muted-foreground">Proveedor sugerido <span className="font-normal">(opcional)</span></Label>
+                  <Popover open={supplierPopoverOpen} onOpenChange={setSupplierPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between h-11 rounded-xl font-normal" disabled={isSubmitting}>
+                        <span className={cn('truncate', !suggestedSupplier.name && 'text-muted-foreground')}>
+                          {suggestedSupplier.name || 'Sin sugerencia — lo define Abastecimiento'}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-3.5 w-3.5 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0 rounded-xl">
+                      <Command shouldFilter>
+                        <CommandInput placeholder="Buscar o escribir un proveedor…" value={supplierQuery} onValueChange={setSupplierQuery} />
+                        <CommandList>
+                          <CommandEmpty className="p-2">
+                            {supplierQuery.trim() ? (
+                              <button
+                                type="button"
+                                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-muted"
+                                onClick={() => { setSuggestedSupplier({ id: null, name: supplierQuery.trim() }); setSupplierPopoverOpen(false); }}
+                              >
+                                Usar «<b>{supplierQuery.trim()}</b>» — no está registrado
+                              </button>
+                            ) : (
+                              <span className="text-sm text-muted-foreground px-3">Escribe para buscar o sugerir uno nuevo.</span>
+                            )}
+                          </CommandEmpty>
+                          <CommandGroup>
+                            {suggestedSupplier.name && (
+                              <CommandItem value="__limpiar__" onSelect={() => { setSuggestedSupplier({ id: null, name: '' }); setSupplierQuery(''); setSupplierPopoverOpen(false); }}>
+                                <XIcon className="mr-2 h-3.5 w-3.5" /> Quitar sugerencia
+                              </CommandItem>
+                            )}
+                            {((suppliers || []) as Supplier[]).map((s) => (
+                              <CommandItem
+                                key={s.id}
+                                value={`${s.name} ${s.id}`}
+                                onSelect={() => { setSuggestedSupplier({ id: s.id, name: s.name }); setSupplierPopoverOpen(false); }}
+                              >
+                                {s.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )}
+
               <Button
                 className="w-full h-12 rounded-xl text-sm font-black uppercase tracking-widest shadow-lg shadow-primary/10 gap-2"
                 onClick={handleSubmitAll}
-                disabled={isSubmitting || cart.length === 0 || !contractId || !commonJustification || (target === 'client' && !contractClient)}
+                disabled={isSubmitting || cart.length === 0 || !contractId || !commonJustification || (target === 'client' && !contractClient) || (isRental && !rentalCeco) || (!isClientSupply && urgency === 'alta' && urgencyReason.trim().length < URGENCY_REASON_MIN)}
               >
                 {isSubmitting
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando…</>
-                  : <><Send className="h-4 w-4" /> {target === 'client' ? 'Enviar solicitud de suministro' : 'Enviar solicitud de compra'}</>}
+                  : <><Send className="h-4 w-4" /> {target === 'client' ? 'Enviar solicitud de suministro' : isRental ? 'Enviar solicitud de arriendo' : isService ? 'Enviar solicitud de servicio' : 'Enviar solicitud de compra'}</>}
               </Button>
             </div>
           </div>
@@ -670,7 +1148,7 @@ export default function PurchaseRequestFormPage() {
             <>
               <div className="space-y-4">
                 {filteredHistory.slice(0, visible).map((group) => (
-                  <PurchaseHistoryCard key={groupKey(group[0])} items={group} onSendToClient={openSendToClient} />
+                  <PurchaseHistoryCard key={groupKey(group[0])} items={group} onSendToClient={openSendToClient} rentalStatusById={rentalStatusById} />
                 ))}
               </div>
               {filteredHistory.length > visible && (

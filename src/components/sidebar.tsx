@@ -274,7 +274,7 @@ const getSupervisorNavItems = () => [
   { href: '/dashboard/supervisor/request', icon: PlusCircle, label: 'Solicitud Material' },
   { href: '/dashboard/supervisor/return-request', icon: RotateCcw, label: 'Devolución Material' },
   { href: '/dashboard/supervisor/purchase-request-form', icon: ShoppingCart, label: 'Solicitud Compra' },
-  { href: '/dashboard/supervisor/rental-request', icon: KeyRound, label: 'Solicitud Arriendo' },
+  { href: '/dashboard/purchasing/purchase-request-form?tipo=arriendo', icon: KeyRound, label: 'Solicitud Arriendo' },
   { href: '/dashboard/supervisor/suppliers', icon: Building2, label: 'Lista Proveedores' },
 ];
 

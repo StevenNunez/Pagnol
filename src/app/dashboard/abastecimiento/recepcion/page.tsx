@@ -387,6 +387,10 @@ function ReceiveDialog({
 }) {
     const { toast } = useToast();
 
+    // RFC-004 F2: una OC de servicio se conforma, no se recibe — no hay stock
+    // que ingresar ni material de destino que elegir.
+    const isServiceOrder = po.orderType === 'servicio';
+
     // Línea por ítem de OC, con la cantidad pendiente como valor por defecto
     // y un material calzado por nombre si existe.
     const lines = useMemo(() => {
@@ -456,7 +460,12 @@ function ReceiveDialog({
         setSubmitting(true);
         try {
             await receiveGoodsReceipt({ purchaseOrderId: po.id, items, photos, notes: notes.trim() || undefined });
-            toast({ title: "Recepción registrada", description: "El stock se actualizó correctamente." });
+            toast({
+                title: isServiceOrder ? "Conformidad registrada" : "Recepción registrada",
+                description: isServiceOrder
+                    ? "El gasto quedó imputado al contrato. No se ingresó nada al pañol."
+                    : "El stock se actualizó correctamente.",
+            });
             onClose();
         } catch (e) {
             toast({ variant: "destructive", title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar la recepción." });
@@ -469,9 +478,13 @@ function ReceiveDialog({
         <Dialog open onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>Recepción · {po.officialOCId || po.id}</DialogTitle>
+                    <DialogTitle>
+                        {isServiceOrder ? 'Conformidad de servicio' : 'Recepción'} · {po.officialOCId || po.id}
+                    </DialogTitle>
                     <DialogDescription>
-                        {po.supplierName} — confirma las cantidades recibidas y el material de destino. Puedes recibir parcialmente.
+                        {isServiceOrder
+                            ? `${po.supplierName} — confirma que el servicio se ejecutó. No ingresa nada al pañol: el costo se imputa al contrato del requerimiento.`
+                            : `${po.supplierName} — confirma las cantidades recibidas y el material de destino. Puedes recibir parcialmente.`}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -481,12 +494,16 @@ function ReceiveDialog({
                             <div className="flex items-center justify-between gap-3">
                                 <p className="font-semibold text-foreground">{l.name}</p>
                                 <span className="text-xs text-muted-foreground">
-                                    Pendiente: <strong className="text-foreground">{l.remaining}</strong> {l.unit} · Ordenado {l.ordered}
+                                    {isServiceOrder
+                                        ? <>Pendiente de conformidad: <strong className="text-foreground">{l.remaining}</strong> de {l.ordered}</>
+                                        : <>Pendiente: <strong className="text-foreground">{l.remaining}</strong> {l.unit} · Ordenado {l.ordered}</>}
                                 </span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Un servicio no tiene material de destino: pedirlo
+                                invitaría a inventar un activo que no existe. */}
+                            <div className={cn('grid gap-3 grid-cols-1', !isServiceOrder && 'sm:grid-cols-2')}>
                                 <div className="space-y-1.5">
-                                    <Label className="text-xs">Cantidad recibida</Label>
+                                    <Label className="text-xs">{isServiceOrder ? 'Ejecuciones conformes' : 'Cantidad recibida'}</Label>
                                     <Input
                                         type="number"
                                         min={0}
@@ -497,14 +514,16 @@ function ReceiveDialog({
                                         disabled={l.remaining === 0}
                                     />
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label className="text-xs">Material destino (pañol)</Label>
-                                    <MaterialPicker
-                                        materials={materials}
-                                        value={state[l.key]?.materialId}
-                                        onChange={(id) => update(l.key, { materialId: id })}
-                                    />
-                                </div>
+                                {!isServiceOrder && (
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Material destino (pañol)</Label>
+                                        <MaterialPicker
+                                            materials={materials}
+                                            value={state[l.key]?.materialId}
+                                            onChange={(id) => update(l.key, { materialId: id })}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}

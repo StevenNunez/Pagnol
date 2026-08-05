@@ -18,6 +18,193 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — El Requerimiento dice de qué bolsillo sale y para cuándo (RFC-004, F1)
+
+Segundo paso de la puerta única del gasto. Hasta ahora un requerimiento decía *qué* se pedía;
+ahora dice **de qué CeCo sale**, **para cuándo se necesita** y **qué es exactamente**.
+
+- **CeCo presentado como una sola cosa.** Los dos ejes ya existían sueltos en la tabla —
+  `contract_id` (la obra) y `category` (la partida)—, así que no hubo que construirlo: hubo que
+  presentarlo. El formulario ahora lo nombra así y explica que la partida se elige por ítem.
+- **La partida pasó a ser obligatoria.** Antes caía a `"General"` en silencio, que es un CeCo a
+  medias: ese gasto quedaba fuera de la comparación contra el presupuesto por contrato × categoría.
+- **Urgencia con fecha, no un adjetivo.** Se guarda la etiqueta (alta 1 día · media 3 · baja +3) **y**
+  la fecha concreta que se deriva de ella. Con eso las bandejas del ADC y de Abastecimiento ordenan
+  por lo que vence primero y marcan **Atrasado** solo cuando la fecha pasó y el ítem sigue abierto.
+  Sin la fecha, "alta" deja de significar algo a los tres días.
+- **Descripción por ítem** (marca, medida, modelo), separada de la justificación: la justificación es
+  el *por qué* del pedido completo, la descripción es el *qué exactamente* de esa línea. Es el dato
+  que hoy obliga a Abastecimiento a llamar por teléfono antes de cotizar.
+- **Ordinario / extraordinario** — declarado por quien pide (RFC-004 D4). Solo se muestra el
+  imprevisto: etiquetar cada gasto normal como "ordinario" no cambia ninguna decisión.
+- **Proveedor sugerido** desde la lista **o escrito a mano**: en terreno la mitad de las sugerencias
+  son proveedores que todavía no están dados de alta, y obligar a elegir de la lista habría perdido
+  ese dato.
+- **Los campos se ven donde se decide**, no solo donde se escriben: historial del solicitante,
+  bandeja del ADC, bandeja de Abastecimiento y la exportación a Excel. Un campo que solo existe en el
+  formulario es un formulario más largo y nada más.
+
+**Lo que NO se hizo a propósito:** el selector *Contratar un servicio*. La columna `request_type`
+nace en esta fase, pero pedir servicios se habilita en F2 — hoy `receivePurchaseRequest` **siempre**
+crea un `Material` y suma stock, así que el primer servicio recibido generaría un activo fantasma
+("mantención de compresor", stock 1) que además entraría en la valorización del inventario. Es el
+riesgo #1 que el propio RFC anticipó. Mientras tanto la mutación **falla en vez de degradar** si
+alguien intentara guardar un servicio sin la columna: un servicio convertido en producto por
+silencio entraría al pañol.
+
+### Corregido — El mismo error de CHECK, otra vez (RFC-004, F3)
+
+La restricción que impide enlazar un **producto** a una solicitud de arriendo no rechazaba nada, por
+la misma razón que la de F2: `service_kind = 'arriendo'` con `service_kind` en NULL da NULL, y un
+CHECK que evalúa a NULL deja pasar la fila. Lo destapó el E2E de F3, una fase después de haber
+documentado la lección.
+
+**Migración `20260812000000_rq_rental_link_check_fix.sql`** — exige `IS NOT NULL` antes de comparar.
+Se revisaron además los otros seis CHECK de este lote: usan `IS NULL OR`, `IS DISTINCT FROM` o
+columnas `NOT NULL`, así que sólo éste estaba afectado. Verificado contra la base que ninguna fila
+viola la versión corregida.
+
+### Agregado — El arriendo se pide desde el Requerimiento, sin duplicarse (RFC-004, F3)
+
+Cierra la puerta única: **todo gasto entra por el mismo lugar**, incluidos los arriendos. Y lo hace
+sin reimplementar el flujo de arriendos —que ya tiene cotización por IA, comparador de ofertas,
+adjudicación, calendario de ciclos y materialización del equipo como activo— ni crear un segundo
+documento que compita con él.
+
+El riesgo evidente de "derivar y enlazar" era terminar con dos identidades para el mismo pedido: dos
+códigos, dos estados y dos autorizaciones. Tres reglas lo impiden:
+
+- **Un solo código.** La solicitud de arriendo derivada **no emite correlativo propio**: hereda el
+  del requerimiento (`MDS-RQ-0012`). Un número desde que se pide hasta la OC. Los arriendos ya
+  emitidos conservan su `SOLPED-ARR` — corte limpio, igual que con `PRQ`.
+- **Un solo estado.** El requerimiento derivado no tiene máquina de estados propia: la bandeja
+  **proyecta** la etapa de la solicitud de arriendo. No hay columna espejo que sincronizar, así que
+  no puede quedar desfasada — si Abastecimiento la rechaza, se ve rechazada en el mismo instante.
+- **Una sola autorización.** El gate del ADC se queda en el arriendo, que es donde vive el flujo, y
+  el derivado sale de la pestaña de Compra. Sin esto el ADC habría visto el mismo pedido dos veces.
+
+Y **un solo emisor del costo**: lo compromete el calendario de arriendos, nunca el requerimiento —
+un derivado no llega jamás a una orden de compra, y las bandejas de compras lo excluyen para que
+nadie pueda emitírsela.
+
+**Lo que gana el arriendo con esto:** CeCo, partida, urgencia y motivo de urgencia, que su
+formulario no capturaba. Y la bandeja de Requerimientos pasa a ser la vista completa del gasto.
+
+**Una sola puerta:** `Arriendos → Solicitud` dejó de tener formulario propio y redirige al
+Requerimiento con el arriendo ya seleccionado. La ruta se conserva —en vez de borrarse— porque está
+enlazada desde el hub de Supervisor, el sidebar y enlaces que la gente ya tiene guardados: un 404
+habría sido peor que una redirección.
+
+**Migración `20260811000000_rq_rental_derivation_f3.sql`** — `purchase_requests.rental_request_id`
+con borrado en cascada (un requerimiento derivado no significa nada sin su solicitud: es la puerta
+de entrada de un hecho, no un hecho propio), el subtipo `arriendo` ya admitido **sólo si viene
+enlazado**, y la restricción inversa: sólo un arriendo puede llevar el enlace.
+
+### Corregido — El CHECK de `service_kind` no rechazaba nada (RFC-004, F2)
+
+Lo destapó el E2E de F2, y es el motivo por el que existe: la restricción que debía impedir un
+**servicio sin subtipo** dejaba pasar la fila.
+
+**Por qué:** un `CHECK` de Postgres sólo rechaza cuando evalúa a `FALSE`; si evalúa a `NULL`, la
+fila entra. Con `service_kind` en NULL, `NULL IN ('mantencion','otro')` da NULL, la rama del
+servicio daba `TRUE AND NULL` = NULL y el total `NULL OR FALSE` = NULL. Pasaba.
+
+Por la interfaz nunca habría ocurrido —la mutación valida antes de insertar— pero sí por el
+servidor MCP o por REST, que es justo para lo que se puso la regla en la base.
+
+**Migración `20260810000000_rq_service_kind_check_fix.sql`**: reemplaza la restricción explicitando
+`IS NOT NULL`, para que la rama dé FALSE de verdad.
+
+### Corregido — El suministro del cliente no tiene CeCo (RFC-004)
+
+F1 le puso a **todas** las solicitudes el lenguaje del centro de costo, y en el suministro del
+cliente eso está de más: **ahí no hay gasto propio** —el cliente del contrato entrega el material— y
+el documento se le manda **por correo**, así que los campos de control interno no le dicen nada a
+quien lo recibe.
+
+- Vuelve a ser lo que era: **partida, área y para qué se va a ocupar**. Sin urgencia, sin
+  ordinario/extraordinario y sin proveedor sugerido.
+- **El contrato se queda**, pero deja de llamarse CeCo: ahí no define de qué bolsillo sale el costo
+  sino **a qué cliente se le solicita**, que es lo que dice ahora la pantalla.
+- Los campos que no aplican **se anulan en la mutación**, no sólo se ocultan: el estado del
+  formulario sobrevive al cambio de modo, así que sin eso una urgencia elegida antes de cambiar a
+  "pedir al cliente" se habría colado en la fila.
+- **La descripción del ítem sí viaja al PDF** que recibe el cliente, junto al nombre del material:
+  es exactamente lo que necesita para mandar lo correcto (marca, medida, modelo).
+
+Verificado renderizando los tres modos en el navegador: compra habla de CeCo y pide urgencia,
+cliente no hace ninguna de las dos y conserva partida/área/justificación, y servicio recupera el
+CeCo —porque sí gasta plata propia— sin pedir unidad de pañol.
+
+### Agregado — Servicios: gasto que no entra al pañol (RFC-004, F2)
+
+El módulo sólo sabía pedir **cosas que se guardan**. Ahora también se contrata un **servicio** —una
+mantención, un flete, una calibración—, que genera gasto pero no genera inventario.
+
+**El riesgo que esto evita:** `receivePurchaseRequest` **siempre** crea un `Material` y le suma
+stock. Recibir "mantención de compresor" por ese camino habría dejado un activo fantasma con
+stock 1, dentro de la valorización del inventario y rompiendo el invariante
+`sum(material_stocks) == materials.stock`. Era el riesgo #1 que el propio RFC anticipó, y por eso
+el selector no se encendió en F1.
+
+**Decisión de Steven: el servicio recorre el mismo flujo que un producto** (requerimiento →
+autorización → OC → recepción), para que el compromiso exista **antes** del gasto y quede enlazado
+a su factura. Lo único que cambia es el final del camino.
+
+- **Tercera opción en el selector que ya existía** (D2, idea suya): *Comprar* · *Pedir al cliente* ·
+  **Contratar servicio**, con subtipo mantención u otro. El servicio se escribe, no se elige del
+  catálogo del pañol —no está ahí—, y su unidad queda fija en "global".
+- **La recepción de una OC de servicio no toca el pañol:** no crea material, no suma stock, no
+  escribe kardex, no toca el desglose por contrato ni retroalimenta el precio del catálogo. En
+  pantalla deja de llamarse "recepción" y pasa a ser **conformidad de ejecución**.
+- **El costo se imputa a la partida `services`** del ledger financiero —no a `materials`—, tanto al
+  comprometer (OC) como al devengar (conformidad), con el contrato del requerimiento.
+- **No se puede mezclar servicios y productos en una misma OC.** Las dos reglas de arriba no se
+  pueden aplicar "a medias" sobre un documento mezclado, y algunas OC calzan sus ítems por nombre,
+  un camino ambiguo del que la decisión de tocar o no el pañol no puede depender. El corte avisa
+  **antes** de emitir el documento y dice qué ítems separar.
+- **Un servicio sin precio en la OC no se puede conformar.** Un producto sin precio queda igual en
+  el stock y su costo se corrige después; un servicio sin monto **no deja rastro de ninguna clase**
+  y desaparecería del margen del contrato en silencio. Ahí se corta en vez de continuar.
+- **Un servicio ya no se puede recibir desde la bandeja del pañol**: ese camino crea material y
+  además no emite el hecho financiero. Se explica dónde corresponde hacerlo. Así el gasto tiene **un
+  solo emisor** — la regla que ya mordió tres veces en este proyecto (el cron de MO, la liquidación
+  del último mes y el `payable` de la planilla).
+- Badge **Servicio** en toda la cadena (historial, ADC, Abastecimiento) y columna *Tipo* en el Excel.
+
+**Migración `20260809000000_rq_services_f2.sql`** — `purchase_requests.service_kind`,
+`purchase_orders.order_type` (las OC ya emitidas quedan como `producto`, que es lo que son) y las
+partidas de servicio de D6 sembradas por empresa **sólo si no tenía ya una con ese nombre**, para no
+pisar la nomenclatura de nadie. El subtipo `arriendo` **no se acepta todavía**: el arriendo tiene su
+propio flujo completo y el RQ debe **derivar** hacia él en F3, no reimplementarlo — hasta entonces
+el dominio lo rechaza para que nadie cree por accidente un arriendo que el módulo de Arriendos no
+conoce.
+
+### Agregado — Pedir algo para mañana obliga a decir por qué (RFC-004, F1.1)
+
+Petición de Steven al cerrar F1, y es más que un campo: **si declarar urgencia no cuesta nada, en
+un mes todo se pide para mañana** y la bandeja vuelve a ordenarse por nada.
+
+- Elegir urgencia **alta** abre un campo obligatorio — *"¿Por qué lo necesitas para mañana?"* — con
+  un mínimo de 10 caracteres, para que no se resuelva escribiendo "urgente".
+- La regla vive en un **CHECK de la base**, no sólo en el formulario: así vale también para el
+  servidor MCP, el asistente de IA y cualquier emisor futuro del requerimiento. La mutación la
+  valida además antes de insertar, para dar un mensaje entendible en vez de un error de Postgres.
+- **El motivo se muestra destacado** —no truncado ni escondido en un tooltip— en el historial, en la
+  bandeja del ADC y en la de Abastecimiento, y sale en el Excel. Es lo que quien autoriza necesita
+  leer para decidir si la urgencia es real.
+- Urgencia media y baja **no** piden motivo: la fricción va donde tiene efecto.
+
+**Migración `20260808000000_rq_urgency_reason.sql`** — una columna y un CHECK condicional. Se
+verificó contra la base que no existía **ninguna** fila con urgencia alta antes de crear la
+restricción, así que validarla no podía fallar sobre datos ya emitidos. El histórico tiene
+`urgency` en NULL y pasa sin tocarse (Artículo 2).
+
+**Migración `20260807000000_rq_fields_f1.sql`** — 7 columnas nullable, tres dominios cerrados por
+CHECK y un índice parcial para la bandeja. El histórico **no se reescribe** (Artículo 2): queda con
+los campos en NULL. La única excepción es `request_type`, que nace en `'producto'` porque todo lo
+emitido hasta hoy *es* un producto — hace explícito un hecho existente, no lo cambia.
+
 ### Cambiado — Solicitudes de Compra pasan a ser **Requerimientos (RQ)** (RFC-004, F0)
 
 Primer paso de la iniciativa que convierte el módulo en la **puerta única del gasto** — productos

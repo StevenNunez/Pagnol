@@ -287,11 +287,17 @@ export async function generateClientSupplyPDF(
   doc.line(margin, y, pageWidth - margin, y);
   y += LINE_HEIGHT;
 
+  // La descripción va junto al nombre y no en su propia columna: es lo que el
+  // cliente necesita para mandar exactamente lo pedido (marca, medida, modelo),
+  // y una columna vacía en las solicitudes viejas ensuciaría el documento.
   autoTable(doc, {
     head: [['Ítem', 'Material', 'Unidad', 'Cantidad']],
     body: requests.map((r, i) => [
       i + 1,
-      r.materialName || 'Sin nombre',
+      r.itemDescription
+        ? `${r.materialName || 'Sin nombre'}
+${r.itemDescription}`
+        : (r.materialName || 'Sin nombre'),
       r.unit || '—',
       (r.quantity || 0).toLocaleString('es-CL'),
     ]),

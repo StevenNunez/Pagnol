@@ -1,8 +1,9 @@
 
 
 import { supabase } from '@/modules/core/lib/supabase';
-import { PurchaseRequest, Material, PurchaseLot, PurchaseOrder } from '@/modules/core/lib/data';
+import { PurchaseRequest, Material, PurchaseLot, PurchaseOrder, URGENCY_LEAD_DAYS, URGENCY_REASON_MIN } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
+import { addRentalRequest } from './rentalRequestMutations';
 import { userCan } from '@/modules/core/lib/permissions';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 import { addToLedger } from './stockLedger';
@@ -30,7 +31,7 @@ async function insertPurchaseRequestRow(payload: Record<string, any>, required: 
     const missingColumn = /Could not find the '([^']+)' column/.exec(error.message || '')?.[1];
     if (missingColumn && missingColumn in attempt) {
       if (required.includes(missingColumn)) {
-        throw new Error(`Falta la columna '${missingColumn}' en la base de datos — aplica la migración pendiente (20260713000000_client_supply_requests).`);
+        throw new Error(`Falta la columna '${missingColumn}' en la base de datos — hay una migración pendiente de aplicar.`);
       }
       delete attempt[missingColumn];
       continue;
@@ -61,6 +62,36 @@ export async function addPurchaseRequest(
   }
   const requestId = await nextInternalCode(tenantId, isClientSupply ? 'SCL' : 'RQ');
 
+  // RFC-004 F1: la urgencia se guarda como etiqueta Y como fecha concreta. Sin
+  // la fecha, "alta" deja de significar algo a los tres días; sin la etiqueta,
+  // no se sabe con qué criterio se pidió esa fecha. Se deriva aquí (y no en la
+  // UI) para que cualquier emisor futuro del RQ use la misma regla.
+  // Un suministro del cliente no gasta plata propia: el cliente del contrato
+  // entrega el material. Por eso no lleva urgencia (no compite por la bandeja
+  // de Abastecimiento), ni tipo de gasto, ni proveedor sugerido. Se anula acá
+  // además de ocultarlo en el formulario, para que ningún otro emisor —el MCP,
+  // el asistente— cree un SCL con datos que no significan nada en él.
+  const urgency = isClientSupply ? null : (data.urgency || null);
+  const neededBy = data.neededBy || (urgency
+    ? new Date(Date.now() + URGENCY_LEAD_DAYS[urgency] * 86400000).toISOString().slice(0, 10)
+    : null);
+
+  // Un servicio SIEMPRE trae su subtipo, y un producto nunca: el CHECK de la
+  // base lo exige, pero se valida aquí para dar un mensaje entendible.
+  const isService = data.requestType === 'servicio';
+  if (isService && !data.serviceKind) {
+    throw new Error('Indica qué tipo de servicio se está contratando.');
+  }
+
+  // Pedir para mañana obliga a decir por qué. Se valida aquí además del CHECK
+  // de la base para poder dar un mensaje entendible en vez de un error de
+  // Postgres — pero la regla la sostiene la base, que es la que también aplica
+  // al MCP y al asistente de IA.
+  const urgencyReason = data.urgencyReason?.trim() || null;
+  if (urgency === 'alta' && (urgencyReason?.length || 0) < URGENCY_REASON_MIN) {
+    throw new Error(`Si lo necesitas para mañana, explica por qué (mínimo ${URGENCY_REASON_MIN} caracteres).`);
+  }
+
   // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
   const preAuthorized = userCan(user, 'purchase_requests:authorize');
   const now = new Date().toISOString();
@@ -90,8 +121,23 @@ export async function addPurchaseRequest(
       client_id: data.clientId,
       client_name: data.clientName || null,
     } : {}),
+    // RFC-004 F1 (migración 20260807000000).
+    request_type: data.requestType || 'producto',
+    service_kind: isService ? data.serviceKind : null,
+    expense_kind: isClientSupply ? null : (data.expenseKind || null),
+    urgency,
+    needed_by: neededBy,
+    urgency_reason: urgencyReason,
+    item_description: data.itemDescription || null,
+    suggested_supplier_id: isClientSupply ? null : (data.suggestedSupplierId || null),
+    suggested_supplier_name: isClientSupply ? null : (data.suggestedSupplierName || null),
     created_at: now
-  }, isClientSupply ? ['request_target', 'client_id'] : []);
+  }, [
+    ...(isClientSupply ? ['request_target', 'client_id'] : []),
+    // Un servicio degradado a producto por falta de columna entraría al pañol
+    // como material fantasma: preferimos fallar antes que crear ese hecho.
+    ...(data.requestType === 'servicio' ? ['request_type'] : []),
+  ]);
 
   // Push al ADC solo si quedó pendiente de autorización.
   if (!preAuthorized) notifyAuthorizers('purchase', { tenantId, code: requestId, requesterName: user.name });
@@ -209,6 +255,132 @@ export async function updatePurchaseRequestStatus(
   }
 }
 
+/**
+ * Requerimiento de ARRIENDO (RFC-004 F3).
+ *
+ * El RQ es la puerta; el flujo de arriendos es el que gestiona. Esta función
+ * los une sin duplicar identidades:
+ *
+ *   1. Emite UN código (`MDS-RQ-xxxx`) y se lo pasa a la solicitud de arriendo,
+ *      que por una vez no emite el suyo. Un número para toda la cadena.
+ *   2. Crea PRIMERO el arriendo, que es el documento dueño del flujo. Si algo
+ *      fallara después, lo que queda en pie es el documento que sirve — al
+ *      revés quedaría un requerimiento apuntando a un arriendo inexistente.
+ *   3. El requerimiento derivado NO lleva estado propio: la bandeja proyecta la
+ *      etapa del arriendo. Tampoco pasa por el gate del ADC (ese vive en el
+ *      arriendo) ni emite costo (lo emite el calendario de ciclos).
+ *
+ * Lo que aporta el requerimiento es lo que la solicitud de arriendo no tiene:
+ * CeCo, partida, urgencia con su motivo y la descripción del pedido.
+ */
+export async function addRentalRequirement(
+  data: {
+    items: { name: string; category: any; quantity: number }[];
+    startDate?: string | null;
+    endDate?: string | null;
+    billingCycleEstimate: any;
+    contractId?: string | null;
+    contractName?: string | null;
+    area?: string;
+    justification?: string;
+    category: string;              // partida (CeCo)
+    urgency?: PurchaseRequest['urgency'];
+    urgencyReason?: string | null;
+    expenseKind?: PurchaseRequest['expenseKind'];
+    itemDescription?: string | null;
+    suggestedSupplierId?: string | null;
+    suggestedSupplierName?: string | null;
+  },
+  context: Context,
+): Promise<{ code: string; rentalRequestId: string }> {
+  const { user, tenantId } = context;
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+
+  const items = (data.items || []).filter((it) => (it.name || '').trim());
+  if (!items.length) throw new Error('La solicitud necesita al menos un equipo.');
+  if (!data.category) throw new Error('Elige la partida (CeCo) del arriendo.');
+
+  const urgency = data.urgency || null;
+  const urgencyReason = data.urgencyReason?.trim() || null;
+  if (urgency === 'alta' && (urgencyReason?.length || 0) < URGENCY_REASON_MIN) {
+    throw new Error(`Si lo necesitas para mañana, explica por qué (mínimo ${URGENCY_REASON_MIN} caracteres).`);
+  }
+
+  // Un solo correlativo para las dos filas.
+  const code = await nextInternalCode(tenantId, 'RQ');
+
+  const rentalRequestId = await addRentalRequest({
+    items,
+    startDate: data.startDate ?? null,
+    endDate: data.endDate ?? null,
+    billingCycleEstimate: data.billingCycleEstimate,
+    contractId: data.contractId ?? null,
+    contractName: data.contractName ?? null,
+    area: data.area,
+    justification: data.justification,
+    internalCode: code,
+  }, context);
+
+  const now = new Date().toISOString();
+  const summary = items.length === 1
+    ? items[0].name
+    : `Arriendo de ${items.length} equipos`;
+
+  await insertPurchaseRequestRow({
+    material_name: summary,
+    // El detalle de equipos vive en la solicitud de arriendo: repetirlo acá
+    // sería el mismo carrito en dos tablas, con dos verdades posibles.
+    quantity: items.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0),
+    unit: 'global',
+    category: data.category,
+    area: data.area,
+    contract_id: data.contractId || null,
+    contract_name: data.contractName || null,
+    justification: data.justification || '',
+    supervisor_id: user.id,
+    status: 'pending',
+    tenant_id: tenantId,
+    internal_code: code,
+    requester_name: user.name,
+    // El gate del ADC vive en el arriendo: si el derivado también lo pidiera,
+    // el ADC vería el mismo pedido dos veces en pestañas distintas.
+    adc_authorized_at: now,
+    adc_authorized_by: user.id,
+    request_type: 'servicio',
+    service_kind: 'arriendo',
+    rental_request_id: rentalRequestId,
+    expense_kind: data.expenseKind || null,
+    urgency,
+    needed_by: urgency ? new Date(Date.now() + URGENCY_LEAD_DAYS[urgency] * 86400000).toISOString().slice(0, 10) : null,
+    urgency_reason: urgencyReason,
+    item_description: data.itemDescription || null,
+    suggested_supplier_id: data.suggestedSupplierId || null,
+    suggested_supplier_name: data.suggestedSupplierName || null,
+    created_at: now,
+  }, ['request_type', 'service_kind', 'rental_request_id']);
+
+  return { code, rentalRequestId };
+}
+
+/**
+ * Tipo de una OC a partir de las solicitudes que agrupa (RFC-004 F2).
+ *
+ * NO se permite mezclar servicios y productos en una misma orden: la recepción
+ * de una OC de servicio no toca el pañol y devenga en la categoría `services`,
+ * y esas dos reglas no pueden aplicarse "a medias" sobre un documento mezclado.
+ * Además evita el calce ambiguo por nombre que usan las OC agrupadas.
+ */
+function resolveOrderType(requests: { requestType?: string | null; materialName?: string }[]): 'producto' | 'servicio' {
+  const services = requests.filter((r) => r.requestType === 'servicio');
+  if (services.length && services.length !== requests.length) {
+    throw new Error(
+      'No se puede emitir una orden que mezcle servicios y productos — un servicio no ingresa al pañol al recibirse. Emite una orden por separado para: '
+      + services.map((r) => r.materialName).join(', ') + '.',
+    );
+  }
+  return services.length ? 'servicio' : 'producto';
+}
+
 export async function receivePurchaseRequest(
   requestId: string,
   receivedQuantity: number,
@@ -221,6 +393,18 @@ export async function receivePurchaseRequest(
   const { data: request, error: reqErr } = await supabase.from('purchase_requests').select('*').eq('id', requestId).single();
   if (reqErr || !request) throw new Error("Solicitud no encontrada");
   if (request.tenant_id !== tenantId) throw new Error("No tienes permiso.");
+
+  // RFC-004 F2: un servicio NO se recibe por aquí. Este camino existe para
+  // ingresar cosas al pañol —crea el material, suma stock y escribe kardex— y
+  // además NO emite el hecho financiero. Un servicio cerrado acá quedaría con
+  // un activo fantasma y sin costo en el margen del contrato. Su conformidad
+  // se registra en Abastecimiento → Recepción, contra su OC, que es el único
+  // emisor de ese gasto (la regla de "un solo emisor" que ya mordió tres veces).
+  if (request.request_type === 'servicio') {
+    throw new Error(
+      'Este es un requerimiento de servicio: su conformidad se registra en Abastecimiento → Recepción, contra la orden de compra. Así queda el gasto imputado al contrato y no se crea un activo que no existe.',
+    );
+  }
 
   const requestedQuantity = request.quantity;
   const now = new Date().toISOString();
@@ -400,6 +584,7 @@ export async function generatePurchaseOrder(
   const { data: supplier } = await supabase.from('suppliers').select('name').eq('id', supplierId).single();
   if (!supplier) throw new Error("Proveedor no encontrado");
 
+  const orderType = resolveOrderType(requests);
   const orderId = await nextInternalCode(tenantId, 'PUR');
 
   // Ítems agrupados por material (formato histórico del documento). El precio
@@ -435,6 +620,7 @@ export async function generatePurchaseOrder(
     total_amount: Math.round(totalAmount),
     tenant_id: tenantId,
     lot_id: lotId,
+    order_type: orderType,
   });
 
   if (orderErr) throw orderErr;
@@ -452,7 +638,9 @@ export async function generatePurchaseOrder(
     requests.map((req): FinanceEntryInput => ({
       nature: 'cost',
       stage: 'committed',
-      category: 'materials',
+      // Un servicio se imputa a `services`, no a materiales: si no, ensucia el
+      // presupuesto de una partida que no le corresponde.
+      category: orderType === 'servicio' ? 'services' : 'materials',
       amountNet: Number(prices[req.id]) * req.quantity,
       contractId: req.contractId ?? null,
       contractName: req.contractName ?? null,
@@ -482,7 +670,19 @@ export async function createPurchaseOrder(
 
   const { data: supplier } = await supabase.from('suppliers').select('name').eq('id', lot.supplier_id).single();
 
+  // Tipo de la OC (RFC-004 F2): se lee de las solicitudes que la originan. Si
+  // mezclara servicios y productos, `resolveOrderType` corta acá — antes de
+  // emitir el documento, no después.
+  const rfqReqIds = items.map((i) => i.requestId).filter(Boolean);
+  const { data: rfqReqs } = rfqReqIds.length
+    ? await supabase.from('purchase_requests').select('id, request_type, material_name').in('id', rfqReqIds)
+    : { data: [] as any[] };
+  const orderType = resolveOrderType(
+    (rfqReqs || []).map((r: any) => ({ requestType: r.request_type, materialName: r.material_name })),
+  );
+
   const { data: order, error: orderErr } = await supabase.from('purchase_orders').insert({
+    order_type: orderType,
     official_oc_id: ocNumber,
     lot_id: lotId,
     supplier_id: lot.supplier_id,
@@ -533,7 +733,7 @@ export async function createPurchaseOrder(
         return {
           nature: 'cost',
           stage: 'committed',
-          category: 'materials',
+          category: orderType === 'servicio' ? 'services' : 'materials',
           amountNet: Number(item.price) * Number(item.quantity),
           contractId: contract.id,
           contractName: contract.name,

@@ -552,6 +552,18 @@ export const mappers = {
         clientName: item.client_name || null,
         sentToClientAt: item.sent_to_client_at || null,
         sentToClientEmail: item.sent_to_client_email || null,
+        // RFC-004 F1. Las filas anteriores a la migración 20260807000000 no
+        // tienen estos datos: quedan en NULL y la UI los omite, no los inventa.
+        requestType: item.request_type || 'producto',
+        expenseKind: item.expense_kind || null,
+        urgency: item.urgency || null,
+        neededBy: item.needed_by || null,
+        urgencyReason: item.urgency_reason || null,
+        itemDescription: item.item_description || null,
+        serviceKind: item.service_kind || null,
+        rentalRequestId: item.rental_request_id || null,
+        suggestedSupplierId: item.suggested_supplier_id || null,
+        suggestedSupplierName: item.suggested_supplier_name || null,
     }),
     return_requests: (item: any): ReturnRequest => ({
         id: item.id,
@@ -600,6 +612,7 @@ export const mappers = {
         processedBy: item.processed_by,
         totalAmount: item.total_amount,
         costCenterId: item.cost_center_id || null,
+        orderType: item.order_type || 'producto',
         tenantId: item.tenant_id,
     }),
     cost_centers: (item: any): CostCenter => ({

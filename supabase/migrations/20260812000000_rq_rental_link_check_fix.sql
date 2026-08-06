@@ -3,6 +3,8 @@
 -- Mismo error que en 20260810000000, cometido de nuevo en la migración anterior:
 -- un CHECK que evalúa a NULL **no rechaza nada**, porque Postgres sólo descarta
 -- la fila cuando la expresión da FALSE.
+
+
 --
 --   CHECK (rental_request_id IS NULL OR service_kind = 'arriendo')
 --

@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { PageHeader } from "@/components/page-header";
+import { LoadingState } from "@/components/loading-state";
 import {
   Card,
   CardContent,
@@ -22,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserSearch, Clock, Briefcase, CalendarDays, Loader2 } from "lucide-react";
+import { UserSearch, Clock, Briefcase, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({
@@ -139,10 +140,7 @@ export default function OvertimeReportPage() {
       ) : loading ? (
          <Card>
           <CardContent className="p-12">
-            <div className="flex flex-col items-center justify-center text-center text-muted-foreground">
-              <Loader2 className="h-12 w-12 animate-spin mb-4" />
-              <p className="text-xl font-semibold">Calculando horas...</p>
-            </div>
+            <LoadingState label="Calculando horas…" className="py-0" />
           </CardContent>
         </Card>
       ) : (

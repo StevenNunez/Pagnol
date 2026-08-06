@@ -32,6 +32,7 @@ import { PageShell } from '@/components/page-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/data-table';
+import { EmptyState } from '@/components/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import type { WorkOrder, WorkReport } from '@/modules/core/lib/data';
@@ -543,10 +544,11 @@ function PipelineStage({ label, total, rows }: { label: string; total: number; r
 
 function ChartEmpty({ hint }: { hint?: string }) {
   return (
-    <div className="h-[260px] flex flex-col items-center justify-center text-center gap-1.5 text-muted-foreground">
-      <Gauge className="h-7 w-7 opacity-40" />
-      <p className="text-sm">Sin datos en el período seleccionado.</p>
-      {hint && <p className="text-xs max-w-xs">{hint}</p>}
-    </div>
+    <EmptyState
+      className="min-h-[260px] border-0"
+      icon={<Gauge size={24} />}
+      title="Sin datos en el período seleccionado."
+      description={hint}
+    />
   );
 }

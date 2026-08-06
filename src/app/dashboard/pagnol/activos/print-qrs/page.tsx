@@ -7,6 +7,7 @@
 import React, { useState, useMemo } from "react";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import QRCode from "react-qr-code";
 import { Printer, ArrowLeft, AlertCircle } from "lucide-react";
@@ -168,9 +169,7 @@ export default function PrintAssetsQrPage() {
                     })
                 )}
                  {filteredAssets.length === 0 && !isLoading && (
-                    <div className="col-span-full text-center text-muted-foreground py-10">
-                        No se encontraron activos con esos filtros.
-                    </div>
+                    <EmptyState className="col-span-full border-0" title="No se encontraron activos con esos filtros." />
                 )}
             </div>
         </CardContent>

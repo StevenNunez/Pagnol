@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Badge } from "@/components/ui/badge";
 import { isRestDay } from "@/modules/core/hooks/use-attendance";
@@ -173,9 +174,7 @@ export default function AttendanceOverviewPage() {
 
       {/* Grid de contratos */}
       {displayed.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-12 text-center text-muted-foreground text-sm">
-          No hay contratos activos que mostrar.
-        </div>
+        <EmptyState className="rounded-2xl" title="No hay contratos activos que mostrar." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {displayed.map(({ contract, total, present, absent, restDay, onLM, subContracts }) => {

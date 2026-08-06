@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PageShell } from "@/components/page-shell";
+import { EmptyState } from "@/components/empty-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -238,7 +239,7 @@ export default function ReportesPage() {
             <div className="space-y-4">
                 <MicroLabel>Ejecución por Centro de Costo</MicroLabel>
                 {ccRollup.length === 0 ? (
-                    <Card className="rounded-[1.5rem]"><CardContent className="p-6 text-sm text-muted-foreground">Aún no hay centros de costo definidos.</CardContent></Card>
+                    <EmptyState title="Aún no hay centros de costo definidos." />
                 ) : (
                     <Card className="rounded-[1.5rem]">
                         <CardContent className="p-0 divide-y">

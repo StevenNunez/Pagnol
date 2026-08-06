@@ -323,11 +323,13 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             // arrays del hook (se transforman a objeto) y no tienen `hasLoaded`.
         ].every(data => (data as any)?.hasLoaded === true);
 
-        if (!allDataLoaded) {
-            dispatch({ type: 'SET_LOADING', payload: true });
-            return;
-        }
-
+        // Antes se hacía `return` aquí mientras faltara UNA sola colección, así que
+        // el estado no se publicaba hasta que respondían las 54. Medido en DEMO:
+        // `materials` llegaba a 1,4 s y la pantalla la recibía a 2,6 s, esperando a
+        // colecciones que devuelven 0 bytes y que esa página no usa nunca.
+        // Ahora se publica lo que ya llegó y `isLoading` sigue marcando que falta
+        // algo — con eso los estados vacíos siguen mostrando el spinner en vez de
+        // afirmar "no hay datos" (ADR-014), que es lo que protege esa bandera.
         const processData = (data: any[] | undefined) => {
             if (!Array.isArray(data)) return [];
             return data; // In Supabase Supabase handles dates as strings or native Date objects if using a library, but here we expect strings
@@ -408,7 +410,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 workWeeklyReports: processData(workWeeklyReportsData),
                 roles: rolesToUse,
                 subscriptionPlans: plansToUse,
-                isLoading: false,
+                isLoading: !allDataLoaded,
             },
         });
 

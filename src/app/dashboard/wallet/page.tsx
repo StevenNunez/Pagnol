@@ -15,6 +15,7 @@ import {
     DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
+import { LoadingState } from '@/components/loading-state';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { startOfMonth, getDaysInMonth, formatDistanceToNow, isToday, format } from 'date-fns';
@@ -380,9 +381,7 @@ export default function WorkerWallet() {
                 </div>
 
                 {liqLoading ? (
-                    <div className="p-8 rounded-[2rem] border border-dashed border-border flex justify-center">
-                        <Loader2 className="animate-spin text-muted-foreground" size={24} />
-                    </div>
+                    <LoadingState className="rounded-[2rem] border border-dashed border-border py-8" />
                 ) : liquidaciones.length === 0 ? (
                     <div className="p-8 rounded-[2rem] border border-dashed border-border text-center space-y-2">
                         <Receipt size={28} className="mx-auto text-muted-foreground" />

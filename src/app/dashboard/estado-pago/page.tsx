@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/page-header';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import {
-  Loader2, Briefcase, DollarSign, TrendingUp, ChevronRight,
+  Briefcase, DollarSign, TrendingUp, ChevronRight,
   FileText, Clock, CheckCircle2, AlertCircle, History, ArrowRight
 } from 'lucide-react';
+import { LoadingState } from '@/components/loading-state';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -57,11 +58,7 @@ export default function MisContratosPage() {
   }, [workItems, user]);
 
   if (isLoading) {
-    return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingState fullHeight />;
   }
 
   return (

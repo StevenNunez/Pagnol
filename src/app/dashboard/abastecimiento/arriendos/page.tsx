@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -349,12 +350,7 @@ export default function AbastecimientoArriendosPage() {
 }
 
 function EmptyBox({ icon: Icon, text }: { icon: any; text: string }) {
-  return (
-    <div className="text-center py-12 bg-muted/20 rounded-[1.5rem] border-2 border-dashed">
-      <Icon className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
-      <p className="text-muted-foreground">{text}</p>
-    </div>
-  );
+  return <EmptyState className="rounded-[1.5rem]" icon={<Icon size={24} />} title={text} />;
 }
 
 // ── Matriz comparativa por ítem (equipo × arrendador) ─────────────────────────

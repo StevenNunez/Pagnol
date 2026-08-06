@@ -5,7 +5,8 @@ import React, { useMemo } from "react";
 import { PageHeader } from "@/components/page-header";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, ClipboardList, Search, Users, Target, FileUp, ListChecks, ShieldAlert, BookOpen } from "lucide-react";
+import { ClipboardList, Search, Users, Target, FileUp, ListChecks, ShieldAlert, BookOpen } from "lucide-react";
+import { LoadingState } from "@/components/loading-state";
 import Link from "next/link";
 
 export default function SafetyDashboardPage() {
@@ -26,7 +27,7 @@ export default function SafetyDashboardPage() {
     }, [assignedChecklists, safetyInspections, dailyTalks, behaviorObservations, checklistTemplates]);
 
     if (isLoading) {
-        return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+        return <LoadingState fullHeight />;
     }
 
     const cards = [

@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { PageHeader } from '@/components/page-header';
+import { EmptyState } from '@/components/empty-state';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -125,8 +126,8 @@ export default function PurchaseOrdersPage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center h-24">
-                    No hay órdenes de compra generadas.
+                  <TableCell colSpan={5}>
+                    <EmptyState className="border-0" title="No hay órdenes de compra generadas." />
                   </TableCell>
                 </TableRow>
               )}

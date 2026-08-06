@@ -5,6 +5,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
+import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -423,15 +424,11 @@ export default function OrdersPage() {
                             ))}
                         </div>
                     ) : (
-                        <Card className="border-dashed">
-                            <CardContent className="flex flex-col items-center justify-center text-center text-muted-foreground p-12">
-                                <Inbox className="h-12 w-12 mb-4 opacity-50"/>
-                                <h3 className="text-lg font-medium text-foreground">Todo al día</h3>
-                                <p className="text-sm max-w-xs mx-auto">
-                                    No hay solicitudes pendientes agrupadas en lotes.
-                                </p>
-                            </CardContent>
-                        </Card>
+                        <EmptyState
+                            icon={<Inbox size={24} />}
+                            title="Todo al día"
+                            description="No hay solicitudes pendientes agrupadas en lotes."
+                        />
                     )}
                 </CardContent>
             </Card>
@@ -524,11 +521,11 @@ export default function OrdersPage() {
                                 </AccordionContent>
                             </AccordionItem>
                         )) : (
-                            <div className="flex flex-col items-center justify-center text-center text-muted-foreground p-12">
-                                <Inbox className="h-16 w-16 mb-4"/>
-                                <h3 className="text-xl font-semibold">Sin Cotizaciones</h3>
-                                <p className="mt-2">No se han generado cotizaciones para la fecha seleccionada.</p>
-                            </div>
+                            <EmptyState
+                                icon={<Inbox size={24} />}
+                                title="Sin Cotizaciones"
+                                description="No se han generado cotizaciones para la fecha seleccionada."
+                            />
                         )}
                     </Accordion>
                 </CardContent>

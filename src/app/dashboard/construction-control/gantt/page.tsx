@@ -305,12 +305,13 @@ export default function GanttChartPage() {
                 </div>
             </div>
           ) : (
-            <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground bg-muted/5">
-                <div className="bg-background p-4 rounded-full mb-4 shadow-sm border"><Calendar className="h-8 w-8 text-muted-foreground/50" /></div>
-                <p className="font-medium">No se encontraron tareas</p>
-                <p className="text-sm mb-4">Ajusta los filtros de búsqueda</p>
-                <Button variant="outline" size="sm" onClick={() => setSearchTerm('')} disabled={!searchTerm}>Limpiar Búsqueda</Button>
-            </div>
+            <EmptyState
+                className="min-h-[400px] border-0"
+                icon={<Calendar size={24} />}
+                title="No se encontraron tareas"
+                description="Ajusta los filtros de búsqueda"
+                action={<Button variant="outline" size="sm" onClick={() => setSearchTerm('')} disabled={!searchTerm}>Limpiar Búsqueda</Button>}
+            />
           )}
         </CardContent>
       </Card>

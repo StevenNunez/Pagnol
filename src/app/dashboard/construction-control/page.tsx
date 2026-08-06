@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { PageShell } from '@/components/page-shell';
+import { EmptyState } from '@/components/empty-state';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -161,7 +162,7 @@ export default function ConstructionControlHubPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             {stats.phases.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No hay fases definidas.</p>
+              <EmptyState className="border-0 py-8" title="No hay fases definidas." />
             ) : (
               stats.phases.map(phase => (
                 <div key={phase.id} className="space-y-1.5">

@@ -5,6 +5,7 @@ import React, { useState, useCallback, memo, useMemo } from "react";
 import { useLots } from "@/hooks/use-lots";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import {
   Card,
   CardContent,
@@ -42,15 +43,6 @@ interface Lot {
 }
 
 // --- Sub-Componentes Optimizados ---
-
-const EmptyState = memo(({ message, description, icon: Icon }: { message: string; description: string, icon?: React.ElementType }) => (
-  <div className="flex flex-col items-center justify-center text-center text-muted-foreground p-8 border-2 border-dashed rounded-lg bg-muted/10 h-full">
-    {Icon ? <Icon className="h-12 w-12 mb-3 opacity-50" /> : <Inbox className="h-12 w-12 mb-3 opacity-50" />}
-    <h3 className="text-lg font-medium text-foreground">{message}</h3>
-    <p className="mt-1 text-sm max-w-xs mx-auto">{description}</p>
-  </div>
-));
-EmptyState.displayName = "EmptyState";
 
 const CreateLotCard = memo(() => (
   <Card className="shadow-sm border-l-4 border-l-primary/40">
@@ -193,9 +185,9 @@ const ApprovedRequestsCard = memo(
         ) : (
           <div className="p-6 h-full">
               <EmptyState
-                message="Todo limpio"
+                title="Todo limpio"
                 description="No hay solicitudes pendientes por agrupar."
-                icon={CheckCircle}
+                icon={<CheckCircle size={24} />}
               />
           </div>
         )}
@@ -298,9 +290,9 @@ const ActiveLotsCard = memo(
             <Card>
                 <CardContent className="pt-6">
                     <EmptyState
-                        message="No hay lotes activos"
+                        title="No hay lotes activos"
                         description="Usa el formulario de la izquierda para crear uno nuevo."
-                        icon={AlertCircle}
+                        icon={<AlertCircle size={24} />}
                     />
                 </CardContent>
             </Card>

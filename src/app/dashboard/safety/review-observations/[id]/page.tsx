@@ -8,7 +8,8 @@ import { useRecordFields } from "@/modules/core/hooks/use-record-fields";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
+import { LoadingState } from "@/components/loading-state";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/modules/core/hooks/use-toast";
@@ -67,7 +68,7 @@ export default function BehaviorObservationDetailPage() {
     };
 
     if (isLoading) {
-        return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+        return <LoadingState fullHeight />;
     }
 
     if (!observation) {

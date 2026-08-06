@@ -9,7 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, UserSearch, FileDown } from 'lucide-react';
+import { UserSearch, FileDown } from 'lucide-react';
+import { LoadingState } from '@/components/loading-state';
+import { EmptyState } from '@/components/empty-state';
 import Papa from 'papaparse';
 import type { MaterialRequest } from '@/modules/core/lib/data';
 
@@ -118,7 +120,7 @@ export default function DeliveryReportPage() {
 
 
     if (isLoading) {
-        return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin"/></div>;
+        return <LoadingState className="min-h-64" />;
     }
     
     return (
@@ -179,11 +181,12 @@ export default function DeliveryReportPage() {
                                             ))
                                         ) : (
                                             <TableRow>
-                                                <TableCell colSpan={5} className="h-24 text-center">
-                                                    <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-12">
-                                                        <UserSearch className="h-12 w-12 mb-4" />
-                                                        <p>No se encontraron entregas para la búsqueda actual.</p>
-                                                    </div>
+                                                <TableCell colSpan={5}>
+                                                    <EmptyState
+                                                        className="border-0"
+                                                        icon={<UserSearch size={24} />}
+                                                        title="No se encontraron entregas para la búsqueda actual."
+                                                    />
                                                 </TableCell>
                                             </TableRow>
                                         )}
@@ -237,8 +240,8 @@ export default function DeliveryReportPage() {
                                             })
                                         ) : (
                                             <TableRow>
-                                                <TableCell colSpan={5} className="h-24 text-center">
-                                                    No hay entregas registradas por usuarios con rol de APR.
+                                                <TableCell colSpan={5}>
+                                                    <EmptyState className="border-0" title="No hay entregas registradas por usuarios con rol de APR." />
                                                 </TableCell>
                                             </TableRow>
                                         )}

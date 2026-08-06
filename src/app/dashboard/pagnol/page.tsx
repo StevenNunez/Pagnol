@@ -21,6 +21,7 @@ import {
   ShoppingCart,
   X,
 } from 'lucide-react';
+import { LoadingState } from '@/components/loading-state';
 import type { MaterialRequest } from '@/modules/core/lib/data';
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
@@ -129,7 +130,7 @@ export default function PagnolMainPage() {
   const healthLabel = operabilityPct >= 80 ? 'Óptimo' : operabilityPct >= 50 ? 'Estable' : 'Crítico';
 
   if (!currentUser) {
-    return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+    return <LoadingState fullHeight />;
   }
 
   return (

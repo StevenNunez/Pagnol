@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
+import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -355,11 +356,12 @@ export default function PurchaseRequestsManagementPage() {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="h-48 text-center text-muted-foreground">
-                                            <div className="flex flex-col items-center gap-2">
-                                                <Filter className="h-10 w-10 opacity-20" />
-                                                <p>No se encontraron solicitudes con los filtros actuales.</p>
-                                            </div>
+                                        <TableCell colSpan={6}>
+                                            <EmptyState
+                                                className="border-0"
+                                                icon={<Filter size={24} />}
+                                                title="No se encontraron solicitudes con los filtros actuales."
+                                            />
                                         </TableCell>
                                     </TableRow>
                                 )}

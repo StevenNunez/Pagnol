@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Loader2, ArrowLeft, Save, CircleUserRound, CalendarDays, Calendar as CalendarIcon, Camera, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, CircleUserRound, CalendarDays, Calendar as CalendarIcon, Camera, Trash2 } from "lucide-react";
+import { LoadingState } from "@/components/loading-state";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import SignaturePad from "@/components/signature-pad";
@@ -176,7 +177,7 @@ export default function AssignedChecklistPage() {
 
 
     if (isLoading) {
-        return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+        return <LoadingState fullHeight />;
     }
 
     if (!checklistData) {

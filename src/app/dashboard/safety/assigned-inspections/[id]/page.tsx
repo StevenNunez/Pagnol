@@ -9,7 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, Save, User, Calendar, Camera, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, User, Calendar, Camera, Trash2 } from "lucide-react";
+import { LoadingState } from "@/components/loading-state";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import SignaturePad from "@/components/signature-pad";
@@ -148,7 +149,7 @@ export default function CompleteInspectionPage() {
     };
 
     if (isLoading) {
-        return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+        return <LoadingState fullHeight />;
     }
 
     if (!inspectionData) {

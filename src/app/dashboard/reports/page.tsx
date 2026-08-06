@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
+import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -338,12 +339,12 @@ export default function ReportsWithCharts() {
       </Card>
 
       {isEmpty ? (
-        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-          <SearchX className="h-16 w-16 mb-4 opacity-20" />
-          <h3 className="text-xl font-semibold text-foreground">Sin resultados</h3>
-          <p className="max-w-sm text-center mt-2">No se encontraron solicitudes que coincidan con los filtros seleccionados. Intenta ampliar el rango de fechas.</p>
-          <Button variant="link" onClick={resetFilters} className="mt-4">Restablecer filtros</Button>
-        </div>
+        <EmptyState
+          icon={<SearchX size={24} />}
+          title="Sin resultados"
+          description="No se encontraron solicitudes que coincidan con los filtros seleccionados. Intenta ampliar el rango de fechas."
+          action={<Button variant="link" onClick={resetFilters}>Restablecer filtros</Button>}
+        />
       ) : (
         <>
           {/* CARDS RESUMEN */}

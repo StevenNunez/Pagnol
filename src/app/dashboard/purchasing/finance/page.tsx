@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import {
   Card,
   CardHeader,
@@ -208,13 +209,12 @@ export default function FinanceQuoteProcessor() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-7xl mx-auto">
           {pendingLots.length === 0 ? (
-            <Card className="col-span-full">
-              <CardContent className="py-20 text-center">
-                <Check className="h-16 w-16 mx-auto mb-4 text-green-500 opacity-50" />
-                <p className="text-xl">¡Todo al día!</p>
-                <p className="text-muted-foreground">No hay cotizaciones pendientes de procesar.</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              className="col-span-full"
+              icon={<Check size={24} />}
+              title="¡Todo al día!"
+              description="No hay cotizaciones pendientes de procesar."
+            />
           ) : (
             pendingLots.map((lot) => {
               const count = (purchaseRequests || []).filter((r) => r.lotId === lot.id).length;

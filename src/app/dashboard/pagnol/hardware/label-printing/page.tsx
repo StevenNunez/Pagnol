@@ -3,6 +3,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -392,10 +393,7 @@ const LabelPrintingPage: React.FC = () => {
         </CardHeader>
         <CardContent className="p-8">
           {filteredAssets.length === 0 ? (
-            <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground font-bold">No hay activos disponibles</p>
-            </div>
+            <EmptyState className="border-0" icon={<AlertCircle size={24} />} title="No hay activos disponibles" />
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {filteredAssets.map((asset) => (

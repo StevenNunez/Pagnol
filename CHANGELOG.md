@@ -18,6 +18,74 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Corregido — Una colección lenta ya no retrasa toda la pantalla
+
+`DataProvider` no publicaba **ninguna** colección hasta que respondían **las 54**: mientras faltara
+una sola, hacía `return` sin despachar. El efecto medido es que los datos existían en el navegador
+pero se retenían — `materials` llegaba a los 1,4 s y la pantalla lo recibía a los 2,6 s, esperando
+por catálogos que devuelven 0 bytes y que esa página no lee nunca.
+
+Ahora se publica lo que ya llegó, y `isLoading` pasa a significar "todavía falta algo" en vez de
+"no hay nada que mostrar".
+
+**Medido**, retrasando a propósito 3 s una sola colección vacía (`wr_milestones`) que las páginas
+de prueba no usan, 3 corridas por escenario:
+
+| escenario | antes | después |
+|---|---|---|
+| Asistencia · Vista general, normal | 1.372 ms | 1.388 ms |
+| Asistencia · Vista general, **con la colección lenta** | **4.221 ms** | **1.539 ms** |
+| Mantenimiento, **con la colección lenta** | **4.207 ms** | **1.356 ms** |
+
+Sin la inyección de latencia el tiempo no cambia (no hay regresión): lo que se elimina es el
+**acoplamiento**, que es lo que se paga en faena con mala señal, donde cualquier petición puede
+ser la lenta.
+
+**ADR-014 sigue protegido**, y se verificó explícitamente porque este cambio podía romperlo:
+retrasando 4 s la colección de una página cuya lista está vacía, la página muestra el spinner
+durante toda la carga y solo afirma "No hay observaciones" cuando termina de verdad.
+
+Verificado: `tsc` limpio, build exit 0, 277/277 tests.
+
+### Cambiado — Barrido de consistencia UI: los estados vacíos y de carga son componentes compartidos (43 archivos)
+
+Las páginas escribían "No hay…" y copiaban `<Loader2 className="animate-spin">` a mano. Ahora usan
+`EmptyState` y `LoadingState`. **El valor no es cosmético:** desde ADR-014, `EmptyState` muestra el
+spinner mientras el estado global carga, así que ninguna de las páginas migradas puede volver a
+afirmar "no hay datos" cuando lo que pasa es que todavía no llegaron. Un "No hay existencias" en
+faena con mala señal se lee como "perdimos el stock", y los textos a mano no tienen esa protección.
+
+- **`LoadingState`** — 25 spinners de página/sección migrados (12 de ellos en `safety/`, con el mismo
+  bloque copiado literalmente). Se estandariza el spinner en color de marca y con `role="status"` /
+  `aria-live`, que los bloques a mano no tenían: un lector de pantalla no anunciaba la carga.
+- **`EmptyState`** — 28 estados vacíos migrados, incluidos los que viven dentro de un
+  `<TableCell colSpan>`, que seguían pintando texto plano centrado.
+- **Dos componentes locales duplicados, eliminados:** `purchasing/lots` definía su propio
+  componente **llamado también `EmptyState`** (API `message`/`icon` como `ElementType`), y
+  `abastecimiento/arriendos` tenía `EmptyBox`. El primero se borró y sus usos pasaron al compartido;
+  el segundo ahora delega, con lo que sus 3 usos se benefician sin tocarlos.
+- **Tokenización de paso:** los bloques migrados en `users/print-qrs` usaban `bg-white`,
+  `bg-slate-50`, `border-slate-100` y `text-slate-300` — paleta cruda que no adapta a dark. Al pasar
+  al componente compartido quedaron en tokens.
+
+**Qué se dejó fuera a propósito** (migrarlo habría empeorado la UI o el alcance):
+- **Spinners dentro de botones de submit** (`{isSubmitting ? <Loader2/> : 'Guardar'}`): 145 de las
+  183 ocurrencias del repo. Son correctos; no son estados de carga de sección.
+- **Texto inline de formularios y dropdowns** — mensajes dentro de `<SelectContent>` y bajo un
+  campo (`abastecimiento/rfq`, `comparador`, `pagnol/panoles`, `mantenimiento`, `purchasing/orders`).
+  Un `EmptyState` con borde punteado y `py-16` dentro de un desplegable se ve peor que el texto.
+- **Casos a medida:** el spinner de `dashboard/layout.tsx` (lleva mensaje propio y un bloque de
+  timeout con botón), el de la zona de drag&drop de `attendance/import` (alterna con un ícono, no es
+  un estado de sección) y el overlay de cámara de `pagnol/movimientos` (acento sobre superficie
+  siempre-oscura, excluido por la referencia de tokens).
+- **Módulo `dte`** (9 páginas con `<p>No hay X registradas</p>`): el backlog ya decidió no tocarlo
+  hasta que exista el backend del SII.
+- **Páginas públicas** (`login`, `register`, `enroll`, `invite`, `update-password`): el estándar de
+  diseño cubre `/dashboard`, y tienen lenguaje visual propio.
+
+Verificado: `tsc` limpio, `npm run build` exit 0, **277/277 tests**, y renderizado en navegador
+(dark y light, sesión real contra DEMO) confirmando `EmptyState` y `LoadingState` en pantalla.
+
 ### Agregado — El Requerimiento dice de qué bolsillo sale y para cuándo (RFC-004, F1)
 
 Segundo paso de la puerta única del gasto. Hasta ahora un requerimiento decía *qué* se pedía;

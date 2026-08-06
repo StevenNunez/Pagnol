@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ROLES } from "@/modules/core/lib/permissions";
 import { generateUserInternalId } from "@/modules/core/lib/user-internal-id";
 import { UserPermissionsEditor } from "@/components/user-permissions-editor";
+import { EmptyState } from "@/components/empty-state";
 import {
   Fingerprint, UserPlus, Mail, ShieldCheck, Search, X,
   User as UserIcon, FileText, CheckCircle, AlertCircle,
@@ -260,10 +261,11 @@ export default function PersonalPage() {
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 pb-20">
           {filteredUsers.length === 0 ? (
-            <div className="col-span-full py-20 text-center bg-card rounded-[2.5rem] border border-dashed">
-              <UserIcon size={48} className="mx-auto text-muted-foreground/30 mb-4" />
-              <p className="text-muted-foreground font-bold uppercase tracking-widest text-xs">No se encontraron empleados</p>
-            </div>
+            <EmptyState
+              className="col-span-full rounded-[2.5rem]"
+              icon={<UserIcon size={24} />}
+              title="No se encontraron empleados"
+            />
           ) : (
             filteredUsers.map(emp => (
               <Card key={emp.id} className="p-5 rounded-[2rem] border-none shadow-xl shadow-black/5 bg-card flex flex-col justify-between h-full gap-4 group hover:shadow-2xl transition-all duration-500">

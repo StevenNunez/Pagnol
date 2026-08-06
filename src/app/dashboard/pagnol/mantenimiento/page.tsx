@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
+import { EmptyState } from '@/components/empty-state';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -314,14 +315,17 @@ export default function MantenimientoPage() {
                   ))}
                   {maintenanceOrders.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-8 py-16 text-center">
-                        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                          <Wrench size={32} className="opacity-30" />
-                          <p className="text-sm font-medium">No hay órdenes de trabajo registradas.</p>
-                          <Button onClick={() => setIsNewOTOpen(true)} variant="outline" size="sm" className="rounded-xl text-xs font-bold mt-2">
-                            <Plus size={14} className="mr-2" /> Crear primera OT
-                          </Button>
-                        </div>
+                      <td colSpan={6}>
+                        <EmptyState
+                          className="border-0"
+                          icon={<Wrench size={24} />}
+                          title="No hay órdenes de trabajo registradas."
+                          action={
+                            <Button onClick={() => setIsNewOTOpen(true)} variant="outline" size="sm" className="rounded-xl text-xs font-bold">
+                              <Plus size={14} className="mr-2" /> Crear primera OT
+                            </Button>
+                          }
+                        />
                       </td>
                     </tr>
                   )}

@@ -8,6 +8,7 @@ import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, CheckCircle, Edit } from "lucide-react";
+import { LoadingState } from "@/components/loading-state";
 import { DailyTalk } from "@/modules/core/lib/data";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -61,7 +62,7 @@ export default function SignDailyTalkPage() {
     }
 
     if (isLoading) {
-        return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+        return <LoadingState fullHeight />;
     }
 
     if (!talk) {

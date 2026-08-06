@@ -4,6 +4,8 @@
 import React, { useState, useMemo } from "react";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
+import { LoadingState } from "@/components/loading-state";
+import { EmptyState } from "@/components/empty-state";
 import {
     Card,
     CardContent,
@@ -202,11 +204,7 @@ export default function InventoryReportPage() {
 
 
     if (isLoading) {
-        return (
-            <div className="flex h-full w-full items-center justify-center min-h-[50vh]">
-                <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-        );
+        return <LoadingState className="min-h-[50vh]" />;
     }
 
     return (
@@ -493,15 +491,12 @@ export default function InventoryReportPage() {
                                     </Table>
                                 </ScrollArea>
                             ) : (
-                                <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center p-8">
-                                    <Inbox className="h-12 w-12 mb-4 opacity-50" />
-                                    <p className="font-medium">
-                                        No hay materiales con stock disponible.
-                                    </p>
-                                    <p className="text-xs mt-1">
-                                        Todo el inventario está en 0.
-                                    </p>
-                                </div>
+                                <EmptyState
+                                    className="border-0"
+                                    icon={<Inbox size={24} />}
+                                    title="No hay materiales con stock disponible."
+                                    description="Todo el inventario está en 0."
+                                />
                             )}
                         </div>
                     </CardContent>

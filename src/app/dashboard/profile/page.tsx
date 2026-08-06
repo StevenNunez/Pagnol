@@ -4,6 +4,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
+import { LoadingState } from '@/components/loading-state';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -211,11 +212,7 @@ export default function ProfilePage() {
 
     // Si aún está cargando la autenticación inicial pesada y no tenemos ni el authUser, mostrar spinner
     if (authLoading && !authUser) {
-        return (
-            <div className="flex items-center justify-center h-[50vh]">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-        );
+        return <LoadingState className="min-h-[50vh]" />;
     }
 
     return (

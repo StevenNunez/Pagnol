@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { PageHeader } from "@/components/page-header";
+import { LoadingState } from "@/components/loading-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -354,10 +355,7 @@ export default function InvitacionesPage() {
                         </CardHeader>
                         <CardContent className="p-0">
                             {isLoading ? (
-                                <div className="flex flex-col items-center justify-center py-40 opacity-40">
-                                    <Loader2 className="animate-spin mb-4" size={32} />
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">Sincronizando...</span>
-                                </div>
+                                <LoadingState label="Sincronizando…" className="py-40" />
                             ) : invitations.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-40 text-muted-foreground opacity-60">
                                     <div className="bg-muted p-6 rounded-full mb-6">

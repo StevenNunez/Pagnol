@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import QRCode from "react-qr-code";
 import { Printer, ArrowLeft, Loader2, AlertCircle, Search } from "lucide-react";
@@ -142,12 +143,11 @@ export default function PrintUserQrPage() {
             ))
           )}
           {filteredUsers.length === 0 && !isLoading && (
-            <div className="col-span-full text-center py-20 bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
-              <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="text-slate-300" />
-              </div>
-              <p className="text-muted-foreground font-bold uppercase text-xs tracking-widest">No hay resultados para la búsqueda actual</p>
-            </div>
+            <EmptyState
+              className="col-span-full rounded-[3rem]"
+              icon={<Search size={24} />}
+              title="No hay resultados para la búsqueda actual"
+            />
           )}
         </div>
       </div>

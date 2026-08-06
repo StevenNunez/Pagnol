@@ -464,8 +464,8 @@ export default function ConstructionWBSPage() {
                                   ))
                                 ) : (
                                   <TableRow>
-                                    <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
-                                      No hay registros de avance para esta partida.
+                                    <TableCell colSpan={4}>
+                                      <EmptyState className="border-0" title="No hay registros de avance para esta partida." />
                                     </TableCell>
                                   </TableRow>
                                 )}

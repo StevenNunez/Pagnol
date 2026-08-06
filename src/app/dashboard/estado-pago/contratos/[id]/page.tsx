@@ -5,6 +5,8 @@ import React, { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/page-header';
+import { LoadingState } from '@/components/loading-state';
+import { EmptyState } from '@/components/empty-state';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import {
     Loader2,
@@ -48,7 +50,7 @@ import { Badge } from '@/components/ui/badge';
 // Importación dinámica de Gantt para evitar errores de SSR
 const Gantt = dynamic(() => import('gantt-task-react').then(mod => mod.Gantt), {
     ssr: false,
-    loading: () => <div className="h-[300px] flex items-center justify-center bg-muted/10 text-muted-foreground"><Loader2 className="h-8 w-8 animate-spin" /></div>
+    loading: () => <LoadingState className="min-h-[300px] bg-muted/10" />
 });
 import { ViewMode, type Task } from 'gantt-task-react';
 import 'gantt-task-react/dist/index.css'; // Asegúrate de importar los estilos
@@ -197,7 +199,7 @@ const WorkItemNode = ({
 const WorkItemTree = ({ workItems, onSelect, onDoubleClick, selectedId, rootId }: { workItems: WorkItem[], onSelect: (item: WorkItem) => void, onDoubleClick: (item: WorkItem) => void, selectedId: string | null, rootId: string }) => {
     const tree = useMemo(() => buildTree(workItems || [], rootId), [workItems, rootId]);
 
-    if (!workItems.length) return <div className="p-4 text-center text-sm text-muted-foreground">No hay partidas disponibles.</div>;
+    if (!workItems.length) return <EmptyState className="border-0" title="No hay partidas disponibles." />;
 
     return (
         <ScrollArea className="h-[500px] border rounded-md bg-card/50">
@@ -406,11 +408,7 @@ export default function ContractorContractDetailPage() {
     };
 
     if (isLoading) {
-        return (
-            <div className="flex h-[80vh] items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            </div>
-        )
+        return <LoadingState fullHeight />
     }
 
     if (!contract) {

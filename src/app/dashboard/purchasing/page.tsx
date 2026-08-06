@@ -4,6 +4,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
+import { EmptyState } from "@/components/empty-state";
 import {
   ShoppingCart,
   ThumbsUp,
@@ -404,11 +405,12 @@ const PendingReceptionCard = ({ requests, onReceiveClick, onCancelClick, users }
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-40 text-center">
-                    <div className="flex flex-col items-center justify-center text-muted-foreground gap-2">
-                      <CheckCircle2 className="h-10 w-10 text-green-500/50" />
-                      <p>No hay recepciones pendientes con estos filtros.</p>
-                    </div>
+                  <TableCell colSpan={4}>
+                    <EmptyState
+                      className="border-0"
+                      icon={<CheckCircle2 size={24} />}
+                      title="No hay recepciones pendientes con estos filtros."
+                    />
                   </TableCell>
                 </TableRow>
               )}
@@ -733,15 +735,16 @@ export default function PurchasingHubPage() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={3} className="h-32 text-center text-muted-foreground">
-                        {searchTerm || showLowStockOnly ? (
-                            <div className="flex flex-col items-center">
-                                <PackageMinus className="h-8 w-8 mb-2 opacity-50" />
-                                No se encontraron materiales con estos filtros.
-                            </div>
-                        ) : (
-                            "Inventario vacío."
-                        )}
+                      <TableCell colSpan={3}>
+                        <EmptyState
+                          className="border-0"
+                          icon={searchTerm || showLowStockOnly ? <PackageMinus size={24} /> : undefined}
+                          title={
+                            searchTerm || showLowStockOnly
+                              ? "No se encontraron materiales con estos filtros."
+                              : "Inventario vacío."
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   )}

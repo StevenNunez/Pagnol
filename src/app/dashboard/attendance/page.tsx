@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -271,9 +272,7 @@ export default function AttendancePage() {
 
         <div className="divide-y divide-border">
           {filtered.length === 0 ? (
-            <div className="p-12 text-center text-muted-foreground text-sm">
-              No hay trabajadores que coincidan con el filtro.
-            </div>
+            <EmptyState className="border-0" title="No hay trabajadores que coincidan con el filtro." />
           ) : filtered.map(({ user: u, status, firstIn, lastOut, totalLogs, shiftName }) => {
             const cfg = STATUS_CONFIG[status];
             return (

@@ -7,7 +7,9 @@ import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Inbox, ArrowRight, Trash2 } from "lucide-react";
+import { Inbox, ArrowRight, Trash2 } from "lucide-react";
+import { LoadingState } from "@/components/loading-state";
+import { EmptyState } from "@/components/empty-state";
 import Link from "next/link";
 import {
   AlertDialog,
@@ -66,7 +68,7 @@ export default function ReviewChecklistsPage() {
     };
 
     if (isLoading) {
-        return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+        return <LoadingState fullHeight />;
     }
 
     return (
@@ -130,11 +132,12 @@ export default function ReviewChecklistsPage() {
                                 ))}
                             </div>
                         ) : (
-                             <div className="flex flex-col items-center justify-center text-center text-muted-foreground h-full p-12">
-                                <Inbox className="h-16 w-16 mb-4"/>
-                                <h3 className="text-xl font-semibold">Bandeja de Entrada Vacía</h3>
-                                <p className="mt-2">No hay checklists pendientes de revisión en este momento.</p>
-                            </div>
+                            <EmptyState
+                                className="border-0"
+                                icon={<Inbox size={24} />}
+                                title="Bandeja de Entrada Vacía"
+                                description="No hay checklists pendientes de revisión en este momento."
+                            />
                         )}
                     </ScrollArea>
                 </CardContent>

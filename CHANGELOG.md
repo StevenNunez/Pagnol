@@ -18,6 +18,41 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado — Cada página carga lo que usa, no las 54 colecciones (RFC-005)
+
+Entrar a cualquier página de `/dashboard` pedía **54 colecciones**, sin importar cuáles usaba.
+Medido en el navegador, ahora pide **5** (`/dashboard/worker`), **9** (`/dashboard/safety`) o
+**22** (`/dashboard/pagnol/activos`). Antes eran **57 tablas** en las tres.
+
+Tres piezas, en orden de lo que cada una entrega:
+
+- **`tools` salió del estado global.** No la consumía nadie desde la fusión Bodega → Pagnol.
+  La tabla de Postgres **no se toca**.
+- **Los badges de la barra superior ya no traen tablas.** El layout cargaba 8 colecciones
+  completas —y las pagaba *toda* página del dashboard— para mostrar nueve números en la campana
+  y el carrito. Ahora llegan agregados de `dashboard_badges()` en un viaje. Es la única pieza que
+  **no crece con los datos**: un contador vale lo mismo con 100 filas que con 50.000. Se refresca
+  cada 45 s y se pausa con la pestaña oculta, para no gastar batería y datos en faena.
+  *De paso:* `suppliers` se traía entera para alimentar un `supplierMap` que no se usaba en
+  ninguna parte.
+- **Cada módulo declara sus colecciones** (`src/modules/data/moduleData.ts`), y las demás no se
+  piden. La lista se **generó midiendo** las 177 páginas, no se escribió a mano.
+
+**Lo que protege el cambio.** Con carga selectiva, un array vacío pasa a significar tres cosas:
+*no llega todavía* · *no hay datos* · **nadie la pidió**. La tercera no dejaría error en consola.
+Por eso el manifiesto es sólo la optimización, y la garantía es una red de seguridad: si una
+página lee una colección que su módulo no declara, se **activa al vuelo** y en desarrollo se avisa
+por consola con el nombre exacto y dónde agregarla. El peor caso es "un viaje extra", nunca "cero
+filas en silencio". Se verificó **provocándola**: al quitar `dailyTalks` de `safety`, apareció el
+aviso y los datos se cargaron igual.
+
+⚠️ **Migración `20260813000000_dashboard_badges.sql` pendiente de aplicar.** Hasta entonces los
+badges quedan en cero (con un error en consola) y el resto de la app funciona normalmente.
+
+Detalle y alternativas rechazadas en `docs/decisions/ADR-015-carga-selectiva-por-modulo.md`.
+**No resuelve el caso del tenant grande** (peso de una colección): eso es paginación server-side
+y queda como RFC aparte.
+
 ### Corregido — Una colección lenta ya no retrasa toda la pantalla
 
 `DataProvider` no publicaba **ninguna** colección hasta que respondían **las 54**: mientras faltara

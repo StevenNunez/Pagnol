@@ -25,8 +25,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { differenceInDays, startOfDay } from 'date-fns';
-import { UserRole, type SupplierPayment, type MaterialRequest, type PurchaseRequest, type Supplier, type Tenant } from '@/modules/core/lib/data';
+import { UserRole, type Tenant } from '@/modules/core/lib/data';
+import { useDashboardBadges } from '@/modules/core/hooks/use-dashboard-badges';
 import { ROLES } from '@/modules/core/lib/permissions';
 import { InventoryAssistant } from '@/components/assistant/inventory-assistant';
 import { ThemeSwitcher } from '@/components/theme-switcher';
@@ -43,17 +43,9 @@ import { supabase } from '@/modules/core/lib/supabase';
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, authLoading, logout, tenants, currentTenantId, setCurrentTenantId, pageHeader, getTenantId } = useAuth();
-  const {
-    requests,
-    purchaseRequests,
-    rentalRequests,
-    supplierPayments,
-    suppliers,
-    purchaseOrders,
-    goodsReceipts,
-    costCenters,
-    can,
-  } = useAppState();
+  // RFC-005 F1: el layout ya no trae las 8 colecciones que alimentaban los
+  // badges. Sólo necesita `can()` para decidir qué avisos le tocan a este rol.
+  const { can } = useAppState();
   const router = useRouter();
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
@@ -105,7 +97,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   // Drena la cola de sincronización offline al recuperar conexión / al encolar.
   useOfflineSync();
 
-  const today = startOfDay(new Date());
+  // RFC-005 F1 — contadores de la barra superior en un viaje, refrescados por
+  // intervalo (se pausa con la pestaña oculta).
+  const { badges } = useDashboardBadges(getTenantId());
 
   // Determine if the current page is the main dashboard hub
   const isDashboardHub = pathname === '/dashboard';
@@ -149,38 +143,24 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     return ROLES[role]?.label || role;
   };
 
-  const parseDate = (d: any) => {
-    if (!d) return new Date();
-    if (d instanceof Date) return d;
-    if (d && typeof d === 'object' && 'seconds' in d) {
-      return new Date(d.seconds * 1000);
-    }
-    return new Date(d);
-  };
+  // RFC-005 F1: los nueve contadores llegan agregados desde Postgres en UN
+  // viaje, en vez de derivarse de 8 tablas completas traídas al navegador.
+  // Los criterios (umbral de 7 días, estados, autorización del ADC) viven ahora
+  // en `dashboard_badges()` — migración 20260813000000.
+  const {
+    pendingAuthMaterial,
+    pendingAuthPurchase,
+    pendingAuthRental,
+    pendingMaterialRequests,
+    pendingPurchaseRequests,
+    overduePayments,
+    dueSoonPayments,
+    pendingCotizaciones,
+    pendingReceptions,
+    overBudgetCostCenters,
+  } = badges;
 
-  const overduePayments = React.useMemo(() => (supplierPayments || []).filter((p: SupplierPayment) => {
-    if (p.status === 'paid') return false;
-    const dueDate = parseDate(p.dueDate);
-    return differenceInDays(dueDate, today) < 0;
-  }), [supplierPayments, today]);
-
-  const dueSoonPayments = React.useMemo(() => (supplierPayments || []).filter((p: SupplierPayment) => {
-    if (p.status === 'paid') return false;
-    const dueDate = parseDate(p.dueDate);
-    const daysLeft = differenceInDays(dueDate, today);
-    return daysLeft >= 0 && daysLeft <= 7;
-  }), [supplierPayments, today]);
-
-  // Colas del pañol/Abastecimiento: solo cuentan lo ya AUTORIZADO por el ADC
-  // (las pendientes sin autorizar van a la bandeja del ADC, abajo).
-  const pendingMaterialRequests = React.useMemo(() => (requests || []).filter((r: MaterialRequest) => r.status === 'pending' && r.adcAuthorizedAt).length, [requests]);
-  const pendingPurchaseRequests = React.useMemo(() => (purchaseRequests || []).filter((pr: PurchaseRequest) => pr.status === 'pending' && pr.adcAuthorizedAt).length, [purchaseRequests]);
-
-  // Bandeja del ADC: solicitudes pendientes SIN autorizar (por tipo y combinadas
-  // según los permisos de autorización del usuario).
-  const pendingAuthMaterial = React.useMemo(() => (requests || []).filter((r: MaterialRequest) => r.status === 'pending' && !r.adcAuthorizedAt).length, [requests]);
-  const pendingAuthPurchase = React.useMemo(() => (purchaseRequests || []).filter((pr: PurchaseRequest) => pr.status === 'pending' && !pr.adcAuthorizedAt).length, [purchaseRequests]);
-  const pendingAuthRental = React.useMemo(() => (rentalRequests || []).filter((rr: any) => rr.status === 'pending' && !rr.adcAuthorizedAt).length, [rentalRequests]);
+  // Bandeja del ADC: se suma sólo lo que este usuario puede autorizar.
   const pendingAuthTotal = React.useMemo(() => {
     let c = 0;
     if (can('material_requests:authorize')) c += pendingAuthMaterial;
@@ -188,36 +168,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     if (can('rentals:authorize')) c += pendingAuthRental;
     return c;
   }, [can, pendingAuthMaterial, pendingAuthPurchase, pendingAuthRental]);
-  const pendingCotizaciones = React.useMemo(() => (purchaseOrders || []).filter(po => po.status === 'generated').length, [purchaseOrders]);
-
-  // Abastecimiento (F5): OC activas que aún no se reciben por completo.
-  const pendingReceptions = React.useMemo(() => {
-    const receivedByPO = new Map<string, Map<string, number>>();
-    for (const r of (goodsReceipts || [])) {
-      const inner = receivedByPO.get(r.purchaseOrderId) || new Map<string, number>();
-      for (const it of (r.items || [])) inner.set(it.itemId, (inner.get(it.itemId) || 0) + (it.receivedQuantity || 0));
-      receivedByPO.set(r.purchaseOrderId, inner);
-    }
-    return (purchaseOrders || []).filter(po => {
-      if (!['generated', 'sent', 'issued'].includes(po.status)) return false;
-      const rec = receivedByPO.get(po.id);
-      return (po.items || []).some((it, idx) => {
-        const key = it.id || `${it.name}#${idx}`;
-        return (rec?.get(key) || 0) < (it.totalQuantity || 0);
-      });
-    }).length;
-  }, [purchaseOrders, goodsReceipts]);
-
-  // Abastecimiento (F5): centros de costo cuyo comprometido excede el presupuesto.
-  const overBudgetCostCenters = React.useMemo(() => {
-    return (costCenters || []).filter(cc => {
-      if (!cc.budget || cc.budget <= 0) return false;
-      const committed = (purchaseOrders || [])
-        .filter(po => po.costCenterId === cc.id && po.status !== 'cancelled')
-        .reduce((a, po) => a + (po.totalAmount || 0), 0);
-      return committed > cc.budget;
-    }).length;
-  }, [costCenters, purchaseOrders]);
 
   const totalNotifications = React.useMemo(() => {
     let count = 0;
@@ -225,8 +175,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     if (can('material_requests:approve_class_c')) count += pendingMaterialRequests;
     if (can('purchase_requests:approve')) count += pendingPurchaseRequests;
     if (can('payments:view')) {
-      count += overduePayments.length;
-      count += dueSoonPayments.length;
+      count += overduePayments;
+      count += dueSoonPayments;
     }
     if (can('finance:manage_purchase_orders')) {
       count += pendingCotizaciones;
@@ -235,8 +185,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     if (can('cost_centers:manage')) count += overBudgetCostCenters;
     return count;
   }, [can, pendingAuthTotal, pendingMaterialRequests, pendingPurchaseRequests, overduePayments, dueSoonPayments, pendingCotizaciones, pendingReceptions, overBudgetCostCenters]);
-
-  const supplierMap = React.useMemo(() => new Map<string, string>((suppliers || []).map((s: Supplier) => [s.id, s.name])), [suppliers]);
 
   const prevNotificationsRef = React.useRef<number | null>(null);
 
@@ -450,19 +398,19 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                           </DropdownMenuItem>
                         </Link>
                       )}
-                      {can('payments:view') && overduePayments.length > 0 && (
+                      {can('payments:view') && overduePayments > 0 && (
                         <Link href="/dashboard/payments">
                           <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-red-50/50 dark:hover:bg-red-950/40">
                             <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg mr-3"><AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" /></div>
-                            <span className="text-[11px] font-bold uppercase tracking-tight">{overduePayments.length} Pagos Vencidos</span>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{overduePayments} Pagos Vencidos</span>
                           </DropdownMenuItem>
                         </Link>
                       )}
-                      {can('payments:view') && dueSoonPayments.length > 0 && (
+                      {can('payments:view') && dueSoonPayments > 0 && (
                         <Link href="/dashboard/payments">
                           <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-orange-50/50 dark:hover:bg-orange-950/40">
                             <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg mr-3"><AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" /></div>
-                            <span className="text-[11px] font-bold uppercase tracking-tight">{dueSoonPayments.length} Pagos por Vencer</span>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{dueSoonPayments} Pagos por Vencer</span>
                           </DropdownMenuItem>
                         </Link>
                       )}

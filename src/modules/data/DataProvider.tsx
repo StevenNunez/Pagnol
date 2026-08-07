@@ -30,6 +30,8 @@ import { useToast } from "@/modules/core/hooks/use-toast";
 import { useSupabaseCollection } from "@/modules/core/hooks/use-supabase-collection";
 import { mappers } from "./mappers";
 import { AppDataState, AppStateAction, AppStateContextType } from './types';
+import { CollectionGateProvider, useCollectionGate } from './CollectionGate';
+import type { CollectionName } from './moduleData';
 import * as materialRequestMutations from './mutations/materialRequestMutations';
 import * as purchaseRequestMutations from './mutations/purchaseRequestMutations';
 import * as genericMutations from './mutations/genericMutations';
@@ -64,7 +66,6 @@ const initialState: AppDataState = {
     subscriptionPlans: PLANS,
     users: [],
     materials: [],
-    tools: [],
     requests: [],
     returnRequests: [],
     purchaseRequests: [],
@@ -151,6 +152,17 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
 
     const tenantId = getTenantId();
 
+    // RFC-005 F2 — carga selectiva. `active` trae las colecciones del módulo en
+    // el que estamos (más las que se hayan pedido al vuelo). Sin el gate —por
+    // ejemplo en un test que monte el provider suelto— `on()` devuelve true para
+    // todo y el comportamiento es el de siempre: cargarlo todo.
+    const gate = useCollectionGate();
+    const active = gate?.active;
+    const on = useCallback(
+        (name: CollectionName) => !active || active.has(name),
+        [active]
+    );
+
     useEffect(() => {
         if (!tenantId) { setCurrentTenant(null); return; }
 
@@ -191,68 +203,67 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         return () => { supabase.removeChannel(channel); };
     }, [tenantId, refreshVersion]);
 
-    const materialsData = useSupabaseCollection('materials', { tenantId, mapper: mappers.materials, softDelete: true });
-    const toolsData = useSupabaseCollection('tools', { tenantId });
-    const usersData = useSupabaseCollection('profiles', { tenantId, mapper: mappers.profiles, softDelete: true });
-    const requestsData = useSupabaseCollection('material_requests', { tenantId, mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
-    const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
-    const purchaseRequestsData = useSupabaseCollection('purchase_requests', { tenantId, mapper: mappers.purchase_requests, orderBy: { column: 'created_at', ascending: false } });
-    const suppliersData = useSupabaseCollection('suppliers', { tenantId, mapper: mappers.suppliers });
-    const materialCategoriesData = useSupabaseCollection('material_categories', { tenantId, mapper: mappers.material_categories });
-    const unitsData = useSupabaseCollection('units', { tenantId });
-    const purchaseLotsData = useSupabaseCollection('purchase_lots', { tenantId, mapper: mappers.purchase_lots });
-    const purchaseOrdersData = useSupabaseCollection('purchase_orders', { tenantId, mapper: mappers.purchase_orders, orderBy: { column: 'created_at', ascending: false } });
-    const quoteRequestsData = useSupabaseCollection('quote_requests', { tenantId, mapper: mappers.quote_requests, orderBy: { column: 'created_at', ascending: false } });
-    const goodsReceiptsData = useSupabaseCollection('goods_receipts', { tenantId, mapper: mappers.goods_receipts, orderBy: { column: 'created_at', ascending: false } });
-    const costCentersData = useSupabaseCollection('cost_centers', { tenantId, mapper: mappers.cost_centers, orderBy: { column: 'created_at', ascending: false } });
-    const supplierPaymentsData = useSupabaseCollection('supplier_payments', { tenantId, mapper: mappers.supplier_payments, orderBy: { column: 'due_date', ascending: true } });
-    const salaryAdvancesData = useSupabaseCollection('salary_advances', { tenantId, mapper: mappers.salary_advances, orderBy: { column: 'requested_at', ascending: false } });
-    const attendanceLogsData = useSupabaseCollection('attendance_logs', { tenantId, mapper: mappers.attendance_logs, orderBy: { column: 'timestamp', ascending: false } });
+    const materialsData = useSupabaseCollection('materials', { tenantId, enabled: on('materials'), mapper: mappers.materials, softDelete: true });
+    const usersData = useSupabaseCollection('profiles', { tenantId, enabled: on('users'), mapper: mappers.profiles, softDelete: true });
+    const requestsData = useSupabaseCollection('material_requests', { tenantId, enabled: on('requests'), mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
+    const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, enabled: on('returnRequests'), mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
+    const purchaseRequestsData = useSupabaseCollection('purchase_requests', { tenantId, enabled: on('purchaseRequests'), mapper: mappers.purchase_requests, orderBy: { column: 'created_at', ascending: false } });
+    const suppliersData = useSupabaseCollection('suppliers', { tenantId, enabled: on('suppliers'), mapper: mappers.suppliers });
+    const materialCategoriesData = useSupabaseCollection('material_categories', { tenantId, enabled: on('materialCategories'), mapper: mappers.material_categories });
+    const unitsData = useSupabaseCollection('units', { tenantId, enabled: on('units') });
+    const purchaseLotsData = useSupabaseCollection('purchase_lots', { tenantId, enabled: on('purchaseLots'), mapper: mappers.purchase_lots });
+    const purchaseOrdersData = useSupabaseCollection('purchase_orders', { tenantId, enabled: on('purchaseOrders'), mapper: mappers.purchase_orders, orderBy: { column: 'created_at', ascending: false } });
+    const quoteRequestsData = useSupabaseCollection('quote_requests', { tenantId, enabled: on('quoteRequests'), mapper: mappers.quote_requests, orderBy: { column: 'created_at', ascending: false } });
+    const goodsReceiptsData = useSupabaseCollection('goods_receipts', { tenantId, enabled: on('goodsReceipts'), mapper: mappers.goods_receipts, orderBy: { column: 'created_at', ascending: false } });
+    const costCentersData = useSupabaseCollection('cost_centers', { tenantId, enabled: on('costCenters'), mapper: mappers.cost_centers, orderBy: { column: 'created_at', ascending: false } });
+    const supplierPaymentsData = useSupabaseCollection('supplier_payments', { tenantId, enabled: on('supplierPayments'), mapper: mappers.supplier_payments, orderBy: { column: 'due_date', ascending: true } });
+    const salaryAdvancesData = useSupabaseCollection('salary_advances', { tenantId, enabled: on('salaryAdvances'), mapper: mappers.salary_advances, orderBy: { column: 'requested_at', ascending: false } });
+    const attendanceLogsData = useSupabaseCollection('attendance_logs', { tenantId, enabled: on('attendanceLogs'), mapper: mappers.attendance_logs, orderBy: { column: 'timestamp', ascending: false } });
     // Proyección sin evidence_photos (arrays base64): se cargan bajo demanda en
     // el detalle/revisión (useRecordFields). Requiere la migración 20260612000004
     // (que añade template_title/supervisor_id/assigner_id/assigner_name/items). (S6)
-    const assignedChecklistsData = useSupabaseCollection('assigned_checklists', { tenantId, mapper: mappers.assigned_checklists, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, template_id, template_title, supervisor_id, assigner_id, assigner_name, status, area, items, observations, performed_by, completed_at, reviewed_by, rejection_notes, created_at' });
-    const safetyInspectionsData = useSupabaseCollection('safety_inspections', { tenantId, mapper: mappers.safety_inspections, orderBy: { column: 'created_at', ascending: false } });
-    const checklistTemplatesData = useSupabaseCollection('checklist_templates', { tenantId, mapper: mappers.checklist_templates });
+    const assignedChecklistsData = useSupabaseCollection('assigned_checklists', { tenantId, enabled: on('assignedChecklists'), mapper: mappers.assigned_checklists, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, template_id, template_title, supervisor_id, assigner_id, assigner_name, status, area, items, observations, performed_by, completed_at, reviewed_by, rejection_notes, created_at' });
+    const safetyInspectionsData = useSupabaseCollection('safety_inspections', { tenantId, enabled: on('safetyInspections'), mapper: mappers.safety_inspections, orderBy: { column: 'created_at', ascending: false } });
+    const checklistTemplatesData = useSupabaseCollection('checklist_templates', { tenantId, enabled: on('checklistTemplates'), mapper: mappers.checklist_templates });
     // Proyección sin firmas/foto (base64): se cargan bajo demanda en el detalle
     // (useRecordFields). Requiere la migración 20260612000004 (worker_id/worker_name). (S6)
-    const behaviorObservationsData = useSupabaseCollection('behavior_observations', { tenantId, mapper: mappers.behavior_observations, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, obra, worker_id, worker_name, worker_rut, observation_date, items, risk_level, feedback, observer_id, observer_name, created_at' });
-    const stockMovementsData = useSupabaseCollection('stock_movements', { tenantId, mapper: mappers.stock_movements, orderBy: { column: 'date', ascending: false } });
-    const workItemsData = useSupabaseCollection('work_items', { tenantId, mapper: mappers.work_items, orderBy: { column: 'path', ascending: true } });
-    const progressLogsData = useSupabaseCollection('progress_logs', { tenantId, mapper: mappers.progress_logs, orderBy: { column: 'date', ascending: false } });
-    const paymentStatesData = useSupabaseCollection('payment_states', { tenantId, mapper: mappers.payment_states, orderBy: { column: 'created_at', ascending: false } });
+    const behaviorObservationsData = useSupabaseCollection('behavior_observations', { tenantId, enabled: on('behaviorObservations'), mapper: mappers.behavior_observations, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, obra, worker_id, worker_name, worker_rut, observation_date, items, risk_level, feedback, observer_id, observer_name, created_at' });
+    const stockMovementsData = useSupabaseCollection('stock_movements', { tenantId, enabled: on('stockMovements'), mapper: mappers.stock_movements, orderBy: { column: 'date', ascending: false } });
+    const workItemsData = useSupabaseCollection('work_items', { tenantId, enabled: on('workItems'), mapper: mappers.work_items, orderBy: { column: 'path', ascending: true } });
+    const progressLogsData = useSupabaseCollection('progress_logs', { tenantId, enabled: on('progressLogs'), mapper: mappers.progress_logs, orderBy: { column: 'date', ascending: false } });
+    const paymentStatesData = useSupabaseCollection('payment_states', { tenantId, enabled: on('paymentStates'), mapper: mappers.payment_states, orderBy: { column: 'created_at', ascending: false } });
     // Proyección sin firma/foto (base64 pesado): se cargan bajo demanda en el
     // detalle (useRecordFields). Requiere la migración 20260612000004 (que añade
     // obra/fecha al esquema). (S6)
-    const dailyTalksData = useSupabaseCollection('daily_talks', { tenantId, mapper: mappers.daily_talks, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, obra, fecha, expositor_id, expositor_name, temas, asistentes, created_at' });
-    const maintenanceOrdersData = useSupabaseCollection('maintenance_orders', { tenantId, mapper: mappers.maintenance_orders, orderBy: { column: 'created_at', ascending: false } });
-    const maintenanceLogsData = useSupabaseCollection('maintenance_logs', { tenantId, mapper: mappers.maintenance_logs, orderBy: { column: 'timestamp', ascending: false } });
-    const eaDocumentsData = useSupabaseCollection('ea_documents', { tenantId, mapper: mappers.ea_documents, orderBy: { column: 'generated_at', ascending: false } });
-    const protocolTemplatesData = useSupabaseCollection('protocol_templates', { tenantId, mapper: mappers.protocol_templates, orderBy: { column: 'created_at', ascending: false } });
-    const protocolsData = useSupabaseCollection('protocols', { tenantId, mapper: mappers.protocols, orderBy: { column: 'created_at', ascending: false } });
-    const shiftSchedulesData = useSupabaseCollection('shift_schedules', { tenantId, mapper: mappers.shift_schedules, orderBy: { column: 'created_at', ascending: true } });
-    const clientsData = useSupabaseCollection('clients', { tenantId, mapper: mappers.clients, orderBy: { column: 'name', ascending: true } });
-    const contractsData = useSupabaseCollection('contracts', { tenantId, mapper: mappers.contracts, orderBy: { column: 'created_at', ascending: false } });
-    const contractWorkersData = useSupabaseCollection('contract_workers', { tenantId, mapper: mappers.contract_workers });
-    const warehousesData = useSupabaseCollection('warehouses', { tenantId, mapper: mappers.warehouses, orderBy: { column: 'name', ascending: true } });
-    const warehouseContractsData = useSupabaseCollection('warehouse_contracts', { tenantId, mapper: mappers.warehouse_contracts });
-    const materialStocksData = useSupabaseCollection('material_stocks', { tenantId, mapper: mappers.material_stocks });
-    const rentalPartiesData = useSupabaseCollection('rental_parties', { tenantId, mapper: mappers.rental_parties, orderBy: { column: 'name', ascending: true } });
-    const rentalContractsData = useSupabaseCollection('rental_contracts', { tenantId, mapper: mappers.rental_contracts, orderBy: { column: 'created_at', ascending: false } });
-    const rentalAssetsData = useSupabaseCollection('rental_assets', { tenantId, mapper: mappers.rental_assets, orderBy: { column: 'created_at', ascending: false } });
-    const rentalPaymentsData = useSupabaseCollection('rental_payments', { tenantId, mapper: mappers.rental_payments, orderBy: { column: 'due_date', ascending: true } });
-    const rentalRequestsData = useSupabaseCollection('rental_requests', { tenantId, mapper: mappers.rental_requests, orderBy: { column: 'created_at', ascending: false } });
-    const rentalQuoteRequestsData = useSupabaseCollection('rental_quote_requests', { tenantId, mapper: mappers.rental_quote_requests, orderBy: { column: 'created_at', ascending: false } });
-    const rentalCategoriesData = useSupabaseCollection('rental_categories', { tenantId, orderBy: { column: 'name', ascending: true } });
-    const workReportsData = useSupabaseCollection('work_reports', { tenantId, mapper: mappers.work_reports, orderBy: { column: 'created_at', ascending: false } });
-    const leaveRequestsData = useSupabaseCollection('hr_leave_requests', { tenantId, mapper: mappers.hr_leave_requests, orderBy: { column: 'created_at', ascending: false } });
-    const hrDocumentsData = useSupabaseCollection('hr_documents', { tenantId, mapper: mappers.hr_documents, orderBy: { column: 'expiry_date', ascending: true } });
-    const workReportAreasData = useSupabaseCollection('wr_areas', { tenantId, orderBy: { column: 'name', ascending: true } });
-    const workReportSpecialtiesData = useSupabaseCollection('wr_specialties', { tenantId, orderBy: { column: 'name', ascending: true } });
-    const workReportMilestonesData = useSupabaseCollection('wr_milestones', { tenantId, orderBy: { column: 'name', ascending: true } });
-    const workReportCatalogsData = useSupabaseCollection('wr_catalogs', { tenantId, orderBy: { column: 'name', ascending: true } });
-    const workOrdersData = useSupabaseCollection('work_orders', { tenantId, mapper: mappers.work_orders, orderBy: { column: 'work_date', ascending: false } });
-    const workWeeklyReportsData = useSupabaseCollection('work_weekly_reports', { tenantId, mapper: mappers.work_weekly_reports, orderBy: { column: 'start_date', ascending: false } });
+    const dailyTalksData = useSupabaseCollection('daily_talks', { tenantId, enabled: on('dailyTalks'), mapper: mappers.daily_talks, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, obra, fecha, expositor_id, expositor_name, temas, asistentes, created_at' });
+    const maintenanceOrdersData = useSupabaseCollection('maintenance_orders', { tenantId, enabled: on('maintenanceOrders'), mapper: mappers.maintenance_orders, orderBy: { column: 'created_at', ascending: false } });
+    const maintenanceLogsData = useSupabaseCollection('maintenance_logs', { tenantId, enabled: on('maintenanceLogs'), mapper: mappers.maintenance_logs, orderBy: { column: 'timestamp', ascending: false } });
+    const eaDocumentsData = useSupabaseCollection('ea_documents', { tenantId, enabled: on('eaDocuments'), mapper: mappers.ea_documents, orderBy: { column: 'generated_at', ascending: false } });
+    const protocolTemplatesData = useSupabaseCollection('protocol_templates', { tenantId, enabled: on('protocolTemplates'), mapper: mappers.protocol_templates, orderBy: { column: 'created_at', ascending: false } });
+    const protocolsData = useSupabaseCollection('protocols', { tenantId, enabled: on('protocols'), mapper: mappers.protocols, orderBy: { column: 'created_at', ascending: false } });
+    const shiftSchedulesData = useSupabaseCollection('shift_schedules', { tenantId, enabled: on('shiftSchedules'), mapper: mappers.shift_schedules, orderBy: { column: 'created_at', ascending: true } });
+    const clientsData = useSupabaseCollection('clients', { tenantId, enabled: on('clients'), mapper: mappers.clients, orderBy: { column: 'name', ascending: true } });
+    const contractsData = useSupabaseCollection('contracts', { tenantId, enabled: on('contracts'), mapper: mappers.contracts, orderBy: { column: 'created_at', ascending: false } });
+    const contractWorkersData = useSupabaseCollection('contract_workers', { tenantId, enabled: on('contractWorkers'), mapper: mappers.contract_workers });
+    const warehousesData = useSupabaseCollection('warehouses', { tenantId, enabled: on('warehouses'), mapper: mappers.warehouses, orderBy: { column: 'name', ascending: true } });
+    const warehouseContractsData = useSupabaseCollection('warehouse_contracts', { tenantId, enabled: on('warehouseContracts'), mapper: mappers.warehouse_contracts });
+    const materialStocksData = useSupabaseCollection('material_stocks', { tenantId, enabled: on('materialStocks'), mapper: mappers.material_stocks });
+    const rentalPartiesData = useSupabaseCollection('rental_parties', { tenantId, enabled: on('rentalParties'), mapper: mappers.rental_parties, orderBy: { column: 'name', ascending: true } });
+    const rentalContractsData = useSupabaseCollection('rental_contracts', { tenantId, enabled: on('rentalContracts'), mapper: mappers.rental_contracts, orderBy: { column: 'created_at', ascending: false } });
+    const rentalAssetsData = useSupabaseCollection('rental_assets', { tenantId, enabled: on('rentalAssets'), mapper: mappers.rental_assets, orderBy: { column: 'created_at', ascending: false } });
+    const rentalPaymentsData = useSupabaseCollection('rental_payments', { tenantId, enabled: on('rentalPayments'), mapper: mappers.rental_payments, orderBy: { column: 'due_date', ascending: true } });
+    const rentalRequestsData = useSupabaseCollection('rental_requests', { tenantId, enabled: on('rentalRequests'), mapper: mappers.rental_requests, orderBy: { column: 'created_at', ascending: false } });
+    const rentalQuoteRequestsData = useSupabaseCollection('rental_quote_requests', { tenantId, enabled: on('rentalQuoteRequests'), mapper: mappers.rental_quote_requests, orderBy: { column: 'created_at', ascending: false } });
+    const rentalCategoriesData = useSupabaseCollection('rental_categories', { tenantId, enabled: on('rentalCategories'), orderBy: { column: 'name', ascending: true } });
+    const workReportsData = useSupabaseCollection('work_reports', { tenantId, enabled: on('workReports'), mapper: mappers.work_reports, orderBy: { column: 'created_at', ascending: false } });
+    const leaveRequestsData = useSupabaseCollection('hr_leave_requests', { tenantId, enabled: on('leaveRequests'), mapper: mappers.hr_leave_requests, orderBy: { column: 'created_at', ascending: false } });
+    const hrDocumentsData = useSupabaseCollection('hr_documents', { tenantId, enabled: on('hrDocuments'), mapper: mappers.hr_documents, orderBy: { column: 'expiry_date', ascending: true } });
+    const workReportAreasData = useSupabaseCollection('wr_areas', { tenantId, enabled: on('workReportAreas'), orderBy: { column: 'name', ascending: true } });
+    const workReportSpecialtiesData = useSupabaseCollection('wr_specialties', { tenantId, enabled: on('workReportSpecialties'), orderBy: { column: 'name', ascending: true } });
+    const workReportMilestonesData = useSupabaseCollection('wr_milestones', { tenantId, enabled: on('workReportMilestones'), orderBy: { column: 'name', ascending: true } });
+    const workReportCatalogsData = useSupabaseCollection('wr_catalogs', { tenantId, enabled: on('workReportCatalogs'), orderBy: { column: 'name', ascending: true } });
+    const workOrdersData = useSupabaseCollection('work_orders', { tenantId, enabled: on('workOrders'), mapper: mappers.work_orders, orderBy: { column: 'work_date', ascending: false } });
+    const workWeeklyReportsData = useSupabaseCollection('work_weekly_reports', { tenantId, enabled: on('workWeeklyReports'), mapper: mappers.work_weekly_reports, orderBy: { column: 'start_date', ascending: false } });
 
     // Dynamic / specialized data
     const rolesArray = useSupabaseCollection<any>('roles', { tenantId, enabled: !!tenantId });
@@ -303,25 +314,46 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             return;
         }
 
-        const allDataLoaded = [
-            usersData, materialsData, toolsData, requestsData,
-            returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
-            unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, goodsReceiptsData, costCentersData, supplierPaymentsData,
-            salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
-            checklistTemplatesData, behaviorObservationsData, stockMovementsData,
-            workItemsData, progressLogsData, paymentStatesData,
-            dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
-            protocolTemplatesData, protocolsData,
-            shiftSchedulesData, clientsData, contractsData, contractWorkersData,
-            warehousesData, warehouseContractsData, materialStocksData,
-            rentalPartiesData, rentalContractsData, rentalAssetsData, rentalPaymentsData,
-            rentalRequestsData, rentalQuoteRequestsData, rentalCategoriesData,
-            workReportsData, leaveRequestsData, hrDocumentsData,
-            workReportAreasData, workReportSpecialtiesData, workReportMilestonesData, workReportCatalogsData,
-            workOrdersData, workWeeklyReportsData,
-            // `dynamicRolesData` y `subscriptionPlansData` no entran: no son
-            // arrays del hook (se transforman a objeto) y no tienen `hasLoaded`.
-        ].every(data => (data as any)?.hasLoaded === true);
+        // Nombre → datos. El nombre importa: con RFC-005 F2 las colecciones
+        // inactivas NO se piden, así que su `hasLoaded` queda en false para
+        // siempre. Si contaran para `allDataLoaded`, `isLoading` no se apagaría
+        // nunca y toda la app viviría en el spinner hasta el safety net de 12 s.
+        // Por eso la comprobación mira sólo las que este módulo activó.
+        //
+        // `dynamicRolesData` y `subscriptionPlansData` no entran: no son arrays
+        // del hook (se transforman a objeto) y no tienen `hasLoaded`.
+        const collections: Record<CollectionName, any> = {
+            users: usersData, materials: materialsData, requests: requestsData,
+            returnRequests: returnRequestsData, purchaseRequests: purchaseRequestsData,
+            suppliers: suppliersData, materialCategories: materialCategoriesData,
+            units: unitsData, purchaseLots: purchaseLotsData,
+            purchaseOrders: purchaseOrdersData, quoteRequests: quoteRequestsData,
+            goodsReceipts: goodsReceiptsData, costCenters: costCentersData,
+            supplierPayments: supplierPaymentsData, salaryAdvances: salaryAdvancesData,
+            attendanceLogs: attendanceLogsData, assignedChecklists: assignedChecklistsData,
+            safetyInspections: safetyInspectionsData, checklistTemplates: checklistTemplatesData,
+            behaviorObservations: behaviorObservationsData, stockMovements: stockMovementsData,
+            workItems: workItemsData, progressLogs: progressLogsData,
+            paymentStates: paymentStatesData, dailyTalks: dailyTalksData,
+            maintenanceOrders: maintenanceOrdersData, maintenanceLogs: maintenanceLogsData,
+            eaDocuments: eaDocumentsData, protocolTemplates: protocolTemplatesData,
+            protocols: protocolsData, shiftSchedules: shiftSchedulesData,
+            clients: clientsData, contracts: contractsData,
+            contractWorkers: contractWorkersData, warehouses: warehousesData,
+            warehouseContracts: warehouseContractsData, materialStocks: materialStocksData,
+            rentalParties: rentalPartiesData, rentalContracts: rentalContractsData,
+            rentalAssets: rentalAssetsData, rentalPayments: rentalPaymentsData,
+            rentalRequests: rentalRequestsData, rentalQuoteRequests: rentalQuoteRequestsData,
+            rentalCategories: rentalCategoriesData, workReports: workReportsData,
+            leaveRequests: leaveRequestsData, hrDocuments: hrDocumentsData,
+            workReportAreas: workReportAreasData, workReportSpecialties: workReportSpecialtiesData,
+            workReportMilestones: workReportMilestonesData, workReportCatalogs: workReportCatalogsData,
+            workOrders: workOrdersData, workWeeklyReports: workWeeklyReportsData,
+        };
+
+        const allDataLoaded = (Object.keys(collections) as CollectionName[])
+            .filter(name => on(name))
+            .every(name => collections[name]?.hasLoaded === true);
 
         // Antes se hacía `return` aquí mientras faltara UNA sola colección, así que
         // el estado no se publicaba hasta que respondían las 54. Medido en DEMO:
@@ -356,7 +388,6 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             payload: {
                 users: processData(usersData),
                 materials: processData(materialsData),
-                tools: processData(toolsData),
                 requests: processData(requestsData),
                 returnRequests: processData(returnRequestsData),
                 purchaseRequests: processData(purchaseRequestsData),
@@ -415,7 +446,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         });
 
     }, [
-        authLoading, user, usersData, materialsData, toolsData, requestsData,
+        authLoading, user, usersData, materialsData, requestsData,
         returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
         unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, supplierPaymentsData,
         salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
@@ -429,7 +460,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         rentalRequestsData, rentalQuoteRequestsData, rentalCategoriesData,
         leaveRequestsData, hrDocumentsData,
         workReportAreasData, workReportSpecialtiesData, workReportMilestonesData,
-        workOrdersData, workWeeklyReportsData, refreshVersion
+        workOrdersData, workWeeklyReportsData, refreshVersion,
+        // `on` cambia cuando se activa una colección nueva (al navegar o cuando
+        // la red de seguridad la pide): hay que recalcular `allDataLoaded`, o
+        // `isLoading` se quedaría en false ignorando que ahora falta algo más.
+        on, goodsReceiptsData, costCentersData, workReportCatalogsData,
     ]);
 
 
@@ -767,7 +802,14 @@ export function useAppIsLoading(): boolean {
 }
 
 function DataProviderWithLoading({ children }: { children: React.ReactNode }) {
-    return <Provider><LoadingBridge>{children}</LoadingBridge></Provider>;
+    // El gate va POR FUERA del container de react-tracked: `useAppValue` lo lee
+    // para saber qué colecciones pedir, y `useAppState` lo lee para activar al
+    // vuelo una colección no declarada (RFC-005 F2).
+    return (
+        <CollectionGateProvider>
+            <Provider><LoadingBridge>{children}</LoadingBridge></Provider>
+        </CollectionGateProvider>
+    );
 }
 
 /** Publica `isLoading` del estado tracked en el contexto ligero. */

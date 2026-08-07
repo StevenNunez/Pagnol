@@ -93,7 +93,10 @@ export interface AppDataState {
   subscriptionPlans: typeof PLANS;
   users: User[];
   materials: Material[];
-  tools: Tool[];
+  // `tools` salió del estado global (RFC-005 F0): quedó sin consumidores tras la
+  // fusión Bodega → Pagnol, donde las herramientas pasaron a ser activos
+  // ('Herramienta Menor') y quién las tiene se deriva de entregas + devoluciones.
+  // La TABLA `tools` de Postgres no se toca: los datos sobreviven al código.
   requests: MaterialRequest[];
   returnRequests: ReturnRequest[];
   purchaseRequests: PurchaseRequest[];

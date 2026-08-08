@@ -4,7 +4,7 @@ import React, { useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ThumbsUp, ThumbsDown, CheckCircle, XCircle, Clock, Banknote } from "lucide-react";
@@ -107,6 +107,75 @@ export default function SalaryAdvancesPage() {
         }
     };
 
+    const pendingColumns: DataTableColumn<SalaryAdvance>[] = [
+        { key: 'worker', header: 'Trabajador', className: 'font-medium', cell: (req) => req.workerName },
+        { key: 'amount', header: 'Monto Solicitado', className: 'font-mono text-lg font-bold', cell: (req) => formatCurrency(req.amount) },
+        {
+            key: 'requested', header: 'Fecha Solicitud',
+            cell: (req) => formatDistanceToNow(new Date(req.requestedAt), { addSuffix: true, locale: es }),
+        },
+        {
+            key: 'actions', header: 'Acciones', headerClassName: 'text-right', className: 'text-right space-x-2',
+            cell: (req) => processingId === req.id ? <Loader2 className="animate-spin h-5 w-5 ml-auto" /> : (
+                <>
+                    <Button size="sm" variant="destructive" onClick={() => { setRechazando(req); setMotivo(''); }}>
+                        <ThumbsDown className="mr-2 h-4 w-4" /> Rechazar
+                    </Button>
+                    <Button size="sm" onClick={() => handleAction(req.id, 'approve')}>
+                        <ThumbsUp className="mr-2 h-4 w-4" /> Aprobar
+                    </Button>
+                </>
+            ),
+        },
+    ];
+
+    const approvedColumns: DataTableColumn<SalaryAdvance>[] = [
+        { key: 'worker', header: 'Trabajador', className: 'font-medium', cell: (req) => req.workerName },
+        { key: 'amount', header: 'Monto', className: 'font-mono text-lg font-bold', cell: (req) => formatCurrency(req.amount) },
+        {
+            key: 'approved', header: 'Aprobado',
+            cell: (req) => (
+                <>
+                    {req.processedAt ? formatDistanceToNow(new Date(req.processedAt), { addSuffix: true, locale: es }) : '—'}
+                    {req.approverName && <span className="block text-xs text-muted-foreground">por {req.approverName}</span>}
+                </>
+            ),
+        },
+        {
+            key: 'actions', header: 'Acciones', headerClassName: 'text-right', className: 'text-right',
+            cell: (req) => processingId === req.id ? <Loader2 className="animate-spin h-5 w-5 ml-auto" /> : (
+                <Button size="sm" onClick={() => { setPagando(req); setFechaPago(format(new Date(), 'yyyy-MM-dd')); setMedioPago(MEDIOS_DE_PAGO[0]); }}>
+                    <Banknote className="mr-2 h-4 w-4" /> Registrar pago
+                </Button>
+            ),
+        },
+    ];
+
+    const processedColumns: DataTableColumn<SalaryAdvance>[] = [
+        { key: 'worker', header: 'Trabajador', cell: (req) => req.workerName },
+        { key: 'amount', header: 'Monto', className: 'font-mono', cell: (req) => formatCurrency(req.amount) },
+        {
+            key: 'processed', header: 'Fecha Procesado',
+            cell: (req) => req.processedAt ? formatDistanceToNow(new Date(req.processedAt), { addSuffix: true, locale: es }) : 'N/A',
+        },
+        {
+            key: 'status', header: 'Estado',
+            cell: (req) => (
+                <>
+                    {getStatusBadge(req.status)}
+                    {req.status === 'paid' && req.paymentDate && (
+                        <span className="block text-xs mt-1">
+                            {req.paymentDate}{req.paymentMethod ? ` · ${req.paymentMethod}` : ''}
+                        </span>
+                    )}
+                    {req.status === 'rejected' && req.rejectionReason && (
+                        <span className="block text-xs mt-1 italic">{req.rejectionReason}</span>
+                    )}
+                </>
+            ),
+        },
+    ];
+
     return (
         <div className="flex flex-col gap-8">
             <PageHeader title="Gestión de Adelantos de Sueldo" description="Aprueba o rechaza las solicitudes de adelanto de los trabajadores." />
@@ -116,46 +185,14 @@ export default function SalaryAdvancesPage() {
                     <CardTitle>Solicitudes Pendientes de Aprobación</CardTitle>
                     <CardDescription>Revisa y procesa las solicitudes de adelanto de sueldo.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Trabajador</TableHead>
-                                <TableHead>Monto Solicitado</TableHead>
-                                <TableHead>Fecha Solicitud</TableHead>
-                                <TableHead className="text-right">Acciones</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {pending.length > 0 ? (
-                                pending.map(req => (
-                                    <TableRow key={req.id}>
-                                        <TableCell className="font-medium">{req.workerName}</TableCell>
-                                        <TableCell className="font-mono text-lg font-bold">{formatCurrency(req.amount)}</TableCell>
-                                        <TableCell>
-                                            {formatDistanceToNow(new Date(req.requestedAt), { addSuffix: true, locale: es })}
-                                        </TableCell>
-                                        <TableCell className="text-right space-x-2">
-                                            {processingId === req.id ? <Loader2 className="animate-spin h-5 w-5 ml-auto" /> : (
-                                                <>
-                                                    <Button size="sm" variant="destructive" onClick={() => { setRechazando(req); setMotivo(''); }}>
-                                                        <ThumbsDown className="mr-2 h-4 w-4"/> Rechazar
-                                                    </Button>
-                                                    <Button size="sm" onClick={() => handleAction(req.id, 'approve')}>
-                                                        <ThumbsUp className="mr-2 h-4 w-4"/> Aprobar
-                                                    </Button>
-                                                </>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="text-center h-24">No hay solicitudes pendientes.</TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
+                <CardContent className="p-0">
+                    <DataTable
+                        data={pending}
+                        rowKey={(req) => req.id}
+                        columns={pendingColumns}
+                        className="border-0 rounded-none"
+                        empty={{ icon: <Clock className="h-6 w-6" />, title: 'No hay solicitudes pendientes.' }}
+                    />
                 </CardContent>
             </Card>
 
@@ -167,40 +204,14 @@ export default function SalaryAdvancesPage() {
                         respaldo de la transferencia y la obligación sigue proyectada en el flujo de caja.
                     </CardDescription>
                 </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Trabajador</TableHead>
-                                <TableHead>Monto</TableHead>
-                                <TableHead>Aprobado</TableHead>
-                                <TableHead className="text-right">Acciones</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {approved.length > 0 ? approved.map(req => (
-                                <TableRow key={req.id}>
-                                    <TableCell className="font-medium">{req.workerName}</TableCell>
-                                    <TableCell className="font-mono text-lg font-bold">{formatCurrency(req.amount)}</TableCell>
-                                    <TableCell>
-                                        {req.processedAt ? formatDistanceToNow(new Date(req.processedAt), { addSuffix: true, locale: es }) : '—'}
-                                        {req.approverName && <span className="block text-xs text-muted-foreground">por {req.approverName}</span>}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        {processingId === req.id ? <Loader2 className="animate-spin h-5 w-5 ml-auto" /> : (
-                                            <Button size="sm" onClick={() => { setPagando(req); setFechaPago(format(new Date(), 'yyyy-MM-dd')); setMedioPago(MEDIOS_DE_PAGO[0]); }}>
-                                                <Banknote className="mr-2 h-4 w-4" /> Registrar pago
-                                            </Button>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            )) : (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="text-center h-24">No hay adelantos pendientes de transferir.</TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
+                <CardContent className="p-0">
+                    <DataTable
+                        data={approved}
+                        rowKey={(req) => req.id}
+                        columns={approvedColumns}
+                        className="border-0 rounded-none"
+                        empty={{ icon: <Banknote className="h-6 w-6" />, title: 'No hay adelantos pendientes de transferir.' }}
+                    />
                 </CardContent>
             </Card>
 
@@ -208,45 +219,15 @@ export default function SalaryAdvancesPage() {
                 <CardHeader>
                     <CardTitle>Historial de Solicitudes Procesadas</CardTitle>
                 </CardHeader>
-                <CardContent>
-                     <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Trabajador</TableHead>
-                                <TableHead>Monto</TableHead>
-                                <TableHead>Fecha Procesado</TableHead>
-                                <TableHead>Estado</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                             {processed.length > 0 ? (
-                                processed.map(req => (
-                                    <TableRow key={req.id} className="text-muted-foreground">
-                                        <TableCell>{req.workerName}</TableCell>
-                                        <TableCell className="font-mono">{formatCurrency(req.amount)}</TableCell>
-                                        <TableCell>
-                                            {req.processedAt ? formatDistanceToNow(new Date(req.processedAt), { addSuffix: true, locale: es }) : 'N/A'}
-                                        </TableCell>
-                                        <TableCell>
-                                            {getStatusBadge(req.status)}
-                                            {req.status === 'paid' && req.paymentDate && (
-                                                <span className="block text-xs mt-1">
-                                                    {req.paymentDate}{req.paymentMethod ? ` · ${req.paymentMethod}` : ''}
-                                                </span>
-                                            )}
-                                            {req.status === 'rejected' && req.rejectionReason && (
-                                                <span className="block text-xs mt-1 italic">{req.rejectionReason}</span>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                             ) : (
-                                 <TableRow>
-                                    <TableCell colSpan={4} className="text-center h-24">No hay solicitudes procesadas.</TableCell>
-                                </TableRow>
-                             )}
-                        </TableBody>
-                    </Table>
+                <CardContent className="p-0">
+                    <DataTable
+                        data={processed}
+                        rowKey={(req) => req.id}
+                        columns={processedColumns}
+                        className="border-0 rounded-none"
+                        rowClassName={() => 'text-muted-foreground'}
+                        empty={{ icon: <CheckCircle className="h-6 w-6" />, title: 'No hay solicitudes procesadas.' }}
+                    />
                 </CardContent>
              </Card>
 

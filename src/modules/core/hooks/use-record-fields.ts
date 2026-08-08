@@ -20,6 +20,7 @@ export function useRecordFields<T = Record<string, any>>(
     const [data, setData] = useState<T | null>(null);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sin id no hay registro: limpiar evita mostrar el anterior como si fuera el actual
         if (!id) { setData(null); return; }
         let active = true;
         setData(null);

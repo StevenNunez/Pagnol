@@ -16,9 +16,27 @@ import { es } from "date-fns/locale";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { DailyTalk } from "@/modules/core/lib/data";
 import { generateDailyTalkPDF } from "@/lib/daily-talk-pdf-generator";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
+
+type Attendee = DailyTalk["asistentes"][number];
+
+const attendeeColumns: DataTableColumn<Attendee>[] = [
+    { key: "name", header: "Nombre", cell: (a) => a.name },
+    { key: "rut", header: "RUT", cell: (a) => a.rut || "N/A" },
+    {
+        key: "signed", header: "Estado Firma", headerClassName: "text-right", className: "text-right",
+        cell: (a) => a.signed ? (
+            <Badge className="bg-green-100 text-green-700 border-green-200">
+                <CheckCircle className="h-3 w-3 mr-1" /> Firmado
+            </Badge>
+        ) : (
+            <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-200">
+                <Clock className="h-3 w-3 mr-1" /> Pendiente
+            </Badge>
+        ),
+    },
+];
 
 
 const formatDate = (date: Date | string | undefined | null) => {
@@ -102,36 +120,15 @@ export default function DailyTalkDetailPage() {
                             <CardTitle className="flex items-center gap-2"><Users /> Lista de Asistentes ({talk.asistentes.length})</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <ScrollArea className="h-72 border rounded-md">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Nombre</TableHead>
-                                            <TableHead>RUT</TableHead>
-                                            <TableHead className="text-right">Estado Firma</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {talk.asistentes.map(asistente => (
-                                            <TableRow key={asistente.id}>
-                                                <TableCell>{asistente.name}</TableCell>
-                                                <TableCell>{asistente.rut || 'N/A'}</TableCell>
-                                                <TableCell className="text-right">
-                                                    {asistente.signed ? (
-                                                        <Badge className="bg-green-100 text-green-700 border-green-200">
-                                                            <CheckCircle className="h-3 w-3 mr-1" /> Firmado
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-200">
-                                                            <Clock className="h-3 w-3 mr-1" /> Pendiente
-                                                        </Badge>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </ScrollArea>
+                            {/* Antes un ScrollArea h-72; DataTable da el mismo alto con
+                                cabecera sticky, que el ScrollArea no tenía. */}
+                            <DataTable
+                                data={talk.asistentes}
+                                rowKey={(a) => a.id}
+                                maxHeight="18rem"
+                                columns={attendeeColumns}
+                                empty={{ icon: <Users className="h-6 w-6" />, title: 'Sin asistentes registrados.' }}
+                            />
                         </CardContent>
                     </Card>
                 </div>

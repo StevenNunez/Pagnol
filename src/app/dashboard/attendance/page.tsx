@@ -60,8 +60,12 @@ export default function AttendancePage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
+  // La fecha se fija en el cliente, no al renderizar: el HTML prerenderizado se
+  // genera en otro momento (y en UTC), así que calcularla durante el render daría
+  // un desajuste de hidratación y, con el cambio de día, una fecha equivocada.
   useEffect(() => {
     const now = new Date();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver comentario arriba: es el patrón anti-hidratación, corre una sola vez al montar
     setTodayDate(now);
     setToday(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
   }, []);

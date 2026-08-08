@@ -28,14 +28,7 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { PurchaseLot, PurchaseRequest } from "@/modules/core/lib/data";
@@ -261,6 +254,63 @@ export default function FinanceQuoteProcessor() {
     );
   }
 
+  const lotItemColumns: DataTableColumn<PurchaseRequest>[] = [
+    {
+      key: 'check', header: '', headerClassName: 'w-12',
+      cell: (req) => (
+        <Checkbox
+          checked={itemsState[req.id]?.confirmed}
+          onCheckedChange={() => toggleItem(req.id)}
+        />
+      ),
+    },
+    {
+      key: 'material', header: 'Material',
+      cell: (req) => {
+        const confirmed = itemsState[req.id]?.confirmed;
+        return (
+          <div>
+            <p className={confirmed ? "font-medium" : "line-through"}>{req.materialName}</p>
+            <span className="text-xs text-muted-foreground">
+              Solicitado: {req.quantity} {req.unit}
+            </span>
+            {!confirmed && (
+              <p className="text-xs text-red-600 flex items-center gap-1">
+                <RefreshCcw className="h-3 w-3" /> Volverá a pendientes
+              </p>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'qty', header: 'Cant. Confirmada', headerClassName: 'w-28 text-right',
+      cell: (req) => (
+        <Input
+          type="number"
+          placeholder="0"
+          value={itemsState[req.id]?.quantity || ""}
+          onChange={(e) => updateItem(req.id, 'quantity', e.target.value)}
+          disabled={!itemsState[req.id]?.confirmed}
+          className="text-right font-mono"
+        />
+      ),
+    },
+    {
+      key: 'price', header: 'Precio Unitario', headerClassName: 'w-32 text-right',
+      cell: (req) => (
+        <Input
+          type="number"
+          placeholder="0"
+          value={itemsState[req.id]?.price || ""}
+          onChange={(e) => updateItem(req.id, 'price', e.target.value)}
+          disabled={!itemsState[req.id]?.confirmed}
+          className="text-right font-mono"
+        />
+      ),
+    },
+  ];
+
   // VISTA 2: Split View Procesador
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -361,73 +411,15 @@ export default function FinanceQuoteProcessor() {
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                 <p>Ajusta las cantidades confirmadas y los precios unitarios según el documento del proveedor. Desmarca los ítems que no serán comprados.</p>
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12"></TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead className="w-28 text-right">Cant. Confirmada</TableHead>
-                    <TableHead className="w-32 text-right">Precio Unitario</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(purchaseRequests || [])
-                    .filter((r) => r.lotId === selectedLot.id)
-                    .map((req) => {
-                      const state = itemsState[req.id];
-                      if (!state) return null;
-
-                      return (
-                        <TableRow
-                          key={req.id}
-                          className={!state.confirmed ? "opacity-50" : ""}
-                        >
-                          <TableCell>
-                            <Checkbox
-                              checked={state.confirmed}
-                              onCheckedChange={() => toggleItem(req.id)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className={state.confirmed ? "font-medium" : "line-through"}>
-                                {req.materialName}
-                              </p>
-                              <span className="text-xs text-muted-foreground">
-                                Solicitado: {req.quantity} {req.unit}
-                              </span>
-                              {!state.confirmed && (
-                                <p className="text-xs text-red-600 flex items-center gap-1">
-                                  <RefreshCcw className="h-3 w-3" /> Volverá a pendientes
-                                </p>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={state.quantity || ""}
-                              onChange={(e) => updateItem(req.id, 'quantity', e.target.value)}
-                              disabled={!state.confirmed}
-                              className="text-right font-mono"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={state.price || ""}
-                              onChange={(e) => updateItem(req.id, 'price', e.target.value)}
-                              disabled={!state.confirmed}
-                              className="text-right font-mono"
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                </TableBody>
-              </Table>
+              {/* El filtro por `itemsState` iba dentro del map como `return null`;
+                  ahora acota los datos, que es lo que DataTable espera. */}
+              <DataTable
+                data={(purchaseRequests || []).filter((r) => r.lotId === selectedLot.id && itemsState[r.id])}
+                rowKey={(req) => req.id}
+                columns={lotItemColumns}
+                rowClassName={(req) => !itemsState[req.id]?.confirmed ? "opacity-50" : undefined}
+                empty={{ title: 'Este lote no tiene ítems por validar.' }}
+              />
             </div>
           </div>
         </div>

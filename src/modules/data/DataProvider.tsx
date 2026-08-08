@@ -164,6 +164,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     );
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sin empresa seleccionada hay que limpiar la actual: conservarla dejaría datos del tenant anterior a la vista
         if (!tenantId) { setCurrentTenant(null); return; }
 
         const mapTenant = (t: any) => ({
@@ -488,7 +489,12 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         });
     }, [toast]);
 
-    const bindContext = <T extends any[], R>(fn: (...args: [...T, { user: User | null; tenantId: string | null }]) => R) => {
+    // Memoizada con las MISMAS dependencias que el `useMemo` de abajo ya declaraba
+    // ([user, tenantId], que es todo lo que captura). Sin esto se recreaba en cada
+    // render y el React Compiler abandonaba la optimización del provider entero
+    // ("existing memoization could not be preserved"), que es el componente más
+    // caliente de la app. El comportamiento no cambia.
+    const bindContext = useCallback(<T extends any[], R>(fn: (...args: [...T, { user: User | null; tenantId: string | null }]) => R) => {
         return (...args: T): R => {
             const context = { user, tenantId };
             if (context.user === undefined) {
@@ -496,7 +502,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             }
             return fn(...args, context);
         };
-    };
+    }, [user, tenantId]);
 
     const functions = React.useMemo(() => ({
         // Purchase Requests
@@ -753,7 +759,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         approveProtocol: bindContext(protocolMutations.approveProtocol),
         rejectProtocol: bindContext(protocolMutations.rejectProtocol),
         deleteProtocol: bindContext(protocolMutations.deleteProtocol),
-    }), [user, tenantId]);
+    }), [bindContext]);
 
     const refreshData = useCallback((_collectionName?: keyof AppDataState) => {
         setRefreshVersion(v => v + 1);

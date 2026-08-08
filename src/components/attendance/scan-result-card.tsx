@@ -16,6 +16,7 @@ export function ScanResultCard({ result, onDismiss, autoDismissMs = 4000 }: Scan
 
   useEffect(() => {
     if (!result) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reinicia la barra de auto-cierre en cada escaneo nuevo, junto al intervalo que la consume
     setProgress(100);
     const interval = setInterval(() => {
       setProgress(p => Math.max(0, p - (100 / (autoDismissMs / 100))));

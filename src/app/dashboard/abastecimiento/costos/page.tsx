@@ -55,8 +55,10 @@ export default function CostosPage() {
     const { costCenters, purchaseOrders, can } = useAppState();
     const canManage = can("cost_centers:manage");
 
-    const orders = purchaseOrders || [];
-    const centers = costCenters || [];
+    // Sin `|| []`: las colecciones del estado global nunca son undefined, y el `||`
+    // creaba un array nuevo por render que invalidaba los useMemo de abajo.
+    const orders = purchaseOrders;
+    const centers = costCenters;
 
     const globals = useMemo(() => {
         const budget = centers.reduce((a, c) => a + (c.budget || 0), 0);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/modules/core/lib/supabase";
 
 interface Options<T> {
@@ -60,10 +60,15 @@ export function useSupabaseCollection<T>(
     // presentaría el array del tenant ANTERIOR como si fuera el nuevo, ya cargado.
     // No se resetea en un simple refresh (`version`), para no provocar un parpadeo
     // de "cargando" cada vez que se refrescan los datos.
+    // El scope previo se guarda en ESTADO, no en un ref: es el patrón oficial de
+    // React para "resetear estado cuando cambia una entrada". Con un ref, un render
+    // descartado (StrictMode/concurrent) dejaría el ref ya mutado pero perdería el
+    // `setHasLoaded(false)`, y el render siguiente no volvería a entrar aquí — o sea,
+    // justo el fallo que este bloque existe para evitar.
     const scopeKey = `${table}::${tenantId ?? ''}`;
-    const lastScope = useRef(scopeKey);
-    if (lastScope.current !== scopeKey) {
-        lastScope.current = scopeKey;
+    const [lastScope, setLastScope] = useState(scopeKey);
+    if (lastScope !== scopeKey) {
+        setLastScope(scopeKey);
         if (hasLoaded) setHasLoaded(false);
     }
 

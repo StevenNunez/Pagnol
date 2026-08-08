@@ -20,8 +20,10 @@ export default function RentalsDashboard() {
   const router = useRouter();
   const { rentalContracts, rentalPayments } = useAppState();
 
-  const contracts = rentalContracts || [];
-  const payments = rentalPayments || [];
+  // Sin `|| []`: las colecciones del estado global nunca son undefined, y el `||`
+  // creaba un array nuevo por render que invalidaba los useMemo de abajo.
+  const contracts = rentalContracts;
+  const payments = rentalPayments;
 
   // Contrapartes distintas involucradas en contratos (arrendadores en `suppliers`,
   // clientes en `rentalParties`); se cuentan por su presencia en los contratos.

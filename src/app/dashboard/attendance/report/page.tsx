@@ -43,14 +43,7 @@ import {
 } from "date-fns";
 import { getWorkerShift, isWorkDay, isRestDay } from "@/modules/core/hooks/use-attendance";
 import { es } from "date-fns/locale";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import {
   Command,
   CommandEmpty,
@@ -359,6 +352,89 @@ export default function AttendanceReportPage() {
     [selectedUser]
   );
 
+  const dailyColumns: DataTableColumn<DailySummary>[] = [
+    { key: "day", header: "Día", className: "font-medium capitalize", cell: (day) => day.dayName },
+    { key: "date", header: "Fecha", cell: (day) => day.date },
+    {
+      key: "entries", header: "Registros",
+      // Celda densa: marcas con su color, aviso de registro modificado con su
+      // tooltip de auditoría, y los botones de editar/agregar según permiso.
+      cell: (day) => (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          {day.isAbsent ? (
+            <span className="text-muted-foreground text-xs">Ausente</span>
+          ) : (
+            day.entries.map((e, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <span className={e.type === "in" ? "text-green-400" : "text-red-400"}>
+                  {e.time}
+                </span>
+                {e.modifiedAt && e.modifiedBy && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <AlertTriangle
+                          className="h-3 w-3 text-yellow-400"
+                          aria-label="Registro modificado"
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          Original:{" "}
+                          {e.originalTimestamp
+                            ? format(new Date(e.originalTimestamp), "HH:mm")
+                            : "N/A"}
+                        </p>
+                        <p>Modificado por: {userMap.get(e.modifiedBy) ?? "Desconocido"}</p>
+                        <p>Fecha mod: {format(new Date(e.modifiedAt), "dd/MM/yy HH:mm")}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                {can('attendance:edit') && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5"
+                    onClick={() => { handleEditEntry(e, day); }}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            ))
+          )}
+          {can('attendance:edit') && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-6 w-6 ml-2"
+              onClick={() => handleAddNewEntry(day)}
+              aria-label="Agregar nuevo registro"
+            >
+              <PlusCircle className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "delay", header: "Atraso (min)", headerClassName: "text-right", className: "text-right",
+      cell: (day) => day.delayMinutes > 0
+        ? <span className="text-amber-500 font-bold">{day.delayMinutes}</span>
+        : "0",
+    },
+    {
+      key: "hours", header: "Horas", headerClassName: "text-right", className: "text-right font-mono",
+      cell: (day) => formatHoursDecimal(day.totalHours),
+    },
+    {
+      key: "overtime", header: "Extras", headerClassName: "text-right",
+      className: "text-right font-mono text-green-600",
+      cell: (day) => day.overtimeHours,
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-8">
       {editingLog && (
@@ -496,127 +572,15 @@ export default function AttendanceReportPage() {
             <CardHeader>
               <CardTitle>Detalle Diario</CardTitle>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Día</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Registros</TableHead>
-                    <TableHead className="text-right">Atraso (min)</TableHead>
-                    <TableHead className="text-right">Horas</TableHead>
-                    <TableHead className="text-right">Extras</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {weeklyReport.map((day) => (
-                    <TableRow
-                      key={day.date}
-                      className={day.isAbsent ? "bg-muted/30" : ""}
-                    >
-                      <TableCell className="font-medium capitalize">
-                        {day.dayName}
-                      </TableCell>
-                      <TableCell>{day.date}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                          {day.isAbsent ? (
-                            <span className="text-muted-foreground text-xs">
-                              Ausente
-                            </span>
-                          ) : (
-                            day.entries.map((e, i) => (
-                              <div key={i} className="flex items-center gap-1">
-                                <span
-                                  className={
-                                    e.type === "in"
-                                      ? "text-green-400"
-                                      : "text-red-400"
-                                  }
-                                >
-                                  {e.time}
-                                </span>
-                                {e.modifiedAt && e.modifiedBy && (
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger>
-                                        <AlertTriangle
-                                          className="h-3 w-3 text-yellow-400"
-                                          aria-label="Registro modificado"
-                                        />
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>
-                                          Original:{" "}
-                                          {e.originalTimestamp
-                                            ? format(
-                                                new Date(e.originalTimestamp),
-                                                "HH:mm"
-                                              )
-                                            : "N/A"}
-                                        </p>
-                                        <p>
-                                          Modificado por:{" "}
-                                          {userMap.get(e.modifiedBy) ?? "Desconocido"}
-                                        </p>
-                                        <p>
-                                          Fecha mod:{" "}
-                                          {format(
-                                            new Date(e.modifiedAt),
-                                            "dd/MM/yy HH:mm"
-                                          )}
-                                        </p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                )}
-                                {can('attendance:edit') && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5"
-                                    onClick={() => {
-                                      handleEditEntry(e, day);
-                                    }}
-                                  >
-                                    <Edit className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              </div>
-                            ))
-                          )}
-                          {can('attendance:edit') && (
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-6 w-6 ml-2"
-                              onClick={() => handleAddNewEntry(day)}
-                              aria-label="Agregar nuevo registro"
-                            >
-                              <PlusCircle className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {day.delayMinutes > 0 ? (
-                          <span className="text-amber-500 font-bold">
-                            {day.delayMinutes}
-                          </span>
-                        ) : (
-                          "0"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatHoursDecimal(day.totalHours)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-green-600">
-                        {day.overtimeHours}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <CardContent className="p-0">
+              <DataTable
+                data={weeklyReport}
+                rowKey={(day) => day.date}
+                columns={dailyColumns}
+                className="border-0 rounded-none"
+                rowClassName={(day) => day.isAbsent ? "bg-muted/30" : undefined}
+                empty={{ icon: <UserSearch className="h-6 w-6" />, title: 'Sin días en el período seleccionado.' }}
+              />
             </CardContent>
           </Card>
         </>

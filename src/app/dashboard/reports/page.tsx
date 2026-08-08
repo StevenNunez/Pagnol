@@ -12,7 +12,7 @@ import { useAppState } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -164,6 +164,66 @@ export default function ReportsWithCharts() {
 
   const chartDataSupervisors = topSupervisors.slice(0, 10);
   const chartDataMaterials = topMaterials.slice(0, 8);
+
+  const supervisorColumns: DataTableColumn<(typeof topSupervisors)[number]>[] = [
+    { key: 'rank', header: '#', headerClassName: 'w-[50px]', className: 'font-mono text-muted-foreground', cell: (_s, i) => i + 1 },
+    { key: 'name', header: 'Supervisor', className: 'font-medium', cell: (s) => s.name },
+    {
+      key: 'count', header: 'N° Solicitudes', headerClassName: 'text-right', className: 'text-right',
+      cell: (s) => filteredRequests.filter(r => userMap.get(r.supervisorId)?.name === s.name).length,
+    },
+    {
+      key: 'qty', header: 'Volumen Total', headerClassName: 'text-right', className: 'text-right font-bold',
+      cell: (s) => s.quantity.toLocaleString(),
+    },
+    {
+      key: 'fav', header: 'Material Preferido',
+      // Se recalcula por fila (no es performante con miles de usuarios, pero para
+      // un top list está bien). Se conserva tal cual estaba antes de DataTable.
+      cell: (s) => {
+        const userRequests = filteredRequests.filter(r => userMap.get(r.supervisorId)?.name === s.name);
+        const matCounts = userRequests.reduce((acc, r) => {
+          acc[r.materialName] = (acc[r.materialName] || 0) + r.quantity;
+          return acc;
+        }, {} as Record<string, number>);
+        const favMat = Object.entries(matCounts).sort((a, b) => b[1] - a[1])[0];
+        return favMat ? (
+          <Badge variant="secondary" className="font-normal">
+            {favMat[0]} <span className="ml-1 opacity-50">({favMat[1]})</span>
+          </Badge>
+        ) : '-';
+      },
+    },
+  ];
+
+  const materialColumns: DataTableColumn<(typeof topMaterials)[number]>[] = [
+    { key: 'rank', header: '#', headerClassName: 'w-[50px]', className: 'font-mono text-muted-foreground', cell: (_m, i) => i + 1 },
+    { key: 'name', header: 'Material', className: 'font-medium', cell: (m) => m.name },
+    { key: 'unit', header: 'Unidad', className: 'text-muted-foreground', cell: (m) => m.unit },
+    {
+      key: 'qty', header: 'Volumen Total', headerClassName: 'text-right', className: 'text-right font-bold text-lg',
+      cell: (m) => m.quantity.toLocaleString(),
+    },
+    { key: 'freq', header: 'Frecuencia', headerClassName: 'text-right', className: 'text-right', cell: (m) => m.count },
+    {
+      key: 'consumers', header: 'Consumidores Principales', className: 'text-sm text-muted-foreground',
+      cell: (m) => {
+        const consumers = filteredRequests
+          .filter(r => r.materialName === m.name)
+          .reduce((acc, r) => {
+            const name = userMap.get(r.supervisorId)?.name || 'Desconocido';
+            acc[name] = (acc[name] || 0) + r.quantity;
+            return acc;
+          }, {} as Record<string, number>);
+        // Top 2 para no saturar la tabla.
+        return Object.entries(consumers)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2)
+          .map(([name, qty]) => `${name.split(' ')[0]} (${qty})`)
+          .join(', ') || '-';
+      },
+    },
+  ];
 
   const pieData = chartDataMaterials.map((item, i) => ({
     name: item.name,
@@ -511,47 +571,14 @@ export default function ReportsWithCharts() {
                   <CardTitle>Detalle por Solicitante</CardTitle>
                   <CardDescription>Desglose de actividad por cada supervisor o APR.</CardDescription>
                 </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[50px]">#</TableHead>
-                        <TableHead>Supervisor</TableHead>
-                        <TableHead className="text-right">N° Solicitudes</TableHead>
-                        <TableHead className="text-right">Volumen Total</TableHead>
-                        <TableHead>Material Preferido</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {topSupervisors.map((s, i) => {
-                        // Calcular material preferido para este usuario específico
-                        // Nota: Hacemos esto aquí para mostrar el dato curioso, aunque no es performante para miles de usuarios,
-                        // para un top list está bien.
-                        const userRequests = filteredRequests.filter(r => userMap.get(r.supervisorId)?.name === s.name);
-                        const matCounts = userRequests.reduce((acc, r) => {
-                          acc[r.materialName] = (acc[r.materialName] || 0) + r.quantity;
-                          return acc;
-                        }, {} as Record<string, number>);
-                        const favMat = Object.entries(matCounts).sort((a, b) => b[1] - a[1])[0];
-
-                        return (
-                          <TableRow key={s.name}>
-                            <TableCell className="font-mono text-muted-foreground">{i + 1}</TableCell>
-                            <TableCell className="font-medium">{s.name}</TableCell>
-                            <TableCell className="text-right">{userRequests.length}</TableCell>
-                            <TableCell className="text-right font-bold">{s.quantity.toLocaleString()}</TableCell>
-                            <TableCell>
-                              {favMat ? (
-                                <Badge variant="secondary" className="font-normal">
-                                  {favMat[0]} <span className="ml-1 opacity-50">({favMat[1]})</span>
-                                </Badge>
-                              ) : '-'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                <CardContent className="p-0">
+                  <DataTable
+                    data={topSupervisors}
+                    rowKey={(s) => s.name}
+                    columns={supervisorColumns}
+                    className="border-0 rounded-none"
+                    empty={{ icon: <User className="h-6 w-6" />, title: 'Sin solicitantes en el período.' }}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -562,50 +589,14 @@ export default function ReportsWithCharts() {
                   <CardTitle>Detalle por Material</CardTitle>
                   <CardDescription>Inventario de necesidades y consumidores principales.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[50px]">#</TableHead>
-                        <TableHead>Material</TableHead>
-                        <TableHead>Unidad</TableHead>
-                        <TableHead className="text-right">Volumen Total</TableHead>
-                        <TableHead className="text-right">Frecuencia</TableHead>
-                        <TableHead>Consumidores Principales</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {topMaterials.map((m, i) => {
-                        // Calcular top consumidores de este material
-                        const consumers = filteredRequests
-                          .filter(r => r.materialName === m.name)
-                          .reduce((acc, r) => {
-                            const name = userMap.get(r.supervisorId)?.name || 'Desconocido';
-                            acc[name] = (acc[name] || 0) + r.quantity;
-                            return acc;
-                          }, {} as Record<string, number>);
-
-                        const topConsumers = Object.entries(consumers)
-                          .sort((a, b) => b[1] - a[1])
-                          .slice(0, 2) // Solo mostrar top 2 para no saturar la tabla
-                          .map(([name, qty]) => `${name.split(' ')[0]} (${qty})`)
-                          .join(', ');
-
-                        return (
-                          <TableRow key={m.name}>
-                            <TableCell className="font-mono text-muted-foreground">{i + 1}</TableCell>
-                            <TableCell className="font-medium">{m.name}</TableCell>
-                            <TableCell className="text-muted-foreground">{m.unit}</TableCell>
-                            <TableCell className="text-right font-bold text-lg">{m.quantity.toLocaleString()}</TableCell>
-                            <TableCell className="text-right">{m.count}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {topConsumers || '-'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                <CardContent className="p-0">
+                  <DataTable
+                    data={topMaterials}
+                    rowKey={(m) => m.name}
+                    columns={materialColumns}
+                    className="border-0 rounded-none"
+                    empty={{ icon: <Package className="h-6 w-6" />, title: 'Sin materiales en el período.' }}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>

@@ -9,14 +9,13 @@
 
 import React, { useMemo, useState } from "react";
 import { PageShell } from "@/components/page-shell";
-import { EmptyState } from "@/components/empty-state";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -47,7 +46,7 @@ function MicroLabel({ children }: { children: React.ReactNode }) {
 export default function SupplierInvoicesPage() {
     const {
         supplierPayments, suppliers, purchaseOrders,
-        addSupplierPayment, markPaymentAsPaid, deleteSupplierPayment,
+        addSupplierPayment, markPaymentAsPaid, deleteSupplierPayment, isLoading,
     } = useAppState();
     const { toast } = useToast();
 
@@ -87,6 +86,41 @@ export default function SupplierInvoicesPage() {
             }))
             .sort((a, b) => new Date(b.issueDate as any).getTime() - new Date(a.issueDate as any).getTime());
     }, [supplierPayments]);
+
+    const invoiceColumns: DataTableColumn<SupplierPayment>[] = [
+        { key: 'invoice', header: 'Factura', className: 'font-medium font-mono', cell: (p) => p.invoiceNumber },
+        { key: 'supplier', header: 'Proveedor', cell: (p) => supplierMap.get(p.supplierId) || "—" },
+        { key: 'po', header: 'OC', className: 'font-mono text-xs', cell: (p) => p.purchaseOrderId || p.purchaseOrderNumber || "—" },
+        {
+            key: 'amount', header: 'Monto (bruto)', headerClassName: 'text-right',
+            className: 'text-right font-mono font-bold', cell: (p) => CLP.format(p.amount || 0),
+        },
+        {
+            key: 'due', header: 'Vencimiento',
+            cell: (p) => p.dueDate ? format(new Date(p.dueDate), "dd MMM yyyy", { locale: es }) : "—",
+        },
+        {
+            key: 'status', header: 'Estado',
+            cell: (p) => <Badge className={STATUS_BADGE[p.status].cls}>{STATUS_BADGE[p.status].label}</Badge>,
+        },
+        {
+            key: 'actions', header: 'Acciones', headerClassName: 'text-right', className: 'text-right space-x-2',
+            cell: (p) => processingId === p.id ? (
+                <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+            ) : (
+                <>
+                    {p.status !== "paid" && (
+                        <Button size="sm" variant="outline" className="rounded-xl" onClick={() => { setPayMethod("Transferencia"); setPayTarget(p); }}>
+                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Pagar
+                        </Button>
+                    )}
+                    <Button size="sm" variant="ghost" className="rounded-xl text-destructive hover:text-destructive" onClick={() => setDeleteTarget(p)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                </>
+            ),
+        },
+    ];
 
     const kpis = useMemo(() => {
         const pending = rows.filter((r) => r.status !== "paid");
@@ -199,61 +233,18 @@ export default function SupplierInvoicesPage() {
             </div>
 
             {/* Tabla */}
-            <Card className="rounded-[1.5rem]">
-                <CardContent className="p-0">
-                    {rows.length === 0 ? (
-                        <EmptyState
-                            icon={<Receipt className="h-6 w-6" />}
-                            title="Sin facturas registradas"
-                            description="Registra la primera factura de proveedor para empezar a controlar las cuentas por pagar."
-                        />
-                    ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Factura</TableHead>
-                                    <TableHead>Proveedor</TableHead>
-                                    <TableHead>OC</TableHead>
-                                    <TableHead className="text-right">Monto (bruto)</TableHead>
-                                    <TableHead>Vencimiento</TableHead>
-                                    <TableHead>Estado</TableHead>
-                                    <TableHead className="text-right">Acciones</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {rows.map((p) => (
-                                    <TableRow key={p.id} className={p.status === "paid" ? "text-muted-foreground" : undefined}>
-                                        <TableCell className="font-medium font-mono">{p.invoiceNumber}</TableCell>
-                                        <TableCell>{supplierMap.get(p.supplierId) || "—"}</TableCell>
-                                        <TableCell className="font-mono text-xs">{p.purchaseOrderId || p.purchaseOrderNumber || "—"}</TableCell>
-                                        <TableCell className="text-right font-mono font-bold">{CLP.format(p.amount || 0)}</TableCell>
-                                        <TableCell>{p.dueDate ? format(new Date(p.dueDate), "dd MMM yyyy", { locale: es }) : "—"}</TableCell>
-                                        <TableCell>
-                                            <Badge className={STATUS_BADGE[p.status].cls}>{STATUS_BADGE[p.status].label}</Badge>
-                                        </TableCell>
-                                        <TableCell className="text-right space-x-2">
-                                            {processingId === p.id ? (
-                                                <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                                            ) : (
-                                                <>
-                                                    {p.status !== "paid" && (
-                                                        <Button size="sm" variant="outline" className="rounded-xl" onClick={() => { setPayMethod("Transferencia"); setPayTarget(p); }}>
-                                                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Pagar
-                                                        </Button>
-                                                    )}
-                                                    <Button size="sm" variant="ghost" className="rounded-xl text-destructive hover:text-destructive" onClick={() => setDeleteTarget(p)}>
-                                                        <Trash2 className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                </>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
-                </CardContent>
-            </Card>
+            <DataTable
+                data={rows}
+                rowKey={(p) => p.id}
+                isLoading={isLoading}
+                columns={invoiceColumns}
+                rowClassName={(p) => p.status === "paid" ? "text-muted-foreground" : undefined}
+                empty={{
+                    icon: <Receipt className="h-6 w-6" />,
+                    title: "Sin facturas registradas",
+                    description: "Registra la primera factura de proveedor para empezar a controlar las cuentas por pagar.",
+                }}
+            />
 
             {/* Diálogo: nueva factura */}
             <Dialog open={createOpen} onOpenChange={(o) => { setCreateOpen(o); if (!o) resetForm(); }}>

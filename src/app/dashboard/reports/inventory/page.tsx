@@ -5,7 +5,6 @@ import React, { useState, useMemo } from "react";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
 import { LoadingState } from "@/components/loading-state";
-import { EmptyState } from "@/components/empty-state";
 import {
     Card,
     CardContent,
@@ -14,17 +13,9 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     Loader2,
     FileDown,
@@ -109,6 +100,83 @@ export default function InventoryReportPage() {
             m.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [toolMaterials, searchTerm]);
+
+    const materialColumns: DataTableColumn<Material>[] = [
+        {
+            key: "name", header: "Nombre",
+            cell: (m) => (
+                <>
+                    <p className="font-medium">{m.name}</p>
+                    <p className="text-xs text-muted-foreground">{m.category}</p>
+                </>
+            ),
+        },
+        {
+            key: "stock", header: "Stock", headerClassName: "text-right",
+            // El color del stock depende de la fila, así que va en la celda.
+            cell: (m) => (
+                <span className={m.stock === 0 ? "text-red-500" : m.stock < 10 ? "text-amber-500" : ""}>
+                    {m.stock.toLocaleString()}{" "}
+                    <span className="text-xs text-muted-foreground">{m.unit}</span>
+                </span>
+            ),
+            className: "text-right font-mono font-medium",
+        },
+        // Columna sólo para quien puede editar (antes era un `&&` en el <TableHead>).
+        ...(isPrivilegedUser ? [{
+            key: "actions", header: "Acciones", headerClassName: "text-right", className: "text-right",
+            cell: (m: Material) => (
+                <Button variant="ghost" size="icon" onClick={() => setEditingMaterial(m)}>
+                    <Edit className="h-4 w-4" />
+                </Button>
+            ),
+        }] : []),
+    ];
+
+    const toolColumns: DataTableColumn<Material>[] = [
+        {
+            key: "name", header: "Nombre",
+            cell: (m) => {
+                const holder = holderMap.get(m.id);
+                return (
+                    <>
+                        <p className="font-medium">{m.name}</p>
+                        {holder && <p className="text-xs text-muted-foreground">En poder de {holder.name}</p>}
+                    </>
+                );
+            },
+        },
+        {
+            key: "status", header: "Estado", headerClassName: "text-right", className: "text-right",
+            cell: (m) => {
+                const holder = holderMap.get(m.id);
+                if (m.status === "En Mantenimiento") return <Badge variant="destructive">Mantenimiento</Badge>;
+                if (holder || (m.inUse || 0) > 0 || m.status === "En Uso") return <Badge variant="secondary">En Uso</Badge>;
+                return <Badge className="badge-success">Disponible</Badge>;
+            },
+        },
+    ];
+
+    const availableColumns: DataTableColumn<Material>[] = [
+        {
+            key: "name", header: "Material",
+            cell: (m) => (
+                <>
+                    <div className="font-medium">{m.name}</div>
+                    <div className="text-xs text-muted-foreground">{m.category}</div>
+                </>
+            ),
+        },
+        {
+            key: "stock", header: "Stock", headerClassName: "text-right", className: "text-right",
+            cell: (m) => (
+                <Badge variant="outline" className="font-mono font-bold text-base">
+                    {m.stock.toLocaleString()}
+                    <span className="text-xs ml-1 font-normal opacity-70 uppercase">{m.unit}</span>
+                </Badge>
+            ),
+        },
+    ];
 
     const handleExport = async () => {
         setIsExporting(true);
@@ -315,99 +383,22 @@ export default function InventoryReportPage() {
                                 />
                             </div>
                             <TabsContent value="materials" className="mt-0">
-                                <ScrollArea className="h-[400px] border rounded-md">
-                                    <Table>
-                                        <TableHeader className="sticky top-0 bg-card">
-                                            <TableRow>
-                                                <TableHead>Nombre</TableHead>
-                                                <TableHead className="text-right">
-                                                    Stock
-                                                </TableHead>
-                                                {isPrivilegedUser && <TableHead className="text-right">Acciones</TableHead>}
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {filteredMaterials.map((m) => (
-                                                <TableRow key={m.id}>
-                                                    <TableCell>
-                                                        <p className="font-medium">{m.name}</p>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            {m.category}
-                                                        </p>
-                                                    </TableCell>
-
-                                                    <TableCell
-                                                        className={`text-right font-mono font-medium ${
-                                                            m.stock === 0
-                                                                ? "text-red-500"
-                                                                : m.stock < 10
-                                                                ? "text-amber-500"
-                                                                : ""
-                                                        }`}
-                                                    >
-                                                        {m.stock.toLocaleString()}{" "}
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {m.unit}
-                                                        </span>
-                                                    </TableCell>
-                                                    {isPrivilegedUser && (
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => setEditingMaterial(m)}>
-                                                                <Edit className="h-4 w-4" />
-                                                            </Button>
-                                                        </TableCell>
-                                                    )}
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </ScrollArea>
+                                <DataTable
+                                    data={filteredMaterials}
+                                    rowKey={(m) => m.id}
+                                    maxHeight="400px"
+                                    columns={materialColumns}
+                                    empty={{ icon: <Inbox size={24} />, title: 'Sin materiales que coincidan.' }}
+                                />
                             </TabsContent>
                             <TabsContent value="tools" className="mt-0">
-                                <ScrollArea className="h-[400px] border rounded-md">
-                                    <Table>
-                                        <TableHeader className="sticky top-0 bg-card">
-                                            <TableRow>
-                                                <TableHead>Nombre</TableHead>
-                                                <TableHead className="text-right">
-                                                    Estado
-                                                </TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {filteredTools.map((m) => {
-                                                const holder = holderMap.get(m.id);
-                                                return (
-                                                    <TableRow key={m.id}>
-                                                        <TableCell>
-                                                            <p className="font-medium">{m.name}</p>
-                                                            {holder && (
-                                                                <p className="text-xs text-muted-foreground">
-                                                                    En poder de {holder.name}
-                                                                </p>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="text-right">
-                                                            {m.status === "En Mantenimiento" ? (
-                                                                <Badge variant="destructive">
-                                                                    Mantenimiento
-                                                                </Badge>
-                                                            ) : holder || (m.inUse || 0) > 0 || m.status === "En Uso" ? (
-                                                                <Badge variant="secondary">
-                                                                    En Uso
-                                                                </Badge>
-                                                            ) : (
-                                                                <Badge className="badge-success">
-                                                                    Disponible
-                                                                </Badge>
-                                                            )}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                );
-                                            })}
-                                        </TableBody>
-                                    </Table>
-                                </ScrollArea>
+                                <DataTable
+                                    data={filteredTools}
+                                    rowKey={(m) => m.id}
+                                    maxHeight="400px"
+                                    columns={toolColumns}
+                                    empty={{ icon: <Inbox size={24} />, title: 'Sin herramientas que coincidan.' }}
+                                />
                             </TabsContent>
                         </Tabs>
                     </CardContent>
@@ -449,55 +440,18 @@ export default function InventoryReportPage() {
                             />
                         </div>
 
-                        <div className="flex-1 overflow-hidden border rounded-md min-h-[380px] bg-background">
-                            {availableMaterials.length > 0 ? (
-                                <ScrollArea className="h-[380px]">
-                                    <Table>
-                                        <TableHeader className="sticky top-0 bg-card">
-                                            <TableRow>
-                                                <TableHead>Material</TableHead>
-                                                <TableHead className="text-right">
-                                                    Stock
-                                                </TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-
-                                        <TableBody>
-                                            {availableMaterials.map((m) => (
-                                                <TableRow key={m.id}>
-                                                    <TableCell>
-                                                        <div className="font-medium">
-                                                            {m.name}
-                                                        </div>
-                                                        <div className="text-xs text-muted-foreground">
-                                                            {m.category}
-                                                        </div>
-                                                    </TableCell>
-
-                                                    <TableCell className="text-right">
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="font-mono font-bold text-base"
-                                                        >
-                                                            {m.stock.toLocaleString()}
-                                                            <span className="text-xs ml-1 font-normal opacity-70 uppercase">
-                                                                {m.unit}
-                                                            </span>
-                                                        </Badge>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </ScrollArea>
-                            ) : (
-                                <EmptyState
-                                    className="border-0"
-                                    icon={<Inbox size={24} />}
-                                    title="No hay materiales con stock disponible."
-                                    description="Todo el inventario está en 0."
-                                />
-                            )}
+                        <div className="flex-1 min-h-[380px]">
+                            <DataTable
+                                data={availableMaterials}
+                                rowKey={(m) => m.id}
+                                maxHeight="380px"
+                                columns={availableColumns}
+                                empty={{
+                                    icon: <Inbox size={24} />,
+                                    title: "No hay materiales con stock disponible.",
+                                    description: "Todo el inventario está en 0.",
+                                }}
+                            />
                         </div>
                     </CardContent>
                 </Card>

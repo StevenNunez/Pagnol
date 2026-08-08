@@ -128,6 +128,27 @@ const assetSchema = z.object({
 
 type FormData = z.infer<typeof assetSchema>;
 
+// Helpers puros de mantenimiento: viven FUERA del componente para tener identidad
+// estable. Dentro se recreaban en cada render y, al entrar como dependencia del
+// useMemo que filtra los activos, lo obligaban a recalcularse siempre.
+const toDate = (date: any) => date ? new Date(date) : null;
+
+const isMaintenanceSoon = (dateStr?: Date | string) => {
+  const maintenanceDate = toDate(dateStr);
+  if (!maintenanceDate) return false;
+  const today = new Date();
+  const diffTime = maintenanceDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays >= 0 && diffDays <= 15;
+};
+
+const isMaintenanceOverdue = (dateStr?: Date | string) => {
+  const maintenanceDate = toDate(dateStr);
+  if (!maintenanceDate) return false;
+  const today = new Date();
+  return maintenanceDate < today;
+};
+
 export default function ActivosPage() {
   const { materials, addMaterial, deleteMaterial, updateMaterial, materialCategories, units, suppliers, requests, returnRequests, users, can, materialStocks, contracts } = useAppState();
   const { user: currentUser, currentTenantId } = useAuth();
@@ -351,24 +372,6 @@ export default function ActivosPage() {
     return 'Disponible'; // Simplified for now
   }, []);
 
-  const toDate = (date: any) => date ? new Date(date) : null;
-
-  const isMaintenanceSoon = (dateStr?: Date | string) => {
-    const maintenanceDate = toDate(dateStr);
-    if (!maintenanceDate) return false;
-    const today = new Date();
-    const diffTime = maintenanceDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 15;
-  };
-
-  const isMaintenanceOverdue = (dateStr?: Date | string) => {
-    const maintenanceDate = toDate(dateStr);
-    if (!maintenanceDate) return false;
-    const today = new Date();
-    return maintenanceDate < today;
-  };
-
   // Jerarquía de categorías (Familia → Subcategoría) para el filtro "Categoría".
   // materials.category guarda el NOMBRE, así que se resuelve por nombres:
   // elegir una familia incluye también todas sus subcategorías.
@@ -440,7 +443,7 @@ export default function ActivosPage() {
       const matchesContract = materialIdsInContract === null || materialIdsInContract.has(a.id);
       return matchesSearch && matchesStatus && matchesClass && matchesUse && matchesCategory && matchesOverdue && matchesContract;
     });
-  }, [materials, debouncedFilter, selectedStatus, selectedClass, selectedUseType, categoryNamesForFilter, showOverdueOnly, getStatusLabel, isMaintenanceOverdue, materialIdsInContract, holderMap]);
+  }, [materials, debouncedFilter, selectedStatus, selectedClass, selectedUseType, categoryNamesForFilter, showOverdueOnly, getStatusLabel, materialIdsInContract, holderMap]);
 
   // Segmento Activos vs Consumibles. Un "Consumible" es stock que se agota por
   // cantidad (no tiene identidad individual); el resto son activos trazables.

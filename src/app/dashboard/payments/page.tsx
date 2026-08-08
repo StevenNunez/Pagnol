@@ -4,7 +4,7 @@ import React, { useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -33,7 +33,7 @@ const getStatusBadge = (status: SalaryAdvance['status']) => {
 };
 
 export default function SalaryAdvancesPage() {
-    const { salaryAdvances, approveSalaryAdvance, rejectSalaryAdvance } = useAppState();
+    const { salaryAdvances, approveSalaryAdvance, rejectSalaryAdvance, isLoading } = useAppState();
     const { toast } = useToast();
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [rejectTarget, setRejectTarget] = useState<SalaryAdvance | null>(null);
@@ -85,6 +85,38 @@ export default function SalaryAdvancesPage() {
         }
     };
     
+    const pendingColumns: DataTableColumn<SalaryAdvance>[] = [
+        { key: 'worker', header: 'Trabajador', className: 'font-medium', cell: (req) => req.workerName },
+        { key: 'amount', header: 'Monto Solicitado', className: 'font-mono text-lg font-bold', cell: (req) => formatCurrency(req.amount) },
+        {
+            key: 'requested', header: 'Fecha Solicitud',
+            cell: (req) => formatDistanceToNow(new Date(req.requestedAt), { addSuffix: true, locale: es }),
+        },
+        {
+            key: 'actions', header: 'Acciones', headerClassName: 'text-right', className: 'text-right space-x-2',
+            cell: (req) => processingId === req.id ? <Loader2 className="animate-spin h-5 w-5 ml-auto" /> : (
+                <>
+                    <Button size="sm" variant="destructive" onClick={() => { setRejectTarget(req); setRejectionReason(''); }}>
+                        <ThumbsDown className="mr-2 h-4 w-4" /> Rechazar
+                    </Button>
+                    <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApprove(req.id)}>
+                        <ThumbsUp className="mr-2 h-4 w-4" /> Aprobar
+                    </Button>
+                </>
+            ),
+        },
+    ];
+
+    const processedColumns: DataTableColumn<SalaryAdvance>[] = [
+        { key: 'worker', header: 'Trabajador', cell: (req) => req.workerName },
+        { key: 'amount', header: 'Monto', className: 'font-mono', cell: (req) => formatCurrency(req.amount) },
+        {
+            key: 'processed', header: 'Fecha Procesado',
+            cell: (req) => req.processedAt ? formatDistanceToNow(new Date(req.processedAt), { addSuffix: true, locale: es }) : 'N/A',
+        },
+        { key: 'status', header: 'Estado', cell: (req) => getStatusBadge(req.status) },
+    ];
+
     return (
         <>
         <div className="flex flex-col gap-8">
@@ -96,45 +128,13 @@ export default function SalaryAdvancesPage() {
                     <CardDescription>Revisa y procesa las solicitudes de adelanto de sueldo.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Trabajador</TableHead>
-                                <TableHead>Monto Solicitado</TableHead>
-                                <TableHead>Fecha Solicitud</TableHead>
-                                <TableHead className="text-right">Acciones</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {pending.length > 0 ? (
-                                pending.map(req => (
-                                    <TableRow key={req.id}>
-                                        <TableCell className="font-medium">{req.workerName}</TableCell>
-                                        <TableCell className="font-mono text-lg font-bold">{formatCurrency(req.amount)}</TableCell>
-                                        <TableCell>
-                                            {formatDistanceToNow(new Date(req.requestedAt), { addSuffix: true, locale: es })}
-                                        </TableCell>
-                                        <TableCell className="text-right space-x-2">
-                                            {processingId === req.id ? <Loader2 className="animate-spin h-5 w-5 ml-auto" /> : (
-                                                <>
-                                                    <Button size="sm" variant="destructive" onClick={() => { setRejectTarget(req); setRejectionReason(''); }}>
-                                                        <ThumbsDown className="mr-2 h-4 w-4"/> Rechazar
-                                                    </Button>
-                                                    <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApprove(req.id)}>
-                                                        <ThumbsUp className="mr-2 h-4 w-4"/> Aprobar
-                                                    </Button>
-                                                </>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="text-center h-24">No hay solicitudes pendientes.</TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
+                    <DataTable
+                        data={pending}
+                        rowKey={(req) => req.id}
+                        isLoading={isLoading}
+                        columns={pendingColumns}
+                        empty={{ icon: <Clock className="h-8 w-8" />, title: 'No hay solicitudes pendientes.' }}
+                    />
                 </CardContent>
             </Card>
 
@@ -143,34 +143,15 @@ export default function SalaryAdvancesPage() {
                     <CardTitle>Historial de Solicitudes Procesadas</CardTitle>
                 </CardHeader>
                 <CardContent>
-                     <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Trabajador</TableHead>
-                                <TableHead>Monto</TableHead>
-                                <TableHead>Fecha Procesado</TableHead>
-                                <TableHead>Estado</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                             {processed.length > 0 ? (
-                                processed.map(req => (
-                                    <TableRow key={req.id} className="text-muted-foreground">
-                                        <TableCell>{req.workerName}</TableCell>
-                                        <TableCell className="font-mono">{formatCurrency(req.amount)}</TableCell>
-                                        <TableCell>
-                                            {req.processedAt ? formatDistanceToNow(new Date(req.processedAt), { addSuffix: true, locale: es }) : 'N/A'}
-                                        </TableCell>
-                                        <TableCell>{getStatusBadge(req.status)}</TableCell>
-                                    </TableRow>
-                                ))
-                             ) : (
-                                 <TableRow>
-                                    <TableCell colSpan={4} className="text-center h-24">No hay solicitudes procesadas.</TableCell>
-                                </TableRow>
-                             )}
-                        </TableBody>
-                    </Table>
+                    <DataTable
+                        data={processed}
+                        rowKey={(req) => req.id}
+                        isLoading={isLoading}
+                        columns={processedColumns}
+                        // Atenuadas por ser historial ya resuelto (antes iba en el <TableRow>).
+                        rowClassName={() => 'text-muted-foreground'}
+                        empty={{ icon: <CheckCircle className="h-8 w-8" />, title: 'No hay solicitudes procesadas.' }}
+                    />
                 </CardContent>
              </Card>
         </div>

@@ -68,6 +68,7 @@ export function EditSupplierForm({ supplier, isOpen, onClose }: EditSupplierForm
             notes: supplier.notes || '',
         };
         reset(defaultValues);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza el formulario cuando cambia el proveedor editado; va junto al reset() de react-hook-form
         setSelectedCategories(supplier.categories);
     }
   }, [supplier, reset]);

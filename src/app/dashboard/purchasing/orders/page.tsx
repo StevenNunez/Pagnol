@@ -32,7 +32,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/modules/core/lib/supabase';
 import type { PurchaseOrder as PurchaseOrderType, Supplier, PurchaseRequest } from '@/modules/core/lib/data';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
+
+type OrderItem = { name: string; unit: string; totalQuantity: number };
+
+// Fuera del componente: no dependen de nada del render.
+const orderItemColumns: DataTableColumn<OrderItem>[] = [
+    { key: 'name', header: 'Material', className: 'font-medium', cell: (i) => i.name },
+    { key: 'unit', header: 'Unidad', cell: (i) => i.unit },
+    {
+        key: 'qty', header: 'Cantidad Total', headerClassName: 'text-right', className: 'text-right font-mono',
+        cell: (i) => i.totalQuantity.toLocaleString(),
+    },
+];
 import { generatePurchaseOrderPDF } from '@/lib/pdf-generator';
 import { useLots } from '@/hooks/use-lots';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -500,24 +512,12 @@ export default function OrdersPage() {
                                     </div>
                                 </div>
                                 <AccordionContent className="p-6 pt-0">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Material</TableHead>
-                                                <TableHead>Unidad</TableHead>
-                                                <TableHead className="text-right">Cantidad Total</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {order.items.map((item: { name: string; unit: string; totalQuantity: number; }, idx: number) => (
-                                                <TableRow key={`${order.id}-${idx}`}>
-                                                    <TableCell className="font-medium">{item.name}</TableCell>
-                                                    <TableCell>{item.unit}</TableCell>
-                                                    <TableCell className="text-right font-mono">{item.totalQuantity.toLocaleString()} </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
+                                    <DataTable
+                                        data={order.items}
+                                        rowKey={(_item, idx) => `${order.id}-${idx}`}
+                                        columns={orderItemColumns}
+                                        empty={{ title: 'Esta cotización no tiene ítems.' }}
+                                    />
                                 </AccordionContent>
                             </AccordionItem>
                         )) : (

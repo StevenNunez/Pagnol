@@ -83,7 +83,10 @@ export default function WeeklyReportDetailPage() {
   // firmado (status !== 'draft') se usa la copia congelada
   // (consolidatedReportsSnapshot) en vez de los Diarios en vivo, para que el
   // Semanal ya firmado no cambie si alguien reabre/edita un Diario después.
-  const selectedIds = draft?.consolidatedReportIds || [];
+  // Memoizado (a diferencia de las colecciones del estado global, `draft` SÍ puede
+  // ser undefined, así que el `|| []` hace falta): sin esto era un array nuevo por
+  // render y recalculaba `selectedReports` y `candidates` sin que cambiara nada.
+  const selectedIds = React.useMemo(() => draft?.consolidatedReportIds || [], [draft]);
   const usingSnapshot = !!draft && draft.status !== 'draft' && !!draft.consolidatedReportsSnapshot?.length;
   const selectedReports = React.useMemo(() => {
     if (usingSnapshot) return draft!.consolidatedReportsSnapshot as WorkReport[];

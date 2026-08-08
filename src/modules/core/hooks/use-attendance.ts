@@ -20,7 +20,7 @@ import {
 import { es } from 'date-fns/locale';
 import type { AttendanceLog, ShiftSchedule, ContractWorker } from '@/modules/core/lib/data';
 
-interface DailySummary {
+export interface DailySummary {
   date: string;
   dayName: string;
   isBusinessDay: boolean;
@@ -241,6 +241,7 @@ export function useMonthlyAttendance(
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sin trabajador no hay reporte que mostrar: limpiar es correcto, dejar el anterior lo atribuiría a otra persona
     if (!userId) { setReport(null); return; }
     setLoading(true);
 

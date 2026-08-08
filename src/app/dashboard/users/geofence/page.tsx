@@ -53,6 +53,7 @@ export default function GeofencePage() {
         }
     }, []);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: `loadConfig` es async y sólo escribe estado después del await
     useEffect(() => { loadConfig(); }, [loadConfig]);
 
     const useMyLocation = () => {

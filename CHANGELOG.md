@@ -18,6 +18,186 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Corregido — El reset de empresa podía perderse y mostrar datos del tenant anterior
+
+`useSupabaseCollection` guardaba el scope previo (`tabla::tenant`) en un `useRef` que **leía y
+mutaba durante el render**. Si React descartaba ese render —StrictMode o rendering concurrente—,
+el ref quedaba mutado pero el `setHasLoaded(false)` se perdía, y el render siguiente ya no volvía
+a entrar en la condición. Resultado posible: `hasLoaded` en `true` con los datos de la empresa
+anterior, presentados como si fueran los de la nueva y ya cargados — **justo el fallo que ese
+bloque existe para evitar**.
+
+Ahora el scope previo vive en `useState`, que es el patrón oficial de React para resetear estado
+cuando cambia una entrada: si el render se descarta, se descarta con él el `setState`, y el
+siguiente vuelve a detectar el cambio. Verificado renderizando: 22 colecciones en
+`/dashboard/pagnol/activos`, 135 activos reales en pantalla y **cero errores de consola**.
+
+### Cambiado — `DataTable`: cerradas las últimas migrables (lote 4: 24 de 34)
+
+`attendance/report` y `pagnol/personal`. **Con esto no queda ninguna tabla migrable sin migrar**:
+las 10 restantes están fuera por diseño (ver abajo).
+
+No hizo falta tocar `DataTable`: las dos entraron con lo que el componente ya tenía. La celda
+"Registros" de `attendance/report` es la más densa de todo el barrido —marcas coloreadas por
+entrada/salida, aviso de registro modificado con su tooltip de auditoría, y botones de editar y
+agregar según permiso— y viajó entera sin cambios.
+
+Verificado renderizando: detalle diario 6 columnas y 7 filas (lunes · 03/08/2026 · Ausente) ·
+gestión de personal 7 columnas y 9 filas, **con el `min-width: 1000px` preservado** y la clase
+`group` de la fila aplicada. Para llegar a la segunda hay que cambiar del modo tarjetas al modo
+lista con el toggle. Cero errores de consola.
+
+**Quedan 10 tablas en 8 archivos, y no se migran por una razón, no por falta de tiempo:** llevan
+subtotales, filas multifila o expandibles, que `DataTable` no soporta hoy — `finanzas/flujo`,
+`finanzas/page`, `finanzas/presupuesto`, `purchasing/page` (2), `purchasing/purchase-requests`,
+`construction-control/wbs`, `estado-pago/contratos/[id]`, `reports/deliveries` (2). Ampliar el
+componente a footer y agrupación es una decisión aparte.
+
+### Cambiado — `DataTable` en pagos, compras y planillas (lote 3: 8 tablas más, 22 de 34)
+
+`payments/advances` (3) · `payments/orders` · `purchasing/orders` · `purchasing/finance` ·
+`rrhh/remuneraciones/[id]` (2).
+
+`DataTable` creció en un punto: **`rowKey` también recibe el índice**. Los ítems de una OC no
+siempre traen `id` propio y pueden repetir nombre —hay dos generadores y sólo uno pone `id`—, así
+que sin el índice la key colisionaba.
+
+Dos migraciones dejaron el código mejor de como estaba:
+- `purchasing/finance` tenía un `return null` **dentro** del `map` para saltar ítems sin estado.
+  Eso ahora acota los datos que entran a la tabla, que es donde corresponde; de paso, una lista
+  vacía deja de ser un hueco mudo y dice por qué está vacía.
+- Las tres tablas de `payments/advances` y la de `payments/orders` resolvían su vacío con
+  `<TableCell colSpan={4}>`, el patrón que `DataTable` elimina.
+
+Verificado renderizando: adelantos aprobados 4 columnas (Carlos Fuentes Mora · $150.000 ·
+Registrar pago) · historial de OC 5 columnas y 2 filas · planilla cerrada 6 columnas (Demo Admin ·
+30 días · $500.000) · validación de ítems 4 columnas **con el checkbox marcado y los inputs
+editables dentro de la celda** (`[check:checked] · Bomba Sumergible · [input:"5"]`). Cero errores
+de consola.
+
+**Sin verificar en vivo:** la tabla de ítems de `purchasing/orders`. Vive dentro del acordeón de
+una cotización, y el historial filtra **por fecha**: DEMO no tiene cotizaciones emitidas hoy, así
+que el acordeón no existe. Sólo pasó por `tsc` y `build`.
+
+📋 **Observación, no regresión:** en el historial de OC la columna "Nº OC" se ve vacía.
+`official_oc_id` es **NULL en la base** para las 4 órdenes de DEMO (quedaron así de corridas E2E);
+la expresión que la pinta no cambió. Convendría mostrar "—" en vez de vacío.
+
+### Cambiado — `DataTable` en los reportes (lote 2: 7 tablas más, 14 de 34)
+
+`reports` (2 rankings) · `reports/stats` (2 rankings) · `reports/inventory` (3 tablas).
+
+`DataTable` creció en un punto: **`cell` ahora recibe el índice de fila**, que es lo que necesita
+la columna "#" de un ranking. Es retrocompatible — las columnas que ignoran el segundo argumento
+siguen igual.
+
+Dos cosas que resuelve el componente y antes se hacían a mano en cada tabla:
+- **Columna condicional.** En `reports/inventory` la columna "Acciones" solo existe para quien
+  puede editar; antes era un `&&` suelto en el `<TableHead>` **y otro** en el `<TableCell>`, que es
+  la forma clásica de terminar con la cabecera y el cuerpo descuadrados. Ahora es un ítem que entra
+  o no entra al array de columnas: imposible que se desalineen.
+- **`ScrollArea` + cabecera sticky a mano** (3 tablas) → `maxHeight`.
+
+Verificado renderizando, con las pestañas de Radix accionadas de verdad y leyendo la primera fila:
+ranking de personas 5 columnas (Demo Admin · 8 solicitudes · 440 unidades · Guantes de Nitrilo) ·
+ranking de materiales 6 columnas (Guantes · par · 360 · 6 · Demo (360)) · inventario 135 filas con
+la columna "Acciones" presente por ser administrador · herramientas 36 filas · disponibles 134.
+Cero errores de consola.
+
+⚠️ **Trampa de verificación:** el primer intento dio "correcto" en las tres páginas **sin haber
+cambiado de pestaña**: Radix Tabs ignora un `.click()` disparado desde `evaluate`, igual que Radix
+Select. Las tablas de "Ranking por Material" y "Herramientas" parecían verificadas y no lo estaban.
+Hace falta el click nativo sobre el `ElementHandle`.
+
+### Cambiado — `DataTable` en 7 tablas hechas a mano (lote 1)
+
+Seis páginas armaban su `<table>` a mano, cada una con su propia cabecera, su propio "no hay
+datos" y, en dos casos, su propio `ScrollArea`. Ahora usan `DataTable`.
+
+**Lo que gana el usuario no es consistencia visual, es honestidad:** esas tablas afirmaban
+"No hay solicitudes pendientes" / "Sin estados de pago" **mientras los datos venían en camino**.
+`DataTable` delega su vacío en `EmptyState`, que desde ADR-014 muestra el spinner si el estado
+global aún está cargando. Es el mismo problema que cerró el barrido de agosto; estas 34 tablas
+habían quedado fuera.
+
+Para no perder nada al migrar, `DataTable` creció en tres puntos —todos porque una página real
+los necesitaba, ninguno especulativo—:
+- `rowClassName` — filas atenuadas (historial ya procesado, días no hábiles). Sin esto, migrar
+  `payments` habría borrado la distinción visual entre lo pendiente y lo resuelto.
+- `loadingLabel` — conserva textos propios como "Revisando el estado de los períodos…".
+- `empty.action` — el vacío de Estados de Pago ofrece un botón "Ver mis contratos"; sin esto la
+  migración habría dejado al usuario en una pantalla sin salida.
+
+De paso, dos tablas que usaban `ScrollArea` ganan **cabecera sticky**, que antes no tenían.
+
+Migradas: `payments` (2 tablas) · `payments/pago-facturas` · `finanzas/cierre` ·
+`estado-pago/historial` · `attendance/overtime` · `safety/review-daily-talks/[id]`.
+
+Verificado renderizando, con las columnas contadas y la primera fila leída en cada una:
+Adelantos 4 columnas y datos reales · Cierre 4 columnas y 18 períodos · Estados de Pago 6 columnas
+con `MDS-EP-0003` / Contrato Torres / $150.000 · Horas Extras 5 columnas, 31 filas y el
+`rowClassName` visible en los días no hábiles · Facturas mostrando su estado vacío. Cero errores
+de consola. **`safety/review-daily-talks/[id]` quedó sin verificar en vivo**: DEMO no tiene
+charlas diarias (0 filas), así que solo pasó por `tsc` y `build`.
+
+Quedan **27 tablas en 18 archivos** sin migrar, más 11 de `dte` excluidas a propósito. El backlog
+decía "~8 tablas": la medición dio 34.
+
+### Cambiado — Listas que se recalculaban en cada render (20 warnings menos: 81 → 61)
+
+Siete páginas hacían `const orders = workOrders || []` en el cuerpo del componente. El `|| []` era
+**defensivo y muerto**: las colecciones del estado global no pueden ser `undefined` —están tipadas
+como array, `initialState` las arranca en `[]` y `processData` devuelve `[]` ante cualquier cosa
+que no sea un array—. Pero el linter no lee tipos: ve un `||`, asume que puede producir un array
+nuevo y avisa de que **todos los `useMemo` que dependen de él se recalculan en cada render**.
+
+Se quitó el `||` en lugar de envolverlo en `useMemo`: es menos código, no añade una memoización
+que tapa el problema en vez de resolverlo, y `tsc` avisa si alguien vuelve opcional una colección.
+Afecta a `work-reports` (7), `rentals` (3), `abastecimiento/arriendos` (3), `abastecimiento/costos`
+(2) y `work-reports/reportesdiarios` (2).
+
+Los otros tres warnings del grupo **no** eran el mismo caso y se trataron distinto:
+- `work-reports/semanal/[id]` — ahí `draft` **sí** puede ser `undefined`, así que el `|| []` hace
+  falta; se memoizó `selectedIds` con `useMemo`.
+- `pagnol/activos` — `isMaintenanceOverdue` y sus ayudantes se declaraban dentro del componente
+  pese a ser **funciones puras**, y al entrar como dependencia del `useMemo` que filtra los activos
+  lo obligaban a recalcularse siempre. Se movieron fuera del componente.
+
+Verificado renderizando las 7 páginas, sin errores de consola. Donde DEMO tiene datos, cuadran
+exacto contra la base: `materials` 135 filas → 135 en pantalla; `rental_contracts` 1 → 1;
+`purchase_orders` 4. Las otras cuatro páginas **sólo se pudieron probar vacías**: DEMO no tiene
+work orders, reportes, semanales, solicitudes de arriendo ni centros de costo (0 filas,
+confirmado por consulta), así que sus ceros son correctos, pero el camino con datos no se ejerció.
+
+### Cambiado — ESLint queda sin errores (96 problemas → 81, todos warnings)
+
+`npm run lint` reportaba **14 errores** (no 11: el conteo del backlog había quedado viejo, y
+RFC-005 sumó dos hooks nuevos). Ahora reporta **0**. Uno era el bug de arriba; los otros trece se
+repartían así:
+
+- **`DataProvider`** — el `useMemo` que arma las ~250 mutaciones declaraba `[user, tenantId]` pero
+  dependía de `bindContext`, que se recreaba en cada render. El React Compiler **abandonaba la
+  optimización del provider entero** ("existing memoization could not be preserved"), que es el
+  componente más caliente de la app. `bindContext` pasa a estar memoizada con esas mismas dos
+  dependencias —lo único que captura—, así que el comportamiento no cambia.
+- **Curva S del Gantt** — el `.map` reasignaba acumuladores de su scope exterior, y por eso el
+  compilador saltaba el componente. Reescrita como bucle explícito. **Probada por equivalencia
+  contra la versión anterior: 6/6 escenarios idénticos al bit** (tarea de un día, rango de 365
+  puntos, `progress` fuera de rango, proyecto íntegramente futuro o pasado), incluido el SPI.
+- **10 `set-state-in-effect` que son patrones correctos**, anotados con `eslint-disable` **y su
+  razón escrita** —silenciarlos sin explicar por qué es peor que dejarlos—: cuatro son
+  anti-hidratación (la fecha y `window.location` no pueden leerse al prerenderizar), cuatro
+  limpian el estado cuando desaparece su entrada (sin tenant, sin id, sin trabajador: conservar lo
+  anterior lo atribuiría al registro equivocado), y dos sincronizan un formulario o un contador
+  con la prop que lo alimenta.
+
+Al corregir la curva S apareció un error **que estaba oculto**: mientras el compilador saltaba ese
+componente, no analizaba el resto de su código. Es estado local del Gantt (`hideChildren`) sembrado
+desde los datos, así que no puede ser un `useMemo`; queda anotado.
+
+Sin cambios de comportamiento buscados: `tsc` limpio, 277/277 tests, `build` exit 0, y las tres
+páginas tocadas verificadas en el navegador con datos reales.
+
 ### Cambiado — Cada página carga lo que usa, no las 54 colecciones (RFC-005)
 
 Entrar a cualquier página de `/dashboard` pedía **54 colecciones**, sin importar cuáles usaba.

@@ -17,6 +17,7 @@ export function QRWithPagnolLogo({
   const [logoUrl, setLogoUrl] = useState("/logo1.png");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- `window` no existe al prerenderizar; leerlo durante el render rompería la hidratación
     setLogoUrl(`${window.location.origin}/logo1.png`);
   }, []);
 

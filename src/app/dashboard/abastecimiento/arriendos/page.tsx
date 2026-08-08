@@ -69,10 +69,12 @@ export default function AbastecimientoArriendosPage() {
 
   const canManage = can("rentals:manage_quotes");
 
-  const requests = (rentalRequests || []) as RentalRequest[];
-  const rfqs = (rentalQuoteRequests || []) as RentalQuoteRequest[];
+  // Sin `|| []`: las colecciones del estado global nunca son undefined, y el `||`
+  // creaba un array nuevo por render que invalidaba los useMemo de abajo.
+  const requests = rentalRequests as RentalRequest[];
+  const rfqs = rentalQuoteRequests as RentalQuoteRequest[];
   // Un arrendador ES un proveedor: la fuente única son los `suppliers`.
-  const lessors = useMemo(() => (suppliers || []) as Supplier[], [suppliers]);
+  const lessors = suppliers as Supplier[];
   const partyMap = useMemo(() => new Map(lessors.map((p) => [p.id, p])), [lessors]);
 
   // Gate ADC: Abastecimiento solo ve solicitudes ya AUTORIZADAS por el ADC.

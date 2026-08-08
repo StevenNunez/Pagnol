@@ -104,9 +104,13 @@ export default function WorkReportsOperationalHub() {
   const [specialty, setSpecialty] = useState<string>('all');
   const [supervisor, setSupervisor] = useState<string>('all');
 
-  const orders = workOrders || [];
-  const reports = workReports || [];
-  const weeklies = workWeeklyReports || [];
+  // Sin `|| []`: las colecciones del estado global nunca son undefined (tipadas
+  // como array, inicializadas en `[]` y saneadas por `processData`). El `||`
+  // creaba un array nuevo en cada render y obligaba a recalcular todos los
+  // useMemo de abajo aunque los datos no hubieran cambiado.
+  const orders = workOrders;
+  const reports = workReports;
+  const weeklies = workWeeklyReports;
   const todayStr = dateOnlyStr(new Date());
 
   // Opciones de filtros (catálogos + lo presente en los datos).

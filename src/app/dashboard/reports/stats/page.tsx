@@ -11,7 +11,7 @@ import {
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -174,6 +174,64 @@ export default function ReportsWithCharts() {
   
     const supervisors = (users || []).filter(u => ['supervisor','apr','administrador'].includes(u.role));
 
+  const supervisorColumns: DataTableColumn<(typeof summary.topSupervisors)[number]>[] = [
+    { key: 'rank', header: '#', cell: (_s, i) => i + 1 },
+    { key: 'name', header: 'Supervisor', className: 'font-semibold', cell: (s) => s.name },
+    {
+      key: 'count', header: 'Solicitudes', headerClassName: 'text-right', className: 'text-right',
+      cell: (s) => filteredRequests.filter(r => userMap.get(r.supervisorId)?.name === s.name).length,
+    },
+    {
+      key: 'qty', header: 'Total Unidades', headerClassName: 'text-right', className: 'text-right font-mono text-lg',
+      cell: (s) => s.quantity.toLocaleString(),
+    },
+    {
+      key: 'topMat', header: 'Material Más Pedido',
+      cell: (s) => {
+        const topMat = filteredRequests
+          .filter(r => userMap.get(r.supervisorId)?.name === s.name)
+          .reduce((acc, r) => {
+            acc[r.materialName] = (acc[r.materialName] || 0) + r.quantity;
+            return acc;
+          }, {} as Record<string, number>);
+        const mat = Object.entries(topMat).sort((a: any, b: any) => b[1] - a[1])[0];
+        return <Badge variant="secondary">{mat?.[0] || 'Varios'}</Badge>;
+      },
+    },
+  ];
+
+  const materialColumns: DataTableColumn<(typeof summary.topMaterials)[number]>[] = [
+    { key: 'rank', header: '#', cell: (_m, i) => i + 1 },
+    { key: 'name', header: 'Material', className: 'font-semibold', cell: (m) => m.name },
+    { key: 'unit', header: 'Unidad', cell: (m) => m.unit },
+    {
+      key: 'qty', header: 'Cantidad Total', headerClassName: 'text-right', className: 'text-right font-mono text-lg',
+      cell: (m) => m.quantity.toLocaleString(),
+    },
+    {
+      key: 'count', header: 'N° Solicitudes', headerClassName: 'text-right', className: 'text-right',
+      cell: (m) => filteredRequests.filter(r => r.materialName === m.name).length,
+    },
+    {
+      key: 'top3', header: 'Top 3 Solicitantes', className: 'text-sm text-muted-foreground max-w-md truncate',
+      cell: (m) => {
+        const requesters = filteredRequests
+          .filter(r => r.materialName === m.name)
+          .reduce((acc, r) => {
+            const name = userMap.get(r.supervisorId)?.name || 'Desconocido';
+            acc[name] = (acc[name] || 0) + r.quantity;
+            return acc;
+          }, {} as Record<string, number>);
+        const top3 = Object.entries(requesters)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([name, qty]) => `${name} (${qty.toLocaleString()})`)
+          .join(', ');
+        // El `title` con el texto completo se conserva: la celda trunca.
+        return <span title={top3}>{top3 || 'Varios'}</span>;
+      },
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-8 pb-12">
@@ -367,38 +425,14 @@ export default function ReportsWithCharts() {
         <TabsContent value="supervisors">
           <Card>
             <CardHeader><CardTitle>Quién pide más y qué</CardTitle></CardHeader>
-            <CardContent className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>Supervisor</TableHead>
-                    <TableHead className="text-right">Solicitudes</TableHead>
-                    <TableHead className="text-right">Total Unidades</TableHead>
-                    <TableHead>Material Más Pedido</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.topSupervisors.map((s, i) => {
-                    const topMat = filteredRequests
-                      .filter(r => userMap.get(r.supervisorId)?.name === s.name)
-                      .reduce((acc, r) => {
-                        acc[r.materialName] = (acc[r.materialName] || 0) + r.quantity;
-                        return acc;
-                      }, {} as Record<string, number>);
-                    const mat = Object.entries(topMat).sort((a: any, b: any) => b[1] - a[1])[0];
-                    return (
-                      <TableRow key={s.name}>
-                        <TableCell>{i + 1}</TableCell>
-                        <TableCell className="font-semibold">{s.name}</TableCell>
-                        <TableCell className="text-right">{filteredRequests.filter(r => userMap.get(r.supervisorId)?.name === s.name).length}</TableCell>
-                        <TableCell className="text-right font-mono text-lg">{s.quantity.toLocaleString()}</TableCell>
-                        <TableCell><Badge variant="secondary">{mat?.[0] || 'Varios'}</Badge></TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <CardContent className="p-0">
+              <DataTable
+                data={summary.topSupervisors}
+                rowKey={(s) => s.name}
+                columns={supervisorColumns}
+                className="border-0 rounded-none"
+                empty={{ title: 'Sin solicitantes en el período.' }}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -406,49 +440,14 @@ export default function ReportsWithCharts() {
         <TabsContent value="materials">
           <Card>
             <CardHeader><CardTitle>Materiales más solicitados</CardTitle></CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead>Unidad</TableHead>
-                    <TableHead className="text-right">Cantidad Total</TableHead>
-                    <TableHead className="text-right">N° Solicitudes</TableHead>
-                    <TableHead>Top 3 Solicitantes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.topMaterials.map((m, i) => {
-                    const requesters = filteredRequests
-                      .filter(r => r.materialName === m.name)
-                      .reduce((acc, r) => {
-                        const name = userMap.get(r.supervisorId)?.name || 'Desconocido';
-                        acc[name] = (acc[name] || 0) + r.quantity;
-                        return acc;
-                      }, {} as Record<string, number>);
-
-                    const top3 = Object.entries(requesters)
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 3)
-                      .map(([name, qty]) => `${name} (${qty.toLocaleString()})`)
-                      .join(', ');
-
-                    return (
-                      <TableRow key={m.name}>
-                        <TableCell>{i + 1}</TableCell>
-                        <TableCell className="font-semibold">{m.name}</TableCell>
-                        <TableCell>{m.unit}</TableCell>
-                        <TableCell className="text-right font-mono text-lg">{m.quantity.toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{filteredRequests.filter(r => r.materialName === m.name).length}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-md truncate" title={top3}>
-                          {top3 || 'Varios'}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <CardContent className="p-0">
+              <DataTable
+                data={summary.topMaterials}
+                rowKey={(m) => m.name}
+                columns={materialColumns}
+                className="border-0 rounded-none"
+                empty={{ title: 'Sin materiales en el período.' }}
+              />
             </CardContent>
           </Card>
         </TabsContent>

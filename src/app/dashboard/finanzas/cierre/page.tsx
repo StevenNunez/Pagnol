@@ -11,7 +11,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/page-shell";
 import { EmptyState } from "@/components/empty-state";
-import { LoadingState } from "@/components/loading-state";
 import { useAuth, useAppState } from "@/modules/core/contexts/app-provider";
 import {
     fetchPeriodEvents, closedMonths as deriveClosed, precheckPeriod, toPeriodMonth,
@@ -23,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import type { FinancePeriodEvent, FinancePeriodWarning } from "@/modules/core/lib/data";
 import {
@@ -128,6 +127,38 @@ export default function CierrePage() {
         }
     };
 
+    const periodColumns: DataTableColumn<string>[] = [
+        { key: 'period', header: 'Período', className: 'font-medium capitalize', cell: (month) => monthLabel(month) },
+        {
+            key: 'status', header: 'Estado',
+            cell: (month) => closed.get(month)
+                ? <Badge variant="secondary" className="rounded-xl"><Lock className="mr-1 h-3 w-3" />Cerrado</Badge>
+                : <Badge className="badge-success rounded-xl"><LockOpen className="mr-1 h-3 w-3" />Abierto</Badge>,
+        },
+        {
+            key: 'by', header: 'Cerrado por', className: 'text-sm text-muted-foreground',
+            cell: (month) => {
+                const ev = closed.get(month);
+                return ev
+                    ? <>{ev.createdByName || "—"} · {new Date(ev.createdAt as any).toLocaleDateString("es-CL")}</>
+                    : "—";
+            },
+        },
+        {
+            key: 'action', header: 'Acción', headerClassName: 'text-right w-40', className: 'text-right',
+            cell: (month) => {
+                if (!canManage) return null;
+                const isClosed = !!closed.get(month);
+                return (
+                    <Button variant={isClosed ? "ghost" : "outline"} size="sm" className="rounded-xl"
+                        onClick={() => openDialog(month, isClosed ? "reopen" : "close")}>
+                        {isClosed ? <><LockOpen className="mr-2 h-3.5 w-3.5" />Reabrir</> : <><Lock className="mr-2 h-3.5 w-3.5" />Cerrar</>}
+                    </Button>
+                );
+            },
+        },
+    ];
+
     if (!canView) {
         return (
             <PageShell title="Cierre de Período" description="Congelar meses del ledger financiero">
@@ -149,55 +180,14 @@ export default function CierrePage() {
                 </Button>
             }
         >
-            <Card className="rounded-[1.5rem]">
-                <CardContent className="p-0">
-                    {loading ? (
-                        <LoadingState label="Revisando el estado de los períodos…" />
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Período</TableHead>
-                                        <TableHead>Estado</TableHead>
-                                        <TableHead>Cerrado por</TableHead>
-                                        <TableHead className="text-right w-40">Acción</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {months.map((month) => {
-                                        const ev = closed.get(month);
-                                        const isClosed = !!ev;
-                                        return (
-                                            <TableRow key={month}>
-                                                <TableCell className="font-medium capitalize">{monthLabel(month)}</TableCell>
-                                                <TableCell>
-                                                    {isClosed
-                                                        ? <Badge variant="secondary" className="rounded-xl"><Lock className="mr-1 h-3 w-3" />Cerrado</Badge>
-                                                        : <Badge className="badge-success rounded-xl"><LockOpen className="mr-1 h-3 w-3" />Abierto</Badge>}
-                                                </TableCell>
-                                                <TableCell className="text-sm text-muted-foreground">
-                                                    {isClosed
-                                                        ? <>{ev.createdByName || "—"} · {new Date(ev.createdAt as any).toLocaleDateString("es-CL")}</>
-                                                        : "—"}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {canManage && (
-                                                        <Button variant={isClosed ? "ghost" : "outline"} size="sm" className="rounded-xl"
-                                                            onClick={() => openDialog(month, isClosed ? "reopen" : "close")}>
-                                                            {isClosed ? <><LockOpen className="mr-2 h-3.5 w-3.5" />Reabrir</> : <><Lock className="mr-2 h-3.5 w-3.5" />Cerrar</>}
-                                                        </Button>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            <DataTable
+                data={months}
+                rowKey={(month) => month}
+                isLoading={loading}
+                loadingLabel="Revisando el estado de los períodos…"
+                columns={periodColumns}
+                empty={{ icon: <CalendarCheck className="h-6 w-6" />, title: 'Sin períodos que mostrar.' }}
+            />
 
             {/* Historial: cerrar → reabrir → cerrar queda completo */}
             {events.length > 0 && (

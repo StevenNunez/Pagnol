@@ -21,7 +21,7 @@ import { Label } from '@/components/ui/label';
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import {
@@ -207,6 +207,66 @@ export default function PlanillaDetallePage() {
         return [...todos];
     }, [results, lines, proposal]);
 
+    const draftColumns: DataTableColumn<PayrollLineInput>[] = [
+        { key: 'worker', header: 'Trabajador', className: 'font-medium', cell: (l) => l.userName },
+        {
+            key: 'days', header: 'Días', headerClassName: 'w-28',
+            cell: (l) => (
+                <Input type="number" min={0} max={31} value={l.workedDays}
+                    className="h-10 w-20 rounded-xl"
+                    onChange={(e) => setLineField(l.userId, 'workedDays', Number(e.target.value))} />
+            ),
+        },
+        {
+            key: 'overtime', header: 'Horas extra', headerClassName: 'w-32',
+            cell: (l) => (
+                <Input type="number" min={0} step="0.5" value={l.overtimeHours}
+                    className="h-10 w-24 rounded-xl"
+                    onChange={(e) => setLineField(l.userId, 'overtimeHours', Number(e.target.value))} />
+            ),
+        },
+        {
+            key: 'advances', header: 'Anticipos', headerClassName: 'w-40',
+            cell: (l) => l.advancesAmount
+                ? <span className="text-sm">{CLP(l.advancesAmount)}</span>
+                : <span className="text-xs text-muted-foreground">—</span>,
+        },
+        {
+            key: 'net', header: 'Líquido', headerClassName: 'text-right', className: 'text-right font-bold',
+            cell: (l) => {
+                const res = results[l.userId];
+                return res ? CLP(res.netPay) : <span className="text-xs text-muted-foreground">sin calcular</span>;
+            },
+        },
+    ];
+
+    const closedColumns: DataTableColumn<PayrollLine>[] = [
+        {
+            key: 'worker', header: 'Trabajador', className: 'font-medium',
+            cell: (l) => (
+                <>
+                    {l.userName}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                        {l.workedDays} días{l.overtimeHours ? ` · ${l.overtimeHours} h extra` : ''}
+                    </span>
+                </>
+            ),
+        },
+        { key: 'taxable', header: 'Imponible', headerClassName: 'text-right', className: 'text-right', cell: (l) => CLP(l.totalTaxable) },
+        { key: 'deductions', header: 'Descuentos', headerClassName: 'text-right', className: 'text-right text-destructive', cell: (l) => CLP(l.totalDeductions) },
+        { key: 'advances', header: 'Anticipos', headerClassName: 'text-right', className: 'text-right', cell: (l) => l.advancesAmount ? CLP(l.advancesAmount) : '—' },
+        { key: 'net', header: 'Líquido', headerClassName: 'text-right', className: 'text-right font-bold', cell: (l) => CLP(l.netPay) },
+        {
+            key: 'pdf', header: '', headerClassName: 'w-16',
+            cell: (l) => (
+                <Button variant="ghost" size="icon" className="rounded-xl"
+                    title="Descargar liquidación" onClick={() => descargarPdf(l)}>
+                    <FileDown className="h-4 w-4" />
+                </Button>
+            ),
+        },
+    ];
+
     if (loading) return <LoadingState />;
     if (!run) {
         return (
@@ -315,89 +375,27 @@ export default function PlanillaDetallePage() {
                             : `Cerrada por ${run.closedByName || '—'}${run.paymentDate ? ` · pagada el ${run.paymentDate}` : ''}.`}
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="overflow-x-auto">
+                <CardContent className="p-0">
                     {esBorrador ? (
-                        !draft.length ? (
-                            <EmptyState icon={<Users size={24} />} title="Nadie con contrato laboral vigente"
-                                description="Registra el Contrato Laboral de los trabajadores en su ficha para poder liquidarlos." />
-                        ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Trabajador</TableHead>
-                                        <TableHead className="w-28">Días</TableHead>
-                                        <TableHead className="w-32">Horas extra</TableHead>
-                                        <TableHead className="w-40">Anticipos</TableHead>
-                                        <TableHead className="text-right">Líquido</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {draft.map((l) => {
-                                        const res = results[l.userId];
-                                        return (
-                                            <TableRow key={l.userId}>
-                                                <TableCell className="font-medium">{l.userName}</TableCell>
-                                                <TableCell>
-                                                    <Input type="number" min={0} max={31} value={l.workedDays}
-                                                        className="h-10 w-20 rounded-xl"
-                                                        onChange={(e) => setLineField(l.userId, 'workedDays', Number(e.target.value))} />
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Input type="number" min={0} step="0.5" value={l.overtimeHours}
-                                                        className="h-10 w-24 rounded-xl"
-                                                        onChange={(e) => setLineField(l.userId, 'overtimeHours', Number(e.target.value))} />
-                                                </TableCell>
-                                                <TableCell>
-                                                    {l.advancesAmount
-                                                        ? <span className="text-sm">{CLP(l.advancesAmount)}</span>
-                                                        : <span className="text-xs text-muted-foreground">—</span>}
-                                                </TableCell>
-                                                <TableCell className="text-right font-bold">
-                                                    {res ? CLP(res.netPay) : <span className="text-xs text-muted-foreground">sin calcular</span>}
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
-                                </TableBody>
-                            </Table>
-                        )
-                    ) : !lines.length ? (
-                        <EmptyState icon={<Users size={24} />} title="Sin líneas" description="Esta planilla se cerró sin trabajadores." />
+                        <DataTable
+                            data={draft}
+                            rowKey={(l) => l.userId}
+                            columns={draftColumns}
+                            className="border-0 rounded-none"
+                            empty={{
+                                icon: <Users size={24} />,
+                                title: 'Nadie con contrato laboral vigente',
+                                description: 'Registra el Contrato Laboral de los trabajadores en su ficha para poder liquidarlos.',
+                            }}
+                        />
                     ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Trabajador</TableHead>
-                                    <TableHead className="text-right">Imponible</TableHead>
-                                    <TableHead className="text-right">Descuentos</TableHead>
-                                    <TableHead className="text-right">Anticipos</TableHead>
-                                    <TableHead className="text-right">Líquido</TableHead>
-                                    <TableHead className="w-16" />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {lines.map((l) => (
-                                    <TableRow key={l.id}>
-                                        <TableCell className="font-medium">
-                                            {l.userName}
-                                            <span className="ml-2 text-xs text-muted-foreground">
-                                                {l.workedDays} días{l.overtimeHours ? ` · ${l.overtimeHours} h extra` : ''}
-                                            </span>
-                                        </TableCell>
-                                        <TableCell className="text-right">{CLP(l.totalTaxable)}</TableCell>
-                                        <TableCell className="text-right text-destructive">{CLP(l.totalDeductions)}</TableCell>
-                                        <TableCell className="text-right">{l.advancesAmount ? CLP(l.advancesAmount) : '—'}</TableCell>
-                                        <TableCell className="text-right font-bold">{CLP(l.netPay)}</TableCell>
-                                        <TableCell>
-                                            <Button variant="ghost" size="icon" className="rounded-xl"
-                                                title="Descargar liquidación" onClick={() => descargarPdf(l)}>
-                                                <FileDown className="h-4 w-4" />
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                        <DataTable
+                            data={lines}
+                            rowKey={(l) => l.id}
+                            columns={closedColumns}
+                            className="border-0 rounded-none"
+                            empty={{ icon: <Users size={24} />, title: 'Sin líneas', description: 'Esta planilla se cerró sin trabajadores.' }}
+                        />
                     )}
                 </CardContent>
             </Card>

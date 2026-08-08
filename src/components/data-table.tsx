@@ -17,8 +17,8 @@ export interface DataTableColumn<T> {
     /** Clave única de la columna (para React key). */
     key: string;
     header: React.ReactNode;
-    /** Render de la celda para una fila. */
-    cell: (row: T) => React.ReactNode;
+    /** Render de la celda. `index` es la posición en `data` (para rankings "#"). */
+    cell: (row: T, index: number) => React.ReactNode;
     className?: string;
     headerClassName?: string;
 }
@@ -26,12 +26,19 @@ export interface DataTableColumn<T> {
 interface DataTableProps<T> {
     columns: DataTableColumn<T>[];
     data: T[];
-    /** Devuelve la key estable de cada fila. */
-    rowKey: (row: T) => string;
+    /**
+     * Key estable de cada fila. Recibe el índice porque no toda colección trae id
+     * propio (los ítems de una OC, p. ej., pueden repetir nombre).
+     */
+    rowKey: (row: T, index: number) => string;
     isLoading?: boolean;
+    /** Texto del estado de carga (por defecto el genérico de LoadingState). */
+    loadingLabel?: string;
     onRowClick?: (row: T) => void;
-    /** Texto del estado vacío. */
-    empty?: { icon?: React.ReactNode; title: string; description?: string };
+    /** Clases extra por fila (p. ej. atenuar las ya procesadas). */
+    rowClassName?: (row: T) => string | undefined;
+    /** Estado vacío. `action` permite ofrecer una salida (p. ej. "crear el primero"). */
+    empty?: { icon?: React.ReactNode; title: string; description?: string; action?: React.ReactNode };
     /** Alto máximo (p. ej. '500px'): scroll interno con cabecera sticky. */
     maxHeight?: string;
     /** Ancho mínimo de la tabla (p. ej. '700px') para scroll horizontal. */
@@ -49,7 +56,9 @@ export function DataTable<T>({
     data,
     rowKey,
     isLoading,
+    loadingLabel,
     onRowClick,
+    rowClassName,
     empty,
     maxHeight,
     minWidth,
@@ -58,13 +67,14 @@ export function DataTable<T>({
     return (
         <div className={cn('overflow-hidden rounded-[1.5rem] border bg-card shadow-sm', className)}>
             {isLoading ? (
-                <LoadingState />
+                <LoadingState label={loadingLabel} />
             ) : data.length === 0 ? (
                 <EmptyState
                     className="border-0"
                     icon={empty?.icon}
                     title={empty?.title ?? 'Sin datos'}
                     description={empty?.description}
+                    action={empty?.action}
                 />
             ) : (
                 <div className="overflow-auto no-scrollbar" style={maxHeight ? { maxHeight } : undefined}>
@@ -87,15 +97,15 @@ export function DataTable<T>({
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {data.map((row) => (
+                            {data.map((row, index) => (
                                 <TableRow
-                                    key={rowKey(row)}
+                                    key={rowKey(row, index)}
                                     onClick={onRowClick ? () => onRowClick(row) : undefined}
-                                    className={onRowClick ? 'cursor-pointer' : undefined}
+                                    className={cn(onRowClick && 'cursor-pointer', rowClassName?.(row))}
                                 >
                                     {columns.map((col) => (
                                         <TableCell key={col.key} className={col.className}>
-                                            {col.cell(row)}
+                                            {col.cell(row, index)}
                                         </TableCell>
                                     ))}
                                 </TableRow>

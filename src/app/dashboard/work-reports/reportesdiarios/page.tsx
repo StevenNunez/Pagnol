@@ -50,7 +50,8 @@ export default function ReportesDiariosPage() {
   const { workReports, workOrders, createWorkReport, deleteWorkReport, can, isLoading, notify } = useAppState();
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'super-admin';
-  const reports = workReports || [];
+  // Sin `|| []`: nunca es undefined, y el `||` creaba un array nuevo por render.
+  const reports = workReports;
   const [toDelete, setToDelete] = React.useState<WorkReport | null>(null);
   const [deleting, setDeleting] = React.useState(false);
   const [query, setQuery] = React.useState('');

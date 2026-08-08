@@ -22,9 +22,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { UserSearch, Clock, Briefcase, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { DailySummary } from "@/modules/core/hooks/use-attendance";
+
+const dailyColumns: DataTableColumn<DailySummary>[] = [
+    { key: "date", header: "Fecha", className: "font-medium", cell: (day) => day.date },
+    { key: "dayName", header: "Día", className: "capitalize", cell: (day) => day.dayName },
+    {
+        key: "entries", header: "Registros",
+        cell: (day) => day.entries.length > 0 ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                {day.entries.map((e) => (
+                    <span key={e.id} className={cn(e.type === 'in' ? 'text-green-400' : 'text-red-400')}>
+                        {e.time}
+                    </span>
+                ))}
+            </div>
+        ) : (
+            <span className="text-xs">{day.isBusinessDay ? 'Ausente' : 'Día no hábil'}</span>
+        ),
+    },
+    {
+        key: "worked", header: "Horas Trabajadas", headerClassName: "text-right", className: "text-right font-mono",
+        cell: (day) => day.totalHours > 0 ? day.totalHours.toFixed(2) : '--',
+    },
+    {
+        key: "overtime", header: "Horas Extras",
+        headerClassName: "text-right font-semibold text-green-400",
+        className: "text-right font-mono font-semibold text-green-400",
+        cell: (day) => day.overtimeHours !== '00:00' ? day.overtimeHours : '--',
+    },
+];
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({
   value: i + 1,
@@ -178,44 +208,13 @@ export default function OvertimeReportPage() {
                     <CardDescription>Detalle de las horas extras registradas por día.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Fecha</TableHead>
-                                <TableHead>Día</TableHead>
-                                <TableHead>Registros</TableHead>
-                                <TableHead className="text-right">Horas Trabajadas</TableHead>
-                                <TableHead className="text-right font-semibold text-green-400">Horas Extras</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {report.dailySummaries.map(day => (
-                                <TableRow key={day.date} className={cn(!day.isBusinessDay && "bg-muted/50 text-muted-foreground")}>
-                                    <TableCell className="font-medium">{day.date}</TableCell>
-                                    <TableCell className="capitalize">{day.dayName}</TableCell>
-                                    <TableCell>
-                                    {day.entries.length > 0 ? (
-                                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                                            {day.entries.map(e => (
-                                                <span key={e.id} className={cn(e.type === 'in' ? 'text-green-400' : 'text-red-400')}>
-                                                    {e.time}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <span className="text-xs">{day.isBusinessDay ? 'Ausente' : 'Día no hábil'}</span>
-                                    )}
-                                    </TableCell>
-                                    <TableCell className="text-right font-mono">
-                                        {day.totalHours > 0 ? day.totalHours.toFixed(2) : '--'}
-                                    </TableCell>
-                                    <TableCell className="text-right font-mono font-semibold text-green-400">
-                                        {day.overtimeHours !== '00:00' ? day.overtimeHours : '--'}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                    <DataTable
+                        data={report.dailySummaries}
+                        rowKey={(day) => day.date}
+                        columns={dailyColumns}
+                        rowClassName={(day) => !day.isBusinessDay ? "bg-muted/50 text-muted-foreground" : undefined}
+                        empty={{ icon: <CalendarDays className="h-6 w-6" />, title: 'Sin días en el período seleccionado.' }}
+                    />
                 </CardContent>
             </Card>
 

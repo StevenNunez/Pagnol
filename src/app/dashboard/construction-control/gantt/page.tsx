@@ -111,6 +111,7 @@ export default function GanttChartPage() {
         assignedTo: (item as any).assignedTo,
         hasRealDates: !!(item.plannedStartDate && item.plannedEndDate),
       }));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- `tasks` no es derivación pura: encima lleva estado local del Gantt (hideChildren, línea ~155), así que no puede ser un useMemo
       setTasks(ganttTasks);
     }
   }, [workItems]);
@@ -195,14 +196,20 @@ export default function GanttChartPage() {
     const today = startOfDay(new Date());
 
     const dateRange = eachDayOfInterval({ start: projectStart, end: projectEnd });
+
+    // Bucle explícito en vez de un `.map` cuyo callback reasignaba los acumuladores
+    // del scope de arriba: el resultado es idéntico (el `.map` ya era síncrono), pero
+    // sin ese closure el React Compiler puede optimizar el componente — con la forma
+    // anterior lo saltaba entero ("Cannot reassign variable after render completes").
+    const sCurve: { date: string; programado: number; real: number }[] = [];
     let cumulativePlanned = 0;
     let cumulativeActual = 0;
 
-    const sCurve = dateRange.map(day => {
+    for (const day of dateRange) {
         let dailyPlanned = 0;
         let dailyActual = 0;
 
-        relevantTasks.forEach(task => {
+        for (const task of relevantTasks) {
             const taskStart = startOfDay(task.start);
             const taskEnd = startOfDay(task.end);
             const duration = differenceInDays(taskEnd, taskStart) + 1;
@@ -216,17 +223,17 @@ export default function GanttChartPage() {
                   dailyActual += actualProgressOnDay;
               }
             }
-        });
+        }
 
         cumulativePlanned += dailyPlanned / relevantTasks.length;
         cumulativeActual += dailyActual / relevantTasks.length;
 
-        return {
+        sCurve.push({
             date: day.toLocaleDateString('es-CL', { month: 'short', day: 'numeric'}),
             programado: Math.min(100, cumulativePlanned),
-            real: Math.min(100, cumulativeActual)
-        };
-    });
+            real: Math.min(100, cumulativeActual),
+        });
+    }
 
     const todayIndex = dateRange.findIndex(d => startOfDay(d) >= today);
     const todayData = sCurve[todayIndex > -1 ? todayIndex : sCurve.length - 1];

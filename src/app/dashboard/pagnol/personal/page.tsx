@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { ClientContractFilter, contractIdsOfClient, CC_ALL, CC_POOL } from "@/components/client-contract-filter";
 import type { Contract } from "@/modules/core/lib/data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
 import { EnrollmentWizard } from '@/components/enrollment-wizard';
 import { SecureFileLink } from '@/components/secure-file-link';
@@ -226,6 +226,66 @@ export default function PersonalPage() {
     setIsPermissionsModalOpen(true);
   };
 
+  const personalColumns: DataTableColumn<User>[] = [
+    {
+      key: 'person', header: 'Personal / Identificación',
+      cell: (emp) => (
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xs font-black text-muted-foreground uppercase shrink-0">
+            {emp?.name?.split(' ').map(n => n[0]).join('') || 'U'}
+          </div>
+          <div>
+            <div className="font-bold text-sm uppercase tracking-tight">{emp.name}</div>
+            <div className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{emp.email}</div>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'rut', header: 'RUT', className: 'text-xs font-bold text-muted-foreground uppercase tracking-widest', cell: (emp) => emp.rut },
+    { key: 'internalId', header: 'ID Interno', className: 'text-xs font-mono tracking-widest', cell: (emp) => emp.internalId },
+    { key: 'role', header: 'Rol', cell: (emp) => <Badge variant="outline">{getRoleDisplayName(emp.role)}</Badge> },
+    {
+      key: 'contracts', header: 'Contrato / Área',
+      cell: (emp) => (
+        <div className="flex flex-wrap gap-1 max-w-[220px]">
+          {(assignmentsByUser.get(emp.id) || []).length > 0 ? (
+            (assignmentsByUser.get(emp.id) || []).map(c => (
+              <span
+                key={c.id}
+                title={c.kind === 'internal' ? 'Área interna' : 'Contrato de cliente'}
+                className={`${c.kind === 'internal' ? 'badge-warning' : 'badge-info'} text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase`}
+              >
+                {c.name}
+              </span>
+            ))
+          ) : (
+            <span className="text-[8px] font-black text-muted-foreground uppercase">Sin asignar</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'biometric', header: 'Estado Biométrico',
+      cell: (emp) => (
+        <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${emp.biometric_template ? 'text-success' : 'text-muted-foreground'}`}>
+          <ScanFace size={14} /> {emp.biometric_template ? 'Enrolado / Activo' : 'Pendiente'}
+        </div>
+      ),
+    },
+    {
+      key: 'actions', header: 'Acciones', headerClassName: 'text-center',
+      cell: (emp) => (
+        <div className="flex items-center justify-center gap-3">
+          {canDelegatePermissions && emp.id !== currentUser?.id && (
+            <Button variant="ghost" size="icon" onClick={() => handleOpenPermissions(emp)} className="text-pagnol-orange" title="Delegar Permisos"><Lock size={18} /></Button>
+          )}
+          {canManageEmployees && !emp.biometric_template && (
+            <Button variant="ghost" size="icon" onClick={() => handleOpenEnrollment(emp)} title="Enrolar"><ScanFace size={18} /></Button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -362,69 +422,15 @@ export default function PersonalPage() {
         </div>
       ) : (
         <Card className="rounded-[2.5rem] border-none shadow-2xl shadow-black/5 bg-card overflow-hidden">
-          <div className="overflow-x-auto no-scrollbar">
-            <Table>
-              <TableHeader className="min-w-[1000px]">
-                <TableRow>
-                  <TableHead>Personal / Identificación</TableHead><TableHead>RUT</TableHead><TableHead>ID Interno</TableHead>
-                  <TableHead>Rol</TableHead><TableHead>Contrato / Área</TableHead><TableHead>Estado Biométrico</TableHead><TableHead className="text-center">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsers.map(emp => (
-                  <TableRow key={emp.id} className="group">
-                    <TableCell>
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xs font-black text-muted-foreground uppercase shrink-0">
-                          {emp?.name?.split(' ').map(n => n[0]).join('') || 'U'}
-                        </div>
-                        <div>
-                          <div className="font-bold text-sm uppercase tracking-tight">{emp.name}</div>
-                          <div className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{emp.email}</div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{emp.rut}</TableCell>
-                    <TableCell className="text-xs font-mono tracking-widest">{emp.internalId}</TableCell>
-                    <TableCell><Badge variant="outline">{getRoleDisplayName(emp.role)}</Badge></TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1 max-w-[220px]">
-                        {(assignmentsByUser.get(emp.id) || []).length > 0 ? (
-                          (assignmentsByUser.get(emp.id) || []).map(c => (
-                            <span
-                              key={c.id}
-                              title={c.kind === 'internal' ? 'Área interna' : 'Contrato de cliente'}
-                              className={`${c.kind === 'internal' ? 'badge-warning' : 'badge-info'} text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase`}
-                            >
-                              {c.name}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-[8px] font-black text-muted-foreground uppercase">Sin asignar</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${emp.biometric_template ? 'text-success' : 'text-muted-foreground'}`}>
-                        <ScanFace size={14} /> {emp.biometric_template ? 'Enrolado / Activo' : 'Pendiente'}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-center gap-3">
-                        {/* <Button variant="ghost" size="icon" onClick={() => handleOpenHistory(emp)} title="Ver Historial"><History size={18} /></Button> */}
-                        {canDelegatePermissions && emp.id !== currentUser?.id && (
-                          <Button variant="ghost" size="icon" onClick={() => handleOpenPermissions(emp)} className="text-pagnol-orange" title="Delegar Permisos"><Lock size={18} /></Button>
-                        )}
-                        {canManageEmployees && !emp.biometric_template && (
-                          <Button variant="ghost" size="icon" onClick={() => handleOpenEnrollment(emp)} title="Enrolar"><ScanFace size={18} /></Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <DataTable
+            data={filteredUsers}
+            rowKey={(emp) => emp.id}
+            minWidth="1000px"
+            columns={personalColumns}
+            className="border-0 rounded-none shadow-none"
+            rowClassName={() => 'group'}
+            empty={{ icon: <UserIcon size={24} />, title: 'Sin personal que coincida con el filtro.' }}
+          />
         </Card>
       )}
 

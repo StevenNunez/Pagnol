@@ -101,6 +101,7 @@ export default function TenantDetailPage() {
     setLoading(false);
   }, [tenantId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: `fetchData` es async y sólo escribe estado después del await
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSaveHardware = async () => {

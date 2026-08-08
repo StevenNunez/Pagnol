@@ -2,12 +2,11 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { PageHeader } from '@/components/page-header';
-import { EmptyState } from '@/components/empty-state';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { PurchaseOrder as PurchaseOrderType, Supplier } from '@/modules/core/lib/data';
 import { generateOCPDF } from '@/lib/pdf-oc-generator';
 import { useToast } from '@/modules/core/hooks/use-toast';
@@ -86,6 +85,22 @@ export default function PurchaseOrdersPage() {
     }
   };
   
+  const orderColumns: DataTableColumn<PurchaseOrderType>[] = [
+    { key: 'oc', header: 'Nº OC', className: 'font-mono', cell: (o) => o.officialOCId },
+    { key: 'supplier', header: 'Proveedor', className: 'font-medium', cell: (o) => o.supplierName },
+    { key: 'date', header: 'Fecha de Emisión', cell: (o) => getDate(o.createdAt).toLocaleDateString('es-CL') },
+    { key: 'amount', header: 'Monto Total', className: 'font-mono', cell: (o) => `$${(o.totalAmount || 0).toLocaleString('es-CL')}` },
+    {
+      key: 'actions', header: 'Acciones', headerClassName: 'text-right', className: 'text-right',
+      cell: (o) => (
+        <Button size="sm" onClick={() => handleDownloadPDF(o)} disabled={downloadingId === o.id}>
+          <Download className="mr-2 h-4 w-4" />
+          {downloadingId === o.id ? 'Generando...' : 'PDF'}
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="Historial de Órdenes de Compra" description="Consulta y descarga todas las órdenes de compra oficiales generadas." />
@@ -97,42 +112,14 @@ export default function PurchaseOrdersPage() {
             Esta es la lista de todas las OC que han sido procesadas y están listas para ser enviadas a proveedores y para el pago de facturas.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nº OC</TableHead>
-                <TableHead>Proveedor</TableHead>
-                <TableHead>Fecha de Emisión</TableHead>
-                <TableHead>Monto Total</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {officialOrders.length > 0 ? (
-                officialOrders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-mono">{order.officialOCId}</TableCell>
-                    <TableCell className="font-medium">{order.supplierName}</TableCell>
-                    <TableCell>{getDate(order.createdAt).toLocaleDateString('es-CL')}</TableCell>
-                    <TableCell className="font-mono">${(order.totalAmount || 0).toLocaleString('es-CL')}</TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" onClick={() => handleDownloadPDF(order)} disabled={downloadingId === order.id}>
-                        <Download className="mr-2 h-4 w-4" />
-                        {downloadingId === order.id ? 'Generando...' : 'PDF'}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5}>
-                    <EmptyState className="border-0" title="No hay órdenes de compra generadas." />
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+        <CardContent className="p-0">
+          <DataTable
+            data={officialOrders}
+            rowKey={(order) => order.id}
+            columns={orderColumns}
+            className="border-0 rounded-none"
+            empty={{ title: 'No hay órdenes de compra generadas.' }}
+          />
         </CardContent>
       </Card>
     </div>

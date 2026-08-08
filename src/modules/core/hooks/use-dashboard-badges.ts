@@ -85,6 +85,7 @@ export function useDashboardBadges(tenantId: string | null | undefined) {
     useEffect(() => {
         scopeRef.current = tenantId;
         if (!tenantId) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- sin empresa hay que borrar los contadores: conservarlos filtraría cifras del tenant anterior
             setBadges(ZERO);
             setHasLoaded(false);
             return;

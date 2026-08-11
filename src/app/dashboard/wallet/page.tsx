@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
 import { LoadingState } from '@/components/loading-state';
+import { PageHeader } from '@/components/page-header';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { startOfMonth, getDaysInMonth, formatDistanceToNow, isToday, format } from 'date-fns';
@@ -218,6 +219,7 @@ export default function WorkerWallet() {
 
     return (
         <div className="max-w-md mx-auto space-y-6 pb-16 animate-in fade-in duration-500 font-outfit">
+            <PageHeader title="Pagnol Wallet" description="Anticipos y liquidaciones" />
 
             {/* Header */}
             <div className="flex justify-between items-center pt-4">

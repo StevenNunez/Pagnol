@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Permission } from '@/modules/core/lib/permissions';
+import { PageHeader } from '@/components/page-header';
 
 export default function DashboardHub() {
     const { user, can } = useAuth();
@@ -266,6 +267,7 @@ export default function DashboardHub() {
         // 1. APLICAMOS UN CONTENEDOR CON FONDO SUTIL
         // bg-slate-50 para modo claro y un tono muy profundo para oscuro, generando contraste inmediato con las cards.
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 p-6 sm:p-8 bg-slate-50/60 dark:bg-slate-950/40 rounded-[2.5rem] border border-border/40">
+            <PageHeader title="Inicio" description="Selecciona el módulo al que deseas acceder" />
 
             {/* Welcome Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">

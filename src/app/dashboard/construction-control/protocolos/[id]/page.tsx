@@ -25,6 +25,7 @@ import { ProtocolItem, ProtocolSignature } from '@/modules/core/lib/data';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import Link from 'next/link';
+import { PageHeader } from '@/components/page-header';
 
 type SINoNA = 'si' | 'no' | 'na';
 
@@ -249,6 +250,7 @@ export default function ProtocolDetailPage() {
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <PageHeader title={protocol.title} description={protocol.obra} />
       {/* Header */}
       <div className="flex items-start gap-4">
         <Link href="/dashboard/construction-control/protocolos">

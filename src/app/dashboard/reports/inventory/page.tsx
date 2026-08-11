@@ -4,7 +4,8 @@
 import React, { useState, useMemo } from "react";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { PageHeader } from "@/components/page-header";
-import { LoadingState } from "@/components/loading-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import {
     Card,
     CardContent,
@@ -34,6 +35,16 @@ import { computeToolHolderMap } from "@/modules/core/lib/tool-loans";
 import { EditMaterialForm } from "@/components/admin/edit-material-form";
 import * as ExcelJS from 'exceljs';
 
+
+/**
+ * Cifra de una tarjeta de resumen. Mientras el estado global carga, todas estas
+ * cuentas valen 0 — y "0 materiales agotados" es una afirmación falsa, no un
+ * dato que aún no llega (ADR-014). El esqueleto no afirma nada.
+ */
+const StatValue = ({ value, isLoading, className }: { value: number; isLoading?: boolean; className?: string }) =>
+    isLoading
+        ? <Skeleton className="h-8 w-20" />
+        : <div className={cn('text-2xl font-bold', className)}>{value}</div>;
 
 export default function InventoryReportPage() {
     const { materials, requests, returnRequests, users, isLoading } = useAppState();
@@ -271,10 +282,6 @@ export default function InventoryReportPage() {
     };
 
 
-    if (isLoading) {
-        return <LoadingState className="min-h-[50vh]" />;
-    }
-
     return (
         <div className="flex flex-col gap-8">
             {editingMaterial && (
@@ -298,9 +305,7 @@ export default function InventoryReportPage() {
                         <Package className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">
-                            {stats.totalMaterials}
-                        </div>
+                        <StatValue value={stats.totalMaterials} isLoading={isLoading} />
                     </CardContent>
                 </Card>
 
@@ -312,9 +317,7 @@ export default function InventoryReportPage() {
                         <Wrench className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">
-                            {stats.totalTools}
-                        </div>
+                        <StatValue value={stats.totalTools} isLoading={isLoading} />
                     </CardContent>
                 </Card>
 
@@ -326,7 +329,7 @@ export default function InventoryReportPage() {
                         <CheckCircle className="h-4 w-4 text-green-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{stats.available}</div>
+                        <StatValue value={stats.available} isLoading={isLoading} />
                     </CardContent>
                 </Card>
 
@@ -338,9 +341,7 @@ export default function InventoryReportPage() {
                         <AlertTriangle className="h-4 w-4 text-destructive" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-destructive">
-                            {stats.outOfStock}
-                        </div>
+                        <StatValue value={stats.outOfStock} isLoading={isLoading} className="text-destructive" />
                     </CardContent>
                 </Card>
             </div>
@@ -364,12 +365,15 @@ export default function InventoryReportPage() {
                                 setActiveTab(value as "materials" | "tools")
                             }
                         >
+                            {/* El contador va entre paréntesis sólo cuando ya se sabe:
+                                "Materiales (0)" durante la carga afirma un inventario
+                                vacío igual que lo haría la tabla (ADR-014). */}
                             <TabsList className="grid w-full grid-cols-2">
                                 <TabsTrigger value="materials">
-                                    Materiales ({stats.totalMaterials})
+                                    Materiales{isLoading ? '' : ` (${stats.totalMaterials})`}
                                 </TabsTrigger>
                                 <TabsTrigger value="tools">
-                                    Herramientas ({stats.totalTools})
+                                    Herramientas{isLoading ? '' : ` (${stats.totalTools})`}
                                 </TabsTrigger>
                             </TabsList>
 

@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { useAppState } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClipboardList, Search, Users, Target, FileUp, ListChecks, ShieldAlert, BookOpen } from "lucide-react";
-import { LoadingState } from "@/components/loading-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 
 export default function SafetyDashboardPage() {
@@ -25,10 +25,6 @@ export default function SafetyDashboardPage() {
 
         return { checklistsPendientes, checklistsCompletados, inspPendientes, inspCompletadas, totalCharlas, totalObservaciones, totalPlantillas };
     }, [assignedChecklists, safetyInspections, dailyTalks, behaviorObservations, checklistTemplates]);
-
-    if (isLoading) {
-        return <LoadingState fullHeight />;
-    }
 
     const cards = [
         {
@@ -96,8 +92,21 @@ export default function SafetyDashboardPage() {
                                 <card.icon className={`h-5 w-5 ${card.color}`} />
                             </CardHeader>
                             <CardContent>
-                                <p className={`text-3xl font-bold ${card.color}`}>{card.value}</p>
-                                <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+                                {/* Mientras el estado global carga, TODOS estos contadores valen 0,
+                                    y "0 checklists pendientes" es una afirmación falsa, no un dato
+                                    que falta (ADR-014). El esqueleto no afirma nada; mientras tanto
+                                    la cabecera y la navegación del panel ya son utilizables. */}
+                                {isLoading ? (
+                                    <>
+                                        <Skeleton className="h-9 w-16" />
+                                        <Skeleton className="mt-2 h-3 w-24" />
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className={`text-3xl font-bold ${card.color}`}>{card.value}</p>
+                                        <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+                                    </>
+                                )}
                             </CardContent>
                         </Card>
                     </Link>

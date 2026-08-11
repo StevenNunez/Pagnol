@@ -3,9 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
-import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,7 +17,6 @@ import {
   Box,
   FileText,
   Edit,
-  Loader2,
   AlertCircle,
   Package,
   Trash2,
@@ -29,7 +27,6 @@ import {
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { EditPurchaseRequestForm } from '@/components/operations/edit-purchase-request-form';
 import type { PurchaseRequest, PurchaseRequestStatus, Material, User } from '@/modules/core/lib/data';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -160,6 +157,128 @@ export default function PurchaseRequestsManagementPage() {
 
   const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
 
+  // Sin `useMemo` a propósito: las celdas usan helpers declarados en el cuerpo del
+  // componente (`formatDate`, `getRelativeTime`, `renderStatusBadge`), que se
+  // recrean en cada render. Memoizar a mano con deps incompletas hace que el React
+  // Compiler abandone el archivo entero ("Existing memoization could not be
+  // preserved") y perdamos MÁS de lo que ese useMemo ahorraba.
+  const columns: DataTableColumn<PurchaseRequest>[] = [
+    {
+      key: 'material',
+      header: 'Material',
+      headerClassName: 'w-[25%]',
+      cell: (req) => (
+        <div className="flex flex-col gap-1">
+          <span className="font-medium text-sm">{req.materialName}</span>
+          {/* La especificación de la línea es lo que evita llamar por
+              teléfono antes de cotizar (RFC-004 F1). */}
+          <ItemSpec req={req} className="truncate max-w-[220px]" />
+          {req.justification && (
+            <span className="text-[11px] text-muted-foreground truncate max-w-[200px]" title={req.justification}>
+              "{req.justification}"
+            </span>
+          )}
+          <CecoLine req={req} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ServiceBadge req={req} />
+            <UrgencyBadge req={req} />
+            <ExpenseKindBadge req={req} />
+          </div>
+          <UrgencyReason req={req} />
+          <SuggestedSupplier req={req} />
+        </div>
+      ),
+    },
+    {
+      key: 'cantidad',
+      header: 'Cantidad',
+      headerClassName: 'w-[15%]',
+      cell: (req) => (
+        <>
+          <Badge variant="secondary" className="font-mono font-normal bg-muted">
+            {req.quantity} {req.unit}
+          </Badge>
+          {/* Tooltip de cambios si existen */}
+          {(req.originalQuantity && req.originalQuantity !== req.quantity) && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger><AlertCircle className="h-3 w-3 text-amber-500 ml-2 inline" /></TooltipTrigger>
+                <TooltipContent>Cantidad original: {req.originalQuantity}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'solicitante',
+      header: 'Solicitante / Área',
+      headerClassName: 'w-[20%]',
+      cell: (req) => (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium">{supervisorMap.get(req.supervisorId) || 'Desconocido'}</span>
+          {req.contractName && (
+            <Badge variant="outline" className="w-fit text-[10px] h-4 px-1.5 border-primary/30 text-primary">{req.contractName}</Badge>
+          )}
+          {req.area && <span className="text-xs text-muted-foreground">{req.area}</span>}
+        </div>
+      ),
+    },
+    {
+      key: 'fecha',
+      header: 'Fecha',
+      headerClassName: 'w-[15%]',
+      cell: (req) => (
+        <div className="flex flex-col">
+          <span className="text-sm">{formatDate(req.createdAt)}</span>
+          <span className="text-[10px] text-muted-foreground">{getRelativeTime(req.createdAt)}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'estado',
+      header: 'Estado',
+      headerClassName: 'w-[10%]',
+      cell: (req) => renderStatusBadge(req.status),
+    },
+    {
+      key: 'acciones',
+      header: 'Acciones',
+      headerClassName: 'w-[15%] text-right',
+      className: 'text-right',
+      cell: (req) => (
+        <div className="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          {canApprove && ['pending', 'approved', 'batched', 'ordered'].includes(req.status) && (
+            <Button variant="ghost" size="icon" onClick={() => setEditingRequest(req)} title="Gestionar / Editar">
+              <Edit className="h-4 w-4 text-blue-600" />
+            </Button>
+          )}
+          {canDelete && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="hover:bg-destructive/10">
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Anular Solicitud?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción anulará la solicitud de <b>{req.materialName}</b>. Esto es útil para ítems que ya no se comprarán. Esta acción es irreversible.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleDeleteRequest(req.id)} className="bg-destructive hover:bg-destructive/90">Anular Solicitud</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   // Estadísticas Rápidas (sobre lo ya autorizado por el ADC)
   const stats = useMemo(() => {
       const all = authorizedRequests;
@@ -249,125 +368,18 @@ export default function PurchaseRequestsManagementPage() {
 
             <Card className="border shadow-sm">
                 <CardContent className="p-0">
-                    <ScrollArea className="h-[600px]">
-                        <Table>
-                            <TableHeader className="bg-muted/50 sticky top-0 z-10">
-                                <TableRow>
-                                    <TableHead className="w-[25%]">Material</TableHead>
-                                    <TableHead className="w-[15%]">Cantidad</TableHead>
-                                    <TableHead className="w-[20%]">Solicitante / Área</TableHead>
-                                    <TableHead className="w-[15%]">Fecha</TableHead>
-                                    <TableHead className="w-[10%]">Estado</TableHead>
-                                    <TableHead className="w-[15%] text-right">Acciones</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {isLoading ? (
-                                    <TableRow>
-                                        <TableCell colSpan={6} className="h-32 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></TableCell>
-                                    </TableRow>
-                                ) : paginatedRequests.length > 0 ? (
-                                    paginatedRequests.map((req) => (
-                                        <TableRow key={req.id} className="group hover:bg-muted/30 transition-colors">
-                                            <TableCell>
-                                                <div className="flex flex-col gap-1">
-                                                    <span className="font-medium text-sm">{req.materialName}</span>
-                                                    {/* La especificación de la línea es lo que evita llamar por
-                                                        teléfono antes de cotizar (RFC-004 F1). */}
-                                                    <ItemSpec req={req} className="truncate max-w-[220px]" />
-                                                    {req.justification && (
-                                                        <span className="text-[11px] text-muted-foreground truncate max-w-[200px]" title={req.justification}>
-                                                            "{req.justification}"
-                                                        </span>
-                                                    )}
-                                                    <CecoLine req={req} />
-                                                    <div className="flex flex-wrap items-center gap-1.5">
-                                                        <ServiceBadge req={req} />
-                                                        <UrgencyBadge req={req} />
-                                                        <ExpenseKindBadge req={req} />
-                                                    </div>
-                                                    <UrgencyReason req={req} />
-                                                    <SuggestedSupplier req={req} />
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant="secondary" className="font-mono font-normal bg-muted">
-                                                    {req.quantity} {req.unit}
-                                                </Badge>
-                                                {/* Tooltip de cambios si existen */}
-                                                {(req.originalQuantity && req.originalQuantity !== req.quantity) && (
-                                                    <TooltipProvider>
-                                                        <Tooltip>
-                                                            <TooltipTrigger><AlertCircle className="h-3 w-3 text-amber-500 ml-2 inline" /></TooltipTrigger>
-                                                            <TooltipContent>Cantidad original: {req.originalQuantity}</TooltipContent>
-                                                        </Tooltip>
-                                                    </TooltipProvider>
-                                                )}
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span className="text-sm font-medium">{supervisorMap.get(req.supervisorId) || 'Desconocido'}</span>
-                                                    {req.contractName && (
-                                                        <Badge variant="outline" className="w-fit text-[10px] h-4 px-1.5 border-primary/30 text-primary">{req.contractName}</Badge>
-                                                    )}
-                                                    {req.area && <span className="text-xs text-muted-foreground">{req.area}</span>}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm">{formatDate(req.createdAt)}</span>
-                                                    <span className="text-[10px] text-muted-foreground">{getRelativeTime(req.createdAt)}</span>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                {renderStatusBadge(req.status)}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                <div className="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                                    {canApprove && ['pending', 'approved', 'batched', 'ordered'].includes(req.status) && (
-                                                        <Button variant="ghost" size="icon" onClick={() => setEditingRequest(req)} title="Gestionar / Editar">
-                                                            <Edit className="h-4 w-4 text-blue-600" />
-                                                        </Button>
-                                                    )}
-                                                    {canDelete && (
-                                                        <AlertDialog>
-                                                            <AlertDialogTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="hover:bg-destructive/10">
-                                                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                                                </Button>
-                                                            </AlertDialogTrigger>
-                                                            <AlertDialogContent>
-                                                                <AlertDialogHeader>
-                                                                    <AlertDialogTitle>¿Anular Solicitud?</AlertDialogTitle>
-                                                                    <AlertDialogDescription>
-                                                                        Esta acción anulará la solicitud de <b>{req.materialName}</b>. Esto es útil para ítems que ya no se comprarán. Esta acción es irreversible.
-                                                                    </AlertDialogDescription>
-                                                                </AlertDialogHeader>
-                                                                <AlertDialogFooter>
-                                                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                                                    <AlertDialogAction onClick={() => handleDeleteRequest(req.id)} className="bg-destructive hover:bg-destructive/90">Anular Solicitud</AlertDialogAction>
-                                                                </AlertDialogFooter>
-                                                            </AlertDialogContent>
-                                                        </AlertDialog>
-                                                    )}
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                ) : (
-                                    <TableRow>
-                                        <TableCell colSpan={6}>
-                                            <EmptyState
-                                                className="border-0"
-                                                icon={<Filter size={24} />}
-                                                title="No se encontraron solicitudes con los filtros actuales."
-                                            />
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </ScrollArea>
+                    <DataTable
+                        columns={columns}
+                        data={paginatedRequests}
+                        rowKey={(req) => req.id}
+                        isLoading={isLoading}
+                        rowClassName={() => 'group hover:bg-muted/30 transition-colors'}
+                        maxHeight="600px"
+                        empty={{
+                            icon: <Filter size={24} />,
+                            title: 'No se encontraron solicitudes con los filtros actuales.',
+                        }}
+                    />
 
                     {/* Paginación */}
                     {totalPages > 1 && (

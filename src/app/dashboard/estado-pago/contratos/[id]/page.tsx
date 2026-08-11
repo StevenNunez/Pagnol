@@ -39,7 +39,7 @@ import { useToast } from '@/modules/core/hooks/use-toast';
 import { RegisterProgressForm } from '@/components/operations/register-progress-form';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { format, eachDayOfInterval, differenceInDays, startOfDay, isAfter, isBefore } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Progress } from '@/components/ui/progress';
@@ -596,32 +596,18 @@ export default function ContractorContractDetailPage() {
                                     <h4 className="font-medium mb-3 flex items-center gap-2 text-sm text-muted-foreground">
                                         <Info className="h-4 w-4" /> Historial de Registros
                                     </h4>
-                                    <ScrollArea className="h-[250px] border rounded-md">
-                                        <Table>
-                                            <TableHeader className="bg-muted/50 sticky top-0">
-                                                <TableRow>
-                                                    <TableHead className="w-[120px]">Fecha</TableHead>
-                                                    <TableHead className="text-right">Cantidad</TableHead>
-                                                    <TableHead>Usuario</TableHead>
-                                                    <TableHead className="w-[40%]">Observaciones</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {selectedItemLogs.length > 0 ? (
-                                                    selectedItemLogs.map(log => (
-                                                        <TableRow key={log.id}>
-                                                            <TableCell className="font-mono text-xs w-28">{formatDate(log.date)}</TableCell>
-                                                            <TableCell className="text-right font-bold text-success w-24">+{log.quantity.toLocaleString()}</TableCell>
-                                                            <TableCell className="text-xs text-muted-foreground">{log.userName}</TableCell>
-                                                            <TableCell className="text-xs text-muted-foreground italic truncate max-w-[200px]">{log.observations || "-"}</TableCell>
-                                                        </TableRow>
-                                                    ))
-                                                ) : (
-                                                    <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">Sin historial de avance.</TableCell></TableRow>
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </ScrollArea>
+                                    <DataTable
+                                        columns={[
+                                            { key: 'fecha', header: 'Fecha', headerClassName: 'w-[120px]', className: 'font-mono text-xs w-28', cell: (log) => formatDate(log.date) },
+                                            { key: 'cantidad', header: 'Cantidad', headerClassName: 'text-right', className: 'text-right font-bold text-success w-24', cell: (log) => `+${log.quantity.toLocaleString()}` },
+                                            { key: 'usuario', header: 'Usuario', className: 'text-xs text-muted-foreground', cell: (log) => log.userName },
+                                            { key: 'obs', header: 'Observaciones', headerClassName: 'w-[40%]', className: 'text-xs text-muted-foreground italic truncate max-w-[200px]', cell: (log) => log.observations || '-' },
+                                        ] satisfies DataTableColumn<ProgressLog>[]}
+                                        data={selectedItemLogs}
+                                        rowKey={(log) => log.id}
+                                        maxHeight="250px"
+                                        empty={{ title: 'Sin historial de avance.' }}
+                                    />
                                 </div>
                             </CardContent>
                         </Card>

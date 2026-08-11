@@ -5,13 +5,10 @@ import { useAppState } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { UserSearch, FileDown } from 'lucide-react';
-import { LoadingState } from '@/components/loading-state';
-import { EmptyState } from '@/components/empty-state';
 import Papa from 'papaparse';
 import type { MaterialRequest } from '@/modules/core/lib/data';
 
@@ -33,6 +30,30 @@ type DeliveryItem = {
     approvedAt: Date;
 }
 
+
+const formatDate = (date: Date | string) => {
+    if (!date) return 'N/A';
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+// Las dos pestañas listan lo mismo, pero con las columnas en distinto orden y con
+// etiquetas propias. Se dejan explícitas para que la migración no las uniforme.
+const workerColumns: DataTableColumn<DeliveryItem>[] = [
+    { key: 'material', header: 'Material', cell: (item) => item.materialName },
+    { key: 'cantidad', header: 'Cantidad', cell: (item) => item.quantity },
+    { key: 'area', header: 'Área / Trabajador', cell: (item) => item.area },
+    { key: 'solicitante', header: 'Solicitante', cell: (item) => item.supervisorName },
+    { key: 'fecha', header: 'Fecha Aprobación', cell: (item) => formatDate(item.approvedAt) },
+];
+
+const aprColumns: DataTableColumn<DeliveryItem>[] = [
+    { key: 'material', header: 'Material', cell: (item) => item.materialName },
+    { key: 'cantidad', header: 'Cantidad', cell: (item) => item.quantity },
+    { key: 'solicitante', header: 'Solicitante (APR)', cell: (item) => item.supervisorName },
+    { key: 'area', header: 'Área', cell: (item) => item.area },
+    { key: 'fecha', header: 'Fecha Aprobación', cell: (item) => formatDate(item.approvedAt) },
+];
 
 export default function DeliveryReportPage() {
     const { requests, users, materials, isLoading } = useAppState();
@@ -81,18 +102,30 @@ export default function DeliveryReportPage() {
         );
     }, [flatDeliveries, searchTerm]);
 
-    const aprDeliveries = useMemo(() => {
-        return approvedRequests.filter(req => {
-            const user = userMap.get(req.supervisorId);
-            return user?.role === 'apr';
-        });
-    }, [approvedRequests, userMap]);
+    // Mismo aplanado que `flatDeliveries` pero acotado a solicitantes APR y **sin
+    // ordenar**: esta pestaña siempre listó en el orden de `requests`, y ordenarla
+    // aquí sería un cambio de comportamiento colado en una migración de tabla.
+    const aprDeliveries = useMemo((): DeliveryItem[] => {
+        return approvedRequests
+            .filter(req => userMap.get(req.supervisorId)?.role === 'apr')
+            .flatMap(req => {
+                const supervisor = userMap.get(req.supervisorId);
+                const itemsToProcess = Array.isArray(req.items)
+                    ? req.items
+                    : (req.materialId && req.quantity ? [{ materialId: req.materialId, quantity: req.quantity }] : []);
 
-    const formatDate = (date: Date | string) => {
-        if (!date) return 'N/A';
-        const d = typeof date === 'string' ? new Date(date) : date;
-        return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    };
+                return itemsToProcess.map(item => ({
+                    requestId: req.id,
+                    materialId: item.materialId,
+                    materialName: materialMap.get(item.materialId)?.name || 'Desconocido',
+                    quantity: item.quantity,
+                    supervisorId: req.supervisorId,
+                    supervisorName: supervisor?.name || 'Desconocido',
+                    area: req.area,
+                    approvedAt: new Date(req.createdAt as any),
+                }));
+            });
+    }, [approvedRequests, userMap, materialMap]);
 
     const handleDownloadExcel = () => {
         const dataToExport = filteredDeliveries.map(item => ({
@@ -119,10 +152,6 @@ export default function DeliveryReportPage() {
     };
 
 
-    if (isLoading) {
-        return <LoadingState className="min-h-64" />;
-    }
-    
     return (
         <div className="flex flex-col gap-8">
             <PageHeader
@@ -157,42 +186,17 @@ export default function DeliveryReportPage() {
                             </div>
                         </CardHeader>
                         <CardContent>
-                             <ScrollArea className="h-[60vh]">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Material</TableHead>
-                                            <TableHead>Cantidad</TableHead>
-                                            <TableHead>Área / Trabajador</TableHead>
-                                            <TableHead>Solicitante</TableHead>
-                                            <TableHead>Fecha Aprobación</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {filteredDeliveries.length > 0 ? (
-                                            filteredDeliveries.map((item, index) => (
-                                                <TableRow key={`${item.requestId}-${item.materialId}-${index}`}>
-                                                    <TableCell>{item.materialName}</TableCell>
-                                                    <TableCell>{item.quantity}</TableCell>
-                                                    <TableCell>{item.area}</TableCell>
-                                                    <TableCell>{item.supervisorName}</TableCell>
-                                                    <TableCell>{formatDate(item.approvedAt)}</TableCell>
-                                                </TableRow>
-                                            ))
-                                        ) : (
-                                            <TableRow>
-                                                <TableCell colSpan={5}>
-                                                    <EmptyState
-                                                        className="border-0"
-                                                        icon={<UserSearch size={24} />}
-                                                        title="No se encontraron entregas para la búsqueda actual."
-                                                    />
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </ScrollArea>
+                            <DataTable
+                                columns={workerColumns}
+                                data={filteredDeliveries}
+                                rowKey={(item, index) => `${item.requestId}-${item.materialId}-${index}`}
+                                isLoading={isLoading}
+                                maxHeight="60vh"
+                                empty={{
+                                    icon: <UserSearch size={24} />,
+                                    title: 'No se encontraron entregas para la búsqueda actual.',
+                                }}
+                            />
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -206,48 +210,14 @@ export default function DeliveryReportPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <ScrollArea className="h-[60vh]">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Material</TableHead>
-                                            <TableHead>Cantidad</TableHead>
-                                            <TableHead>Solicitante (APR)</TableHead>
-                                            <TableHead>Área</TableHead>
-                                            <TableHead>Fecha Aprobación</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {aprDeliveries.length > 0 ? (
-                                           aprDeliveries.flatMap(req => {
-                                                const itemsToProcess = Array.isArray(req.items) 
-                                                    ? req.items 
-                                                    : (req.materialId && req.quantity ? [{ materialId: req.materialId, quantity: req.quantity }] : []);
-
-                                                return itemsToProcess.map(item => {
-                                                    const aprUser = userMap.get(req.supervisorId);
-                                                    const material = materialMap.get(item.materialId);
-                                                    return (
-                                                        <TableRow key={`${req.id}-${item.materialId}`}>
-                                                            <TableCell>{material?.name || 'Desconocido'}</TableCell>
-                                                            <TableCell>{item.quantity}</TableCell>
-                                                            <TableCell>{aprUser?.name || 'Desconocido'}</TableCell>
-                                                            <TableCell>{req.area}</TableCell>
-                                                            <TableCell>{formatDate(req.createdAt)}</TableCell>
-                                                        </TableRow>
-                                                    )
-                                                })
-                                            })
-                                        ) : (
-                                            <TableRow>
-                                                <TableCell colSpan={5}>
-                                                    <EmptyState className="border-0" title="No hay entregas registradas por usuarios con rol de APR." />
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </ScrollArea>
+                            <DataTable
+                                columns={aprColumns}
+                                data={aprDeliveries}
+                                rowKey={(item) => `${item.requestId}-${item.materialId}`}
+                                isLoading={isLoading}
+                                maxHeight="60vh"
+                                empty={{ title: 'No hay entregas registradas por usuarios con rol de APR.' }}
+                            />
                         </CardContent>
                     </Card>
                 </TabsContent>

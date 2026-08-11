@@ -8,7 +8,7 @@ import {
   Briefcase, DollarSign, TrendingUp, ChevronRight,
   FileText, Clock, CheckCircle2, AlertCircle, History, ArrowRight
 } from 'lucide-react';
-import { LoadingState } from '@/components/loading-state';
+import { EmptyState } from '@/components/empty-state';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -57,10 +57,6 @@ export default function MisContratosPage() {
     );
   }, [workItems, user]);
 
-  if (isLoading) {
-    return <LoadingState fullHeight />;
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
@@ -76,23 +72,20 @@ export default function MisContratosPage() {
       </div>
 
       {myContracts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center min-h-64 border-2 border-dashed rounded-xl text-muted-foreground gap-4 py-16 px-6">
-          <div className="p-4 bg-muted/50 rounded-full">
-            <Briefcase className="h-10 w-10 opacity-40" />
-          </div>
-          <div className="text-center space-y-1">
-            <h3 className="text-lg font-semibold text-foreground">Sin contratos asignados</h3>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              Para que aparezca un contrato aquí, un administrador debe crearlo en
-              <strong className="text-foreground"> Control de Obra → Partidas (EDT)</strong> y
-              asignarlo a tu usuario como responsable.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => router.push('/dashboard/construction-control/wbs')}>
-            Ir a Partidas (EDT)
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
+        // Vía `EmptyState` y no a mano: mientras el estado global carga esta lista
+        // también está vacía, y afirmar "Sin contratos asignados" ahí sería mentir
+        // (ADR-014). `EmptyState` muestra el spinner en ese caso.
+        <EmptyState
+          icon={<Briefcase className="h-10 w-10 opacity-40" />}
+          title="Sin contratos asignados"
+          description="Para que aparezca un contrato aquí, un administrador debe crearlo en Control de Obra → Partidas (EDT) y asignarlo a tu usuario como responsable."
+          action={
+            <Button variant="outline" onClick={() => router.push('/dashboard/construction-control/wbs')}>
+              Ir a Partidas (EDT)
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          }
+        />
       ) : (
         <div className="grid gap-4">
           {myContracts.map(contract => {

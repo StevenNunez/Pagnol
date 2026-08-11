@@ -31,7 +31,7 @@ import { CreateWorkItemForm } from '@/components/operations/create-work-item-for
 import { RegisterProgressForm } from '@/components/operations/register-progress-form';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Progress } from '@/components/ui/progress';
@@ -442,36 +442,18 @@ export default function ConstructionWBSPage() {
                           <CardTitle className="flex items-center gap-2"><History className="h-5 w-5"/> Historial de Avances</CardTitle>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden">
-                          <ScrollArea className="h-full max-h-60">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Fecha</TableHead>
-                                  <TableHead className="text-right">Cantidad</TableHead>
-                                  <TableHead>Usuario</TableHead>
-                                  <TableHead>Observaciones</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {selectedItemLogs.length > 0 ? (
-                                  selectedItemLogs.map(log => (
-                                    <TableRow key={log.id}>
-                                      <TableCell>{formatDate(log.date)}</TableCell>
-                                      <TableCell className="text-right font-mono">{log.quantity.toLocaleString()}</TableCell>
-                                      <TableCell>{log.userName}</TableCell>
-                                      <TableCell className="text-xs text-muted-foreground">{log.observations}</TableCell>
-                                    </TableRow>
-                                  ))
-                                ) : (
-                                  <TableRow>
-                                    <TableCell colSpan={4}>
-                                      <EmptyState className="border-0" title="No hay registros de avance para esta partida." />
-                                    </TableCell>
-                                  </TableRow>
-                                )}
-                              </TableBody>
-                            </Table>
-                          </ScrollArea>
+                          <DataTable
+                            columns={[
+                              { key: 'fecha', header: 'Fecha', cell: (log) => formatDate(log.date) },
+                              { key: 'cantidad', header: 'Cantidad', headerClassName: 'text-right', className: 'text-right font-mono', cell: (log) => log.quantity.toLocaleString() },
+                              { key: 'usuario', header: 'Usuario', cell: (log) => log.userName },
+                              { key: 'obs', header: 'Observaciones', className: 'text-xs text-muted-foreground', cell: (log) => log.observations },
+                            ] satisfies DataTableColumn<ProgressLog>[]}
+                            data={selectedItemLogs}
+                            rowKey={(log) => log.id}
+                            maxHeight="15rem"
+                            empty={{ title: 'No hay registros de avance para esta partida.' }}
+                          />
                         </CardContent>
                     </Card>
                 </div>

@@ -12,6 +12,7 @@ import QRCode from "react-qr-code";
 import Link from 'next/link';
 import { supabase } from '@/modules/core/lib/supabase';
 import { formatDistance } from '@/lib/geo';
+import { PageHeader } from '@/components/page-header';
 
 const TOKEN_LIFETIME = 120;
 
@@ -148,6 +149,7 @@ export default function DigitalCredentialPage() {
 
     return (
         <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 p-4">
+            <PageHeader title="Mi Credencial" description="Credencial QR personal" />
             {/* Header */}
             <div className="flex items-center justify-between">
                 <Button variant="ghost" asChild className="text-muted-foreground hover:text-pagnol-orange transition-colors">

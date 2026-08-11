@@ -10,6 +10,7 @@ import { ArrowLeft, MapPin, Navigation, Save, Trash2, ExternalLink, ShieldCheck,
 import Link from 'next/link';
 import { supabase } from '@/modules/core/lib/supabase';
 import { formatDistance } from '@/lib/geo';
+import { PageHeader } from '@/components/page-header';
 
 interface GeofenceConfig {
     geo_lat:      number | null;
@@ -132,6 +133,7 @@ export default function GeofencePage() {
 
     return (
         <div className="max-w-2xl mx-auto space-y-8 p-4 pb-20 animate-in fade-in duration-500">
+            <PageHeader title="Geocerca" description="Configurar zona permitida para marcaje" />
             {/* Toast */}
             {toast && (
                 <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-2xl shadow-lg font-bold text-sm ${

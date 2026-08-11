@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Inbox, ArrowRight, Users, CheckCircle } from "lucide-react";
-import { LoadingState } from "@/components/loading-state";
 import { EmptyState } from "@/components/empty-state";
 import Link from "next/link";
 import type { DailyTalk } from "@/modules/core/lib/data";
@@ -31,9 +30,6 @@ export default function ReviewDailyTalksPage() {
         });
     }, [dailyTalks]);
 
-    if (isLoading) {
-        return <LoadingState fullHeight />;
-    }
 
     return (
         <div className="flex flex-col gap-8">

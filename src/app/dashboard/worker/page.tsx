@@ -14,6 +14,7 @@ import {
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import { formatDistanceToNow, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { PageHeader } from '@/components/page-header';
 
 // El flujo de adelantos que vivía en esta página quedó RETIRADO.
 //
@@ -49,6 +50,7 @@ export default function WorkerDashboard() {
 
   return (
     <div className="max-w-md mx-auto space-y-6 pb-10 animate-in fade-in duration-500">
+      <PageHeader title="Mi Panel" description="Panel del trabajador" />
 
       {/* Header Saludo */}
       <div className="flex justify-between items-center pt-4">

@@ -18,6 +18,91 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado — Cerradas las dos decisiones que quedaban del frente de consistencia UI
+
+Steven decidió: **(1)** migrar a `DataTable` sólo lo que no exige ampliar el componente, dejando
+las tres tablas de finanzas a mano; **(2)** quitar el hard-block de carga en los listados y
+conservarlo en los detalles. La tercera decisión —el `'unsafe-inline'` de la CSP— queda
+deliberadamente **para el RFC** de cookies httpOnly + Server Components, porque ambos empujan
+solos el dashboard a render por request, que es lo que el nonce necesita: hacerlo antes es
+pagarlo dos veces.
+
+**Antes de decidir se re-midió, y el backlog estaba mal en los dos casos.** Decía "10 tablas
+que exigen footer y agrupación": ninguna de las diez usa `TableFooter` ni tiene subtotales, y
+**siete eran migrables ya** — sus `colSpan` eran `EmptyState` (la trampa de siempre) o, en
+`purchase-requests`, un spinner puesto a mano dentro de la tabla. Y decía "13 hard-blocks":
+son **18** los que bloquean por el estado global, más 3 que bloquean por un fetch propio y que
+**no** hay que tocar (`rrhh/finiquitos/[id]`, `rrhh/remuneraciones/[id]`,
+`super-admin/tenants/[tenantId]`).
+
+**Las 7 tablas migradas** (`DataTable` quedó **sin un solo cambio**, así que las 24 que ya
+funcionaban no corrieron riesgo): `purchasing` ×2 (recepción e inventario),
+`purchasing/purchase-requests`, `construction-control/wbs`, `estado-pago/contratos/[id]` y
+`reports/deliveries` ×2. Ganan gratis la garantía de ADR-014: ya no pueden decir "no hay datos"
+mientras cargan. Se conservaron los detalles que la migración podía borrar en silencio —la clase
+`group` que revela el botón de anular al pasar el cursor, el orden y las etiquetas propias de
+cada pestaña de Entregas (que no son las mismas columnas en el mismo orden), y el texto
+"Cargando inventario…".
+
+**Los 9 listados desbloqueados** (`safety` y sus 4 bandejas de revisión, `estado-pago`,
+`reports/deliveries`, `reports/inventory`) ahora pintan cabecera, filtros y navegación de
+inmediato, con el spinner acotado a la lista. Los **9 detalles `[id]` conservan el bloqueo a
+propósito**: sin el registro cargado, su rama "no encontrado" se dispararía y mostraría un error
+falso sobre algo que sí existe.
+
+Que el bloqueo se fuera **no podía dejar afirmando un vacío falso**, así que dos páginas
+necesitaban trabajo previo: `estado-pago` escribía su vacío a mano (ahora va por `EmptyState`,
+que sabe distinguir "cargando" de "no hay") y las cifras de resumen de `safety` y
+`reports/inventory` pasan por `Skeleton` —"0 checklists pendientes" durante la carga es una
+afirmación falsa, no un dato que falta.
+
+Verificado en navegador con datos reales del tenant DEMO: las 4 tablas que tienen filas
+renderizan con **columnas y celdas cuadrando** (4/4, 3/3, 6/6, 5/5), cero errores de consola, y
+con la colección de cada página retrasada a propósito se comprobó una por una que **la página se
+pinta y ninguna afirma un vacío falso**. Mirar el pixel pagó: el escaneo del DOM daba todo
+correcto mientras las pestañas de Inventario decían **"Materiales (0)"** y **"Herramientas (0)"**
+durante la carga — el mismo bug movido al rótulo. Corregido también.
+
+Quedan **sin poder verse renderizadas** las dos tablas de historial de avance
+(`construction-control/wbs` y `estado-pago/contratos/[id]`): `progress_logs` está en **cero en
+ambos tenants**, así que sólo se pudo comprobar su estado vacío. Igual la pestaña de entregas de
+APR, que en DEMO no tiene ninguna.
+
+### Corregido — La pestaña del navegador siempre decía lo mismo en todo el dashboard
+
+El único `metadata` del proyecto está en el layout raíz, y como **todas** las páginas de
+`/dashboard` son `"use client"` no pueden exportar el suyo: el `<title>` nunca cambiaba y cada
+pestaña abierta se veía idéntica ("PAGNOL — ERP de Gestión de Activos…"), imposible de
+distinguir con varias abiertas. `PageHeader` ya recibía el título de cada página, pero sólo
+alimentaba la barra superior del layout.
+
+`PageHeader` ahora también escribe `document.title` como `«Título» | PAGNOL ERP`, respetando el
+template `%s | PAGNOL ERP` del layout raíz. Escribirlo una vez no bastaba: **en cada navegación
+cliente Next vuelve a aplicar el `metadata` de la ruta después del efecto y pisaba el título**
+—verificado en navegador: en carga directa quedaba bien y al navegar por el sidebar volvía al
+genérico—, así que un `MutationObserver` sobre `<head>` lo repone cuando eso ocurre.
+
+Verificado en navegador con login real recorriendo el sidebar módulo por módulo: **84 rutas del
+dashboard navegadas cliente-side, 0 con el título genérico**. También se comprobó el caso de
+título dinámico (`PageHeader title={contract.name}` en el detalle de contrato, que sólo existe
+tras cargar el `DataProvider`): correcto en carga directa y cliente-side, con el título
+definitivo apareciendo ~320 ms después del click. Salir del dashboard a `/login` o `/pricing`
+deja el título por defecto, que es el correcto: esas rutas no declaran `metadata` propio.
+
+Además, se agregó el `PageHeader` que faltaba en las 6 páginas que no lo tenían —`/dashboard`
+(inicio), `pagnol` (hub), `wallet`, `worker`, `profile/credential`, `users/geofence` y el detalle
+de protocolo de Control de Obra—, que además de la pestaña dejaban **vacío el título de la barra
+superior**. El título de Reportes de Pagnol pasó de mayúsculas sostenidas a capitalización normal
+(la barra ya aplica `uppercase` por CSS, así que se ve igual, pero la pestaña deja de gritar).
+
+### Cambiado — El Panel de Compras titulaba la página con el nombre del usuario
+
+`/dashboard/purchasing` usaba `title={`Hola, ${nombre}`}`, así que al hacer visible el título en
+la pestaña quedaba "Hola, Teo" —inútil para distinguir pestañas, que es justo el problema que se
+estaba resolviendo, y además metía el nombre del usuario en el historial del navegador. Ahora el
+título es "Panel de Compras" (el mismo nombre del sidebar) y el saludo se movió a la descripción,
+donde no se pierde.
+
 ### Corregido — El reset de empresa podía perderse y mostrar datos del tenant anterior
 
 `useSupabaseCollection` guardaba el scope previo (`tabla::tenant`) en un `useRef` que **leía y

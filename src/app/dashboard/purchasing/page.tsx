@@ -4,7 +4,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
-import { EmptyState } from "@/components/empty-state";
 import {
   ShoppingCart,
   ThumbsUp,
@@ -37,14 +36,7 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { useLots } from "@/hooks/use-lots";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -53,7 +45,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Material, PurchaseRequest, User } from "@/modules/core/lib/data";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/modules/core/hooks/use-toast";
@@ -258,6 +249,42 @@ function ReceiveRequestDialog({
   );
 }
 
+// Umbral de "stock bajo" de la consulta rápida; estaba repetido en dos celdas.
+const LOW_STOCK_THRESHOLD = 10;
+
+const stockColumns: DataTableColumn<Material>[] = [
+  {
+    key: 'material',
+    header: 'Material',
+    className: 'font-medium',
+    cell: (material) => (
+      <>
+        {material.name}
+        {material.stock <= LOW_STOCK_THRESHOLD && (
+          <Badge variant="outline" className="ml-2 text-red-500 border-red-200 text-[10px] h-5">Bajo</Badge>
+        )}
+      </>
+    ),
+  },
+  {
+    key: 'categoria',
+    header: 'Categoría',
+    className: 'text-muted-foreground text-sm',
+    cell: (material) => material.category,
+  },
+  {
+    key: 'stock',
+    header: 'Stock Disponible',
+    headerClassName: 'text-right',
+    className: 'text-right',
+    cell: (material) => (
+      <span className={cn('font-mono font-bold', material.stock <= LOW_STOCK_THRESHOLD ? 'text-red-600' : 'text-foreground')}>
+        {material.stock.toLocaleString()} {material.unit}
+      </span>
+    ),
+  },
+];
+
 // --- Pending Reception Card ---
 const PendingReceptionCard = ({ requests, onReceiveClick, onCancelClick, users }: {
   requests: PurchaseRequest[];
@@ -283,6 +310,83 @@ const PendingReceptionCard = ({ requests, onReceiveClick, onCancelClick, users }
         return materialMatch && applicantMatch;
     });
   }, [requests, materialSearch, applicantSearch, supervisorMap]);
+
+  const columns = React.useMemo<DataTableColumn<PurchaseRequest>[]>(() => [
+    {
+      key: 'material',
+      header: 'Material / Destino',
+      cell: (req) => (
+        <div className="flex flex-col">
+          <span className="font-medium text-foreground">{req.materialName}</span>
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <UserIcon className="h-3 w-3" /> {supervisorMap.get(req.supervisorId)?.split(' ')[0] || 'N/A'} • {req.area}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'cantidad',
+      header: 'Cantidad',
+      cell: (req) => (
+        <Badge variant="outline" className="font-mono bg-background">
+          {req.quantity} {req.unit}
+        </Badge>
+      ),
+    },
+    {
+      key: 'espera',
+      header: 'Tiempo Espera',
+      headerClassName: 'hidden md:table-cell',
+      className: 'hidden md:table-cell text-sm text-muted-foreground',
+      cell: (req) => {
+        // Fechas inválidas guardadas en el pasado hacen throw en date-fns.
+        try {
+          if (!req.approvalDate) return 'Reciente';
+          return formatDistanceToNow(new Date(req.approvalDate as any), { locale: es, addSuffix: true });
+        } catch {
+          return 'Fecha inválida';
+        }
+      },
+    },
+    {
+      key: 'accion',
+      header: 'Acción',
+      headerClassName: 'text-right',
+      className: 'text-right flex items-center justify-end gap-1',
+      cell: (req) => (
+        <>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 focus:opacity-100" title="Anular Solicitud">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Anular esta solicitud?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta acción eliminará la solicitud de <strong>{req.quantity} {req.unit} de {req.materialName}</strong> permanentemente. Úsala si el material ya no se necesita o no llegará.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onCancelClick(req)} className="bg-destructive hover:bg-destructive/90">
+                  Sí, Anular
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button
+            size="sm"
+            onClick={() => onReceiveClick(req)}
+            className="bg-primary/90 hover:bg-primary transition-all"
+          >
+            Recibir <ArrowRight className="ml-1 h-3 w-3" />
+          </Button>
+        </>
+      ),
+    },
+  ], [supervisorMap, onCancelClick, onReceiveClick]);
 
   return (
     <Card className="border-l-4 border-l-primary shadow-sm">
@@ -327,100 +431,22 @@ const PendingReceptionCard = ({ requests, onReceiveClick, onCancelClick, users }
           </div>
         </div>
 
-        <ScrollArea className="h-[350px] rounded-md border bg-card">
-          <Table>
-            <TableHeader className="bg-muted/50 sticky top-0 z-10">
-              <TableRow>
-                <TableHead>Material / Destino</TableHead>
-                <TableHead>Cantidad</TableHead>
-                <TableHead className="hidden md:table-cell">Tiempo Espera</TableHead>
-                <TableHead className="text-right">Acción</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRequests.length > 0 ? (
-                filteredRequests.map((req) => {
-                    // Calcular tiempo relativo
-                    let timeAgo = "Reciente";
-                    try {
-                        if (req.approvalDate) {
-                            const dateToCompare = new Date(req.approvalDate as any);
-                            timeAgo = formatDistanceToNow(dateToCompare, { locale: es, addSuffix: true });
-                        }
-                    } catch (e) {
-                         // Fallback for invalid dates
-                        timeAgo = "Fecha inválida";
-                    }
-
-                    return (
-                    <TableRow key={req.id} className="group">
-                        <TableCell>
-                        <div className="flex flex-col">
-                            <span className="font-medium text-foreground">{req.materialName}</span>
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <UserIcon className="h-3 w-3" /> {supervisorMap.get(req.supervisorId)?.split(' ')[0] || 'N/A'} • {req.area}
-                            </span>
-                        </div>
-                        </TableCell>
-                        <TableCell>
-                        <Badge variant="outline" className="font-mono bg-background">
-                            {req.quantity} {req.unit}
-                        </Badge>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                            {timeAgo}
-                        </TableCell>
-                        <TableCell className="text-right flex items-center justify-end gap-1">
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 focus:opacity-100" title="Anular Solicitud">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>¿Anular esta solicitud?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Esta acción eliminará la solicitud de <strong>{req.quantity} {req.unit} de {req.materialName}</strong> permanentemente. Úsala si el material ya no se necesita o no llegará.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => onCancelClick(req)} className="bg-destructive hover:bg-destructive/90">
-                                  Sí, Anular
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                          <Button
-                              size="sm"
-                              onClick={() => onReceiveClick(req)}
-                              className="bg-primary/90 hover:bg-primary transition-all"
-                          >
-                              Recibir <ArrowRight className="ml-1 h-3 w-3" />
-                          </Button>
-                        </TableCell>
-                    </TableRow>
-                    );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={4}>
-                    <EmptyState
-                      className="border-0"
-                      icon={<CheckCircle2 size={24} />}
-                      title="No hay recepciones pendientes con estos filtros."
-                    />
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </ScrollArea>
+        <DataTable
+          columns={columns}
+          data={filteredRequests}
+          rowKey={(req) => req.id}
+          rowClassName={() => 'group'}
+          maxHeight="350px"
+          empty={{
+            icon: <CheckCircle2 size={24} />,
+            title: 'No hay recepciones pendientes con estos filtros.',
+          }}
+        />
       </CardContent>
     </Card>
   );
 };
+
 
 // --- Main Page Component ---
 export default function PurchasingHubPage() {
@@ -550,8 +576,8 @@ export default function PurchasingHubPage() {
 
       <div className="flex flex-col gap-8 pb-12 fade-in">
         <PageHeader
-          title={`Hola, ${user?.name.split(" ")[0] || "Usuario"}`}
-          description="Centro de control de compras y gestión de inventario."
+          title="Panel de Compras"
+          description={`Hola, ${user?.name.split(" ")[0] || "Usuario"} · Centro de control de compras y gestión de inventario.`}
         />
 
         {/* --- 1. ACCIONES RÁPIDAS (NUEVO) --- */}
@@ -695,62 +721,21 @@ export default function PurchasingHubPage() {
             </div>
 
             {/* Tabla Stock */}
-            <ScrollArea className="h-[400px] border rounded-md">
-              <Table>
-                <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
-                  <TableRow>
-                    <TableHead>Material</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead className="text-right">Stock Disponible</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={3} className="h-32 text-center">
-                        <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                            <Loader2 className="h-4 w-4 animate-spin" /> Cargando inventario...
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredMaterials.length > 0 ? (
-                    filteredMaterials.map((material) => (
-                      <TableRow key={material.id}>
-                        <TableCell className="font-medium">
-                            {material.name}
-                            {material.stock <= 10 && (
-                                <Badge variant="outline" className="ml-2 text-red-500 border-red-200 text-[10px] h-5">Bajo</Badge>
-                            )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{material.category}</TableCell>
-                        <TableCell className="text-right">
-                           <span className={cn(
-                               "font-mono font-bold",
-                               material.stock <= 10 ? "text-red-600" : "text-foreground"
-                           )}>
-                                {material.stock.toLocaleString()} {material.unit}
-                           </span>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={3}>
-                        <EmptyState
-                          className="border-0"
-                          icon={searchTerm || showLowStockOnly ? <PackageMinus size={24} /> : undefined}
-                          title={
-                            searchTerm || showLowStockOnly
-                              ? "No se encontraron materiales con estos filtros."
-                              : "Inventario vacío."
-                          }
-                        />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+            <DataTable
+              columns={stockColumns}
+              data={filteredMaterials}
+              rowKey={(material) => material.id}
+              isLoading={isLoading}
+              loadingLabel="Cargando inventario..."
+              maxHeight="400px"
+              empty={{
+                icon: searchTerm || showLowStockOnly ? <PackageMinus size={24} /> : undefined,
+                title:
+                  searchTerm || showLowStockOnly
+                    ? 'No se encontraron materiales con estos filtros.'
+                    : 'Inventario vacío.',
+              }}
+            />
           </CardContent>
         </Card>
       </div>

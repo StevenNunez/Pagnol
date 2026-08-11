@@ -47,7 +47,7 @@ export default function ReportsPage() {
             <style dangerouslySetInnerHTML={{ __html: PRINT_CSS }} />
 
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 print:hidden">
-                <PageHeader title="CENTRO DE REPORTES ESTRATÉGICOS" description="CONTROL PATRIMONIAL Y AUDITORÍA DE ACTIVOS" />
+                <PageHeader title="Centro de Reportes Estratégicos" description="Control patrimonial y auditoría de activos" />
                 <Button onClick={() => window.print()} variant="outline" className="rounded-2xl h-12 px-6 gap-2 border-border">
                     <Printer size={16} /> Imprimir
                 </Button>

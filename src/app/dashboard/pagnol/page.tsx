@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { LoadingState } from '@/components/loading-state';
+import { PageHeader } from '@/components/page-header';
 import type { MaterialRequest } from '@/modules/core/lib/data';
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
@@ -135,6 +136,7 @@ export default function PagnolMainPage() {
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-top-4 duration-1000 font-outfit">
+      <PageHeader title="Control de Activos" description="Centro de mando del pañol" />
 
       {/* COMMAND CENTER HEADER */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 px-2">

@@ -31,7 +31,8 @@ import { useSupabaseCollection } from "@/modules/core/hooks/use-supabase-collect
 import { mappers } from "./mappers";
 import { AppDataState, AppStateAction, AppStateContextType } from './types';
 import { CollectionGateProvider, useCollectionGate } from './CollectionGate';
-import type { CollectionName } from './moduleData';
+import { moduleOf, type CollectionName } from './moduleData';
+import { usePathname } from 'next/navigation';
 import * as materialRequestMutations from './mutations/materialRequestMutations';
 import * as purchaseRequestMutations from './mutations/purchaseRequestMutations';
 import * as genericMutations from './mutations/genericMutations';
@@ -59,6 +60,26 @@ import * as workReportCatalogMutations from './mutations/workReportCatalogMutati
 import * as workOrderMutations from './mutations/workOrderMutations';
 import * as workWeeklyReportMutations from './mutations/workWeeklyReportMutations';
 import * as hrMutations from './mutations/hrMutations';
+import * as biometricMutations from './mutations/biometricMutations';
+
+/**
+ * Columnas de `profiles` que consume `mappers.profiles`, listadas a mano para
+ * poder **excluir `biometric_template`** (dato biométrico = sensible) en los
+ * módulos que no hacen reconocimiento facial. `deleted_at` no hace falta: el
+ * `softDelete` del hook filtra server-side.
+ *
+ * ⚠️ Si se agrega un campo nuevo a `mappers.profiles`, hay que agregarlo aquí o
+ * llegará `undefined` **en silencio** — `tsc` no lo detecta.
+ */
+const PROFILE_COLUMNS = [
+    'id', 'name', 'email', 'role', 'qr_code', 'tenant_id', 'rut', 'internal_id',
+    'cargo', 'phone', 'fecha_ingreso', 'base_salary', 'afp', 'tipo_salud',
+    'cargas_familiares', 'signature', 'enrolled_by', 'enrolled_at',
+    'onboarding_completed', 'granted_permissions', 'address', 'birth_date',
+    'emergency_contact_name', 'emergency_contact_phone', 'employment_status',
+].join(', ');
+
+const PROFILE_COLUMNS_CON_BIOMETRIA = `${PROFILE_COLUMNS}, biometric_template`;
 
 const initialState: AppDataState = {
     isLoading: true,
@@ -81,6 +102,7 @@ const initialState: AppDataState = {
     salaryAdvances: [],
     attendanceLogs: [],
     assignedChecklists: [],
+    biometricVerifications: [],
     safetyInspections: [],
     checklistTemplates: [],
     behaviorObservations: [],
@@ -163,6 +185,23 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         [active]
     );
 
+    // El descriptor biométrico es un dato sensible (la Ley 21.719 clasifica los
+    // datos biométricos como sensibles) y hasta ahora viajaba en el `select=*` de
+    // `profiles`, es decir a TODAS las páginas del dashboard, para todos los
+    // usuarios del tenant. Sólo lo necesitan las pantallas que hacen
+    // reconocimiento facial o muestran si alguien está enrolado: `pagnol`
+    // (movimientos, personal, hardware) y los tres módulos donde vive `UserPanel`
+    // (`users`, `profile`, `rrhh`). En los ~20 restantes —entre ellos los home de
+    // `worker` y `supervisor`, donde el trabajador raso pasa el día— se pide la
+    // lista explícita de columnas, sin él. Mismo criterio con el que `kyc_*` ya se
+    // movió a `profile_documents`.
+    // ⚠️ Esto reduce la exposición, NO la cierra: la policy `profiles_select_tenant`
+    // sigue permitiendo pedir la columna por REST. Cerrarla exige permisos por
+    // columna + una RPC para el 1:N (anotado en PENDIENTES.md).
+    const pathname = usePathname();
+    const necesitaBiometria = ['pagnol', 'users', 'profile', 'rrhh'].includes(moduleOf(pathname) ?? '');
+    const profileColumns = necesitaBiometria ? PROFILE_COLUMNS_CON_BIOMETRIA : PROFILE_COLUMNS;
+
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- sin empresa seleccionada hay que limpiar la actual: conservarla dejaría datos del tenant anterior a la vista
         if (!tenantId) { setCurrentTenant(null); return; }
@@ -205,7 +244,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     }, [tenantId, refreshVersion]);
 
     const materialsData = useSupabaseCollection('materials', { tenantId, enabled: on('materials'), mapper: mappers.materials, softDelete: true });
-    const usersData = useSupabaseCollection('profiles', { tenantId, enabled: on('users'), mapper: mappers.profiles, softDelete: true });
+    const usersData = useSupabaseCollection('profiles', { tenantId, enabled: on('users'), mapper: mappers.profiles, softDelete: true, columns: profileColumns });
     const requestsData = useSupabaseCollection('material_requests', { tenantId, enabled: on('requests'), mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, enabled: on('returnRequests'), mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const purchaseRequestsData = useSupabaseCollection('purchase_requests', { tenantId, enabled: on('purchaseRequests'), mapper: mappers.purchase_requests, orderBy: { column: 'created_at', ascending: false } });
@@ -223,6 +262,9 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     // Proyección sin evidence_photos (arrays base64): se cargan bajo demanda en
     // el detalle/revisión (useRecordFields). Requiere la migración 20260612000004
     // (que añade template_title/supervisor_id/assigner_id/assigner_name/items). (S6)
+    // Evidencia biométrica: la lee el pañol (para saber si hay una excepción ya
+    // autorizada) y la bandeja de Autorizaciones (para resolverlas).
+    const biometricVerificationsData = useSupabaseCollection('biometric_verifications', { tenantId, enabled: on('biometricVerifications'), mapper: mappers.biometric_verifications, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const assignedChecklistsData = useSupabaseCollection('assigned_checklists', { tenantId, enabled: on('assignedChecklists'), mapper: mappers.assigned_checklists, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, template_id, template_title, supervisor_id, assigner_id, assigner_name, status, area, items, observations, performed_by, completed_at, reviewed_by, rejection_notes, created_at' });
     const safetyInspectionsData = useSupabaseCollection('safety_inspections', { tenantId, enabled: on('safetyInspections'), mapper: mappers.safety_inspections, orderBy: { column: 'created_at', ascending: false } });
     const checklistTemplatesData = useSupabaseCollection('checklist_templates', { tenantId, enabled: on('checklistTemplates'), mapper: mappers.checklist_templates });
@@ -332,6 +374,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             goodsReceipts: goodsReceiptsData, costCenters: costCentersData,
             supplierPayments: supplierPaymentsData, salaryAdvances: salaryAdvancesData,
             attendanceLogs: attendanceLogsData, assignedChecklists: assignedChecklistsData,
+            biometricVerifications: biometricVerificationsData,
             safetyInspections: safetyInspectionsData, checklistTemplates: checklistTemplatesData,
             behaviorObservations: behaviorObservationsData, stockMovements: stockMovementsData,
             workItems: workItemsData, progressLogs: progressLogsData,
@@ -404,6 +447,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 salaryAdvances: processData(salaryAdvancesData),
                 attendanceLogs: processData(attendanceLogsData),
                 assignedChecklists: processData(assignedChecklistsData),
+                biometricVerifications: processData(biometricVerificationsData),
                 safetyInspections: processData(safetyInspectionsData),
                 checklistTemplates: processData(checklistTemplatesData),
                 behaviorObservations: processData(behaviorObservationsData),
@@ -450,7 +494,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         authLoading, user, usersData, materialsData, requestsData,
         returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
         unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, supplierPaymentsData,
-        salaryAdvancesData, attendanceLogsData, assignedChecklistsData, safetyInspectionsData,
+        salaryAdvancesData, attendanceLogsData, assignedChecklistsData, biometricVerificationsData, safetyInspectionsData,
         checklistTemplatesData, behaviorObservationsData, stockMovementsData,
         subscriptionPlansData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
@@ -607,6 +651,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         deleteSeveranceDraft: bindContext(severanceMutations.deleteSeveranceDraft),
         closePeriod: bindContext(periodMutations.closePeriod),
         reopenPeriod: bindContext(periodMutations.reopenPeriod),
+
+        // Biometría — hechos append-only que respaldan la recepción de activos
+        recordBiometricVerification: bindContext(biometricMutations.recordBiometricVerification),
+        requestBiometricException: bindContext(biometricMutations.requestBiometricException),
+        resolveBiometricException: bindContext(biometricMutations.resolveBiometricException),
 
         // Safety
         addChecklistTemplate: bindContext(safetyMutations.addChecklistTemplate),

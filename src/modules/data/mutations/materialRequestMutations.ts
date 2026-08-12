@@ -363,7 +363,17 @@ export async function deliverApprovedMaterialRequest(
   contractUrl: string | null,
   /** Receptor real verificado (biometría/QR) en el pañol. null = no informado. */
   receiver: { id: string; name: string } | null,
-  context: Context
+  /**
+   * Cómo se acreditó la recepción. `exception` = salió SIN verificación facial,
+   * con autorización de un ADC/Administrador. Se guarda acá además de en
+   * `biometric_verifications` para que listar entregas no obligue a cruzar nada,
+   * y para que el contrato de responsabilidad pueda imprimirlo.
+   *
+   * Va ANTES del contexto: `bindContext` inyecta el contexto como último
+   * argumento, así que ningún parámetro puede ir después.
+   */
+  verification: { mode: 'biometric' | 'exception'; exceptionGroupId?: string | null } | null,
+  context: Context,
 ) {
   const { user } = context;
   if (!user) throw new Error("No autenticado.");
@@ -377,6 +387,8 @@ export async function deliverApprovedMaterialRequest(
       delivered_by_user_name: user.name,
       received_by_user_id: receiver?.id || null,
       received_by_user_name: receiver?.name || null,
+      delivery_verification: verification?.mode ?? null,
+      delivery_exception_id: verification?.exceptionGroupId ?? null,
     })
     .eq('id', requestId)
     .eq('status', 'approved');

@@ -1,7 +1,7 @@
 ﻿
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from "@/modules/core/lib/supabase";
 import { PageShell } from "@/components/page-shell";
 import { EmptyState } from "@/components/empty-state";
@@ -33,11 +33,7 @@ export default function FeedbackPage() {
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const { toast } = useToast();
 
-    useEffect(() => {
-        fetchFeedbacks();
-    }, []);
-
-    const fetchFeedbacks = async () => {
+    const fetchFeedbacks = useCallback(async () => {
         setLoading(true);
         try {
             const { data, error } = await supabase
@@ -71,7 +67,11 @@ export default function FeedbackPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [toast]);
+
+    useEffect(() => {
+        fetchFeedbacks();
+    }, [fetchFeedbacks]);
 
     const resolveFeedback = async (id: string) => {
         try {

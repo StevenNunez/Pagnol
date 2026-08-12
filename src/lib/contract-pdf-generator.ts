@@ -37,6 +37,18 @@ interface ContractData {
     pagnoleroName: string;
     pagnoleroSignatureUrl?: string | null;
     logoUrl?: string;
+    /**
+     * Cómo se acreditó que este trabajador recibió los activos. Va impreso: un
+     * contrato de responsabilidad que no dice cómo se verificó la identidad del
+     * receptor deja al lector suponiendo que hubo biometría, incluso cuando la
+     * entrega salió por excepción autorizada.
+     */
+    verification?: {
+        mode: 'biometric' | 'exception';
+        /** Sólo en excepciones: quién la autorizó y por qué. */
+        authorizedByName?: string | null;
+        reason?: string | null;
+    } | null;
 }
 
 export async function generateContractPDF(data: ContractData) {
@@ -113,11 +125,19 @@ export async function generateContractPDF(data: ContractData) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
 
+    // La cláusula de identidad tiene que decir lo que REALMENTE pasó. Antes
+    // afirmaba siempre "firmado biométricamente … de manera irrefutable", incluso
+    // cuando no hubo verificación facial — y "irrefutable" no es sostenible ni
+    // con ella: el sistema aún no detecta si es una persona viva o una foto.
+    const clausulaIdentidad = data.verification?.mode === 'exception'
+        ? `4. La identidad del receptor NO fue verificada biométricamente. La entrega se realizó bajo excepción autorizada por ${data.verification.authorizedByName || 'un responsable autorizado'}${data.verification.reason ? `, por el siguiente motivo: ${data.verification.reason}` : ''}.`
+        : "4. La identidad del receptor fue verificada mediante reconocimiento facial al momento de la entrega, y el registro de esa verificación queda almacenado junto a este documento.";
+
     const terms = [
         "1. El trabajador declara recibir los activos detallados en perfectas condiciones operativas (salvo lo indicado).",
         "2. El trabajador asume la responsabilidad total por el cuidado, custodia y uso correcto de los activos.",
         "3. En caso de pérdida, daño por mal uso o negligencia, la empresa se reserva el derecho de aplicar las sanciones correspondientes.",
-        "4. Este documento ha sido firmado biométricamente, validando la identidad del receptor de manera irrefutable."
+        clausulaIdentidad,
     ];
 
     terms.forEach(term => {

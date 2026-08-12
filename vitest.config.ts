@@ -19,6 +19,7 @@ export default defineConfig({
       'src/modules/data/mutations/payrollMath.test.ts',
       'src/modules/data/mutations/payrollLedgerMath.test.ts',
       'src/modules/data/mutations/severanceMath.test.ts',
+      'src/modules/data/mutations/biometricMath.test.ts',
       'src/lib/finance-periods.test.ts',
       'src/lib/numero-a-palabras.test.ts',
     ],

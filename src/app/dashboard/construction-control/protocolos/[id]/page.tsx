@@ -74,6 +74,10 @@ export default function ProtocolDetailPage() {
       setExecutorSignature(protocol.executorSignature ?? null);
       setSupervisorSignature(protocol.supervisorSignature ?? null);
     }
+    // Sembrar el formulario local UNA vez por protocolo. Depender de `protocol`
+    // entero haría que cualquier actualización de Realtime sobre esa fila pisara
+    // las respuestas que el inspector está escribiendo en pantalla.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [protocol?.id]);
 
   const setItemAnswer = (index: number, answer: SINoNA) => {

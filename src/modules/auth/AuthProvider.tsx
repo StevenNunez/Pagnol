@@ -221,6 +221,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timer);
       authSubscription.unsubscribe();
     };
+    // La suscripción a `onAuthStateChange` se monta UNA vez, a propósito: es la que
+    // produce `user`, así que declararlo como dependencia la haría desmontarse y
+    // volver a montarse en cada cambio de sesión — perdiendo eventos justo durante
+    // el login. Las lecturas de `user` aquí dentro son para comparar contra el
+    // estado ya presente, no para reaccionar a él.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Live-sync the logged-in user's own profile row so name/phone/etc

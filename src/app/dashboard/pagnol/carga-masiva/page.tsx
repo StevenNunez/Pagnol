@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -132,13 +132,7 @@ export default function CargaMasivaPage() {
     const [isSavingThresholds, setIsSavingThresholds] = useState(false);
     const [showCriticalityConfig, setShowCriticalityConfig] = useState(true);
 
-    useEffect(() => {
-        if (currentTenantId) {
-            fetchThresholds();
-        }
-    }, [currentTenantId]);
-
-    const fetchThresholds = async () => {
+    const fetchThresholds = useCallback(async () => {
         try {
             const { data: tenant, error } = await supabase
                 .from('tenants')
@@ -157,7 +151,13 @@ export default function CargaMasivaPage() {
         } catch (error) {
             console.error("Error fetching thresholds:", error);
         }
-    };
+    }, [currentTenantId]);
+
+    useEffect(() => {
+        if (currentTenantId) {
+            fetchThresholds();
+        }
+    }, [currentTenantId, fetchThresholds]);
 
     const saveThresholds = async () => {
         if (!currentTenantId) return;

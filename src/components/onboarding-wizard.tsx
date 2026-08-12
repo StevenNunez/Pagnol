@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/modules/auth/useAuth';
 import { supabase } from '@/modules/core/lib/supabase';
@@ -50,15 +50,7 @@ export function OnboardingWizard() {
             .then(({ data }) => { if (data?.name) setTenantName(data.name); });
     }, [user?.tenantId, currentTenantId]);
 
-    // Only show for admins who haven't completed onboarding
-    useEffect(() => {
-        if (user && user.role === 'administrador' && !user.onboardingCompleted) {
-            setIsOpen(true);
-            checkRoles();
-        }
-    }, [user]);
-
-    const checkRoles = async () => {
+    const checkRoles = useCallback(async () => {
         if (!currentTenantId) return;
         const { data: users, error } = await supabase
             .from('profiles')
@@ -75,7 +67,15 @@ export function OnboardingWizard() {
 
         setStats({ admins, supervisors });
         setLoading(false);
-    };
+    }, [currentTenantId, user?.id]);
+
+    // Only show for admins who haven't completed onboarding
+    useEffect(() => {
+        if (user && user.role === 'administrador' && !user.onboardingCompleted) {
+            setIsOpen(true);
+            checkRoles();
+        }
+    }, [user, checkRoles]);
 
     const completeOnboarding = async () => {
         if (!user?.id) return;

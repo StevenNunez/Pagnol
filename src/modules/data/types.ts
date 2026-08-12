@@ -31,6 +31,7 @@ import {
   SalaryAdvance,
   AttendanceLog,
   AssignedSafetyTask,
+  BiometricVerification,
   SafetyInspection,
   ChecklistTemplate,
   BehaviorObservation,
@@ -112,6 +113,7 @@ export interface AppDataState {
   salaryAdvances: SalaryAdvance[];
   attendanceLogs: AttendanceLog[];
   assignedChecklists: AssignedSafetyTask[];
+  biometricVerifications: BiometricVerification[];
   safetyInspections: SafetyInspection[];
   checklistTemplates: ChecklistTemplate[];
   behaviorObservations: BehaviorObservation[];
@@ -175,7 +177,7 @@ export interface AppStateContextType extends AppDataState {
   addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; warehouseId?: string | null; }) => Promise<void>;
   authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
-  deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null) => Promise<void>;
+  deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null, verification: { mode: 'biometric' | 'exception'; exceptionGroupId?: string | null } | null) => Promise<void>;
   // Cada ítem lleva su propio contrato de reingreso (un mismo material puede
   // tener saldo pendiente en más de un contrato a la vez).
   addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string; contractId?: string | null; contractName?: string | null }[], notes: string) => Promise<void>;
@@ -275,6 +277,11 @@ export interface AppStateContextType extends AppDataState {
   deleteSeveranceDraft: (id: string) => Promise<void>;
   closePeriod: (data: { month: string; reason?: string }) => Promise<FinancePeriodEvent>;
   reopenPeriod: (data: { month: string; reason: string }) => Promise<FinancePeriodEvent>;
+
+  // Biometría — hechos append-only que respaldan la recepción de activos
+  recordBiometricVerification: (params: Parameters<typeof import('./mutations/biometricMutations').recordBiometricVerification>[0]) => Promise<string | null>;
+  requestBiometricException: (params: Parameters<typeof import('./mutations/biometricMutations').requestBiometricException>[0]) => Promise<string>;
+  resolveBiometricException: (params: Parameters<typeof import('./mutations/biometricMutations').resolveBiometricException>[0]) => Promise<void>;
 
   // Safety
   addChecklistTemplate: (template: Pick<ChecklistTemplate, 'title' | 'items'>) => Promise<void>;

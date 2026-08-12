@@ -114,6 +114,10 @@ const BiometricVerificationPage: React.FC = () => {
     }
   }, [cameraStream]);
 
+  // Apagar la cámara al desmontar, y sólo entonces. `stopCamera` depende de
+  // `cameraStream`, así que declararla haría que este efecto se limpiara —es decir,
+  // apagara la cámara— cada vez que el stream cambia, justo al encenderla.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => stopCamera(), []);
 
   const statusConfig = {

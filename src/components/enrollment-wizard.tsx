@@ -171,6 +171,12 @@ export function EnrollmentWizard({
             stopCamera();
             startCamera('user');
         }
+        // Girar a la cámara frontal SÓLO al entrar al paso de selfie. Declarar
+        // `cameraStream`/`startCamera`/`stopCamera` da un bucle garantizado:
+        // `startCamera` hace `setCameraStream` → `stopCamera` (que lo captura) cambia
+        // de identidad → `startCamera` también → el efecto corre otra vez y la cámara
+        // se reinicia sin parar.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [kycSubStep]);
 
     const handleClose = useCallback(() => {
@@ -204,6 +210,11 @@ export function EnrollmentWizard({
             stopCamera();
             processFace(imageData);
         }
+        // `processFace` es una función suelta (identidad nueva en cada render):
+        // declararla haría inútil este `useCallback`. La versión capturada es segura
+        // porque no lee estado — la imagen entra por argumento y lo demás son setters
+        // más `startCamera`/`toast`, que ya son dependencias de este callback.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [kycSubStep, stopCamera, startCamera, toast]);
 
     const skipDocument = () => {

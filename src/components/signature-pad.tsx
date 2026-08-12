@@ -172,6 +172,12 @@ const SignaturePad = forwardRef<any, SignaturePadProps>(
         canvas.removeEventListener('touchend', stopDrawing);
         canvas.removeEventListener('touchcancel', stopDrawing);
       };
+      // Los handlers se registran una vez por color de lápiz. No capturan estado:
+      // `isDrawing`, `lastPos` y `hasInk` son refs, y la única prop que leen es
+      // `onEnd`, que los 10 consumidores pasan como setter de estado o como closure
+      // que lee del `ref` — nunca como algo que dependa del render. Declararlos
+      // re-registraría los 9 listeners del canvas en cada render.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [penColor]);
 
     return (

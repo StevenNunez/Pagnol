@@ -6,7 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { AuthorizationInbox, type ApprovableRequest } from '@/components/operations/authorization-inbox';
 import { rentalCategoryLabel } from '@/modules/core/lib/data';
-import { Package, ShoppingCart, Truck } from 'lucide-react';
+import { exceptionStatus } from '@/modules/data/mutations/biometricMutations';
+import { useAuth } from '@/modules/core/contexts/app-provider';
+import { Package, ShoppingCart, Truck, ScanFace } from 'lucide-react';
 
 export default function AuthorizationsPage() {
   const {
@@ -14,8 +16,10 @@ export default function AuthorizationsPage() {
     authorizeMaterialRequest, updateMaterialRequestStatus,
     authorizePurchaseRequest, updatePurchaseRequestStatus,
     authorizeRentalRequest, updateRentalRequestStatus,
+    biometricVerifications, resolveBiometricException,
     can,
   } = useAppState();
+  const { user } = useAuth();
 
   const canMaterial = can('material_requests:authorize');
   const canPurchase = can('purchase_requests:authorize');
@@ -110,6 +114,60 @@ export default function AuthorizationsPage() {
       })),
   [rentalRequests, userMap]);
 
+  // Excepciones biométricas pendientes: el pañol pidió entregar un activo sin
+  // verificación facial. El estado se DERIVA de los hechos (no hay campo de
+  // estado): sigue pendiente mientras su grupo no tenga una resolución.
+  const excepcionesPendientes: ApprovableRequest[] = useMemo(() => {
+    const porGrupo = new Map<string, typeof biometricVerifications>();
+    for (const h of biometricVerifications) {
+      if (!h.exceptionGroupId) continue;
+      const g = porGrupo.get(h.exceptionGroupId) ?? [];
+      g.push(h);
+      porGrupo.set(h.exceptionGroupId, g);
+    }
+    return [...porGrupo.entries()]
+      .filter(([, hechos]) => exceptionStatus(hechos) === 'pendiente')
+      .map(([grupo, hechos]) => {
+        const solicitud = hechos.find(h => h.outcome === 'exception_requested') ?? hechos[0];
+        return {
+          id: grupo,
+          code: solicitud.transactionCode ?? undefined,
+          requesterName: solicitud.operatorName,
+          date: solicitud.createdAt,
+          justification: solicitud.exceptionReason ?? undefined,
+          lines: [{
+            label: `Entregar a ${solicitud.subjectName} sin verificación biométrica`,
+            qty: 1,
+          }],
+          // Se guarda para poder registrar el hecho de resolución con el sujeto
+          // correcto: la evidencia tiene que decir a QUIÉN se le dejó retirar.
+          _subject: { id: solicitud.subjectUserId ?? '', name: solicitud.subjectName },
+          _requestId: solicitud.requestId,
+          _transactionCode: solicitud.transactionCode,
+        } as ApprovableRequest & {
+          _subject: { id: string; name: string };
+          _requestId: string | null;
+          _transactionCode: string | null;
+        };
+      })
+      // `date` en ApprovableRequest admite string: se normaliza antes de restar.
+      .sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime());
+  }, [biometricVerifications]);
+
+  const resolverExcepcion = async (grupoId: string, aprobar: boolean) => {
+    const item = excepcionesPendientes.find(e => e.id === grupoId) as any;
+    if (!item || !user) return;
+    await resolveBiometricException({
+      exceptionGroupId: grupoId,
+      subject: item._subject,
+      approve: aprobar,
+      mode: 'remota',
+      authorizedBy: { id: user.id, name: user.name },
+      requestId: item._requestId,
+      transactionCode: item._transactionCode,
+    });
+  };
+
   return (
     <PageShell
       title="Autorizaciones"
@@ -120,6 +178,7 @@ export default function AuthorizationsPage() {
           <TabsTrigger value="material">Material ({materialItems.length})</TabsTrigger>
           <TabsTrigger value="compra">Compra ({purchaseItems.length})</TabsTrigger>
           <TabsTrigger value="arriendo">Arriendo ({rentalItems.length})</TabsTrigger>
+          <TabsTrigger value="biometria">Sin biometría ({excepcionesPendientes.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="material">
@@ -161,6 +220,20 @@ export default function AuthorizationsPage() {
             emptyDescription="Cuando terreno pida un arriendo, aparecerá aquí para tu visto bueno."
             onApprove={(id) => authorizeRentalRequest(id)}
             onReject={(id, reason) => updateRentalRequestStatus(id, 'rejected', reason)}
+          />
+        </TabsContent>
+
+        <TabsContent value="biometria">
+          <AuthorizationInbox
+            items={excepcionesPendientes}
+            canAuthorize={canMaterial}
+            typeLabel="Excepción"
+            typeBadgeClass="badge-warning"
+            lineIcon={<ScanFace className="h-3.5 w-3.5" />}
+            emptyTitle="Sin excepciones pendientes"
+            emptyDescription="Aquí llegan los retiros que el pañol necesita hacer sin verificación facial. Aprobar deja constancia de que tú lo autorizaste."
+            onApprove={(id) => resolverExcepcion(id, true)}
+            onReject={(id) => resolverExcepcion(id, false)}
           />
         </TabsContent>
       </Tabs>

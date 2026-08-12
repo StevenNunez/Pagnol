@@ -149,6 +149,11 @@ const isMaintenanceOverdue = (dateStr?: Date | string) => {
   return maintenanceDate < today;
 };
 
+// Tipos de uso que TÍPICAMENTE llevan mantenimiento (equipos), vs. los que no
+// (consumibles, herramientas menores, reutilizables simples). Constante de módulo:
+// no depende del render, así el efecto que la usa puede declararla sin recrearse.
+const USAGE_TYPES_WITH_MAINTENANCE = ['Activo Fijo', 'IT Controlado', 'Repuesto Crítico'];
+
 export default function ActivosPage() {
   const { materials, addMaterial, deleteMaterial, updateMaterial, materialCategories, units, suppliers, requests, returnRequests, users, can, materialStocks, contracts } = useAppState();
   const { user: currentUser, currentTenantId } = useAuth();
@@ -310,10 +315,6 @@ export default function ActivosPage() {
   const currentUsageType = watch('usageType');
   const currentCategoryId = watch('categoryId');
   const currentRequiresMaintenance = watch('requiresMaintenance');
-
-  // Tipos de uso que TÍPICAMENTE llevan mantenimiento (equipos), vs. los que no
-  // (consumibles, herramientas menores, reutilizables simples).
-  const USAGE_TYPES_WITH_MAINTENANCE = ['Activo Fijo', 'IT Controlado', 'Repuesto Crítico'];
 
   // Sugerencia al crear: auto-marcar "requiere mantenimiento" según el tipo de uso.
   // Solo al cambiar el tipo en modo ADD, para no pisar una elección manual.

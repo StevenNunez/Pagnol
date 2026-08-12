@@ -63,7 +63,11 @@ export default function ContractDetailPage() {
 
   const canManage = can('contracts:manage') || can('attendance:edit');
   const today = format(new Date(), "yyyy-MM-dd");
-  const todayDate = new Date();
+  // El mismo día que `today`, como Date para `isRestDay`. Derivado del string (y no
+  // un `new Date()` suelto) para que su identidad cambie sólo al cambiar el día, en
+  // vez de en cada render. Medianoche LOCAL: sin sufijo `Z`, igual que el
+  // `startOfDay`/`parseISO` que usa el cálculo de turnos — sin corrimiento de día.
+  const todayDate = useMemo(() => new Date(`${today}T00:00:00`), [today]);
 
   // Workers in this contract
   const assignedWorkers = useMemo(() =>
@@ -107,7 +111,7 @@ export default function ContractDetailPage() {
 
       return { cw, user, shift, status, firstIn: firstIn ? formatTime(firstIn.timestamp) : null, lastOut: lastOut ? formatTime(lastOut.timestamp) : null };
     });
-  }, [assignedWorkers, users, shiftSchedules, attendanceLogs, today]);
+  }, [assignedWorkers, users, shiftSchedules, attendanceLogs, today, todayDate]);
 
   const stats = useMemo(() => ({
     total: workerRows.length,

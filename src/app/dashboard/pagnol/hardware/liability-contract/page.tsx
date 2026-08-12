@@ -21,6 +21,40 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import jsPDF from "jspdf";
 import autoTable from 'jspdf-autotable';
 
+// Tarifario del hardware: es una constante del contrato, no depende del usuario ni
+// del tenant. Vive fuera del componente para que el PDF (useCallback) pueda
+// declararla como dependencia sin recrearse en cada render.
+const costStructure = [
+  {
+    device: "Pistola QR/Barras USB",
+    unitCost: 2500,
+    premium: 50,
+    premiumPercent: 2,
+    deductible: 250,
+  },
+  {
+    device: "Pistola QR/Barras Bluetooth",
+    unitCost: 3500,
+    premium: 70,
+    premiumPercent: 2,
+    deductible: 350,
+  },
+  {
+    device: "Impresora de Etiquetas",
+    unitCost: 5000,
+    premium: 100,
+    premiumPercent: 2,
+    deductible: 500,
+  },
+  {
+    device: "Lector Biométrico",
+    unitCost: 4000,
+    premium: 80,
+    premiumPercent: 2,
+    deductible: 400,
+  },
+];
+
 const LiabilityContractPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   const [showPreview, setShowPreview] = useState(false);
@@ -186,37 +220,6 @@ const LiabilityContractPage: React.FC = () => {
         { label: "Desastres Naturales", coverage: "Limitado" },
         { label: "Almacenamiento Inadecuado", coverage: "Excluido" },
       ],
-    },
-  ];
-
-  const costStructure = [
-    {
-      device: "Pistola QR/Barras USB",
-      unitCost: 2500,
-      premium: 50,
-      premiumPercent: 2,
-      deductible: 250,
-    },
-    {
-      device: "Pistola QR/Barras Bluetooth",
-      unitCost: 3500,
-      premium: 70,
-      premiumPercent: 2,
-      deductible: 350,
-    },
-    {
-      device: "Impresora de Etiquetas",
-      unitCost: 5000,
-      premium: 100,
-      premiumPercent: 2,
-      deductible: 500,
-    },
-    {
-      device: "Lector Biométrico",
-      unitCost: 4000,
-      premium: 80,
-      premiumPercent: 2,
-      deductible: 400,
     },
   ];
 

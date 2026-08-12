@@ -14,6 +14,64 @@ const getFaceApi = async () => {
   return faceapi;
 };
 
+/**
+ * Por qué falló una verificación. Existe porque "no te encontré la cara" y "no
+ * eres tú" se resuelven de forma distinta —el primero acercándose a la cámara,
+ * el segundo llamando a otra persona— y colapsarlos en un `false` hacía que la
+ * pantalla acusara de impostor a quien sólo estaba mal encuadrado.
+ */
+export type BiometricFailureReason = 'ok' | 'no_face' | 'no_match' | 'error';
+
+/** Mensaje único para el caso "no se detectó rostro", para no repetirlo. */
+export const NO_FACE_MESSAGE =
+  "No se detectó ningún rostro. Acércate a la cámara, mira de frente y busca buena iluminación.";
+
+/**
+ * Umbral de coincidencia (distancia euclidiana; menor = más parecido). Vive en
+ * una sola constante porque antes estaba escrito a mano en `verifyIdentity` y en
+ * `searchIdentity1N`, y dos umbrales que deben ser iguales terminan no siéndolo.
+ *
+ * ⚠️ Medido el 2026-08-11 contra datos reales: entre personas distintas la
+ * distancia dio 0,72–0,73, pero entre dos capturas de la MISMA persona dio
+ * 0,427 — o sea que este 0,5 deja apenas un 15% de margen antes de rechazar a
+ * quien sí corresponde. Está apretado por el lado equivocado. No moverlo a ojo:
+ * hay que medir el inter-persona con capturas de la cámara real, no con fotos.
+ * Cada verificación guarda el umbral con el que se resolvió, justamente para que
+ * recalibrarlo no vuelva ilegible la evidencia vieja.
+ */
+export const MATCH_THRESHOLD = 0.5;
+
+/**
+ * Frame del momento de la verificación, para respaldarla. Sin esto la biometría
+ * es un portón en la pantalla y no evidencia: ante un reclamo no habría nada que
+ * mostrar salvo que el software dijo que sí.
+ */
+export const captureEvidenceFrame = async (
+  input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+  maxWidth = 640,
+): Promise<Blob | null> => {
+  try {
+    const ancho = (input as HTMLVideoElement).videoWidth || (input as HTMLImageElement).width;
+    const alto = (input as HTMLVideoElement).videoHeight || (input as HTMLImageElement).height;
+    if (!ancho || !alto) return null;
+
+    const escala = Math.min(1, maxWidth / ancho);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(ancho * escala);
+    canvas.height = Math.round(alto * escala);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(input, 0, 0, canvas.width, canvas.height);
+
+    return await new Promise<Blob | null>(res =>
+      canvas.toBlob(b => res(b), 'image/jpeg', 0.75)
+    );
+  } catch (e) {
+    console.warn('No se pudo capturar el frame de evidencia:', e);
+    return null;
+  }
+};
+
 export interface BiometricResult {
   success: boolean;
   message: string;
@@ -53,7 +111,7 @@ export const captureBiometrics = async (input: HTMLVideoElement | HTMLImageEleme
     const detection = await fa.detectSingleFace(input).withFaceLandmarks().withFaceDescriptor();
 
     if (!detection) {
-      return { success: false, message: "No se detectó ningún rostro. Asegure buena iluminación y mire de frente." };
+      return { success: false, message: NO_FACE_MESSAGE };
     }
 
     const { descriptor } = detection;
@@ -84,7 +142,7 @@ export const captureBiometrics = async (input: HTMLVideoElement | HTMLImageEleme
 export const verifyIdentity = async (
   input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
   savedTemplate: string
-): Promise<{ verified: boolean; score: number; message: string }> => {
+): Promise<{ verified: boolean; score: number; message: string; reason: BiometricFailureReason }> => {
   if (!modelsLoaded) await loadBiometricModels();
   const fa = await getFaceApi();
 
@@ -93,7 +151,10 @@ export const verifyIdentity = async (
     const detection = await fa.detectSingleFace(input).withFaceLandmarks().withFaceDescriptor();
 
     if (!detection) {
-      return { verified: false, score: 0, message: "No se detecta rostro en vivo." };
+      // NO es "no eres tú": es "no te vi la cara". Son dos problemas distintos con
+      // dos soluciones distintas (acercarse a la cámara vs. no coincide la persona),
+      // y hasta ahora los dos llegaban a la pantalla como "Fallo biométrico".
+      return { verified: false, score: 0, message: NO_FACE_MESSAGE, reason: 'no_face' };
     }
 
     // 2. Parsear template guardado
@@ -104,51 +165,71 @@ export const verifyIdentity = async (
     // Un valor menor a 0.6 suele ser el umbral estándar. Cuanto menor, más parecido.
     const distance = fa.euclideanDistance(detection.descriptor, savedDescriptor);
 
-    // Score inverso para mostrar % (0.6 dist = 100% threshold match aprox, pero mostraremos confianza)
-    // Mapeamos distancia 0 -> 100%, 0.6 -> 50%
-    const threshold = 0.5;
+    const threshold = MATCH_THRESHOLD;
     const isMatch = distance < threshold;
 
     console.log(`Distancia Biométrica: ${distance} (Umbral: ${threshold})`);
 
-    return { verified: isMatch, score: distance, message: isMatch ? "Identidad Verificada" : "No coincide la persona" };
+    return {
+      verified: isMatch,
+      score: distance,
+      message: isMatch ? "Identidad Verificada" : "No coincide la persona",
+      reason: isMatch ? 'ok' : 'no_match',
+    };
 
   } catch (error) {
     console.error("Error verificando identidad:", error);
-    return { verified: false, score: 0, message: "Error técnico durante la verificación." };
+    return { verified: false, score: 0, message: "Error técnico durante la verificación.", reason: 'error' };
   }
 };
 
 /**
  * Función de alto nivel para verificar biometría (usada en MovimientosPage)
  */
+export interface BiometricCheck {
+  verified: boolean;
+  reason: BiometricFailureReason;
+  message: string;
+  score: number;
+}
+
+/**
+ * Función de alto nivel para verificar biometría (usada en MovimientosPage).
+ *
+ * Devuelve el motivo además del veredicto: quien la llama necesita distinguir
+ * "no se detectó rostro" de "no coincide la persona" para poder decirle al
+ * trabajador qué hacer. Sigue siendo compatible con `if (result.verified)`.
+ */
 export const verifyBiometric = async (
   savedTemplate: string,
   setStatus?: (status: string) => void,
   videoElement?: HTMLVideoElement
-): Promise<boolean> => {
-  if (!savedTemplate) return false;
+): Promise<BiometricCheck> => {
+  if (!savedTemplate) {
+    return { verified: false, reason: 'error', message: "Este trabajador no tiene biometría enrolada.", score: 0 };
+  }
 
   try {
     if (setStatus) setStatus("Iniciando verificación...");
 
-    // Intentar buscar el video en el DOM si no se provee
+    // Sin elemento explícito se cae al primer <video> del documento, que no tiene
+    // por qué ser el de la cámara: quien llama debería pasarlo siempre.
     const video = videoElement || document.querySelector('video');
     if (!video) {
       if (setStatus) setStatus("Error: Cámara no encontrada.");
-      return false;
+      return { verified: false, reason: 'error', message: "No se encontró la cámara.", score: 0 };
     }
 
     if (setStatus) setStatus("Analizando rostro...");
     const result = await verifyIdentity(video, savedTemplate);
 
     if (setStatus) setStatus(result.message);
-    return result.verified;
+    return { verified: result.verified, reason: result.reason, message: result.message, score: result.score };
 
   } catch (error) {
     console.error("Error en verifyBiometric:", error);
     if (setStatus) setStatus("Error en el proceso.");
-    return false;
+    return { verified: false, reason: 'error', message: "Error técnico durante la verificación.", score: 0 };
   }
 };
 
@@ -166,7 +247,7 @@ export const searchIdentity1N = async (
     if (!detection) return { success: false };
 
     let bestMatch = { userId: '', distance: 1.0 };
-    const threshold = 0.5;
+    const threshold = MATCH_THRESHOLD;
 
     for (const user of enrolledUsers) {
       if (!user.biometric_template) continue;

@@ -53,6 +53,12 @@ export default function MobileEnrollPage() {
         };
         validate();
         return () => stopCamera();
+        // Validar el token UNA vez por token. `startCamera`/`stopCamera` cambian de
+        // identidad cada vez que arranca la cámara (`stopCamera` captura
+        // `cameraStream`), así que declararlas encadenaría: arranca cámara → nuevo
+        // `stopCamera` → nuevo `startCamera` → el efecto vuelve a correr → valida el
+        // token otra vez y reenciende la cámara. Bucle de fetch + cámara.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
     const capturePhoto = useCallback(() => {
@@ -80,6 +86,14 @@ export default function MobileEnrollPage() {
             stopCamera();
             processFace(imageData);
         }
+        // `processFace` es una función suelta que se recrea en cada render; incluirla
+        // haría inútil este `useCallback`. La versión capturada es correcta porque el
+        // único estado que lee al guardar son `capturedImages.idFront`/`idBack`, y
+        // para cuando `step === 'face'` ambas cédulas ya están en el state: el cambio
+        // a ese paso ocurre en el mismo lote que su `setCapturedImages`. La cara viaja
+        // por argumento. ⚠️ Si se agrega un dato capturado DESPUÉS de la selfie, hay
+        // que leerlo con la forma funcional o pasarlo por argumento.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [step, stopCamera, startCamera]);
 
     const processFace = async (faceData: string) => {

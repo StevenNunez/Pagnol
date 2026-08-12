@@ -549,6 +549,40 @@ export interface MaterialRequest {
   receivedByUserName?: string | null;
 }
 
+/**
+ * Hecho biométrico: algo que ocurrió frente a la cámara del pañol. Append-only —
+ * no se edita ni se borra, porque la evidencia que se puede editar no es
+ * evidencia. El estado de una excepción se DERIVA encadenando hechos por
+ * `exceptionGroupId`, no se guarda como campo mutable.
+ */
+export interface BiometricVerification {
+  id: string;
+  tenantId: string;
+  subjectUserId: string | null;
+  /** Snapshot: si el perfil cambia de nombre, la evidencia conserva el del día. */
+  subjectName: string;
+  operatorUserId: string | null;
+  operatorName: string;
+  /** `recepcion` es el que constituye la aceptación del activo. */
+  stage: 'identificacion' | 'recepcion';
+  requestId: string | null;
+  transactionCode: string | null;
+  outcome:
+    | 'match' | 'no_match' | 'no_face' | 'error'
+    | 'exception_requested' | 'exception_granted' | 'exception_denied';
+  distance: number | null;
+  /** Umbral vigente ese día: sin él, una distancia vieja es ininterpretable. */
+  threshold: number | null;
+  /** Path del bucket privado (no URL: las firmadas expiran). */
+  evidencePath: string | null;
+  exceptionGroupId: string | null;
+  exceptionReason: string | null;
+  authorizedByUserId: string | null;
+  authorizedByName: string | null;
+  authorizedMode: 'presencial' | 'remota' | null;
+  createdAt: Date;
+}
+
 export interface ReturnRequest {
   id: string;
   internalCode?: string;

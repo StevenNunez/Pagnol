@@ -44,7 +44,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { verifyBiometric, searchIdentity1N } from '@/lib/biometricService';
+import { verifyBiometric, searchIdentity1N, captureEvidenceFrame, MATCH_THRESHOLD } from '@/lib/biometricService';
+import { uploadBiometricEvidence, exceptionStatus } from '@/modules/data/mutations/biometricMutations';
+import { BiometricExceptionDialog, type ExceptionTarget } from '@/components/biometric-exception-dialog';
 
 type TransactionState =
   | 'CREADA'
@@ -101,6 +103,10 @@ export default function MovimientosPagnolPage() {
     deleteReturnRequest,
     updateTenant,
     refreshData,
+    biometricVerifications,
+    recordBiometricVerification,
+    requestBiometricException,
+    resolveBiometricException,
   } = useAppState();
   const { user: currentUser, can, getTenantId } = useAuth();
   const { toast } = useToast();
@@ -128,6 +134,10 @@ export default function MovimientosPagnolPage() {
   /** Data URL del archivo local, solo para la vista previa en pantalla. */
   const [returnPhotoPreviews, setReturnPhotoPreviews] = useState<Record<string, string>>({});
   const [isBiometricPulse, setIsBiometricPulse] = useState(false);
+  // Trabajador que no pudo verificarse y espera una excepción autorizada.
+  const [excepcionPara, setExcepcionPara] = useState<ExceptionTarget | null>(null);
+  // Excepción ya aprobada para esta entrega: permite cerrarla sin biometría.
+  const [excepcionAprobada, setExcepcionAprobada] = useState<string | null>(null);
   const [qrInput, setQrInput] = useState('');
   const [isPagnoleroConfirming, setIsPagnoleroConfirming] = useState(false);
   const qrInputRef = useRef<HTMLInputElement>(null);
@@ -356,15 +366,29 @@ export default function MovimientosPagnolPage() {
       return;
     }
 
+    // Regla de negocio (Steven, 2026-08-11): nadie retira activos sin detección
+    // biométrica, salvo excepción autorizada por ADC o Administrador. Se bloquea
+    // ACÁ y no al final: antes el pañolero avanzaba tres pasos con el trabajador
+    // esperando para toparse con un "Protocolo Incompleto" que no explicaba nada.
     if (!emp.biometric_template) {
+      // ¿Ya hay una excepción autorizada para él? Puede haberla aprobado el ADC
+      // desde la bandeja hace un minuto: llega por Realtime, sin recargar.
+      const yaAutorizada = excepcionesAprobadasPorUsuario.get(emp.id);
+      if (!yaAutorizada) {
+        setExcepcionPara({ emp, requestId: tx.id, transactionCode: tx.internalCode || null });
+        toast({
+          title: "Sin biometría enrolada",
+          description: `${emp.name} no puede retirar sin verificación. Enrólalo en Personal o registra una excepción autorizada.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      setExcepcionAprobada(yaAutorizada);
       toast({
-        title: "Falta Enrolamiento",
-        description: "El trabajador no tiene biometría registrada. Debe enrolarse en Personal.",
-        variant: "destructive"
+        variant: 'info',
+        title: "Excepción vigente",
+        description: `${emp.name} tiene una excepción autorizada. La entrega quedará marcada como sin verificación biométrica.`,
       });
-      // Opcional: permitir continuar sin biometría o bloquear? 
-      // Por seguridad 'Pagnol', deberíamos bloquear o pedir enrolar ahora.
-      // Dejaremos que pase pero el botón final fallará con el error explícito que ya pusimos.
     }
 
     setSelectedType('WITHDRAWAL');
@@ -433,14 +457,94 @@ export default function MovimientosPagnolPage() {
     }
   };
 
+  /**
+   * Deja constancia de un acto biométrico: distancia, umbral, hora y —cuando la
+   * verificación fue buena— el frame de la cámara en el bucket privado.
+   *
+   * Nunca interrumpe el flujo: si la evidencia falla, el pañolero no puede
+   * quedarse bloqueado con el trabajador y la herramienta en la mano. Por eso se
+   * invoca con `void` y el error sólo se registra.
+   *
+   * La foto se guarda sólo en los casos con match: subir una imagen por cada
+   * intento fallido del bucle 1:N llenaría el bucket sin aportar nada.
+   */
+  const registrarHechoBiometrico = useCallback(async (p: {
+    emp: { id: string; name: string };
+    stage: 'identificacion' | 'recepcion';
+    check: { verified: boolean; reason: string; score: number };
+    guardarFoto: boolean;
+    requestId?: string | null;
+    transactionCode?: string | null;
+  }) => {
+    try {
+      let evidencePath: string | null = null;
+      if (p.guardarFoto && videoRef.current && currentTenant?.id) {
+        const frame = await captureEvidenceFrame(videoRef.current);
+        if (frame) {
+          evidencePath = await uploadBiometricEvidence(frame, currentTenant.id, `${p.stage}-${p.emp.id}`);
+        }
+      }
+      const outcome = p.check.verified
+        ? 'match'
+        : p.check.reason === 'no_face' ? 'no_face'
+          : p.check.reason === 'no_match' ? 'no_match' : 'error';
+
+      await recordBiometricVerification({
+        subject: { id: p.emp.id, name: p.emp.name },
+        stage: p.stage,
+        outcome,
+        // La distancia sólo significa algo si hubo rostro que comparar.
+        distance: p.check.reason === 'no_face' ? null : p.check.score,
+        threshold: MATCH_THRESHOLD,
+        evidencePath,
+        requestId: p.requestId ?? null,
+        transactionCode: p.transactionCode ?? null,
+      });
+    } catch (err) {
+      console.error('No se pudo registrar la evidencia biométrica:', err);
+    }
+  }, [currentTenant?.id, recordBiometricVerification]);
+
+  /**
+   * Excepciones vigentes por trabajador, DERIVADAS de los hechos (no hay campo
+   * de estado): una excepción sirve si su último hecho de resolución fue una
+   * aprobación. Así una aprobación remota desde la bandeja aparece sola acá,
+   * sin que el pañolero tenga que recargar.
+   */
+  const excepcionesAprobadasPorUsuario = useMemo(() => {
+    const porGrupo = new Map<string, typeof biometricVerifications>();
+    for (const h of biometricVerifications) {
+      if (!h.exceptionGroupId) continue;
+      const g = porGrupo.get(h.exceptionGroupId) ?? [];
+      g.push(h);
+      porGrupo.set(h.exceptionGroupId, g);
+    }
+    const vigentes = new Map<string, string>();
+    for (const [grupo, hechos] of porGrupo) {
+      if (exceptionStatus(hechos) !== 'aprobada') continue;
+      const sujeto = hechos.find(h => h.subjectUserId)?.subjectUserId;
+      if (sujeto) vigentes.set(sujeto, grupo);
+    }
+    return vigentes;
+  }, [biometricVerifications]);
+
   const handleIdentityVerified = async (emp: UserType) => {
     if (!emp.biometric_template) {
       toast({ variant: 'destructive', title: "Acceso Denegado", description: "Trabajador no enrolado." });
       return;
     }
     setIsBiometricPulse(true);
-    const isVerified = await verifyBiometric(emp.biometric_template, (s) => console.log(s), videoRef.current || undefined);
-    if (isVerified) {
+    const check = await verifyBiometric(emp.biometric_template, (s) => console.log(s), videoRef.current || undefined);
+    // Deja constancia del acto ANTES de ramificar, para que también quede el
+    // intento fallido: un patrón de rechazos sobre el mismo trabajador es
+    // justamente lo que hay que poder mirar después.
+    void registrarHechoBiometrico({
+      emp,
+      stage: 'identificacion',
+      check,
+      guardarFoto: check.verified,
+    });
+    if (check.verified) {
       setSelectedEmployee(emp);
       setInitialBiometricToken(emp.biometric_template);
       setTxState('IDENTIDAD_VERIFICADA');
@@ -451,8 +555,18 @@ export default function MovimientosPagnolPage() {
         description: `Bienvenido, ${emp.name}`
       });
       stopCamera();
+    } else if (check.reason === 'no_face') {
+      // No es un rechazo de identidad: la cámara no encontró la cara. Decirle
+      // "fallo biométrico" a alguien mal encuadrado lo acusa de ser otro.
+      toast({ variant: 'warning', title: "No se ve el rostro", description: check.message });
     } else {
-      toast({ variant: 'destructive', title: "Error", description: "Fallo biométrico." });
+      toast({
+        variant: 'destructive',
+        title: check.reason === 'no_match' ? "No coincide" : "Error de verificación",
+        description: check.reason === 'no_match'
+          ? `El rostro no coincide con ${emp.name}.`
+          : check.message,
+      });
     }
     setIsBiometricPulse(false);
   };
@@ -478,12 +592,20 @@ export default function MovimientosPagnolPage() {
     }
 
     return () => clearInterval(interval);
+    // `handleIdentityVerified` no está memoizada: declararla recrearía el efecto en
+    // cada render y con él el `setInterval`, así que el escaneo 1:N nunca llegaría a
+    // completar su ciclo de 1,5 s. El efecto ya se rehace con `isSearching1N` en cada
+    // pasada, de modo que la versión que usa nunca queda vieja.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowStep, cameraStream, users, isSearching1N, usersMap]);
 
   // Once returnRequests updates from DB, clear optimistic state
   useEffect(() => {
     if (justReturnedIds.size > 0) setJustReturnedIds(new Set());
     if (pendingReturnTxs.length > 0) setPendingReturnTxs([]);
+    // El disparador es la llegada del dato real desde la base: `justReturnedIds` y
+    // `pendingReturnTxs` son lo que este efecto LIMPIA, no lo que lo despierta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [returnRequests]);
 
   // Ensure video stream is attached to ref whenever it changes or component re-renders
@@ -501,6 +623,11 @@ export default function MovimientosPagnolPage() {
       }, 400);
       return () => clearTimeout(t);
     }
+    // Sólo debe dispararse al ENTRAR al paso de firma. `startFaceDetect` es una
+    // función suelta (identidad nueva en cada render) que además hace
+    // `setCameraStream`: declararla encadenaría efecto → render → efecto y
+    // reiniciaría la cámara en bucle en mitad del cierre biométrico.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowStep]);
 
   const handleQrScan = (e: React.FormEvent) => {
@@ -680,33 +807,87 @@ export default function MovimientosPagnolPage() {
       if (evidenceInputRef.current) evidenceInputRef.current.value = '';
       setCapturingPhotoFor(null);
     }
-  }, [uploadWithTimeout, toast]);
+  }, [uploadWithTimeout, toast, currentTenant?.id]);
+
+  /**
+   * Qué imprimir en el contrato sobre cómo se acreditó la identidad. Si la
+   * entrega salió por excepción, el PDF tiene que decirlo con nombre y motivo:
+   * un contrato que da a entender que hubo biometría cuando no la hubo es peor
+   * que uno que no dice nada.
+   */
+  const datosVerificacionParaContrato = useCallback(() => {
+    if (!excepcionAprobada) return { mode: 'biometric' as const };
+    const hechos = biometricVerifications.filter(h => h.exceptionGroupId === excepcionAprobada);
+    const aprobacion = hechos.find(h => h.outcome === 'exception_granted');
+    const solicitud = hechos.find(h => h.outcome === 'exception_requested');
+    return {
+      mode: 'exception' as const,
+      authorizedByName: aprobacion?.authorizedByName ?? null,
+      reason: solicitud?.exceptionReason ?? null,
+    };
+  }, [excepcionAprobada, biometricVerifications]);
 
   const handleFinalAcceptance = async () => {
-    if (!selectedEmployee || !initialBiometricToken) {
-      toast({
-        variant: 'destructive',
-        title: "Protocolo Incompleto",
-        description: "No se ha capturado el token biométrico del trabajador. Por favor re-identifique."
-      });
-      return;
-    }
+    if (!selectedEmployee) return;
 
-    if (!cameraStream) {
-      toast({ variant: 'destructive', title: "Cámara no lista", description: "Espere a que la cámara inicie antes de validar." });
-      return;
+    // Vía de excepción: hay una autorización vigente de un ADC/Administrador, así
+    // que la entrega sale sin cámara — pero queda MARCADA como tal, con quién la
+    // autorizó y por qué, y eso se imprime en el contrato de responsabilidad.
+    const conExcepcion = !!excepcionAprobada;
+
+    if (!conExcepcion) {
+      if (!initialBiometricToken) {
+        toast({
+          variant: 'destructive',
+          title: "Protocolo Incompleto",
+          description: "No se ha capturado el token biométrico del trabajador. Por favor re-identifique."
+        });
+        return;
+      }
+
+      if (!cameraStream) {
+        toast({ variant: 'destructive', title: "Cámara no lista", description: "Espere a que la cámara inicie antes de validar." });
+        return;
+      }
     }
 
     setIsBiometricPulse(true);
     try {
-      const verificationPromise = verifyBiometric(initialBiometricToken, (s) => console.log(s), videoRef.current || undefined);
-      const timeoutPromise = new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error("Tiempo de espera agotado. Asegúrese de estar frente a la cámara.")), 15000));
+      if (!conExcepcion) {
+        const verificationPromise = verifyBiometric(initialBiometricToken!, (s) => console.log(s), videoRef.current || undefined);
+        const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Tiempo de espera agotado. Asegúrese de estar frente a la cámara.")), 15000));
 
-      const isVerified = await Promise.race([verificationPromise, timeoutPromise]);
+        const check = await Promise.race([verificationPromise, timeoutPromise]);
 
-      if (!isVerified) {
-        toast({ variant: 'destructive', title: "Validación Fallida", description: "El rostro no coincide. Intente de nuevo." });
-        return;
+        // Éste es el acto que constituye la aceptación del activo: se registra
+        // siempre, con foto cuando hubo coincidencia. Es la evidencia que antes no
+        // existía y dejaba la entrega respaldada sólo por una firma pre-guardada.
+        void registrarHechoBiometrico({
+          emp: selectedEmployee,
+          stage: 'recepcion',
+          check,
+          guardarFoto: check.verified,
+          requestId: pendingDeliveryId,
+          transactionCode: pendingDeliveryCode,
+        });
+
+        if (!check.verified) {
+          // El cierre de la entrega es el momento más sensible del flujo: si la
+          // cámara no encontró el rostro hay que decir eso, no "el rostro no
+          // coincide", que suena a que el trabajador está intentando hacer trampa.
+          if (check.reason === 'no_face') {
+            toast({ variant: 'warning', title: "No se ve el rostro", description: check.message });
+          } else {
+            toast({
+              variant: 'destructive',
+              title: "Validación Fallida",
+              description: check.reason === 'no_match'
+                ? "El rostro no coincide con el del trabajador identificado. Intente de nuevo."
+                : check.message,
+            });
+          }
+          return;
+        }
       }
       setTxState('RECIBIDA_CONFORME');
 
@@ -731,6 +912,7 @@ export default function MovimientosPagnolPage() {
             pagnoleroName: currentUser?.name || 'Pañolero',
             pagnoleroSignatureUrl: currentUser?.signature || null,
             logoUrl: currentTenant?.logoUrl,
+            verification: datosVerificacionParaContrato(),
           });
 
           // 2. Subir a Storage con timeout (8s)
@@ -751,7 +933,14 @@ export default function MovimientosPagnolPage() {
 
         // 3. Finalizar transacción (Con o sin URL) — registra al receptor real verificado
         await Promise.race([
-          deliverApprovedMaterialRequest(pendingDeliveryId, contractUrl, { id: selectedEmployee.id, name: selectedEmployee.name }),
+          deliverApprovedMaterialRequest(
+            pendingDeliveryId,
+            contractUrl,
+            { id: selectedEmployee.id, name: selectedEmployee.name },
+            conExcepcion
+              ? { mode: 'exception', exceptionGroupId: excepcionAprobada }
+              : { mode: 'biometric' },
+          ),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Tiempo de espera excedido al confirmar la entrega. Verifica tu conexión y reintenta.')), 20000)
           ),
@@ -798,6 +987,7 @@ export default function MovimientosPagnolPage() {
             pagnoleroName: currentUser?.name || 'Pañolero',
             pagnoleroSignatureUrl: currentUser?.signature || null,
             logoUrl: currentTenant?.logoUrl,
+            verification: datosVerificacionParaContrato(),
           });
 
           // El tenant va EN LA RUTA: ver la nota de `return-evidence` más arriba.
@@ -1780,6 +1970,26 @@ export default function MovimientosPagnolPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Única vía para que un activo salga sin verificación facial. */}
+      <BiometricExceptionDialog
+        target={excepcionPara}
+        onClose={() => setExcepcionPara(null)}
+        onRequest={requestBiometricException}
+        onResolve={resolveBiometricException}
+        onApproved={(grupo) => {
+          setExcepcionAprobada(grupo);
+          // No se reconstruye el flujo a mano —haría falta duplicar la carga de
+          // ítems y dejaría la entrega a medias si algo faltara—. Con la
+          // excepción ya vigente, volver a pulsar "Entregar" recorre el camino
+          // normal, que la detecta solo.
+          toast({
+            variant: 'success',
+            title: "Listo para entregar",
+            description: "Pulsa Entregar de nuevo: la excepción ya está autorizada.",
+          });
+        }}
+      />
     </div >
   );
 }

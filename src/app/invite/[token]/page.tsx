@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,11 +39,7 @@ export default function InvitePage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitPhase, setSubmitPhase] = useState<'creating' | 'logging_in'>('creating');
 
-    useEffect(() => {
-        validateToken();
-    }, [token]);
-
-    const validateToken = async () => {
+    const validateToken = useCallback(async () => {
         setLoading(true);
         try {
             const res = await fetch(`/api/invite/accept/${token}`);
@@ -84,7 +80,11 @@ export default function InvitePage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [token]);
+
+    useEffect(() => {
+        validateToken();
+    }, [validateToken]);
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();

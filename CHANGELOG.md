@@ -18,6 +18,198 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — La verificación biométrica ahora deja evidencia, y el bloqueo tiene válvula
+
+> ⚠️ **REQUIERE APLICAR `20260814000000_biometric_evidence.sql` ANTES DE DESPLEGAR.** No es
+> opcional: `deliverApprovedMaterialRequest` escribe dos columnas nuevas en `material_requests`, así
+> que **sin la migración las entregas fallan**. Es el mismo drift de esquema que ya mordió 7 veces.
+
+**El problema.** La verificación facial es la forma de aceptar la recepción de un activo, pero no
+dejaba ningún rastro: al cerrar una entrega sólo se guardaba fecha, PDF, quién entregó y quién
+recibió. Ni la distancia, ni la hora de la verificación, ni una imagen, ni un indicador de que hubo
+biometría (el mismo campo servía para QR). Ante un reclamo —"yo nunca recibí ese esmeril"— lo único
+exhibible era un PDF con la firma **pre-guardada** del trabajador. Era un portón en la pantalla, no
+evidencia.
+
+**Y el problema simétrico:** el sistema exige biometría en los tres caminos de identificación
+—incluida la "selección manual", que también verifica 1:1— pero **no existía vía de excepción**. Una
+cámara mojada o un trabajador recién ingresado dejaban la faena detenida, que es el incentivo
+perfecto para entregar la herramienta por fuera del sistema y sin rastro alguno.
+
+**Evidencia.** Nueva tabla `biometric_verifications`, **append-only** (la base revoca UPDATE y
+DELETE: la evidencia que se puede editar no es evidencia). Cada acto guarda a quién se verificó, quién
+operaba, en qué punto del flujo, el resultado, la **distancia**, el **umbral vigente ese día** y el
+frame de la cámara en el bucket privado. Se registran también los intentos fallidos: un patrón de
+rechazos sobre el mismo trabajador es justamente lo que hay que poder mirar después. Guardar el
+umbral es lo que permite recalibrarlo mañana sin volver ilegible la evidencia vieja.
+
+**Excepción autorizada** (regla de negocio decidida por Steven): nadie retira sin detección, salvo
+autorización de un ADC o Administrador. Dos vías, porque el turno de noche y la faena aislada
+existen: **presencial** —el autorizador teclea sus credenciales en el pañol y la entrega sale al
+instante— o **remota**, desde una pestaña nueva en `/authorizations`. Motivo obligatorio de 10
+caracteres, exigido además por CHECK en la base. La entrega queda marcada como `exception`, y **eso
+se imprime en el contrato**.
+
+El estado de una excepción **no se guarda**: se deriva encadenando hechos por `exception_group_id`,
+igual que el ledger financiero deriva el saldo de sus asientos. 6 tests cubren esa derivación
+(283 en total), incluido que hechos desordenados por Realtime resuelvan bien y que la lista vacía
+devuelva `pendiente` — ante la duda, el activo no sale.
+
+**Dos decisiones de seguridad que vale la pena mirar:**
+- La validación presencial va por API route (`/api/biometric/authorize-exception`) y no en el
+  cliente, porque `signInWithPassword` sobre el cliente compartido **cerraría la sesión del
+  pañolero** a mitad de la entrega. Se valida contra un cliente efímero, y la contraseña no se
+  persiste ni se registra.
+- **Nadie se autoriza a sí mismo**: la ruta rechaza que el autorizador sea quien opera el pañol. Una
+  excepción existe para que un segundo par de ojos se haga responsable de la salida del activo.
+
+🔴 **Corregido de paso, y era grave:** la cláusula 4 del contrato de responsabilidad afirmaba
+*"Este documento ha sido firmado biométricamente, validando la identidad del receptor de manera
+irrefutable"* — **en todos los casos**. Es falso cuando la entrega sale por excepción, e
+"irrefutable" no se sostiene ni con biometría, porque el sistema aún no distingue una persona viva
+de una foto. Ahora el PDF dice lo que realmente pasó: o que hubo reconocimiento facial con registro
+almacenado, o que **no lo hubo** y quién autorizó la salida, con su motivo.
+
+**Verificación.** `tsc` limpio, lint 39 warnings / 0 errores, **283/283**, build exit 0. ⚠️ El
+recorrido con cámara **no está probado** —requiere cámara física y la migración aplicada—: queda en
+`PENDIENTES.md` junto al cierre biométrico.
+
+### Seguridad — El descriptor biométrico deja de viajar a todo el dashboard
+
+Auditoría del sistema biométrico (detalle y números en `PENDIENTES.md`). El hallazgo con
+consecuencias legales: `biometric_template` viajaba en el **`select=*`** de la colección
+`profiles`, o sea que **cualquier usuario del tenant recibía el descriptor facial de todos sus
+compañeros en casi cualquier página** — incluidos los home de `worker` y `supervisor`, donde el
+trabajador raso pasa el día. Son datos biométricos, que la **Ley 21.719** clasifica como sensibles
+y entra en vigencia en **diciembre de 2026**.
+
+Ahora `profiles` se pide con **lista explícita de columnas**, y el template se incluye sólo en los
+módulos que hacen reconocimiento facial o muestran quién está enrolado: `pagnol`, `users`,
+`profile` y `rrhh`. En los ~20 restantes no se pide. Es el mismo criterio con el que las imágenes
+`kyc_*` ya se habían movido a `profile_documents`.
+
+⚠️ **Esto reduce la exposición, no la cierra:** la policy `profiles_select_tenant` da SELECT sobre
+todas las columnas y la RLS de Postgres es por fila, no por columna, así que la columna se sigue
+pudiendo pedir por REST. Cerrarlo exige permisos por columna + una RPC para alimentar el 1:N;
+queda anotado en `PENDIENTES.md` y **no se hizo a ciegas** porque toca los flujos de cámara.
+
+⚠️ **Trampa para el futuro:** `PROFILE_COLUMNS` en `DataProvider.tsx` se mantiene a mano. Un campo
+nuevo en `mappers.profiles` que no se agregue ahí llegará **`undefined` en silencio**; `tsc` no lo
+detecta.
+
+### Corregido — La app decía "Fallo biométrico" cuando en realidad no veía el rostro
+
+`verifyIdentity` devolvía `{verified:false, score:0}` tanto si **no detectaba ningún rostro** como
+si el rostro **no coincidía**, y `verifyBiometric` colapsaba todo a un `boolean`. Resultado: a un
+trabajador mal encuadrado —o de pie a dos metros de la tablet— la pantalla le decía que la
+verificación falló, que se lee como "no eres quien dices ser". Son dos problemas con dos
+soluciones distintas: acercarse a la cámara vs. llamar a otra persona.
+
+Ahora el servicio devuelve un motivo (`no_face` / `no_match` / `error` / `ok`) y `pagnol/
+movimientos` lo usa en sus **dos** puntos de verificación —la identificación inicial y el cierre de
+la entrega, que es el momento más sensible del flujo—: si no hay rostro muestra un aviso ámbar
+"No se ve el rostro · acércate a la cámara, mira de frente y busca buena iluminación", y reserva
+el rojo de "No coincide" para el rechazo de identidad real.
+
+**Verificación (sin cámara, que es lo que se podía verificar de verdad).** `tsc` limpio, lint 39
+warnings / 0 errores, 277/277, build exit 0. Y en navegador, con el tenant que **sí tiene
+templates enrolados**, comprobando el `select=` de cada petición a `profiles`: llega en las 5
+pantallas que lo necesitan (`movimientos`, `personal`, `users`, `rrhh/empleados`, `profile`) y no
+llega en `worker`, `attendance`, `bodega`, `safety` ni `finanzas`; `pagnol/personal` sigue
+mostrando correctamente quién está enrolado.
+🔎 `safety` marcó rojo en la primera pasada: era **el verificador**, no el código — la petición de
+la navegación anterior caía dentro de la ventana de captura. Aislado (carga directa y viniendo de
+un módulo con biometría) nunca pide el template.
+
+### Corregido — "Checklists" del menú de Seguridad siempre decía "Checklist no encontrado"
+
+`safety/assigned-checklists/page.tsx` era **copia byte a byte** de su hermana
+`assigned-checklists/[id]/page.tsx`, pero vive en una ruta **sin `[id]`**: `useParams().id` era
+siempre `undefined`, así que la página terminaba **siempre** en su rama "Checklist no
+encontrado". Estaba enlazada desde **tres** lugares —uno más de lo que decía el backlog—: el
+**ítem "Checklists" del menú lateral** de Seguridad, la tarjeta "Checklists Pendientes" del panel,
+y el propio detalle, que redirige ahí **después de guardar** un checklist completado.
+
+Ahora es el **listado** que la ruta siempre debió ser, con la misma forma que su par
+`assigned-inspections` (el menú ya distingue "Checklists" de "Revisar Checklists", igual que
+"Inspecciones" de "Revisar Inspecciones"): los checklists asignados al usuario, **pendientes
+primero** y dentro de cada grupo lo más reciente arriba, con su área, quién lo asignó, la fecha y
+un badge de estado.
+
+Lleva además una sección **"Pendientes del equipo"**, visible sólo con `safety_checklists:review`:
+la tarjeta del panel cuenta los pendientes de **todo el tenant** y enlaza aquí, así que sin ella
+el APR habría hecho clic en un número mayor que cero para llegar a un "no tienes nada". Escrita
+con el estándar de diseño (`PageShell`, `EmptyState`, tokens), no copiando el de la hermana, que
+todavía usa paleta cruda.
+
+**Verificación.** Ningún tenant tiene checklists (DEMO y el de `ADMIN_EMAIL` están los dos en
+cero), así que las filas se probaron **interceptando la respuesta REST de `assigned_checklists`
+en el navegador** — sin escribir nada en la base de DEMO. Resultado: 4 filas propias enlazando a
+su detalle, la de otra persona en "Pendientes del equipo", los 4 badges de estado, el orden
+correcto y cero errores de consola; verificado en **oscuro, claro y móvil**, más el estado vacío
+real. `tsc` limpio, lint sin cambios (39 warnings, 0 errores).
+
+### Corregido — Los warnings de dependencias de hooks: de 22 a 0, sin ningún bucle de fetch
+
+El backlog los trataba como un bloque homogéneo de "riesgo alto". Al leerlos uno por uno
+resultaron ser **cuatro cosas distintas**, y la clasificación cambió qué se hacía con cada
+grupo. Eran **22**, no 23 (de los 61 warnings totales, los otros son 6 de `incompatible-library`
+y 33 de `<img>`).
+
+**Un bug latente real** (`pagnol/movimientos`): el `useCallback` que sube la **evidencia
+fotográfica** de una devolución arma la ruta del bucket con `currentTenant?.id` sin declararlo.
+Un super-admin que cambia de empresa sin recargar habría guardado la foto en la carpeta del
+tenant anterior — y esa ruta es justamente lo que la política de storage usa para acotar por
+empresa (migración `20260806040000`). Se agregó la dependencia.
+
+**Cuatro limpiezas donde el valor era quitar la causa, no callar el aviso:**
+`USAGE_TYPES_WITH_MAINTENANCE` (`pagnol/activos`) y `costStructure` (`hardware/
+liability-contract`) eran constantes declaradas **dentro** del componente: se movieron a nivel
+de módulo. En `attendance/contracts/[id]`, `todayDate` era un `new Date()` suelto que cambiaba
+de identidad en cada render; ahora se **deriva de `today`** (`new Date(\`${today}T00:00:00\`)`),
+así que sólo cambia al cambiar el día. Es medianoche **local**, igual que el `startOfDay` /
+`parseISO` que usa el cálculo de turnos, para no reintroducir el corrimiento de día que ya
+apareció cuatro veces en este proyecto. Y en `attendance/import` se **eliminó** un
+`useCallback([])` que envolvía una llamada a `processFile`: congelaba la versión del primer
+render y funcionaba por casualidad.
+
+**Cinco `fetchX` que el efecto llamaba sin declarar** (`pagnol/carga-masiva`,
+`pagnol/invitaciones`, `subscriptions/feedback`, `invite/[token]`, `onboarding-wizard`):
+memoizadas con `useCallback` sobre lo único que capturan y declaradas en su efecto. `toast` se
+verificó estable (es una función de módulo, no se recrea) antes de usarla como dependencia.
+
+**Doce quedaron como estaban, ahora con su razón escrita** (`eslint-disable` + comentario), que
+es el objetivo real: que nadie los "arregle" mañana sin saber qué rompe.
+- `use-supabase-collection` — `columns`/`mapper`/`orderBy`/`softDelete` son literales de cada
+  llamada: declararlos volvería a pedir **todas** las colecciones en cada render de
+  `DataProvider`.
+- `AuthProvider` — la suscripción a `onAuthStateChange` se monta una vez a propósito; es la que
+  produce `user`, así que declararlo la haría remontarse justo durante el login.
+- `protocolos/[id]` — sembrar el formulario con `protocol` entero **pisaría lo que el inspector
+  está escribiendo** en cada actualización de Realtime.
+- **Siete de cámara/biometría** (`enroll/[token]` ×2, `enrollment-wizard` ×2,
+  `hardware/biometric-verification`, `movimientos` ×2). Aquí el riesgo del backlog **se
+  confirmó, y no es teórico**: `stopCamera` está memoizada sobre `cameraStream`, así que cambia
+  de identidad cada vez que la cámara arranca. En `enrollment-wizard.tsx` declarar las
+  dependencias que pide el linter encadena `startCamera` → `setCameraStream` → `stopCamera`
+  nueva → el efecto corre otra vez → **la cámara se reinicia sin parar**. La causa raíz es una
+  sola y tiene arreglo limpio (mover el stream a un `useRef` deja `stopCamera` estable), pero
+  toca cuatro flujos que **sólo se pueden probar con cámara física** → queda anotado en
+  `PENDIENTES.md`, no se hizo a ciegas.
+- `signature-pad` — se persiguió por si era un bug de firmas: el listener captura la prop
+  `onEnd` del render en que se registró. **Se revisaron los 10 consumidores y no hay bug**:
+  todos pasan un setter de estado o una closure que lee del `ref`, nunca estado capturado.
+
+**Verificación.** `lint` 0 errores (61 → **39** warnings, **cero** de `exhaustive-deps`), `tsc`
+limpio, 277/277, `build` exit 0. Y en navegador con DEMO, contando peticiones REST por tabla en
+las 7 páginas tocadas: ninguna dispara una tabla 4+ veces. `carga-masiva` marcó rojo al
+principio —`tenants×5` contra un baseline de 3—, pero era **la medición, no el código**: fue la
+primera página visitada, con arranque en frío. Con la ruta ya caliente y una ventana de 25 s,
+las 5 peticiones caen **todas en el mismo instante (2,5 s) y después no hay ninguna más**: un
+burst de montaje, no un ciclo. Las 2 extra son el doble montaje de StrictMode en dev sobre una
+consulta legítima, confirmado de forma independiente por `invitations×2` en la página vecina,
+que tiene la misma forma.
+
 ### Cambiado — Cerradas las dos decisiones que quedaban del frente de consistencia UI
 
 Steven decidió: **(1)** migrar a `DataTable` sólo lo que no exige ampliar el componente, dejando

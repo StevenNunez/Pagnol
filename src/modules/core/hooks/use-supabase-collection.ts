@@ -172,6 +172,13 @@ export function useSupabaseCollection<T>(
         return () => {
             supabase.removeChannel(channel);
         };
+        // `columns`, `mapper`, `orderBy` y `softDelete` llegan como literales en cada
+        // llamada al hook, así que su identidad cambia en todos los renders de
+        // `DataProvider`. Incluirlos volvería a pedir TODAS las colecciones y a
+        // re-suscribir sus canales de Realtime en cada render. Se depende de sus
+        // valores primitivos (`orderBy?.column`, `orderBy?.ascending`), que son lo
+        // único que cambia de verdad; el resto es estable por construcción.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [table, tenantId, enabled, orderBy?.column, orderBy?.ascending, version]);
 
     return markLoaded(data, hasLoaded);

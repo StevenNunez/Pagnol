@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -78,12 +78,14 @@ export default function AttendanceImportPage() {
     }
   };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  // Sin `useCallback`: envolvía una llamada a `processFile` (no memoizada) con un
+  // array de dependencias vacío, así que congelaba la versión del primer render.
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) processFile(file);
-  }, []);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

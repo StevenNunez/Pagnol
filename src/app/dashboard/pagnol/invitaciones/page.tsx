@@ -1,7 +1,7 @@
 ﻿
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/page-header";
 import { LoadingState } from "@/components/loading-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -67,27 +67,7 @@ export default function InvitacionesPage() {
         }
     }, [allowedRoles, role]);
 
-    useEffect(() => {
-        if (!currentTenantId) return;
-
-        fetchInvitations();
-
-        const channel = supabase
-            .channel(`invitations-${currentTenantId}-${Date.now()}`)
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'invitations',
-                filter: `tenant_id=eq.${currentTenantId}`,
-            }, () => {
-                fetchInvitations(false);
-            })
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
-    }, [currentTenantId]);
-
-    const fetchInvitations = async (showLoading = true) => {
+    const fetchInvitations = useCallback(async (showLoading = true) => {
         if (showLoading) setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -117,7 +97,27 @@ export default function InvitacionesPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [currentTenantId]);
+
+    useEffect(() => {
+        if (!currentTenantId) return;
+
+        fetchInvitations();
+
+        const channel = supabase
+            .channel(`invitations-${currentTenantId}-${Date.now()}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'invitations',
+                filter: `tenant_id=eq.${currentTenantId}`,
+            }, () => {
+                fetchInvitations(false);
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [currentTenantId, fetchInvitations]);
 
     const handleInvite = async () => {
         if (!email.trim() || !email.includes("@")) {

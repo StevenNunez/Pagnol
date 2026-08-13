@@ -10,6 +10,8 @@ import {
   type LivenessResult,
   type LivenessSample,
 } from '@/modules/data/mutations/livenessMath';
+import { MATCH_THRESHOLD, type MatchReason } from '@/modules/data/mutations/matchMath';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 
 const MODEL_URL = '/models';
 let modelsLoaded = false;
@@ -34,19 +36,14 @@ export const NO_FACE_MESSAGE =
   "No se detectó ningún rostro. Acércate a la cámara, mira de frente y busca buena iluminación.";
 
 /**
- * Umbral de coincidencia (distancia euclidiana; menor = más parecido). Vive en
- * una sola constante porque antes estaba escrito a mano en `verifyIdentity` y en
- * `searchIdentity1N`, y dos umbrales que deben ser iguales terminan no siéndolo.
- *
- * ⚠️ Medido el 2026-08-11 contra datos reales: entre personas distintas la
- * distancia dio 0,72–0,73, pero entre dos capturas de la MISMA persona dio
- * 0,427 — o sea que este 0,5 deja apenas un 15% de margen antes de rechazar a
- * quien sí corresponde. Está apretado por el lado equivocado. No moverlo a ojo:
- * hay que medir el inter-persona con capturas de la cámara real, no con fotos.
- * Cada verificación guarda el umbral con el que se resolvió, justamente para que
- * recalibrarlo no vuelva ilegible la evidencia vieja.
+ * Umbral de coincidencia. Se re-exporta desde `matchMath` para que el cliente lo
+ * pueda mostrar en pantalla y guardarlo con la evidencia, pero **el que decide
+ * es el del servidor**: desde la bóveda biométrica la comparación ocurre en
+ * `/api/biometric/match`, así que cambiar este valor en las devtools no mueve
+ * ningún veredicto. Los números medidos y la advertencia de calibración viven en
+ * `matchMath.ts`, junto a la constante real.
  */
-export const MATCH_THRESHOLD = 0.5;
+export { MATCH_THRESHOLD };
 
 /**
  * Frame del momento de la verificación, para respaldarla. Sin esto la biometría
@@ -144,44 +141,89 @@ export const captureBiometrics = async (input: HTMLVideoElement | HTMLImageEleme
 };
 
 /**
- * Verifica si el rostro en el video coincide con el template guardado.
+ * Extrae el descriptor de quien está frente a la cámara. Es lo ÚNICO biométrico
+ * que este archivo produce desde el cierre de la bóveda: la cara de la persona
+ * presente en ese instante, que ya está delante del lente. Los descriptores
+ * ENROLADOS (los de terceros) no llegan nunca al navegador.
+ */
+const extraerDescriptorVivo = async (
+  input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+): Promise<number[] | null> => {
+  if (!modelsLoaded) await loadBiometricModels();
+  const fa = await getFaceApi();
+  const detection = await fa.detectSingleFace(input).withFaceLandmarks().withFaceDescriptor();
+  return detection ? Array.from(detection.descriptor) : null;
+};
+
+/** Respuesta de `/api/biometric/match`. Nunca incluye un template. */
+interface RespuestaMatch {
+  matched: boolean;
+  reason: MatchReason;
+  userId: string | null;
+  distance: number | null;
+  runnerUpDistance: number | null;
+  threshold: number;
+  evaluated: number;
+  error?: string;
+}
+
+const pedirMatch = async (
+  body: { mode: '1:1' | '1:N'; descriptor: number[]; userId?: string },
+): Promise<RespuestaMatch | null> => {
+  const res = await fetch('/api/biometric/match', {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    console.error('[biometric/match]', res.status, json?.error);
+    return null;
+  }
+  return json as RespuestaMatch;
+};
+
+/**
+ * Verifica si el rostro en el video corresponde a un trabajador determinado.
+ *
+ * ⚠️ Recibe el **id del trabajador**, no su template: el descriptor enrolado ya
+ * no existe en el navegador. Antes esta función tomaba el template como
+ * argumento, y ese argumento sólo se podía llenar bajándose de `profiles` un
+ * dato biométrico que la RLS por fila entregaba a cualquier miembro del tenant.
  */
 export const verifyIdentity = async (
   input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
-  savedTemplate: string
+  userId: string,
 ): Promise<{ verified: boolean; score: number; message: string; reason: BiometricFailureReason }> => {
-  if (!modelsLoaded) await loadBiometricModels();
-  const fa = await getFaceApi();
-
   try {
-    // 1. Obtener descriptor en vivo
-    const detection = await fa.detectSingleFace(input).withFaceLandmarks().withFaceDescriptor();
+    const live = await extraerDescriptorVivo(input);
 
-    if (!detection) {
+    if (!live) {
       // NO es "no eres tú": es "no te vi la cara". Son dos problemas distintos con
       // dos soluciones distintas (acercarse a la cámara vs. no coincide la persona),
       // y hasta ahora los dos llegaban a la pantalla como "Fallo biométrico".
       return { verified: false, score: 0, message: NO_FACE_MESSAGE, reason: 'no_face' };
     }
 
-    // 2. Parsear template guardado
-    const savedDescriptorArray = JSON.parse(savedTemplate);
-    const savedDescriptor = new Float32Array(savedDescriptorArray);
+    const r = await pedirMatch({ mode: '1:1', descriptor: live, userId });
+    if (!r) {
+      return { verified: false, score: 0, message: "No se pudo verificar contra el servidor.", reason: 'error' };
+    }
 
-    // 3. Comparar (Distancia Euclidiana)
-    // Un valor menor a 0.6 suele ser el umbral estándar. Cuanto menor, más parecido.
-    const distance = fa.euclideanDistance(detection.descriptor, savedDescriptor);
-
-    const threshold = MATCH_THRESHOLD;
-    const isMatch = distance < threshold;
-
-    console.log(`Distancia Biométrica: ${distance} (Umbral: ${threshold})`);
+    // `empty` = el trabajador no tiene biometría enrolada. Decir "no coincide"
+    // acusaría de impostor a quien simplemente nunca fue enrolado.
+    if (r.reason === 'empty') {
+      return { verified: false, score: 0, message: "Este trabajador no tiene biometría enrolada.", reason: 'error' };
+    }
+    if (r.reason === 'bad_input') {
+      return { verified: false, score: 0, message: "Error técnico durante la verificación.", reason: 'error' };
+    }
 
     return {
-      verified: isMatch,
-      score: distance,
-      message: isMatch ? "Identidad Verificada" : "No coincide la persona",
-      reason: isMatch ? 'ok' : 'no_match',
+      verified: r.matched,
+      score: r.distance ?? 0,
+      message: r.matched ? "Identidad Verificada" : "No coincide la persona",
+      reason: r.matched ? 'ok' : 'no_match',
     };
 
   } catch (error) {
@@ -208,12 +250,12 @@ export interface BiometricCheck {
  * trabajador qué hacer. Sigue siendo compatible con `if (result.verified)`.
  */
 export const verifyBiometric = async (
-  savedTemplate: string,
+  userId: string,
   setStatus?: (status: string) => void,
   videoElement?: HTMLVideoElement
 ): Promise<BiometricCheck> => {
-  if (!savedTemplate) {
-    return { verified: false, reason: 'error', message: "Este trabajador no tiene biometría enrolada.", score: 0 };
+  if (!userId) {
+    return { verified: false, reason: 'error', message: "No se indicó a quién verificar.", score: 0 };
   }
 
   try {
@@ -231,7 +273,7 @@ export const verifyBiometric = async (
     }
 
     if (setStatus) setStatus("Analizando rostro...");
-    const result = await verifyIdentity(video, savedTemplate);
+    const result = await verifyIdentity(video, userId);
 
     if (setStatus) setStatus(result.message);
     return { verified: result.verified, reason: result.reason, message: result.message, score: result.score };
@@ -308,37 +350,33 @@ export const verifyLiveness = async (
 };
 
 /**
- * Realiza búsqueda 1:N para identificar a un usuario entre una lista.
+ * Búsqueda 1:N: ¿quién del padrón es el rostro que está frente a la cámara?
+ *
+ * ⚠️ Ya NO recibe el padrón. Antes había que pasarle la lista de trabajadores
+ * con sus templates, lo que obligaba a que el navegador tuviera descargados los
+ * descriptores faciales de toda la faena. Ahora manda el descriptor vivo y el
+ * servidor resuelve contra la bóveda, acotado al tenant del llamante.
+ *
+ * `reason` distingue el caso que antes se perdía: `ambiguous` significa que dos
+ * enrolados quedaron empatados —normalmente porque la misma cara está enrolada
+ * dos veces— y NO es lo mismo que "no te reconozco".
  */
 export const searchIdentity1N = async (
   input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
-  enrolledUsers: { id: string, biometric_template?: string | null }[]
-): Promise<{ success: boolean, userId?: string, distance?: number }> => {
+): Promise<{ success: boolean; userId?: string; distance?: number; reason?: MatchReason }> => {
   try {
-    if (!modelsLoaded) await loadBiometricModels();
-    const fa = await getFaceApi();
-    const detection = await fa.detectSingleFace(input).withFaceLandmarks().withFaceDescriptor();
-    if (!detection) return { success: false };
+    const live = await extraerDescriptorVivo(input);
+    if (!live) return { success: false, reason: 'bad_input' };
 
-    let bestMatch = { userId: '', distance: 1.0 };
-    const threshold = MATCH_THRESHOLD;
+    const r = await pedirMatch({ mode: '1:N', descriptor: live });
+    if (!r) return { success: false };
 
-    for (const user of enrolledUsers) {
-      if (!user.biometric_template) continue;
-
-      const savedDescriptor = new Float32Array(JSON.parse(user.biometric_template));
-      const distance = fa.euclideanDistance(detection.descriptor, savedDescriptor);
-
-      if (distance < bestMatch.distance) {
-        bestMatch = { userId: user.id, distance };
-      }
-    }
-
-    if (bestMatch.distance < threshold) {
-      return { success: true, userId: bestMatch.userId, distance: bestMatch.distance };
-    }
-
-    return { success: false };
+    return {
+      success: r.matched,
+      userId: r.userId ?? undefined,
+      distance: r.distance ?? undefined,
+      reason: r.reason,
+    };
   } catch (err) {
     console.error("1:N Search error:", err);
     return { success: false };

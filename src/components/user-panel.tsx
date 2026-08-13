@@ -535,22 +535,22 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                                 {/* BIOMETRÍA */}
                                 <TabsContent value="biometria" className="mt-0 focus-visible:outline-none">
                                     <div className="flex flex-col items-center text-center gap-6 py-6">
-                                        <div className={`w-20 h-20 rounded-3xl flex items-center justify-center ${user.biometric_template ? 'bg-success-subtle text-success' : 'bg-muted text-muted-foreground'}`}>
+                                        <div className={`w-20 h-20 rounded-3xl flex items-center justify-center ${user.biometricEnrolled ? 'bg-success-subtle text-success' : 'bg-muted text-muted-foreground'}`}>
                                             <ScanFace size={40} />
                                         </div>
                                         <div>
                                             <p className="font-black uppercase tracking-tight text-foreground">
-                                                {user.biometric_template ? 'Biometría enrolada' : 'Sin biometría'}
+                                                {user.biometricEnrolled ? 'Biometría enrolada' : 'Sin biometría'}
                                             </p>
                                             <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                                                {user.biometric_template
+                                                {user.biometricEnrolled
                                                     ? 'Este usuario ya tiene su rostro y documentos verificados.'
                                                     : 'Captura el rostro y la cédula desde la cámara o el celular del trabajador.'}
                                             </p>
                                         </div>
                                         {canEnroll ? (
                                             <Button onClick={() => setEnrollOpen(true)} className="rounded-xl font-black uppercase text-[10px] tracking-widest h-11 px-8 gap-2">
-                                                <ScanFace size={16} /> {user.biometric_template ? 'Re-enrolar biometría' : 'Iniciar enrolamiento'}
+                                                <ScanFace size={16} /> {user.biometricEnrolled ? 'Re-enrolar biometría' : 'Iniciar enrolamiento'}
                                             </Button>
                                         ) : (
                                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Sin permiso para enrolar.</p>

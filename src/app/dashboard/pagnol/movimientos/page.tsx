@@ -129,7 +129,12 @@ export default function MovimientosPagnolPage() {
   const [pendingDeliveryCode, setPendingDeliveryCode] = useState<string | null>(null);
 
   const [selectedEmployee, setSelectedEmployee] = useState<UserType | null>(null);
-  const [initialBiometricToken, setInitialBiometricToken] = useState<string | null>(null);
+  // A quién hay que verificar en el cierre. Antes acá se guardaba su TEMPLATE
+  // biométrico —había que tenerlo en el navegador para poder comparar—; desde la
+  // bóveda (migración 20260816000000) basta con su id: la comparación la resuelve
+  // el servidor y el descriptor no viaja. El guard que sostiene sigue siendo el
+  // mismo: sin esto, no hubo identificación previa.
+  const [sujetoAVerificarId, setSujetoAVerificarId] = useState<string | null>(null);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [returnConditions, setReturnConditions] = useState<Record<string, ReturnStatus>>({}); // Map assetId -> Condition
   const [site, setSite] = useState('');
@@ -359,13 +364,29 @@ export default function MovimientosPagnolPage() {
     // 1. Intentamos obtener del mapa local
     let emp = usersMap.get(receiverId);
 
-    // 2. Si no tiene template o no está en mapa, refetch fresco de Supabase
-    if (!emp || !emp.biometric_template) {
+    // 2. Si no está en el mapa o figura sin enrolar, refetch fresco de Supabase:
+    //    puede haberse enrolado hace un minuto. Se piden columnas explícitas en
+    //    vez de `select('*')` —que traía TODA la ficha, sueldo incluido, para
+    //    mirar un campo— y el resultado se mapea igual que la colección para no
+    //    fusionar snake_case crudo dentro de un objeto camelCase.
+    if (!emp || !emp.biometricEnrolled) {
       try {
-        const { data: snap, error } = await supabase.from('profiles').select('*').eq('id', receiverId).single();
+        const { data: snap, error } = await supabase
+          .from('profiles')
+          .select('id, name, rut, internal_id, cargo, role, biometric_enrolled')
+          .eq('id', receiverId)
+          .single();
         if (!error && snap) {
-          // Fusionamos lo que tenemos con lo fresco
-          emp = { ...emp, ...(snap as unknown as UserType), id: snap.id };
+          emp = {
+            ...(emp ?? {} as UserType),
+            id: snap.id,
+            name: snap.name ?? emp?.name,
+            rut: snap.rut ?? emp?.rut,
+            internalId: snap.internal_id ?? emp?.internalId,
+            cargo: snap.cargo ?? emp?.cargo,
+            role: snap.role ?? emp?.role,
+            biometricEnrolled: snap.biometric_enrolled ?? false,
+          } as UserType;
         }
       } catch (e) {
         console.error("Error fetching fresh user:", e);
@@ -381,7 +402,7 @@ export default function MovimientosPagnolPage() {
     // biométrica, salvo excepción autorizada por ADC o Administrador. Se bloquea
     // ACÁ y no al final: antes el pañolero avanzaba tres pasos con el trabajador
     // esperando para toparse con un "Protocolo Incompleto" que no explicaba nada.
-    if (!emp.biometric_template) {
+    if (!emp.biometricEnrolled) {
       // ¿Ya hay una excepción autorizada para él? Puede haberla aprobado el ADC
       // desde la bandeja hace un minuto: llega por Realtime, sin recargar.
       const yaAutorizada = excepcionesAprobadasPorUsuario.get(emp.id);
@@ -405,7 +426,7 @@ export default function MovimientosPagnolPage() {
     setSelectedType('WITHDRAWAL');
     setSelectedAssetIds(tx.assetIds);
     setSelectedEmployee(emp);
-    setInitialBiometricToken(emp.biometric_template || null);
+    setSujetoAVerificarId(emp.biometricEnrolled ? emp.id : null);
     setPendingDeliveryId(tx.id);
     setPendingDeliveryCode(tx.internalCode || null);
     setIsPagnoleroConfirming(false);
@@ -550,12 +571,12 @@ export default function MovimientosPagnolPage() {
   }, [biometricVerifications]);
 
   const handleIdentityVerified = async (emp: UserType) => {
-    if (!emp.biometric_template) {
+    if (!emp.biometricEnrolled) {
       toast({ variant: 'destructive', title: "Acceso Denegado", description: "Trabajador no enrolado." });
       return;
     }
     setIsBiometricPulse(true);
-    const check = await verifyBiometric(emp.biometric_template, (s) => console.log(s), videoRef.current || undefined);
+    const check = await verifyBiometric(emp.id, (s) => console.log(s), videoRef.current || undefined);
     // Deja constancia del acto ANTES de ramificar, para que también quede el
     // intento fallido: un patrón de rechazos sobre el mismo trabajador es
     // justamente lo que hay que poder mirar después.
@@ -567,7 +588,7 @@ export default function MovimientosPagnolPage() {
     });
     if (check.verified) {
       setSelectedEmployee(emp);
-      setInitialBiometricToken(emp.biometric_template);
+      setSujetoAVerificarId(emp.id);
       setTxState('IDENTIDAD_VERIFICADA');
       setFlowStep('ITEMS SELECTION');
       toast({
@@ -600,7 +621,7 @@ export default function MovimientosPagnolPage() {
       interval = setInterval(async () => {
         if (!videoRef.current) return;
         setIsSearching1N(true);
-        const result = await searchIdentity1N(videoRef.current, (users || []).filter(u => u.biometric_template));
+        const result = await searchIdentity1N(videoRef.current);
         if (result.success && result.userId) {
           const emp = usersMap.get(result.userId);
           if (emp) {
@@ -857,7 +878,7 @@ export default function MovimientosPagnolPage() {
     const conExcepcion = !!excepcionAprobada;
 
     if (!conExcepcion) {
-      if (!initialBiometricToken) {
+      if (!sujetoAVerificarId) {
         toast({
           variant: 'destructive',
           title: "Protocolo Incompleto",
@@ -875,7 +896,7 @@ export default function MovimientosPagnolPage() {
     setIsBiometricPulse(true);
     try {
       if (!conExcepcion) {
-        const verificationPromise = verifyBiometric(initialBiometricToken!, (s) => console.log(s), videoRef.current || undefined);
+        const verificationPromise = verifyBiometric(sujetoAVerificarId!, (s) => console.log(s), videoRef.current || undefined);
         const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Tiempo de espera agotado. Asegúrese de estar frente a la cámara.")), 15000));
 
         const check = await Promise.race([verificationPromise, timeoutPromise]);
@@ -1574,7 +1595,7 @@ export default function MovimientosPagnolPage() {
                       onChange={(e) => setManualUserSearch(e.target.value)}
                     />
                     <div className="grid grid-cols-1 gap-2">
-                      {users?.filter(u => u.biometric_template && (
+                      {users?.filter(u => u.biometricEnrolled && (
                         !manualUserSearch ||
                         u.name.toLowerCase().includes(manualUserSearch.toLowerCase()) ||
                         (u.rut || '').toLowerCase().includes(manualUserSearch.toLowerCase())
@@ -1592,7 +1613,7 @@ export default function MovimientosPagnolPage() {
                             <p className="text-[10px] text-muted-foreground font-medium">{u.rut || 'Sin RUT'}</p>
                           </div>
                           <div className="ml-auto">
-                            {u.biometric_template ? (
+                            {u.biometricEnrolled ? (
                               <span className="px-2 py-1 bg-success-subtle text-success rounded-md text-[9px] font-bold uppercase">Enrolado</span>
                             ) : (
                               <span className="px-2 py-1 bg-destructive/10 text-destructive rounded-md text-[9px] font-bold uppercase">No Enrolado</span>

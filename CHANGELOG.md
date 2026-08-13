@@ -18,6 +18,87 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Seguridad — El descriptor facial deja de salir del servidor (bóveda biométrica)
+
+> ✅ **`20260816000000` y `20260816010000` APLICADAS Y VERIFICADAS** (2026-08-12). Sondeo con token
+> de usuario real: `profiles?select=biometric_template` → **400** `42703` ·
+> `profiles?select=biometric_enrolled` → **200** · `biometric_templates` → **403** `42501` ·
+> `enrollment_sessions` → **403** `42501`. **Los 2 enrolamientos existentes sobrevivieron.**
+>
+> ⚠️ **FALTA DESPLEGAR.** Las dos se corrieron juntas, sin la ventana intermedia para la que venían
+> partidas: hasta que el código nuevo esté en producción, la versión anterior pide una columna que
+> ya no existe en 4 módulos (`pagnol`, `users`, `profile`, `rrhh`) y la colección `users` no carga
+> ahí. Se cierra solo con el deploy.
+
+**El problema, ejercitado y no supuesto.** Con el token de una cuenta de usuario normal,
+`GET /rest/v1/profiles?select=id,name,biometric_template` devolvía `200` y entregaba los
+descriptores faciales de todo el tenant — se bajaron dos reales, de 2.640 caracteres. La causa no
+era una policy mal escrita sino algo estructural: `profiles_select_tenant` es
+`USING (is_super_admin() OR tenant_id = get_my_tenant_id())`, **sin condición de rol**, y la RLS de
+Postgres es **por fila, no por columna**. Quien puede ver la fila del compañero ve todas sus
+columnas. Son datos sensibles bajo la **Ley 21.719**, vigente desde diciembre de 2026.
+
+**La segunda puerta, que el backlog no tenía anotada.** `enrollment_sessions` guarda
+`biometric_template` **y** `kyc_id_front` / `kyc_id_back` —fotos de la cédula— y está en la lista
+de tablas con el patrón multi-tenant estándar: misma exposición exacta.
+
+**Lo que NO se hizo, y por qué.** La receta que decía el backlog era `REVOKE SELECT
+(biometric_template)`. Postgres no sabe denegar una columna: con un GRANT de tabla vigente hay que
+revocar `SELECT` de `profiles` entera y re-otorgar columna por columna, y entonces **cada
+`ALTER TABLE profiles ADD COLUMN` futuro nace sin permiso y rompe en silencio**. `profiles` es una
+tabla que crece. Habría sido sembrar la misma clase de mina que este proyecto ya pisó siete veces
+con el drift de esquema.
+
+**Lo que se hizo.** El dato sensible se mudó a su propia tabla, donde la RLS por fila sí alcanza
+—porque ahí **la fila es el template**— y la comparación se movió al servidor:
+
+- **`biometric_templates`** (migración `20260816000000`), sin ninguna policy para `authenticated`
+  y con los privilegios por defecto revocados: nadie la lee desde el navegador, ni un
+  administrador. Fuera de la publicación de Realtime a propósito, que sería otra puerta.
+- **`/api/biometric/match`** resuelve 1:1 y 1:N con service role y devuelve un **veredicto**. El
+  navegador sólo extrae y envía el descriptor de **quien está frente a la cámara**, que ya está
+  ahí. Efecto secundario: el umbral pasa a ser del servidor, y no de un `const` del bundle que
+  cualquiera podía editar en las devtools.
+- **`profiles.biometric_enrolled`**, booleano derivado por trigger, reemplaza a la columna en todo
+  lo que sólo necesitaba saber "¿está enrolado?" — que era la mayoría de los usos (badges de
+  Personal, panel de usuario, guard de Movimientos). Se deriva y no se escribe a mano para que no
+  existan dos fuentes de verdad del mismo dato.
+- **`enrollment_sessions` cerrada** a `authenticated`. El asistente de enrolamiento crea y consulta
+  la sesión por `/api/enroll/session`, que devuelve **sólo el `status`**; el descriptor y las fotos
+  de cédula viajan del móvil del trabajador al servidor y de ahí a su destino final, **sin pasar
+  por el equipo del administrador**. Y la sesión se vacía al consumirse.
+- **Puente para la ventana de despliegue**: un trigger espeja hacia la bóveda lo que el código
+  viejo siga escribiendo en `profiles`, y la migración de corte aborta con `RAISE EXCEPTION` si
+  quedara un solo template sin copiar. Un enrolamiento perdido significa citar al trabajador a que
+  le vuelvan a tomar la cara.
+
+**Límite conocido, dicho en voz alta.** La respuesta incluye la distancia porque la evidencia
+(`biometric_verifications`) la guarda y sin ella no se puede calibrar el umbral. Eso convierte al
+endpoint en un oráculo de distancias, y **el límite de frecuencia no lo cierra**: con 128
+dimensiones bastan ~130 consultas bien elegidas para despejar el vector por álgebra. Por eso la
+distancia se **redondea a tres decimales** antes de salir —toda la precisión que la evidencia usa
+(0,427 y 0,72 son los números medidos)— lo que le quita al oráculo unos 40 bits por consulta. Con
+eso más el límite de 120/min, reconstruir un descriptor pasa de ser un puñado de llamadas a un
+ataque largo, ruidoso y que exige credenciales de pañol. **No es imposible: es incomparablemente
+más caro que un `GET`.**
+
+### Agregado — Ratio test en la búsqueda 1:N (cierra un ítem 🟡 del backlog)
+
+`findBestMatch` ya no se queda con el mínimo a secas: exige **separación respecto al segundo
+mejor**. Dos candidatos dentro de `AMBIGUITY_MARGIN` (0,02, **razonado y no medido**, mismo estatus
+que `LIVENESS_MIN_AMPLITUDE`) se resuelven como `ambiguous`, que **no es lo mismo que "no eres
+tú"**: se informa quién iba ganando para poder diagnosticar el enrolamiento duplicado. Es el caso
+real de este tenant, donde `Steven` y `Picapiedra` son la misma cara. Toda respuesta devuelve
+`runnerUpDistance` justamente para poder calibrar ese margen con padrones reales.
+
+Toda la matemática vive en `matchMath.ts` —puro, sin Supabase, sin DOM y sin `face-api`— con **26
+tests** que la ejercitan sin cámara, incluidos los tres números medidos en producción. Total:
+**329 tests**.
+
+🔎 *De paso:* las dos primeras pruebas de límite fallaron y el defecto estaba en **el test**, no en
+el código — repartía la distancia entre las 128 componentes y el redondeo hacía que "exactamente
+0,5" llegara como 0,49999…, justo el borde que importa cuando el umbral es `<` y no `<=`.
+
 ### Agregado — Prueba de vida: una foto ya no pasa desapercibida (en observación)
 
 > ⚠️ **REQUIERE APLICAR `20260815000000_biometric_liveness.sql` ANTES DE DESPLEGAR.**

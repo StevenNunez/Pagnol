@@ -76,6 +76,9 @@ export async function addUser(data: any, { user, tenantId }: Context) {
             kyc_face_image: data.kyc_face_image || null,
             kyc_id_front: data.kyc_id_front || null,
             kyc_id_back: data.kyc_id_back || null,
+            // Enrolamiento por QR: el servidor lee el descriptor y los documentos
+            // de la sesión del móvil. Este navegador nunca los tuvo.
+            enrollmentToken: data.enrollmentToken || null,
             enrolledByName: user?.name || 'System',
             contractId: data.contractId || null,
             shiftScheduleId: data.shiftScheduleId || null,
@@ -102,6 +105,7 @@ export async function enrollUser(userId: string, data: any, { user }: Context) {
             kyc_face_image: data.kyc_face_image || null,
             kyc_id_front: data.kyc_id_front || null,
             kyc_id_back: data.kyc_id_back || null,
+            enrollmentToken: data.enrollmentToken || null,
             enrolledByName: user?.name || 'System',
         }),
     });
@@ -173,16 +177,17 @@ export async function updateUser(userId: string, data: any, { user }: Context) {
         tipo_salud: data.tipoSalud,
         cargas_familiares: data.cargasFamiliares,
         signature: data.signature,
-        biometric_template: data.biometric_template,
         address: data.address,
         birth_date: data.birthDate,
         emergency_contact_name: data.emergencyContactName,
         emergency_contact_phone: data.emergencyContactPhone,
         employment_status: data.employmentStatus,
         // Los documentos KYC viven en profile_documents (S4); no se escriben aquí.
-        enrolled_by: data.biometric_template ? (user?.name || 'System') : undefined,
-        enrolled_at: data.biometric_template ? new Date().toISOString() : undefined,
-        onboarding_completed: data.biometric_template ? true : undefined,
+        // La biometría tampoco: va a la bóveda por `/api/users/enroll`, que es la
+        // única vía. Esta función tenía una rama que escribía `biometric_template`
+        // en `profiles` y que ningún llamador usaba —se retiró junto con la
+        // columna (migración 20260816010000)—; dejarla habría sido un `UPDATE`
+        // contra una columna inexistente esperando a que alguien la despertara.
     };
 
     // Remove undefined values

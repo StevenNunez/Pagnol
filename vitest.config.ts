@@ -21,6 +21,7 @@ export default defineConfig({
       'src/modules/data/mutations/severanceMath.test.ts',
       'src/modules/data/mutations/biometricMath.test.ts',
       'src/modules/data/mutations/livenessMath.test.ts',
+      'src/modules/data/mutations/matchMath.test.ts',
       'src/lib/finance-periods.test.ts',
       'src/lib/numero-a-palabras.test.ts',
     ],

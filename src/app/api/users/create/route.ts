@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { requireAuth, resolveTenant, hasPermission } from '@/modules/core/lib/api-auth';
+import { guardarTemplate, consumirSesionEnrolamiento } from '@/modules/core/lib/biometric-vault';
 
 export async function POST(request: Request) {
     try {
@@ -15,7 +16,11 @@ export async function POST(request: Request) {
         }
 
         const { email, password, name, role, tenantId: bodyTenantId, internalId, rut,
-                biometric_template, kyc_face_image, kyc_id_front, kyc_id_back,
+                biometric_template: templateDelCuerpo,
+                kyc_face_image: kycCaraDelCuerpo,
+                kyc_id_front: kycFrenteDelCuerpo,
+                kyc_id_back: kycDorsoDelCuerpo,
+                enrollmentToken,
                 enrolledByName, contractId, shiftScheduleId, rotationStartDate } = await request.json();
 
         if (!email) {
@@ -35,6 +40,18 @@ export async function POST(request: Request) {
         }
 
         const admin = ctx.admin;
+
+        // Enrolamiento por QR: el descriptor y los documentos vienen de la sesión
+        // que el trabajador completó en su móvil, leídos server-side. El navegador
+        // del administrador nunca los tuvo. (Ver `biometric-vault.ts`.)
+        const sesion = enrollmentToken
+            ? await consumirSesionEnrolamiento(admin, enrollmentToken, ctx.isSuperAdmin ? null : tenantId)
+            : null;
+
+        const biometric_template = sesion?.template ?? templateDelCuerpo ?? null;
+        const kyc_face_image = sesion?.kycFaceImage ?? kycCaraDelCuerpo ?? null;
+        const kyc_id_front = sesion?.kycIdFront ?? kycFrenteDelCuerpo ?? null;
+        const kyc_id_back = sesion?.kycIdBack ?? kycDorsoDelCuerpo ?? null;
 
         // Create auth user without affecting the current admin session.
         // Sin password explícita se genera una aleatoria e irrecuperable (el
@@ -70,7 +87,7 @@ export async function POST(request: Request) {
                 tenant_id: tenantId,
                 internal_id: internalId,
                 qr_code: qrCode,
-                biometric_template: biometric_template || null,
+                // El descriptor NO se guarda acá: va a la bóveda más abajo.
                 enrolled_by: enrolledByName || 'System',
                 enrolled_at: new Date().toISOString(),
                 onboarding_completed: !!biometric_template,
@@ -81,6 +98,22 @@ export async function POST(request: Request) {
             // Rollback: delete the auth user if profile creation fails
             await admin.auth.admin.deleteUser(newUser.id);
             return NextResponse.json({ error: profileError.message }, { status: 500 });
+        }
+
+        // Biometría en la bóveda (nunca en `profiles`, donde la lee todo el tenant).
+        // Si falla, el usuario ya existe y es utilizable: se avisa en vez de
+        // deshacer la creación entera, porque re-enrolar es un botón y volver a
+        // crear al trabajador no.
+        if (biometric_template) {
+            const guardado = await guardarTemplate(admin, {
+                userId: newUser.id,
+                tenantId,
+                template: biometric_template,
+                enrolledBy: enrolledByName,
+            });
+            if (!guardado.ok) {
+                console.error('[users/create] biometría no guardada:', guardado.error);
+            }
         }
 
         // Documentos KYC en tabla protegida (RLS dueño/admin). Vía service role.

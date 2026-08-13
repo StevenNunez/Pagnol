@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/modules/core/lib/supabase';
+import { authHeaders } from '@/modules/core/lib/auth-header';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 const FormSchema = z.object({
@@ -94,7 +94,6 @@ export function EnrollmentWizard({
     const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
     const [qrPolling, setQrPolling] = useState(false);
     const [qrCompleted, setQrCompleted] = useState(false);
-    const [qrKycImages, setQrKycImages] = useState<{ face: string | null; idFront: string | null; idBack: string | null }>({ face: null, idFront: null, idBack: null });
 
     const { control, register, handleSubmit, reset, watch, formState: { errors } } = useForm<FormData>({
         resolver: zodResolver(FormSchema),
@@ -128,7 +127,6 @@ export function EnrollmentWizard({
             setBiometricTemplate(null);
             setQrCompleted(false);
             setQrPolling(false);
-            setQrKycImages({ face: null, idFront: null, idBack: null });
             setContractId('');
             setShiftScheduleId('');
             setRotationStartDate(new Date().toISOString().slice(0, 10));
@@ -266,18 +264,22 @@ export function EnrollmentWizard({
 
         const formData = watch();
         try {
-            await supabase.from('enrollment_sessions').upsert({
-                token,
-                tenant_id: tenantId,
-                user_id: selectedUser?.id || null,
-                admin_id: currentUser?.id || null,
-                name: formData.name,
-                email: formData.email,
-                rut: formData.rut,
-                role: formData.role,
-                internal_id: formData.internalId,
-                status: 'pending',
-                expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+            // Vía servidor: `enrollment_sessions` guarda el descriptor facial y las
+            // fotos de la cédula, así que dejó de ser legible/escribible desde el
+            // navegador (migración 20260816010000). El tenant lo pone la ruta a
+            // partir de quien enrola, no este cuerpo.
+            await fetch('/api/enroll/session', {
+                method: 'POST',
+                headers: await authHeaders(),
+                body: JSON.stringify({
+                    token,
+                    userId: selectedUser?.id || null,
+                    name: formData.name,
+                    email: formData.email,
+                    rut: formData.rut,
+                    role: formData.role,
+                    internalId: formData.internalId,
+                }),
             });
         } catch (e) {
             console.error("Error creating session:", e);
@@ -285,19 +287,22 @@ export function EnrollmentWizard({
 
         setQrPolling(true);
         const pollInterval = setInterval(async () => {
-            const { data } = await supabase
-                .from('enrollment_sessions')
-                .select('status, biometric_template, kyc_face_image, kyc_id_front, kyc_id_back')
-                .eq('token', token)
-                .maybeSingle();
-            if (data?.status === 'completed' && data.biometric_template) {
-                clearInterval(pollInterval);
-                setBiometricTemplate(data.biometric_template);
-                setQrKycImages({
-                    face: data.kyc_face_image || null,
-                    idFront: data.kyc_id_front || null,
-                    idBack: data.kyc_id_back || null,
+            // Sólo el ESTADO. El descriptor y las fotos de la cédula ya no pasan
+            // por el equipo del administrador: van del móvil del trabajador al
+            // servidor, y de ahí a la bóveda y a `profile_documents` cuando se
+            // envía el formulario (el servidor los toma del `enrollmentToken`).
+            let estado: string | null = null;
+            try {
+                const res = await fetch(`/api/enroll/session?token=${encodeURIComponent(token)}`, {
+                    headers: await authHeaders(),
                 });
+                if (res.ok) estado = (await res.json())?.status ?? null;
+            } catch (e) {
+                console.error('Error consultando la sesión:', e);
+            }
+
+            if (estado === 'completed') {
+                clearInterval(pollInterval);
                 setQrCompleted(true);
                 setQrPolling(false);
                 toast({ title: '✅ Enrolamiento Completado', description: 'El trabajador completó su verificación desde el móvil.' });
@@ -310,13 +315,19 @@ export function EnrollmentWizard({
     const onSubmit: SubmitHandler<FormData> = async (data) => {
         setIsSubmitting(true);
         try {
-            // Use QR kyc images if available (mobile enrollment), otherwise use desktop captures
-            const kycPayload: Record<string, any> = {
-                biometric_template: biometricTemplate,
-                kyc_face_image: qrKycImages.face ?? (capturedImages.face !== 'skip' ? capturedImages.face : null),
-                kyc_id_front: qrKycImages.idFront ?? (capturedImages.idFront !== 'skip' ? capturedImages.idFront : null),
-                kyc_id_back: qrKycImages.idBack ?? (capturedImages.idBack !== 'skip' ? capturedImages.idBack : null),
-            };
+            // Dos caminos, y sólo el de escritorio lleva datos en el cuerpo:
+            //  · Escritorio: el administrador capturó con la cámara del equipo, así
+            //    que el descriptor y las fotos ya están acá y se envían.
+            //  · QR: nada de eso pasó por este navegador. Se manda el TOKEN y el
+            //    servidor lee la sesión que completó el trabajador en su móvil.
+            const kycPayload: Record<string, any> = qrCompleted
+                ? { enrollmentToken }
+                : {
+                    biometric_template: biometricTemplate,
+                    kyc_face_image: capturedImages.face !== 'skip' ? capturedImages.face : null,
+                    kyc_id_front: capturedImages.idFront !== 'skip' ? capturedImages.idFront : null,
+                    kyc_id_back: capturedImages.idBack !== 'skip' ? capturedImages.idBack : null,
+                };
 
             if (selectedUser) {
                 await onEnrollUser(selectedUser.id, { ...kycPayload, internalId: data.internalId });

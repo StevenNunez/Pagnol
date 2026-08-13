@@ -34,7 +34,9 @@ const BiometricVerificationPage: React.FC = () => {
   const [matchCount, setMatchCount] = useState(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const enrolledUsers = (users || []).filter(u => u.biometric_template);
+  // Ya no lleva templates: sirve para contar cuántos hay enrolados y para
+  // resolver el nombre del identificado. La comparación la hace el servidor.
+  const enrolledUsers = (users || []).filter(u => u.biometricEnrolled);
 
   const stopCamera = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -75,7 +77,7 @@ const BiometricVerificationPage: React.FC = () => {
       if (!videoRef.current) return;
       setScanCount(p => p + 1);
 
-      const result = await searchIdentity1N(videoRef.current, enrolledUsers);
+      const result = await searchIdentity1N(videoRef.current);
 
       if (result.success && result.userId) {
         const user = enrolledUsers.find(u => u.id === result.userId);
@@ -91,7 +93,10 @@ const BiometricVerificationPage: React.FC = () => {
           setMatchCount(p => p + 1);
           setStatus("match");
         }
-      } else if (result.success === false && result.userId === undefined) {
+      } else if (result.reason === 'bad_input' || result.reason === 'empty') {
+        // `bad_input` = el detector no vio ninguna cara; `empty` = no hay a quién
+        // comparar. Antes esto se deducía de "success false y userId undefined",
+        // que también era cierto cuando SÍ había cara y no coincidía con nadie.
         setStatus("no_face");
         setMatchResult(null);
       } else {

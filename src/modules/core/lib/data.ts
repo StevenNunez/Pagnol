@@ -95,7 +95,14 @@ export interface User {
   tipoSalud?: 'Fonasa' | 'Isapre';
   cargasFamiliares?: number;
   signature?: string; // Data URL of the user's signature
-  biometric_template?: string | null; // WebAuthn Credential ID for hardware authentication
+  /**
+   * ¿Tiene descriptor facial enrolado? Es lo ÚNICO que la UI necesita saber.
+   * El descriptor en sí vive en `biometric_templates` (bóveda, migración
+   * 20260816000000) y no sale del servidor: la comparación ocurre en
+   * `/api/biometric/match`. Reemplaza a `biometric_template`, que estaba en
+   * `profiles` y por eso lo podía leer por REST cualquier miembro del tenant.
+   */
+  biometricEnrolled?: boolean;
   kyc_id_front?: string | null; // Data URL or URL for ID front
   kyc_id_back?: string | null; // Data URL or URL for ID back
   kyc_face_image?: string | null; // Data URL or URL for face capture

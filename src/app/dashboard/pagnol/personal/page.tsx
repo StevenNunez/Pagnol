@@ -267,8 +267,8 @@ export default function PersonalPage() {
     {
       key: 'biometric', header: 'Estado Biométrico',
       cell: (emp) => (
-        <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${emp.biometric_template ? 'text-success' : 'text-muted-foreground'}`}>
-          <ScanFace size={14} /> {emp.biometric_template ? 'Enrolado / Activo' : 'Pendiente'}
+        <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${emp.biometricEnrolled ? 'text-success' : 'text-muted-foreground'}`}>
+          <ScanFace size={14} /> {emp.biometricEnrolled ? 'Enrolado / Activo' : 'Pendiente'}
         </div>
       ),
     },
@@ -279,7 +279,7 @@ export default function PersonalPage() {
           {canDelegatePermissions && emp.id !== currentUser?.id && (
             <Button variant="ghost" size="icon" onClick={() => handleOpenPermissions(emp)} className="text-pagnol-orange" title="Delegar Permisos"><Lock size={18} /></Button>
           )}
-          {canManageEmployees && !emp.biometric_template && (
+          {canManageEmployees && !emp.biometricEnrolled && (
             <Button variant="ghost" size="icon" onClick={() => handleOpenEnrollment(emp)} title="Enrolar"><ScanFace size={18} /></Button>
           )}
         </div>
@@ -340,7 +340,7 @@ export default function PersonalPage() {
                         <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">{emp.internalId}</p>
                       </div>
                     </div>
-                    <div className={`p-2 rounded-xl shrink-0 ${emp.biometric_template ? 'bg-success-subtle text-success' : 'bg-muted text-muted-foreground/50'}`} title={emp.biometric_template ? 'Biometría enrolada' : 'Falta enrolar'}>
+                    <div className={`p-2 rounded-xl shrink-0 ${emp.biometricEnrolled ? 'bg-success-subtle text-success' : 'bg-muted text-muted-foreground/50'}`} title={emp.biometricEnrolled ? 'Biometría enrolada' : 'Falta enrolar'}>
                       <Fingerprint size={18} />
                     </div>
                   </div>
@@ -404,15 +404,15 @@ export default function PersonalPage() {
                   </div>
                   {canManageEmployees && (
                     <Button
-                      onClick={() => !emp.biometric_template && handleOpenEnrollment(emp)}
-                      variant={emp.biometric_template ? 'ghost' : 'default'}
+                      onClick={() => !emp.biometricEnrolled && handleOpenEnrollment(emp)}
+                      variant={emp.biometricEnrolled ? 'ghost' : 'default'}
                       className={`w-full py-1 h-9 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all
-                        ${emp.biometric_template
+                        ${emp.biometricEnrolled
                           ? 'bg-success-subtle text-success-subtle-foreground hover:bg-success/10 cursor-default border border-success/30'
                           : 'bg-foreground text-background shadow-xl shadow-black/10 hover:bg-foreground/90'
                         }`}>
-                      {emp.biometric_template ? <CheckCircle size={14} /> : <ScanFace size={14} />}
-                      {emp.biometric_template ? 'Enrolado Biométricamente' : 'Iniciar Enrolamiento Biométrico'}
+                      {emp.biometricEnrolled ? <CheckCircle size={14} /> : <ScanFace size={14} />}
+                      {emp.biometricEnrolled ? 'Enrolado Biométricamente' : 'Iniciar Enrolamiento Biométrico'}
                     </Button>
                   )}
                 </div>
@@ -542,9 +542,9 @@ export default function PersonalPage() {
                             <div>
                               <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Estado del Enrolamiento</p>
                               <div className="flex items-center gap-2 mt-1">
-                                <div className={`w-2 h-2 rounded-full ${selectedEmployeeForHistory.biometric_template ? 'bg-success animate-pulse' : 'bg-muted-foreground/40'}`} />
-                                <span className={`text-sm font-black uppercase tracking-tight ${selectedEmployeeForHistory.biometric_template ? 'text-success' : 'text-muted-foreground'}`}>
-                                  {selectedEmployeeForHistory.biometric_template ? 'VALIDADO POR IA' : 'PENDIENTE'}
+                                <div className={`w-2 h-2 rounded-full ${selectedEmployeeForHistory.biometricEnrolled ? 'bg-success animate-pulse' : 'bg-muted-foreground/40'}`} />
+                                <span className={`text-sm font-black uppercase tracking-tight ${selectedEmployeeForHistory.biometricEnrolled ? 'text-success' : 'text-muted-foreground'}`}>
+                                  {selectedEmployeeForHistory.biometricEnrolled ? 'VALIDADO POR IA' : 'PENDIENTE'}
                                 </span>
                               </div>
                             </div>
@@ -552,7 +552,7 @@ export default function PersonalPage() {
                           <div className="pt-4 border-t flex justify-between items-center text-[9px] font-black uppercase tracking-widest text-muted-foreground">
                             <span>Hash Biométrico</span>
                             <span className="font-mono text-muted-foreground/50">
-                              {selectedEmployeeForHistory.biometric_template ? `SHA256-${selectedEmployeeForHistory.id.substring(0, 10)}...` : 'N/A'}
+                              {selectedEmployeeForHistory.biometricEnrolled ? `SHA256-${selectedEmployeeForHistory.id.substring(0, 10)}...` : 'N/A'}
                             </span>
                           </div>
                         </div>

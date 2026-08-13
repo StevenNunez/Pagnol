@@ -65,7 +65,7 @@ export const mappers = {
         tipoSalud: item.tipo_salud,
         cargasFamiliares: item.cargas_familiares,
         signature: item.signature,
-        biometric_template: item.biometric_template || null,
+        biometricEnrolled: item.biometric_enrolled ?? false,
         // kyc_id_front/back/face_image se movieron a la tabla protegida
         // profile_documents (S4). Se cargan bajo demanda, no en el collection.
         enrolledBy: item.enrolled_by || null,

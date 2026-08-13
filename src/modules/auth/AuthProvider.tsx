@@ -169,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 cargasFamiliares: userData.cargas_familiares,
                 signature: userData.signature,
                 onboardingCompleted: userData.onboarding_completed,
+                biometricEnrolled: userData.biometric_enrolled ?? false,
                 grantedPermissions: userData.granted_permissions || []
               };
 
@@ -259,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           signature: p.signature ?? prev.signature,
           grantedPermissions: p.granted_permissions ?? prev.grantedPermissions,
           onboardingCompleted: p.onboarding_completed ?? prev.onboardingCompleted,
-          biometric_template: p.biometric_template ?? prev.biometric_template,
+          biometricEnrolled: p.biometric_enrolled ?? prev.biometricEnrolled,
           kyc_face_image: p.kyc_face_image ?? prev.kyc_face_image,
         } : prev);
       })

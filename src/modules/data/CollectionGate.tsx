@@ -64,9 +64,32 @@ export function CollectionGateProvider({ children }: { children: React.ReactNode
     }, []);
 
     // Al navegar se suma lo del módulo nuevo; nunca se resta.
-    React.useEffect(() => {
-        addActive(collectionsFor(pathname));
-    }, [pathname, addActive]);
+    //
+    // ⚠️ Esto se ajusta DURANTE el render y no en un `useEffect`, a propósito.
+    // Con el efecto, el set llegaba un commit tarde: la página de la ruta nueva
+    // se renderizaba con las colecciones de la ruta ANTERIOR todavía activas, su
+    // primera lectura caía en la red de seguridad y ésta reportaba —en falso—
+    // que el manifiesto no declaraba una colección que sí estaba declarada. El
+    // mensaje además salía contradictorio, porque `pathnameRef` ya apuntaba a la
+    // ruta nueva (se asigna en el render) mientras el set era el viejo.
+    //
+    // Una alarma que suena con el manifiesto correcto es peor que no tenerla:
+    // enseña a ignorar el único aviso que separa "un viaje extra" de "cero filas
+    // en silencio". Ajustar estado en el render es el patrón oficial de React
+    // para derivar de props/navegación — re-ejecuta este componente antes de
+    // renderizar los hijos, así que la página ve su módulo ya activo.
+    const [rutaAplicada, setRutaAplicada] = React.useState(pathname);
+    if (pathname !== rutaAplicada) {
+        setRutaAplicada(pathname);
+        const faltantes = collectionsFor(pathname).filter(n => !active.has(n));
+        if (faltantes.length) {
+            setActive(prev => {
+                const next = new Set(prev);
+                for (const n of faltantes) next.add(n);
+                return next;
+            });
+        }
+    }
 
     // `request` debe ser estable (lo usa el Proxy de useAppState en cada render),
     // así que la ruta para el mensaje de consola se lee por ref.

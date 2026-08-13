@@ -42,6 +42,20 @@ import type { Permission } from '@/modules/core/lib/permissions';
  * ser un puñado de llamadas y pasa a ser un ataque largo, ruidoso y que exige
  * credenciales de pañol. NO es "imposible": es incomparablemente más caro que lo
  * de antes, donde el mismo dato se bajaba con un solo GET a `/rest/v1/profiles`.
+ *
+ * ── El padrón es el de la gente VIVA ─────────────────────────────────────────
+ *
+ * Las dos consultas filtran `profiles.deleted_at IS NULL` con un embed `!inner`.
+ * Sin eso, el servidor identificaba contra un padrón MÁS GRANDE que el que la
+ * app muestra: la colección `users` filtra los borrados (`softDelete`), la
+ * bóveda no. El resultado era un callejón sin salida — el servidor devolvía un
+ * `userId` que la pantalla no podía resolver, y el escaneo giraba para siempre
+ * (encontrado el 2026-08-13 con un perfil soft-deleted que seguía enrolado).
+ *
+ * Y no es sólo un desajuste de UI: alguien dado de baja seguía siendo
+ * biométricamente identificable por el sistema. Un padrón de reconocimiento
+ * facial que incluye a quien ya no está es exactamente lo que la Ley 21.719
+ * mira con lupa.
  */
 
 /** Quién puede pedir una comparación: las pantallas que la usan, y nadie más. */
@@ -165,8 +179,9 @@ export async function POST(req: Request) {
             // verificar contra el padrón de otra empresa.
             let q = ctx.admin
                 .from('biometric_templates')
-                .select('user_id, template')
-                .eq('user_id', body.userId);
+                .select('user_id, template, profiles!inner(deleted_at)')
+                .eq('user_id', body.userId)
+                .is('profiles.deleted_at', null);
             if (!ctx.isSuperAdmin) q = q.eq('tenant_id', tenantId);
 
             const { data, error } = await q.maybeSingle();
@@ -181,7 +196,10 @@ export async function POST(req: Request) {
             );
         }
 
-        let q = ctx.admin.from('biometric_templates').select('user_id, template');
+        let q = ctx.admin
+            .from('biometric_templates')
+            .select('user_id, template, profiles!inner(deleted_at)')
+            .is('profiles.deleted_at', null);
         if (!ctx.isSuperAdmin) q = q.eq('tenant_id', tenantId);
 
         const { data, error } = await q;

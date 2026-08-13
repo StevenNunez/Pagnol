@@ -45,6 +45,7 @@ import { Card, CardContent, CardTitle, CardDescription } from "@/components/ui/c
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { verifyBiometric, searchIdentity1N, captureEvidenceFrame, MATCH_THRESHOLD, verifyLiveness } from '@/lib/biometricService';
+import type { MatchReason } from '@/modules/data/mutations/matchMath';
 import {
   pickChallenge,
   CHALLENGE_PROMPT,
@@ -66,6 +67,73 @@ type TransactionState =
   | 'CERRADA';
 
 type FlowStep = 'IDLE' | 'SCANNING' | 'ITEMS SELECTION' | 'CONDITION CHECK' | 'CONFIRMATION PAGNOLERO' | 'FIRMA RECIBIDO' | 'COMPLETED' | 'MANUAL USER SELECT';
+
+interface ScanDiag {
+  reason: MatchReason | 'not_listed' | 'error';
+  distance?: number;
+  runnerUpDistance?: number;
+  evaluated?: number;
+}
+
+/**
+ * Traduce el motivo del intento fallido a algo que el pañolero pueda ACCIONAR.
+ *
+ * Cada caso se resuelve distinto y por eso se dicen distinto: acercarse a la
+ * cámara no arregla un enrolamiento duplicado, y usar la selección manual no
+ * arregla que la empresa no tenga a nadie enrolado. Función pura y fuera del
+ * componente para que no se recree en cada render (lección del barrido de lint).
+ */
+function explicarDiagnostico(d: ScanDiag): { titulo: string; detalle: string; tono: 'warning' | 'info' | 'destructive' } {
+  switch (d.reason) {
+    case 'bad_input':
+      return {
+        titulo: 'No se ve el rostro',
+        detalle: 'Acércate a la cámara, de frente y con la cara despejada.',
+        tono: 'warning',
+      };
+    case 'no_match':
+      return {
+        titulo: 'No reconocido',
+        detalle: d.evaluated === 0
+          ? 'No hay nadie enrolado en esta empresa todavía.'
+          : 'El rostro no coincide con ningún trabajador enrolado. Repite la toma con más luz o usa la selección manual.',
+        tono: 'destructive',
+      };
+    case 'ambiguous':
+      // NO es "no eres tú": es "no puedo decir cuál de los dos eres". Pasa
+      // cuando la misma cara quedó enrolada dos veces (p. ej. un usuario de
+      // prueba creado con la cara de alguien real).
+      return {
+        titulo: 'Empate entre dos enrolados',
+        detalle: 'Dos personas del padrón dieron prácticamente la misma distancia — normalmente es la misma cara enrolada dos veces. Revisa los enrolamientos duplicados o usa la selección manual.',
+        tono: 'warning',
+      };
+    case 'empty':
+      return {
+        titulo: 'Sin padrón',
+        detalle: 'No hay ningún trabajador con biometría enrolada en esta empresa.',
+        tono: 'info',
+      };
+    case 'not_listed':
+      return {
+        titulo: 'Identificado, pero fuera de la lista',
+        detalle: 'Se reconoció el rostro, pero esa persona no aparece en el listado de esta pantalla. Usa la selección manual.',
+        tono: 'warning',
+      };
+    default:
+      return {
+        titulo: 'Error de verificación',
+        detalle: 'No se pudo consultar al servidor. Reintenta o usa la selección manual.',
+        tono: 'destructive',
+      };
+  }
+}
+
+const TONO_DIAG = {
+  warning: 'bg-warning-subtle text-warning-subtle-foreground',
+  info: 'bg-info-subtle text-info-subtle-foreground',
+  destructive: 'bg-destructive/10 text-destructive',
+} as const;
 type ReturnStatus = 'OK' | 'CON FALLA' | 'ROTO';
 type TransactionType = 'WITHDRAWAL' | 'RETURN';
 
@@ -160,6 +228,17 @@ export default function MovimientosPagnolPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isSearching1N, setIsSearching1N] = useState(false);
+  /**
+   * Por qué el último intento de identificación no terminó en una persona.
+   *
+   * Hasta ahora el bucle 1:N descartaba el motivo y la pantalla mostraba
+   * "Identificando…" en bucle pasara lo que pasara: no te vi la cara, no te
+   * reconozco, hay dos enrolados empatados o no hay nadie enrolado llegaban
+   * todos al pañolero como la misma animación. Es el peor final posible para una
+   * puerta biométrica, porque el operador no tiene forma de saber si acercarse,
+   * insistir o usar la selección manual.
+   */
+  const [scanDiag, setScanDiag] = useState<ScanDiag | null>(null);
   const [manualUserSearch, setManualUserSearch] = useState('');
   const [justReturnedIds, setJustReturnedIds] = useState<Set<string>>(new Set());
   const [pendingReturnTxs, setPendingReturnTxs] = useState<DisplayTransaction[]>([]);
@@ -330,6 +409,7 @@ export default function MovimientosPagnolPage() {
     setSelectedAssetIds([]);
     setReturnConditions({});
     setSelectedEmployee(null);
+    setScanDiag(null); // el diagnóstico es del intento anterior, no del que empieza
     setSearchAsset('');
     setDescription('');
     setManualUserSearch('');
@@ -625,9 +705,22 @@ export default function MovimientosPagnolPage() {
         if (result.success && result.userId) {
           const emp = usersMap.get(result.userId);
           if (emp) {
+            setScanDiag(null);
             handleIdentityVerified(emp);
             clearInterval(interval);
+          } else {
+            // Identificado por el servidor pero ausente de esta pantalla. Antes
+            // era el caso más desconcertante de todos: el bucle seguía girando
+            // como si no hubiera reconocido a nadie.
+            setScanDiag({ reason: 'not_listed' });
           }
+        } else {
+          setScanDiag({
+            reason: result.reason ?? 'error',
+            distance: result.distance,
+            runnerUpDistance: result.runnerUpDistance,
+            evaluated: result.evaluated,
+          });
         }
         setIsSearching1N(false);
       }, 1500); // Escanear cada 1.5s para no saturar
@@ -1560,6 +1653,27 @@ export default function MovimientosPagnolPage() {
                   <div>
                     <h4 className="font-black uppercase text-2xl tracking-tight text-foreground">Identificación en Curso</h4>
                     <p className="text-[10px] font-black text-muted-foreground uppercase mt-2 tracking-widest">Aproxime su rostro a la cámara para iniciar</p>
+
+                    {/* Por qué no terminó de identificar. Sin esto la pantalla
+                        muestra la misma animación para cuatro problemas que se
+                        resuelven de cuatro formas distintas. */}
+                    {scanDiag && (() => {
+                      const { titulo, detalle, tono } = explicarDiagnostico(scanDiag);
+                      return (
+                        <div className={`mt-5 rounded-xl px-4 py-3 text-left ${TONO_DIAG[tono]}`}>
+                          <p className="text-[10px] font-black uppercase tracking-widest">{titulo}</p>
+                          <p className="text-[11px] font-medium mt-1 leading-snug">{detalle}</p>
+                          {scanDiag.distance !== undefined && (
+                            <p className="text-[9px] font-bold mt-2 opacity-70">
+                              Distancia {scanDiag.distance.toFixed(3)} · umbral {MATCH_THRESHOLD}
+                              {scanDiag.runnerUpDistance !== undefined && ` · 2.º ${scanDiag.runnerUpDistance.toFixed(3)}`}
+                              {scanDiag.evaluated !== undefined && ` · ${scanDiag.evaluated} enrolados`}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <p className="text-[9px] font-bold text-muted-foreground mt-4">Sistema de Identificación Pagnol</p>
 
                     {/* Fallback Manual */}

@@ -18,6 +18,75 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Corregido — La red de seguridad de RFC-005 gritaba con el manifiesto correcto
+
+Entrar a `/dashboard/pagnol` desde otra ruta imprimía en consola *"la colección 'requests' se
+leyó en /dashboard/pagnol pero el módulo 'pagnol' no la declara"*. **La declara**
+(`moduleData.ts`), así que el mensaje mandaba a hacer un cambio que no arregla nada.
+
+**La causa era una carrera dentro del propio gate.** `pathnameRef` se asigna **durante el
+render**, pero el set de colecciones activas se actualizaba en un **`useEffect`**, o sea un commit
+más tarde. Al navegar, la página de la ruta nueva se renderizaba con las colecciones de la ruta
+**anterior**: su primera lectura caía en la red de seguridad, que armaba el mensaje con la ruta ya
+nueva. De ahí la contradicción entre las dos mitades de la frase.
+
+**Medido, no supuesto.** Navegando `/dashboard` → `/dashboard/pagnol` en navegador real: **5
+errores** con el código anterior (`requests`, `materials`, `users`, `returnRequests`,
+`materialCategories`) y **0** con el arreglo. El peor caso es entrar desde el hub `/dashboard`,
+cuyo `moduleOf()` da `null` y por lo tanto arranca con el set **vacío**. Con recarga dura no
+aparecía nunca —el inicializador del `useState` sí usa la ruta correcta—, que es lo que lo hacía
+difícil de ver.
+
+**El arreglo:** el set se ajusta **durante el render** (patrón oficial de React para derivar de la
+navegación: re-ejecuta el componente antes de renderizar los hijos) en vez de en un efecto. Se
+conserva intacta la acumulación al navegar —lo ya cargado no se libera, decisión del 2026-08-06—.
+
+**Por qué importaba más que un mensaje molesto:** esa red es lo único que separa *"esta página
+tardó un viaje más"* de *"cero filas en silencio"*. Una alarma que suena con el manifiesto correcto
+enseña a ignorarla, y entonces el día que el manifiesto se desincronice de verdad el aviso pasa
+desapercibido.
+
+### Corregido — El servidor identificaba contra un padrón más grande que el que la app muestra
+
+Consecuencia directa de lo de abajo: apenas la pantalla empezó a decir el motivo, apareció el caso
+real —*"Identificado, pero fuera de la lista"*— y con él la causa.
+
+**El perfil estaba soft-deleted y su template seguía vivo en la bóveda.** La colección `users`
+filtra `deleted_at IS NULL` (`softDelete` del hook), pero `/api/biometric/match` leía
+`biometric_templates` sin ninguna referencia a `profiles`. La migración que pobló la bóveda
+(`20260816000000`) copió **todo** template no nulo, incluidos los de perfiles borrados. Resultado:
+el servidor devolvía un `userId` que la pantalla no podía resolver y el escaneo giraba para
+siempre, sin error de consola y sin nada visible.
+
+Ahora las dos consultas (1:1 y 1:N) filtran con un embed `!inner` sobre `profiles.deleted_at`.
+**Verificado ejercitando el endpoint** con el template guardado como rostro vivo: `evaluated`
+pasó de **2 a 1**, el 1:1 contra el perfil borrado devuelve `empty` (falla cerrado) y el 1:N
+resuelve al perfil vivo. `tsc` limpio, 329/329, build exit 0.
+
+**No es sólo un desajuste de UI:** una persona dada de baja seguía siendo biométricamente
+identificable por el sistema. Un padrón de reconocimiento facial que incluye a quien ya no está es
+exactamente lo que la Ley 21.719 mira con lupa — queda anotado en `PENDIENTES.md` que falta decidir
+si el soft-delete debe además **purgar** el template.
+
+### Corregido — El escaneo 1:N no decía nunca por qué no reconocía a nadie
+
+En `pagnol/movimientos`, el bucle de identificación facial descartaba el motivo del intento
+fallido: `if (result.success && result.userId)` y nada más. **Cuatro problemas que se resuelven de
+cuatro formas distintas** —no se detectó rostro, no coincide nadie, dos enrolados empatados, o el
+padrón está vacío— llegaban al pañolero como la misma animación de "Identificando…" girando para
+siempre. Sin forma de saber si acercarse, insistir o pasar a selección manual.
+
+Había un quinto caso, el más desconcertante: el servidor **sí** identificaba a la persona, pero su
+`userId` no estaba en el listado de la pantalla (`usersMap`), y el bucle seguía girando como si no
+hubiera reconocido a nadie.
+
+Ahora la pantalla muestra el motivo con su acción sugerida, más la línea técnica que hace falta
+para calibrar: **distancia, umbral, distancia del segundo mejor y cuántos enrolados se
+evaluaron**. `searchIdentity1N` propaga `runnerUpDistance` y `evaluated`, que el servidor ya
+calculaba y el cliente tiraba a la basura — y es exactamente el número que permite distinguir un
+empate técnico de un "no te reconozco", y el que hace falta para medir algún día
+`AMBIGUITY_MARGIN`, hoy razonado y no medido.
+
 ### Seguridad — El descriptor facial deja de salir del servidor (bóveda biométrica)
 
 > ✅ **`20260816000000` y `20260816010000` APLICADAS Y VERIFICADAS** (2026-08-12). Sondeo con token

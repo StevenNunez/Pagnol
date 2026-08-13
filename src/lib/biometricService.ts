@@ -363,9 +363,25 @@ export const verifyLiveness = async (
  */
 export const searchIdentity1N = async (
   input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
-): Promise<{ success: boolean; userId?: string; distance?: number; reason?: MatchReason }> => {
+): Promise<{
+  success: boolean;
+  userId?: string;
+  distance?: number;
+  /**
+   * Distancia del segundo mejor candidato. Es EL número que permite distinguir
+   * un empate técnico de un "no te reconozco", y sin él `ambiguous` llega a la
+   * pantalla sin nada que explicar por qué. Se propaga aunque hoy sólo lo use el
+   * diagnóstico: es lo que hace falta para calibrar `AMBIGUITY_MARGIN` con
+   * padrones reales, que hoy es un valor razonado y no medido.
+   */
+  runnerUpDistance?: number;
+  reason?: MatchReason;
+  evaluated?: number;
+}> => {
   try {
     const live = await extraerDescriptorVivo(input);
+    // Sin rostro detectado no hay descriptor que mandar. NO es "no te reconozco":
+    // es "no te vi la cara", y se resuelve acercándose, no cambiando de persona.
     if (!live) return { success: false, reason: 'bad_input' };
 
     const r = await pedirMatch({ mode: '1:N', descriptor: live });
@@ -375,7 +391,9 @@ export const searchIdentity1N = async (
       success: r.matched,
       userId: r.userId ?? undefined,
       distance: r.distance ?? undefined,
+      runnerUpDistance: r.runnerUpDistance ?? undefined,
       reason: r.reason,
+      evaluated: r.evaluated,
     };
   } catch (err) {
     console.error("1:N Search error:", err);

@@ -19,8 +19,27 @@ const BUCKET = 'contracts';
 
 export type BiometricStage = 'identificacion' | 'recepcion';
 export type BiometricOutcome =
-    | 'match' | 'no_match' | 'no_face' | 'error'
+    | 'match' | 'no_match' | 'no_face' | 'error' | 'spoof_suspected'
     | 'exception_requested' | 'exception_granted' | 'exception_denied';
+
+/**
+ * Medición del desafío de vida que acompañó al acto, cuando la hubo.
+ *
+ * Va como bloque aparte del veredicto de identidad porque son dos hechos
+ * independientes: un rostro puede coincidir (`outcome: 'match'`) y aun así no
+ * haberse movido nunca (`outcome: 'no_change'`), que es exactamente lo que hace
+ * una fotografía. Aplanarlos en un solo campo obligaría a elegir cuál de los dos
+ * contar, y la evidencia dejaría de decir lo que pasó.
+ */
+export interface LivenessRecord {
+    outcome: 'ok' | 'no_face' | 'no_change' | 'timeout';
+    challenge: 'blink' | 'mouth';
+    /** Amplitud observada del gesto. */
+    score: number;
+    /** Amplitud mínima exigida ESE DÍA: sin ella el score es ilegible mañana. */
+    threshold: number;
+    method: string;
+}
 
 /**
  * Sube el frame de la verificación al bucket privado y devuelve su **path**.
@@ -63,6 +82,8 @@ interface RecordParams {
     exceptionReason?: string | null;
     authorizedBy?: { id: string; name: string } | null;
     authorizedMode?: 'presencial' | 'remota' | null;
+    /** Ausente = no se midió el gesto (etapa sin desafío, o hecho antiguo). */
+    liveness?: LivenessRecord | null;
 }
 
 /**
@@ -99,6 +120,14 @@ export async function recordBiometricVerification(
                 authorized_by_user_id: params.authorizedBy?.id ?? null,
                 authorized_by_name: params.authorizedBy?.name ?? null,
                 authorized_mode: params.authorizedMode ?? null,
+                // NULL en bloque cuando no se midió: la base tiene un CHECK que
+                // exige umbral y método junto al resultado, porque un score sin
+                // ellos es ilegible dentro de un año.
+                liveness_outcome: params.liveness?.outcome ?? null,
+                liveness_challenge: params.liveness?.challenge ?? null,
+                liveness_score: params.liveness?.score ?? null,
+                liveness_threshold: params.liveness?.threshold ?? null,
+                liveness_method: params.liveness?.method ?? null,
             })
             .select('id')
             .single();

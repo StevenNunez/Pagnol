@@ -568,11 +568,25 @@ export interface BiometricVerification {
   requestId: string | null;
   transactionCode: string | null;
   outcome:
-    | 'match' | 'no_match' | 'no_face' | 'error'
+    | 'match' | 'no_match' | 'no_face' | 'error' | 'spoof_suspected'
     | 'exception_requested' | 'exception_granted' | 'exception_denied';
   distance: number | null;
   /** Umbral vigente ese día: sin él, una distancia vieja es ininterpretable. */
   threshold: number | null;
+  /**
+   * Resultado del desafío de vida. `null` = no se midió, y eso incluye a todos
+   * los hechos anteriores a que existiera — que es lo correcto: significa "aquí
+   * no se preguntó", no "aquí no hubo gesto".
+   *
+   * Es independiente de `outcome`: un rostro puede coincidir y no moverse nunca.
+   */
+  livenessOutcome: 'ok' | 'no_face' | 'no_change' | 'timeout' | null;
+  livenessChallenge: 'blink' | 'mouth' | null;
+  /** Amplitud observada del gesto. Una foto se queda en el ruido del sensor. */
+  livenessScore: number | null;
+  /** Amplitud mínima exigida ese día, por el mismo motivo que `threshold`. */
+  livenessThreshold: number | null;
+  livenessMethod: string | null;
   /** Path del bucket privado (no URL: las firmadas expiran). */
   evidencePath: string | null;
   exceptionGroupId: string | null;

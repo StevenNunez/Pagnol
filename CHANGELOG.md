@@ -18,6 +18,76 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Agregado — Prueba de vida: una foto ya no pasa desapercibida (en observación)
+
+> ⚠️ **REQUIERE APLICAR `20260815000000_biometric_liveness.sql` ANTES DE DESPLEGAR.**
+> Sin ella, el `INSERT` de la evidencia falla al escribir las columnas de liveness y el cierre
+> biométrico del pañol deja de registrar hechos.
+
+**El problema.** La verificación facial es la forma de aceptar la recepción de un activo, pero
+una fotografía en un celular la pasaba entera. Y quien más fácil podía explotarlo era el propio
+pañolero, que custodia el proceso y tiene la cara del trabajador a mano —credencial QR, perfil,
+WhatsApp—.
+
+**Lo que NO se hizo, y por qué.** La salida obvia era migrar a `Human`, del mismo autor, que trae
+antispoof. Se descartó: los templates enrolados son los **128 floats de face-api**, y cambiar de
+motor de reconocimiento los invalidaría **todos**, obligando a citar a cada trabajador a
+re-enrolarse. La segunda variante —usar `Human` sólo para antispoof— significa dos librerías, cada
+una con su propio TensorFlow.js sobre el mismo WebGL, y megabytes de descarga sumados a un módulo
+que ya pesa 11,85 MB y se usa en faena con mala señal.
+
+**Lo que se hizo.** Un desafío de gesto sorteado en el momento —parpadear o abrir y cerrar la
+boca— calculado sobre los **68 landmarks que el detector ya entrega en cada verificación**. Cero
+bytes nuevos de descarga, cero re-enrolamiento. Se acepta sólo si se observa el ciclo completo
+**neutro → activo → neutro** con el rostro detectado de forma continua; exigir el regreso al neutro
+encarece el ataque de las dos fotos (una con los ojos abiertos, otra con los ojos cerrados): ya no
+bastan dos, hacen falta tres en el orden correcto y dentro de la misma ventana de segundos.
+
+Que el gesto se **sortee** es lo que corta el ataque siguiente: un video pregrabado del trabajador
+parpadeando no sirve si esta vez toca abrir la boca. Hay un test dedicado a eso.
+
+**Por qué parpadeo y boca, y no "gira la cabeza".** Está medido (2026-08-11) que el detector pierde
+el rostro con 10° de rotación. Pedir un giro sería ordenar un gesto que el propio detector no puede
+seguir, y el trabajador vería un rechazo por obedecer.
+
+**El motivo real de la migración** no es el gesto sino la evidencia: `biometric_verifications` no
+tenía dónde decir que hubo sospecha. Un rechazo por foto habría tenido que escribirse como
+`no_match` o `error`, y **las dos mienten** — ante un reclamo, "era su cara, en papel" y "no era su
+cara" son hechos distintos. Ahora el resultado del gesto se guarda aparte del veredicto de
+identidad, con su amplitud, el **umbral vigente ese día** y el método versionado, más
+`spoof_suspected` en el vocabulario de `outcome` para cuando el bloqueo se active.
+
+**⚠️ Entra en MODO OBSERVACIÓN: mide y registra, todavía NO bloquea.** El umbral de identidad ya
+está apretado por el lado equivocado (0,5 contra un intra-persona real de 0,427: 15% de margen),
+así que apilarle un segundo motivo de rechazo sin conocer su tasa de falso rechazo en faena
+llevaría al pañolero a usar la vía de excepción todo el día, que es justo el incentivo que la
+excepción vino a evitar. Se recogen los números primero y el bloqueo se activa después, con datos
+—el mismo camino que se usó con la CSP: report-only antes que enforcement—.
+
+**Sólo en el cierre de recepción, no al identificar.** El ataque de la foto tiene que pasar por las
+dos puertas (mismo rostro, misma cámara, mismo trámite), así que blindar el cierre lo corta entero;
+ponerlo también al identificar no agregaría seguridad, sólo segundos con el trabajador esperando.
+
+**20 tests nuevos (303 en total)** sobre `livenessMath.ts`, puro y sin cámara — que es todo el
+punto: lo que rodea a este cálculo sólo se ejercita con hardware, así que si la lógica viviera en
+el componente su única prueba posible sería "lo probamos una vez y funcionó".
+
+### Corregido — El frame del intento sospechoso ya no se descarta
+
+La evidencia sólo se subía cuando la verificación salía **bien** (`guardarFoto: check.verified`).
+Con liveness eso quedaba al revés: el frame de un rostro que coincide pero **nunca se mueve** —o
+sea, alguien sosteniendo una fotografía frente a la cámara— es la evidencia más valiosa que este
+sistema puede producir, y se habría tirado justo en el único caso que importa mirar después. La
+regla vive ahora dentro de `registrarHechoBiometrico`, no en cada llamada, para que no se pueda
+olvidar en un call site. Se mantiene sin guardar el ruido del bucle 1:N.
+
+### Corregido — `verifyBiometric` podía verificar contra el `<video>` equivocado
+
+Sin elemento explícito caía a `document.querySelector('video')`, el **primero del DOM**, que en una
+página con más de un video no tiene por qué ser el de la cámara. Verificar la identidad contra el
+elemento equivocado es peor que no verificar: da un veredicto con toda la apariencia de ser válido.
+Ahora falla y lo dice. (Estaba anotado en `PENDIENTES.md` como 🟡.)
+
 ### Agregado — La verificación biométrica ahora deja evidencia, y el bloqueo tiene válvula
 
 > ⚠️ **REQUIERE APLICAR `20260814000000_biometric_evidence.sql` ANTES DE DESPLEGAR.** No es

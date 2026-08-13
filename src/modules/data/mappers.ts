@@ -761,6 +761,11 @@ export const mappers = {
         authorizedByUserId: item.authorized_by_user_id ?? null,
         authorizedByName: item.authorized_by_name ?? null,
         authorizedMode: item.authorized_mode ?? null,
+        livenessOutcome: item.liveness_outcome ?? null,
+        livenessChallenge: item.liveness_challenge ?? null,
+        livenessScore: item.liveness_score != null ? Number(item.liveness_score) : null,
+        livenessThreshold: item.liveness_threshold != null ? Number(item.liveness_threshold) : null,
+        livenessMethod: item.liveness_method ?? null,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
     }),
     checklist_templates: (item: any): ChecklistTemplate => ({

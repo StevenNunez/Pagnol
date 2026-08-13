@@ -44,7 +44,16 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { verifyBiometric, searchIdentity1N, captureEvidenceFrame, MATCH_THRESHOLD } from '@/lib/biometricService';
+import { verifyBiometric, searchIdentity1N, captureEvidenceFrame, MATCH_THRESHOLD, verifyLiveness } from '@/lib/biometricService';
+import {
+  pickChallenge,
+  CHALLENGE_PROMPT,
+  LIVENESS_MESSAGE,
+  LIVENESS_MIN_AMPLITUDE,
+  LIVENESS_METHOD,
+  type LivenessChallenge,
+} from '@/modules/data/mutations/livenessMath';
+import type { LivenessRecord } from '@/modules/data/mutations/biometricMutations';
 import { uploadBiometricEvidence, exceptionStatus } from '@/modules/data/mutations/biometricMutations';
 import { BiometricExceptionDialog, type ExceptionTarget } from '@/components/biometric-exception-dialog';
 
@@ -134,6 +143,8 @@ export default function MovimientosPagnolPage() {
   /** Data URL del archivo local, solo para la vista previa en pantalla. */
   const [returnPhotoPreviews, setReturnPhotoPreviews] = useState<Record<string, string>>({});
   const [isBiometricPulse, setIsBiometricPulse] = useState(false);
+  /** Gesto que se le está pidiendo al trabajador en este instante, o null. */
+  const [livenessPrompt, setLivenessPrompt] = useState<LivenessChallenge | null>(null);
   // Trabajador que no pudo verificarse y espera una excepción autorizada.
   const [excepcionPara, setExcepcionPara] = useState<ExceptionTarget | null>(null);
   // Excepción ya aprobada para esta entrega: permite cerrarla sin biometría.
@@ -465,8 +476,15 @@ export default function MovimientosPagnolPage() {
    * quedarse bloqueado con el trabajador y la herramienta en la mano. Por eso se
    * invoca con `void` y el error sólo se registra.
    *
-   * La foto se guarda sólo en los casos con match: subir una imagen por cada
-   * intento fallido del bucle 1:N llenaría el bucket sin aportar nada.
+   * La foto se guarda en los casos con match: subir una imagen por cada intento
+   * fallido del bucle 1:N llenaría el bucket sin aportar nada.
+   *
+   * 🔴 Y se guarda TAMBIÉN cuando la prueba de vida no vio movimiento, aunque el
+   * rostro haya coincidido. Ese frame —alguien sosteniendo una fotografía frente
+   * a la cámara— es la evidencia más valiosa que este sistema puede producir, y
+   * con la regla anterior ("sólo si `verified`") se habría descartado justo en el
+   * único caso que importa mirar después. La condición vive acá y no en cada
+   * llamada para que no se pueda olvidar en un call site.
    */
   const registrarHechoBiometrico = useCallback(async (p: {
     emp: { id: string; name: string };
@@ -475,10 +493,12 @@ export default function MovimientosPagnolPage() {
     guardarFoto: boolean;
     requestId?: string | null;
     transactionCode?: string | null;
+    liveness?: LivenessRecord | null;
   }) => {
     try {
       let evidencePath: string | null = null;
-      if (p.guardarFoto && videoRef.current && currentTenant?.id) {
+      const guardarFoto = p.guardarFoto || p.liveness?.outcome === 'no_change';
+      if (guardarFoto && videoRef.current && currentTenant?.id) {
         const frame = await captureEvidenceFrame(videoRef.current);
         if (frame) {
           evidencePath = await uploadBiometricEvidence(frame, currentTenant.id, `${p.stage}-${p.emp.id}`);
@@ -499,6 +519,7 @@ export default function MovimientosPagnolPage() {
         evidencePath,
         requestId: p.requestId ?? null,
         transactionCode: p.transactionCode ?? null,
+        liveness: p.liveness ?? null,
       });
     } catch (err) {
       console.error('No se pudo registrar la evidencia biométrica:', err);
@@ -859,6 +880,38 @@ export default function MovimientosPagnolPage() {
 
         const check = await Promise.race([verificationPromise, timeoutPromise]);
 
+        /**
+         * Prueba de vida. Va DESPUÉS de la identidad porque pedirle un gesto a
+         * alguien cuyo rostro ni siquiera coincide es hacerlo trabajar para nada.
+         *
+         * Sólo se hace en `recepcion`, no en `identificacion`: el ataque de la
+         * foto tiene que pasar por las dos puertas —es el mismo rostro frente a
+         * la misma cámara en el mismo trámite—, así que blindar el cierre lo
+         * corta entero. Ponerlo también al identificar no agregaría seguridad,
+         * sólo segundos con el trabajador esperando.
+         */
+        let liveness: LivenessRecord | null = null;
+        if (check.verified && videoRef.current) {
+          // Sorteado en el momento: un video pregrabado del trabajador
+          // parpadeando no sirve si esta vez toca abrir la boca.
+          const challenge = pickChallenge();
+          setLivenessPrompt(challenge);
+          try {
+            const r = await verifyLiveness(videoRef.current, challenge);
+            liveness = {
+              outcome: r.reason,
+              challenge: r.challenge,
+              score: Number(r.score.toFixed(4)),
+              threshold: LIVENESS_MIN_AMPLITUDE,
+              method: LIVENESS_METHOD,
+            };
+          } catch (e) {
+            console.error('Prueba de vida interrumpida:', e);
+          } finally {
+            setLivenessPrompt(null);
+          }
+        }
+
         // Éste es el acto que constituye la aceptación del activo: se registra
         // siempre, con foto cuando hubo coincidencia. Es la evidencia que antes no
         // existía y dejaba la entrega respaldada sólo por una firma pre-guardada.
@@ -869,7 +922,29 @@ export default function MovimientosPagnolPage() {
           guardarFoto: check.verified,
           requestId: pendingDeliveryId,
           transactionCode: pendingDeliveryCode,
+          liveness,
         });
+
+        /**
+         * ⚠️ MODO OBSERVACIÓN — la prueba de vida MIDE pero NO BLOQUEA todavía.
+         *
+         * El umbral de identidad ya está apretado por el lado equivocado (0,5
+         * contra un intra-persona real de 0,427: 15% de margen), así que apilarle
+         * un segundo motivo de rechazo sin conocer su tasa de falso rechazo en
+         * faena llevaría al pañolero a usar la vía de excepción todo el día —que
+         * es justo el incentivo que la excepción vino a evitar—.
+         *
+         * Se recogen los números reales primero; el bloqueo se activa después,
+         * con datos. Es el mismo camino que se usó con la CSP: report-only antes
+         * que enforcement.
+         */
+        if (liveness && liveness.outcome !== 'ok') {
+          toast({
+            variant: 'warning',
+            title: 'Prueba de vida no superada',
+            description: `${LIVENESS_MESSAGE[liveness.outcome]} La entrega continúa: la prueba de vida está en observación y todavía no bloquea.`,
+          });
+        }
 
         if (!check.verified) {
           // El cierre de la entrega es el momento más sensible del flujo: si la
@@ -1898,10 +1973,25 @@ export default function MovimientosPagnolPage() {
                         <p className="text-[10px] font-black text-white uppercase tracking-widest">Iniciando cámara...</p>
                       </div>
                     )}
-                    <div className="absolute inset-x-0 bottom-0 p-8 bg-gradient-to-t from-black/80 to-transparent">
-                      <p className="text-[10px] font-black text-white uppercase tracking-widest mb-1">Trabajador:</p>
-                      <p className="text-xl font-black text-pagnol-orange uppercase">{selectedEmployee?.name}</p>
-                    </div>
+                    {/* Prueba de vida: la instrucción tapa el pie de foto porque
+                        mientras se pide el gesto es lo ÚNICO que el trabajador
+                        tiene que leer. Sin instrucción visible nadie parpadea a
+                        propósito y toda la medición saldría "sin movimiento". */}
+                    {livenessPrompt ? (
+                      <div className="absolute inset-x-0 bottom-0 p-8 bg-gradient-to-t from-black via-black/80 to-transparent animate-in fade-in">
+                        <p className="text-[10px] font-black text-pagnol-orange uppercase tracking-widest mb-1">
+                          Prueba de vida
+                        </p>
+                        <p className="text-xl font-black text-white uppercase leading-tight">
+                          {CHALLENGE_PROMPT[livenessPrompt]}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="absolute inset-x-0 bottom-0 p-8 bg-gradient-to-t from-black/80 to-transparent">
+                        <p className="text-[10px] font-black text-white uppercase tracking-widest mb-1">Trabajador:</p>
+                        <p className="text-xl font-black text-pagnol-orange uppercase">{selectedEmployee?.name}</p>
+                      </div>
+                    )}
                     <div className="absolute top-4 right-4 p-2 bg-black/40 rounded-xl backdrop-blur-sm">
                       <ShieldCheck size={28} className="text-pagnol-orange drop-shadow-lg" />
                     </div>
@@ -1919,11 +2009,13 @@ export default function MovimientosPagnolPage() {
                     onClick={handleFinalAcceptance}
                     className="w-full py-8 rounded-[1.5rem] bg-pagnol-orange text-white font-black uppercase tracking-widest shadow-xl shadow-pagnol-orange/20 hover:bg-pagnol-orange/90 transition-all disabled:opacity-50"
                   >
-                    {isBiometricPulse
-                      ? <Loader2 className="animate-spin mx-auto" />
-                      : !cameraStream
-                        ? "Iniciando cámara..."
-                        : "Validar Biometría y Cerrar"
+                    {livenessPrompt
+                      ? CHALLENGE_PROMPT[livenessPrompt]
+                      : isBiometricPulse
+                        ? <Loader2 className="animate-spin mx-auto" />
+                        : !cameraStream
+                          ? "Iniciando cámara..."
+                          : "Validar Biometría y Cerrar"
                     }
                   </Button>
                 </div>

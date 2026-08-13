@@ -4,6 +4,13 @@
  * Realiza detección facial, extracción de características y verificación 1:1 en el navegador.
  */
 
+import {
+  evaluateLivenessSequence,
+  type LivenessChallenge,
+  type LivenessResult,
+  type LivenessSample,
+} from '@/modules/data/mutations/livenessMath';
+
 const MODEL_URL = '/models';
 let modelsLoaded = false;
 
@@ -212,9 +219,12 @@ export const verifyBiometric = async (
   try {
     if (setStatus) setStatus("Iniciando verificación...");
 
-    // Sin elemento explícito se cae al primer <video> del documento, que no tiene
-    // por qué ser el de la cámara: quien llama debería pasarlo siempre.
-    const video = videoElement || document.querySelector('video');
+    // Antes, sin elemento explícito, se caía a `document.querySelector('video')`
+    // —el PRIMER <video> del documento, que no tiene por qué ser el de la cámara—.
+    // Verificar la identidad contra el elemento equivocado es peor que no
+    // verificar: da un veredicto con toda la apariencia de ser válido. Si quien
+    // llama no pasa el elemento, esto falla y lo dice.
+    const video = videoElement;
     if (!video) {
       if (setStatus) setStatus("Error: Cámara no encontrada.");
       return { verified: false, reason: 'error', message: "No se encontró la cámara.", score: 0 };
@@ -230,6 +240,70 @@ export const verifyBiometric = async (
     console.error("Error en verifyBiometric:", error);
     if (setStatus) setStatus("Error en el proceso.");
     return { verified: false, reason: 'error', message: "Error técnico durante la verificación.", score: 0 };
+  }
+};
+
+// ── Detección de vida ────────────────────────────────────────────────────────
+
+/** Milisegundos entre muestras. ~8 por segundo alcanza de sobra para un parpadeo. */
+export const LIVENESS_SAMPLE_MS = 120;
+
+/**
+ * Ventana máxima del desafío. Seis segundos es lo que aguanta alguien parado en
+ * el pañol con una herramienta en la mano; más que eso y el gesto se abandona.
+ */
+export const LIVENESS_WINDOW_MS = 6000;
+
+/**
+ * Pide un gesto y observa si ocurre de verdad.
+ *
+ * Muestrea landmarks **sin descriptor**: `withFaceDescriptor()` corre la red de
+ * reconocimiento, que es la parte cara de los 300–700 ms medidos. Saltársela es
+ * lo que hace viable muestrear durante segundos en vez de una sola vez.
+ *
+ * Sale apenas el gesto se completa, así que a quien parpadea de inmediato no le
+ * cuesta la ventana entera. La decisión de si esto bloquea o no NO vive aquí:
+ * este servicio mide y reporta.
+ */
+export const verifyLiveness = async (
+  video: HTMLVideoElement,
+  challenge: LivenessChallenge,
+  opts?: { windowMs?: number; onSample?: (parcial: LivenessResult) => void },
+): Promise<LivenessResult> => {
+  if (!modelsLoaded) await loadBiometricModels();
+  const fa = await getFaceApi();
+
+  const windowMs = opts?.windowMs ?? LIVENESS_WINDOW_MS;
+  const deadline = Date.now() + windowMs;
+  const samples: LivenessSample[] = [];
+
+  try {
+    while (Date.now() < deadline) {
+      const inicio = Date.now();
+      // Mismo detector que la verificación de identidad, a propósito: si aquí se
+      // afinara distinto, el gesto podría exigir una detección que la puerta de
+      // al lado no consigue, y el trabajador vería resultados contradictorios.
+      const detection = await fa.detectSingleFace(video).withFaceLandmarks();
+
+      samples.push({
+        landmarks: detection ? detection.landmarks.positions.map(p => ({ x: p.x, y: p.y })) : null,
+        at: Date.now(),
+      });
+
+      const parcial = evaluateLivenessSequence(samples, challenge);
+      opts?.onSample?.(parcial);
+      if (parcial.passed) return parcial;
+
+      const resto = LIVENESS_SAMPLE_MS - (Date.now() - inicio);
+      if (resto > 0) await new Promise(r => setTimeout(r, resto));
+    }
+
+    return evaluateLivenessSequence(samples, challenge);
+  } catch (error) {
+    console.error('Error durante la prueba de vida:', error);
+    // Se devuelve lo observado hasta el fallo en vez de un veredicto inventado:
+    // en modo observación este resultado se guarda como evidencia.
+    return evaluateLivenessSequence(samples, challenge);
   }
 };
 

@@ -18,6 +18,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Plus, Trash2, FileText, ExternalLink } from 'lucide-react';
+import { SecureFileLink } from '@/components/secure-file-link';
+import { HR_DOCUMENTS_BUCKET } from '@/modules/core/lib/storage';
 import { differenceInCalendarDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { HRDocument, HRDocumentType } from '@/modules/core/lib/data';
@@ -110,10 +112,17 @@ export default function MisDocumentosPage() {
     },
     {
       key: 'file', header: '',
-      cell: (d) => d.fileUrl ? (
-        <a href={d.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary text-xs font-bold">
+      // Se prefiere el path y se cae a la URL sólo por las filas antiguas, que
+      // guardaron una firmada de 10 años. El firmador le extrae el path igual,
+      // así que las viejas siguen abriéndose sin migrar nada.
+      cell: (d) => (d.filePath || d.fileUrl) ? (
+        <SecureFileLink
+          stored={d.filePath || d.fileUrl}
+          bucket={HR_DOCUMENTS_BUCKET}
+          className="inline-flex items-center gap-1 text-primary text-xs font-bold"
+        >
           <ExternalLink className="h-3.5 w-3.5" /> Ver
-        </a>
+        </SecureFileLink>
       ) : null,
     },
     {

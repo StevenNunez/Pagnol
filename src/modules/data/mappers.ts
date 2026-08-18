@@ -766,6 +766,10 @@ export const mappers = {
         livenessScore: item.liveness_score != null ? Number(item.liveness_score) : null,
         livenessThreshold: item.liveness_threshold != null ? Number(item.liveness_threshold) : null,
         livenessMethod: item.liveness_method ?? null,
+        livenessFrames: item.liveness_frames ?? null,
+        livenessFramesLost: item.liveness_frames_lost ?? null,
+        livenessDurationMs: item.liveness_duration_ms ?? null,
+        failureDetail: item.failure_detail ?? null,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
     }),
     checklist_templates: (item: any): ChecklistTemplate => ({

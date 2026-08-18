@@ -72,6 +72,11 @@ export async function addUser(data: any, { user, tenantId }: Context) {
             tenantId,
             internalId: data.internalId,
             rut: data.rut,
+            // `cargo` y `phone` los pide el formulario de alta y el wizard de
+            // enrolamiento; antes se quedaban acá y el perfil nacía sin ellos.
+            // El cargo además alimenta "Personal en obra" de la OT.
+            cargo: data.cargo || null,
+            phone: data.phone || null,
             biometric_template: data.biometric_template || null,
             kyc_face_image: data.kyc_face_image || null,
             kyc_id_front: data.kyc_id_front || null,
@@ -611,17 +616,14 @@ export async function uploadSupplierDocument(
         .upload(path, file, { contentType: file.type, upsert: false });
     if (error) throw error;
 
-    // ~10 años en segundos.
-    const { data: signed, error: signError } = await supabase.storage
-        .from('supplier-documents')
-        .createSignedUrl(path, 315360000);
-    if (signError) throw signError;
-
+    // Aquí se firmaba por ~10 años y esa URL quedaba guardada en el array
+    // `suppliers.documents`. Una firmada persistida es una llave al portador:
+    // abre el archivo sin sesión y sin poder revocarse. Ahora sólo se guarda el
+    // `path` y la URL se firma en el clic (`<SecureFileLink>`), por 5 minutos.
     return {
         id: docId,
         name: meta.name || file.name,
         type: meta.type,
-        url: signed.signedUrl,
         path,
         uploadedAt: new Date().toISOString(),
         uploadedBy: user.name,

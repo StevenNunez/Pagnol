@@ -4,7 +4,9 @@ import React, { useMemo, useState } from "react";
 import { PageShell } from "@/components/page-shell";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { SecureFileLink } from "@/components/secure-file-link";
+import { SUPPLIER_DOCUMENTS_BUCKET } from "@/modules/core/lib/storage";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -553,9 +555,15 @@ function DocumentsTab({ supplier }: { supplier: Supplier }) {
                                     </p>
                                 </div>
                                 {docExpiryBadge(doc)}
-                                <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8"><Download className="h-4 w-4" /></Button>
-                                </a>
+                                {/* El path manda; la URL sólo existe en documentos
+                                    subidos antes de dejar de persistir la firmada. */}
+                                <SecureFileLink
+                                    stored={doc.path || doc.url}
+                                    bucket={SUPPLIER_DOCUMENTS_BUCKET}
+                                    className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'h-8 w-8')}
+                                >
+                                    <Download className="h-4 w-4" />
+                                </SecureFileLink>
                                 {editable && (
                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => remove(doc)}>
                                         <Trash2 className="h-4 w-4" />

@@ -30,6 +30,8 @@ const FormSchema = z.object({
     password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.').or(z.literal('')),
     internalId: z.string().min(1, 'El ID interno es requerido.'),
     role: z.enum(ROLES_ORDER as [string, ...string[]]),
+    // Cargo del trabajador: lo hereda "Personal en obra" de la OT al elegirlo.
+    cargo: z.string().optional(),
 });
 
 type FormData = z.infer<typeof FormSchema>;
@@ -104,6 +106,7 @@ export function EnrollmentWizard({
             password: selectedUser ? 'dummy-password' : '',
             internalId: selectedUser?.internalId || generateInternalId(),
             role: (selectedUser?.role as any) || 'operador',
+            cargo: selectedUser?.cargo || '',
         }
     });
 
@@ -504,6 +507,7 @@ export function EnrollmentWizard({
                                     assignableRoles={assignableRoles}
                                     columns={2}
                                     showPassword={!selectedUser}
+                                    showCargo={!selectedUser}
                                     readOnlyIdentity={!!selectedUser}
                                     roleDisabled={!!selectedUser}
                                 />

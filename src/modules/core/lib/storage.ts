@@ -13,6 +13,12 @@ import { supabase } from './supabase';
 /** Bucket con documentos laborales y evidencia. Privado. */
 export const CONTRACTS_BUCKET = 'contracts';
 
+/** Documentos de RRHH por trabajador. Privado. */
+export const HR_DOCUMENTS_BUCKET = 'hr-documents';
+
+/** Documentos de proveedores (tributarios, bancarios, seguros). Privado. */
+export const SUPPLIER_DOCUMENTS_BUCKET = 'supplier-documents';
+
 /** Vigencia por defecto de una URL firmada: suficiente para abrir el archivo. */
 export const SIGNED_URL_TTL_SECONDS = 300;
 
@@ -26,13 +32,13 @@ export const SIGNED_URL_TTL_SECONDS = 300;
  * Devuelve null cuando no puede resolverlo, para que el llamador muestre el
  * error en vez de abrir un enlace roto.
  */
-export function contractsPath(stored: string | null | undefined): string | null {
+export function bucketPath(bucket: string, stored: string | null | undefined): string | null {
     if (!stored) return null;
     const s = String(stored).trim();
     if (!s) return null;
 
     // URL pública o firmada de Supabase: el path va después del nombre del bucket.
-    const marker = `/${CONTRACTS_BUCKET}/`;
+    const marker = `/${bucket}/`;
     const idx = s.indexOf(marker);
     if (idx >= 0) {
         const path = s.slice(idx + marker.length).split('?')[0];
@@ -45,6 +51,11 @@ export function contractsPath(stored: string | null | undefined): string | null 
     return s.replace(/^\/+/, '');
 }
 
+/** El caso de `contracts`, que es el que más se usa. */
+export function contractsPath(stored: string | null | undefined): string | null {
+    return bucketPath(CONTRACTS_BUCKET, stored);
+}
+
 /**
  * URL firmada para abrir un archivo del bucket privado.
  *
@@ -52,15 +63,16 @@ export function contractsPath(stored: string | null | undefined): string | null 
  * antiguas. Firma en el momento del uso —no se persiste— porque una URL firmada
  * expira: guardarla en la base la dejaría muerta a los minutos.
  */
-export async function getContractsSignedUrl(
+export async function getSignedUrl(
+    bucket: string,
     stored: string | null | undefined,
     expiresIn: number = SIGNED_URL_TTL_SECONDS,
 ): Promise<string | null> {
-    const path = contractsPath(stored);
+    const path = bucketPath(bucket, stored);
     if (!path) return null;
 
     const { data, error } = await supabase.storage
-        .from(CONTRACTS_BUCKET)
+        .from(bucket)
         .createSignedUrl(path, expiresIn);
 
     if (error) {
@@ -68,4 +80,11 @@ export async function getContractsSignedUrl(
         return null;
     }
     return data?.signedUrl ?? null;
+}
+
+export async function getContractsSignedUrl(
+    stored: string | null | undefined,
+    expiresIn: number = SIGNED_URL_TTL_SECONDS,
+): Promise<string | null> {
+    return getSignedUrl(CONTRACTS_BUCKET, stored, expiresIn);
 }

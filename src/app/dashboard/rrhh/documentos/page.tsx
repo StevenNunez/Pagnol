@@ -24,6 +24,8 @@ import { differenceInCalendarDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { HRDocument, HRDocumentType } from '@/modules/core/lib/data';
 import { HR_DOCUMENT_TYPE_LABEL } from '@/modules/core/lib/hr-labels';
+import { SecureFileLink } from '@/components/secure-file-link';
+import { HR_DOCUMENTS_BUCKET } from '@/modules/core/lib/storage';
 
 type NewDocForm = {
   userId: string;
@@ -130,10 +132,16 @@ export default function DocumentosPage() {
     },
     {
       key: 'file', header: '',
-      cell: (d) => d.fileUrl ? (
-        <a href={d.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary text-xs font-bold">
+      // Ver la nota de `mis-documentos`: el path manda, la URL es el respaldo
+      // de las filas antiguas.
+      cell: (d) => (d.filePath || d.fileUrl) ? (
+        <SecureFileLink
+          stored={d.filePath || d.fileUrl}
+          bucket={HR_DOCUMENTS_BUCKET}
+          className="inline-flex items-center gap-1 text-primary text-xs font-bold"
+        >
           <ExternalLink className="h-3.5 w-3.5" /> Ver
-        </a>
+        </SecureFileLink>
       ) : null,
     },
     {

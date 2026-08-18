@@ -26,6 +26,56 @@ async function getBase64FromUrl(url: string): Promise<string | null> {
     }
 }
 
+/**
+ * Re-muestrea una imagen al tamaño con el que se va a IMPRIMIR.
+ *
+ * `addImage` incrusta el archivo original completo, sin mirar los milímetros que
+ * ocupa en la hoja: una firma capturada a pantalla completa viaja entera para
+ * dibujarse en 40 mm. Medido sobre un acta real (`MTL-TX-0011`): **1,28 MB en
+ * una sola página**, de los cuales 1,24 MB eran cuatro imágenes (534 + 178 +
+ * 397 + 132 KB). Eso se sube desde faena por un canal con timeout de 15 s, así
+ * que el peso no es cosmético: es la diferencia entre respaldar el acta y perderla.
+ *
+ * Se mantiene PNG y NO se pasa a JPEG a propósito: las firmas tienen fondo
+ * transparente y el JPEG no lo soporta — quedarían con un rectángulo negro
+ * encima del papel.
+ *
+ * Si algo falla devuelve la imagen original: un acta pesada es mucho mejor que
+ * un acta sin la firma.
+ */
+async function ajustarResolucion(dataUrl: string, anchoMaxPx: number): Promise<string> {
+    if (typeof document === 'undefined') return dataUrl;
+    try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = reject;
+            el.src = dataUrl;
+        });
+
+        if (!img.width || img.width <= anchoMaxPx) return dataUrl;
+
+        const escala = anchoMaxPx / img.width;
+        const canvas = document.createElement('canvas');
+        canvas.width = anchoMaxPx;
+        canvas.height = Math.max(1, Math.round(img.height * escala));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return dataUrl;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/png');
+    } catch {
+        return dataUrl;
+    }
+}
+
+/**
+ * Ancho en píxeles para una imagen que se dibuja con `anchoMm` milímetros.
+ *
+ * 200 ppp es calidad de impresión de oficina: por encima de eso el papel no
+ * distingue nada y sólo se paga en bytes.
+ */
+const pxParaMm = (anchoMm: number) => Math.round((anchoMm / 25.4) * 200);
+
 interface ContractData {
     transactionId: string;
     employeeName: string;
@@ -52,7 +102,9 @@ interface ContractData {
 }
 
 export async function generateContractPDF(data: ContractData) {
-    const doc = new jsPDF();
+    // `compress` comprime los streams del documento. Es gratis en calidad y el
+    // acta viaja a la nube desde faena, donde cada KB se paga en señal.
+    const doc = new jsPDF({ compress: true });
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 20;
     let y = margin;
@@ -60,7 +112,7 @@ export async function generateContractPDF(data: ContractData) {
     // -- HEADER --
     const logoBase64 = await getBase64FromUrl(data.logoUrl || '/logo.png');
     if (logoBase64) {
-        doc.addImage(logoBase64, 'PNG', margin, y, 25, 25);
+        doc.addImage(await ajustarResolucion(logoBase64, pxParaMm(25)), 'PNG', margin, y, 25, 25);
     }
 
     doc.setFont("helvetica", "bold");
@@ -89,9 +141,13 @@ export async function generateContractPDF(data: ContractData) {
     y += 7;
     doc.setFont("helvetica", "normal");
     doc.text(`Nombre: ${data.employeeName}`, margin, y);
-    doc.text(`RUT: ${data.employeeRut || 'N/A'}`, pageWidth / 2, y);
+    // "N/A" se lee como "no aplica" — y en un contrato donde el trabajador
+    // "asume la responsabilidad total", el RUT SÍ aplica: es lo único que
+    // identifica a la persona más allá de un nombre de pila. Decir que falta
+    // deja el vacío a la vista de quien lea el acta, en vez de disimularlo.
+    doc.text(`RUT: ${data.employeeRut?.trim() || 'NO REGISTRADO'}`, pageWidth / 2, y);
     y += 7;
-    doc.text(`Faena/Sitio: ${data.site}`, margin, y);
+    doc.text(`Faena/Sitio: ${data.site?.trim() || 'NO INDICADA'}`, margin, y);
     y += 15;
 
     // -- ASSETS TABLE --
@@ -164,14 +220,16 @@ export async function generateContractPDF(data: ContractData) {
         // Center image horizontally over the signature line
         const imgWidth = 40;
         const imgHeight = 20;
-        doc.addImage(signatureBase64, 'PNG', margin + 50 - (imgWidth / 2), y - 18, imgWidth, imgHeight);
+        const firma = await ajustarResolucion(signatureBase64, pxParaMm(imgWidth));
+        doc.addImage(firma, 'PNG', margin + 50 - (imgWidth / 2), y - 18, imgWidth, imgHeight);
     }
 
     if (pagnoleroSignatureBase64) {
         // Center image horizontally over the pagnolero signature line
         const imgWidth = 40;
         const imgHeight = 20;
-        doc.addImage(pagnoleroSignatureBase64, 'PNG', pageWidth - margin - 50 - (imgWidth / 2), y - 18, imgWidth, imgHeight);
+        const firma = await ajustarResolucion(pagnoleroSignatureBase64, pxParaMm(imgWidth));
+        doc.addImage(firma, 'PNG', pageWidth - margin - 50 - (imgWidth / 2), y - 18, imgWidth, imgHeight);
     }
 
     doc.setLineWidth(0.2);
@@ -185,7 +243,15 @@ export async function generateContractPDF(data: ContractData) {
 
     y += 5;
     doc.setFont("helvetica", "normal");
-    doc.text("(Biometría Validada)", margin + 50, y, { align: "center" });
+    // Tiene que decir lo mismo que la cláusula 4. Estaba fijo en "(Biometría
+    // Validada)" pasara lo que pasara, así que una entrega por excepción
+    // producía un acta que se CONTRADICE a sí misma: arriba "la identidad NO fue
+    // verificada biométricamente" y aquí abajo la afirmación contraria. Es el
+    // mismo defecto que ya se corrigió en la cláusula, sobreviviendo en el pie.
+    doc.text(
+        data.verification?.mode === 'exception' ? "(Entrega por excepción autorizada)" : "(Biometría Validada)",
+        margin + 50, y, { align: "center" },
+    );
     doc.text(data.pagnoleroName, pageWidth - margin - 50, y, { align: "center" });
 
     const pdfBlob = doc.output('blob');

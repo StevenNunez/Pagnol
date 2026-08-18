@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import SignaturePad from '@/components/signature-pad';
+import { CatalogCombobox } from '@/components/catalog-combobox';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import { supabase } from '@/modules/core/lib/supabase';
 import { consolidateWeekly } from '@/modules/core/lib/work-order-consolidation';
@@ -51,6 +52,8 @@ export default function WeeklyReportDetailPage() {
     workOrders,
     workReportAreas,
     workReportSpecialties,
+    workReportCatalogs,
+    addWorkReportCatalog,
     users,
     updateWorkWeeklyReport,
     deleteWorkWeeklyReport,
@@ -60,6 +63,47 @@ export default function WeeklyReportDetailPage() {
   } = useAppState();
 
   const wr = (workWeeklyReports || []).find((w) => w.id === params.id);
+
+  // Cliente y contrato salen del catálogo de Reportes de Trabajo; faena y obra
+  // no tienen catálogo propio, así que se ofrecen los valores que ya se usaron
+  // en Diarios y Semanales anteriores. En los cuatro casos se puede escribir uno
+  // nuevo: son campos abiertos, sólo dejan de obligar a tipear lo de siempre.
+  const catalogNames = React.useCallback(
+    (kind: string) => (workReportCatalogs || []).filter((c) => c.kind === kind).map((c) => c.name),
+    [workReportCatalogs],
+  );
+
+  const usedNames = React.useCallback(
+    (pick: (row: any) => string | undefined | null) => [
+      ...(workReports || []).map(pick),
+      ...(workWeeklyReports || []).map(pick),
+    ],
+    [workReports, workWeeklyReports],
+  );
+
+  const asOptions = (values: (string | undefined | null)[]) => {
+    const seen = new Set<string>();
+    const options: { id: string; name: string }[] = [];
+    for (const value of values) {
+      const name = (value || '').trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      options.push({ id: name, name });
+    }
+    return options.sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  const clientOptions = React.useMemo(
+    () => asOptions([...catalogNames('client'), ...usedNames((r) => r.client)]),
+    [catalogNames, usedNames],
+  );
+  const contractOptions = React.useMemo(
+    () => asOptions([...catalogNames('contract'), ...usedNames((r) => r.contractNumber)]),
+    [catalogNames, usedNames],
+  );
+  const faenaOptions = React.useMemo(() => asOptions(usedNames((r) => r.faena)), [usedNames]);
+  const obraOptions = React.useMemo(() => asOptions(usedNames((r) => r.obra)), [usedNames]);
 
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'super-admin';
@@ -296,10 +340,38 @@ export default function WeeklyReportDetailPage() {
       <Section title="Información general">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <TextField label="Título" value={draft.title} onChange={(v) => patchDraft({ title: v })} disabled={!editable} />
-          <TextField label="Cliente" value={draft.client} onChange={(v) => patchDraft({ client: v })} disabled={!editable} />
-          <TextField label="Faena" value={draft.faena} onChange={(v) => patchDraft({ faena: v })} disabled={!editable} />
-          <TextField label="Obra" value={draft.obra || ''} onChange={(v) => patchDraft({ obra: v })} disabled={!editable} />
-          <TextField label="N° Contrato" value={draft.contractNumber || ''} onChange={(v) => patchDraft({ contractNumber: v })} disabled={!editable} />
+          <Field label="Cliente">
+            <CatalogCombobox
+              value={draft.client} options={clientOptions} disabled={!editable}
+              placeholder="Selecciona o escribe…"
+              onChange={(v) => patchDraft({ client: v })}
+              onCreate={(name) => addWorkReportCatalog('client', name)}
+            />
+          </Field>
+          <Field label="Faena">
+            <CatalogCombobox
+              value={draft.faena} options={faenaOptions} disabled={!editable}
+              placeholder="Selecciona o escribe…"
+              onChange={(v) => patchDraft({ faena: v })}
+              onCreate={async () => { /* la faena no tiene catálogo: queda como texto del reporte */ }}
+            />
+          </Field>
+          <Field label="Obra">
+            <CatalogCombobox
+              value={draft.obra || ''} options={obraOptions} disabled={!editable}
+              placeholder="Selecciona o escribe…"
+              onChange={(v) => patchDraft({ obra: v })}
+              onCreate={async () => { /* la obra no tiene catálogo: queda como texto del reporte */ }}
+            />
+          </Field>
+          <Field label="N° Contrato">
+            <CatalogCombobox
+              value={draft.contractNumber || ''} options={contractOptions} disabled={!editable}
+              placeholder="Selecciona o escribe…"
+              onChange={(v) => patchDraft({ contractNumber: v })}
+              onCreate={(name) => addWorkReportCatalog('contract', name)}
+            />
+          </Field>
           <CatalogSelect label="Área" value={draft.area || ''} options={workReportAreas} onChange={(v) => patchDraft({ area: v })} disabled={!editable} />
           <CatalogSelect label="Especialidad" value={draft.specialty || ''} options={workReportSpecialties} onChange={(v) => patchDraft({ specialty: v })} disabled={!editable} />
           <Field label="Supervisor responsable">

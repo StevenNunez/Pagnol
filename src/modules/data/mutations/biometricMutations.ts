@@ -1,5 +1,10 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import type { MutationContext as Context } from './context';
+// `import type` a propósito: se borra al compilar, así que registrar un hecho no
+// arrastra face-api ni nada del servicio de cámara. El vocabulario se define
+// donde se PRODUCE el valor, para no tener dos listas que se desincronicen —
+// que es como el umbral 0,5 llegó a estar escrito a mano en dos sitios.
+import type { BiometricFailureDetail } from '@/lib/biometricService';
 
 /**
  * Registro de hechos biométricos (tabla `biometric_verifications`).
@@ -39,6 +44,18 @@ export interface LivenessRecord {
     /** Amplitud mínima exigida ESE DÍA: sin ella el score es ilegible mañana. */
     threshold: number;
     method: string;
+    /** Frames en los que SÍ se detectó rostro durante la ventana. */
+    frames?: number;
+    /**
+     * Frames en los que el detector perdió el rostro. Es la mitad que faltaba
+     * para poder leer un `timeout`: la máquina de estados reinicia el progreso
+     * del gesto cada vez que pierde la cara, así que muchos frames perdidos
+     * significan "el detector no aguantó" y cero significa "el umbral del gesto
+     * está mal calibrado" — dos arreglos opuestos que hoy se ven igual.
+     */
+    framesLost?: number;
+    /** Cuánto duró la ventana de verdad. Rechazar en 800 ms no es rechazar a los 6 s. */
+    durationMs?: number;
 }
 
 /**
@@ -73,6 +90,11 @@ interface RecordParams {
     subject: { id: string; name: string };
     stage: BiometricStage;
     outcome: BiometricOutcome;
+    /**
+     * Por qué falló, cuando `outcome` es `'error'`. La base sólo lo admite en
+     * ese caso: pegárselo a un `match` sería describir un fallo que no ocurrió.
+     */
+    failureDetail?: BiometricFailureDetail | null;
     distance?: number | null;
     threshold?: number | null;
     evidencePath?: string | null;
@@ -112,6 +134,11 @@ export async function recordBiometricVerification(
                 request_id: params.requestId ?? null,
                 transaction_code: params.transactionCode ?? null,
                 outcome: params.outcome,
+                // Sólo acompaña a un 'error' — la base tiene un CHECK que lo
+                // exige. Mandarlo en un 'match' haría fallar el insert entero y
+                // el hecho se perdería, así que se filtra acá y no en el
+                // llamador, donde se podría olvidar.
+                failure_detail: params.outcome === 'error' ? (params.failureDetail ?? null) : null,
                 distance: params.distance ?? null,
                 threshold: params.threshold ?? null,
                 evidence_path: params.evidencePath ?? null,
@@ -128,6 +155,9 @@ export async function recordBiometricVerification(
                 liveness_score: params.liveness?.score ?? null,
                 liveness_threshold: params.liveness?.threshold ?? null,
                 liveness_method: params.liveness?.method ?? null,
+                liveness_frames: params.liveness?.frames ?? null,
+                liveness_frames_lost: params.liveness?.framesLost ?? null,
+                liveness_duration_ms: params.liveness?.durationMs ?? null,
             })
             .select('id')
             .single();

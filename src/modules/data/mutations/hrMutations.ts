@@ -83,7 +83,6 @@ export async function addHRDocument(
 ): Promise<HRDocument> {
   if (!user || !tenantId) throw new Error('No autenticado.');
 
-  let fileUrl: string | null = null;
   let filePath: string | null = null;
 
   if (file) {
@@ -94,14 +93,20 @@ export async function addHRDocument(
       .from(BUCKET)
       .upload(filePath, file, { contentType: file.type, upsert: false });
     if (uploadError) throw uploadError;
-
-    // ~10 años en segundos; documentos de RRHH se conservan por largo tiempo
-    const { data: signed, error: signError } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(filePath, 315360000);
-    if (signError) throw signError;
-    fileUrl = signed.signedUrl;
   }
+
+  // Se guarda el PATH y NUNCA una URL firmada.
+  //
+  // Antes aquí se firmaba por 315.360.000 s (~10 años) y esa URL quedaba escrita
+  // en la fila. Una URL firmada es una **llave al portador**: quien la ve abre el
+  // archivo sin sesión, sin pertenecer al tenant y sin que haya forma de
+  // revocarla — durante diez años, sobre documentos laborales con datos
+  // personales. Y la fila viaja a cualquiera que pueda leer `hr_documents`.
+  //
+  // Ahora se firma en el momento del clic (`<SecureFileLink>`), con 5 minutos de
+  // vida. Las filas antiguas conservan su URL y siguen abriéndose: el firmador
+  // extrae el path desde la propia URL, así que no hay que migrar datos.
+  const fileUrl: string | null = null;
 
   const { data: inserted, error } = await supabase
     .from('hr_documents')

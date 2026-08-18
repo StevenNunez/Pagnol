@@ -24,6 +24,7 @@ export interface UserIdentityValues {
     internalId?: string;
     password?: string;
     phone?: string;
+    cargo?: string;
 }
 
 interface UserIdentityFieldsProps<T extends FieldValues & UserIdentityValues> {
@@ -36,6 +37,12 @@ interface UserIdentityFieldsProps<T extends FieldValues & UserIdentityValues> {
     columns?: 1 | 2;
     showPassword?: boolean;
     showPhone?: boolean;
+    /**
+     * Muestra "Cargo / Puesto". Se pide al dar de alta y al enrolar porque de ahí
+     * lo hereda "Personal en obra" de la OT. `UserPanel` lo deja en `false`: su
+     * pestaña Contrato/RRHH ya trae su propio campo y saldría duplicado.
+     */
+    showCargo?: boolean;
     /** Bloquea nombre/RUT/email (p.ej. al enrolar a un usuario ya existente). */
     readOnlyIdentity?: boolean;
     /** Bloquea SOLO el email (p.ej. al editar un usuario: el email se cambia aparte). */
@@ -54,6 +61,7 @@ export function UserIdentityFields<T extends FieldValues & UserIdentityValues>({
     columns = 1,
     showPassword = false,
     showPhone = false,
+    showCargo = false,
     readOnlyIdentity = false,
     emailReadOnly = false,
     roleDisabled = false,
@@ -99,6 +107,14 @@ export function UserIdentityFields<T extends FieldValues & UserIdentityValues>({
                 />
                 {e.role && <p className="text-xs text-destructive">{e.role.message as string}</p>}
             </div>
+
+            {showCargo && (
+                <div className="space-y-1.5">
+                    <Label className={labelCls}>Cargo / Puesto</Label>
+                    <Input placeholder="Ej: Mecánico A" {...f('cargo')} className={inputCls} />
+                    {e.cargo && <p className="text-xs text-destructive">{e.cargo.message as string}</p>}
+                </div>
+            )}
 
             {showPassword && (
                 <div className="space-y-1.5">

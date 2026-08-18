@@ -581,6 +581,18 @@ export interface BiometricVerification {
   /** Umbral vigente ese día: sin él, una distancia vieja es ininterpretable. */
   threshold: number | null;
   /**
+   * Por qué falló, cuando `outcome` es `'error'`. `null` en todo lo demás y en
+   * los hechos anteriores a que existiera — de esos no hay motivo que recuperar.
+   *
+   * Existe porque `'error'` solo no alcanza para arreglar nada: "no había
+   * cámara", "el servidor no respondió" y "este trabajador no está enrolado"
+   * son tres situaciones con tres soluciones distintas, y las tres se guardaban
+   * con la misma palabra.
+   */
+  failureDetail:
+    | 'no_camera' | 'server_unreachable' | 'not_enrolled' | 'bad_input' | 'exception'
+    | null;
+  /**
    * Resultado del desafío de vida. `null` = no se midió, y eso incluye a todos
    * los hechos anteriores a que existiera — que es lo correcto: significa "aquí
    * no se preguntó", no "aquí no hubo gesto".
@@ -594,6 +606,17 @@ export interface BiometricVerification {
   /** Amplitud mínima exigida ese día, por el mismo motivo que `threshold`. */
   livenessThreshold: number | null;
   livenessMethod: string | null;
+  /** Frames en los que SÍ se detectó rostro durante la ventana del gesto. */
+  livenessFrames: number | null;
+  /**
+   * Frames en los que el detector perdió el rostro. Sin este número, un
+   * `timeout` no se puede leer: muchos frames perdidos significan "el detector
+   * no aguantó" y cero significa "el umbral del gesto está mal calibrado", que
+   * piden arreglos opuestos.
+   */
+  livenessFramesLost: number | null;
+  /** Duración real de la ventana. Rechazar en 800 ms no es rechazar a los 6 s. */
+  livenessDurationMs: number | null;
   /** Path del bucket privado (no URL: las firmadas expiran). */
   evidencePath: string | null;
   exceptionGroupId: string | null;
@@ -1485,7 +1508,13 @@ export interface SupplierDocument {
   name: string;
   /** Tipo: Tributario, Bancario, Contrato, Certificado, Seguro, Otro */
   type?: string;
-  url: string;         // URL firmada (bucket privado)
+  /**
+   * URL firmada de las filas ANTIGUAS. Ya no se escribe: se guardaba con ~10
+   * años de vigencia, y una firmada persistida abre el archivo sin sesión y no
+   * se puede revocar. Se conserva para que esos documentos sigan abriéndose —
+   * el firmador les extrae el path.
+   */
+  url?: string;
   path: string;        // Ruta en storage: {tenantId}/{supplierId}/{docId}.ext
   uploadedAt: string;  // ISO
   uploadedBy?: string;

@@ -31,6 +31,31 @@ const getFaceApi = async () => {
  */
 export type BiometricFailureReason = 'ok' | 'no_face' | 'no_match' | 'error';
 
+/**
+ * Por qué falló técnicamente, cuando `reason` es `'error'`.
+ *
+ * `'error'` es lo que el trabajador necesita saber (no se pudo verificar), pero
+ * no alcanza para arreglar nada: son CINCO causas con cinco soluciones
+ * distintas, y hasta ahora la evidencia guardaba las cinco con la misma palabra.
+ * Las 7 filas de `error` del 13-ago-2026 son indiagnosticables justamente por
+ * eso — el código sabía cuál era en el momento y lo tiró a la basura al
+ * guardar. Es el mismo defecto que ya se corrigió al separar `no_face` de
+ * `no_match`, sobreviviendo un nivel más abajo.
+ *
+ *   no_camera          → no había elemento de video. Problema del equipo.
+ *   server_unreachable → `/api/biometric/match` no respondió. Problema de red.
+ *   not_enrolled       → el sujeto no tiene template. NO es un fallo técnico:
+ *                        es un dato administrativo, y se resuelve enrolando.
+ *   bad_input          → el servidor rechazó el descriptor enviado.
+ *   exception          → cualquier otra cosa; el detalle queda en el log.
+ */
+export type BiometricFailureDetail =
+  | 'no_camera'
+  | 'server_unreachable'
+  | 'not_enrolled'
+  | 'bad_input'
+  | 'exception';
+
 /** Mensaje único para el caso "no se detectó rostro", para no repetirlo. */
 export const NO_FACE_MESSAGE =
   "No se detectó ningún rostro. Acércate a la cámara, mira de frente y busca buena iluminación.";
@@ -167,20 +192,33 @@ interface RespuestaMatch {
   error?: string;
 }
 
+/**
+ * `null` significa siempre lo mismo: **el servidor no dio un veredicto**.
+ *
+ * La red caída y el 500 se tratan igual a propósito. Antes un `fetch` que
+ * lanzaba (faena sin señal, que es el caso corriente) se escapaba hasta el
+ * `catch` general y se registraba como `exception`, indistinguible de un error
+ * de programación. Para quien tiene que arreglarlo son dos cosas muy distintas.
+ */
 const pedirMatch = async (
   body: { mode: '1:1' | '1:N'; descriptor: number[]; userId?: string },
 ): Promise<RespuestaMatch | null> => {
-  const res = await fetch('/api/biometric/match', {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (!res.ok) {
-    console.error('[biometric/match]', res.status, json?.error);
+  try {
+    const res = await fetch('/api/biometric/match', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      console.error('[biometric/match]', res.status, json?.error);
+      return null;
+    }
+    return json as RespuestaMatch;
+  } catch (err) {
+    console.error('[biometric/match] sin respuesta del servidor:', err);
     return null;
   }
-  return json as RespuestaMatch;
 };
 
 /**
@@ -194,7 +232,13 @@ const pedirMatch = async (
 export const verifyIdentity = async (
   input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
   userId: string,
-): Promise<{ verified: boolean; score: number; message: string; reason: BiometricFailureReason }> => {
+): Promise<{
+  verified: boolean;
+  score: number;
+  message: string;
+  reason: BiometricFailureReason;
+  detail?: BiometricFailureDetail;
+}> => {
   try {
     const live = await extraerDescriptorVivo(input);
 
@@ -207,16 +251,25 @@ export const verifyIdentity = async (
 
     const r = await pedirMatch({ mode: '1:1', descriptor: live, userId });
     if (!r) {
-      return { verified: false, score: 0, message: "No se pudo verificar contra el servidor.", reason: 'error' };
+      return {
+        verified: false, score: 0, reason: 'error', detail: 'server_unreachable',
+        message: "No se pudo verificar contra el servidor.",
+      };
     }
 
     // `empty` = el trabajador no tiene biometría enrolada. Decir "no coincide"
     // acusaría de impostor a quien simplemente nunca fue enrolado.
     if (r.reason === 'empty') {
-      return { verified: false, score: 0, message: "Este trabajador no tiene biometría enrolada.", reason: 'error' };
+      return {
+        verified: false, score: 0, reason: 'error', detail: 'not_enrolled',
+        message: "Este trabajador no tiene biometría enrolada.",
+      };
     }
     if (r.reason === 'bad_input') {
-      return { verified: false, score: 0, message: "Error técnico durante la verificación.", reason: 'error' };
+      return {
+        verified: false, score: 0, reason: 'error', detail: 'bad_input',
+        message: "Error técnico durante la verificación.",
+      };
     }
 
     return {
@@ -228,7 +281,10 @@ export const verifyIdentity = async (
 
   } catch (error) {
     console.error("Error verificando identidad:", error);
-    return { verified: false, score: 0, message: "Error técnico durante la verificación.", reason: 'error' };
+    return {
+      verified: false, score: 0, reason: 'error', detail: 'exception',
+      message: "Error técnico durante la verificación.",
+    };
   }
 };
 
@@ -240,6 +296,12 @@ export interface BiometricCheck {
   reason: BiometricFailureReason;
   message: string;
   score: number;
+  /**
+   * Presente sólo cuando `reason === 'error'`. Es lo que se guarda en la
+   * evidencia para que un fallo se pueda diagnosticar después sin tener que
+   * reconstruirlo a mano desde la hora y el sujeto.
+   */
+  detail?: BiometricFailureDetail;
 }
 
 /**
@@ -255,7 +317,10 @@ export const verifyBiometric = async (
   videoElement?: HTMLVideoElement
 ): Promise<BiometricCheck> => {
   if (!userId) {
-    return { verified: false, reason: 'error', message: "No se indicó a quién verificar.", score: 0 };
+    return {
+      verified: false, reason: 'error', detail: 'bad_input', score: 0,
+      message: "No se indicó a quién verificar.",
+    };
   }
 
   try {
@@ -269,19 +334,31 @@ export const verifyBiometric = async (
     const video = videoElement;
     if (!video) {
       if (setStatus) setStatus("Error: Cámara no encontrada.");
-      return { verified: false, reason: 'error', message: "No se encontró la cámara.", score: 0 };
+      return {
+        verified: false, reason: 'error', detail: 'no_camera', score: 0,
+        message: "No se encontró la cámara.",
+      };
     }
 
     if (setStatus) setStatus("Analizando rostro...");
     const result = await verifyIdentity(video, userId);
 
     if (setStatus) setStatus(result.message);
-    return { verified: result.verified, reason: result.reason, message: result.message, score: result.score };
+    return {
+      verified: result.verified,
+      reason: result.reason,
+      message: result.message,
+      score: result.score,
+      detail: result.detail,
+    };
 
   } catch (error) {
     console.error("Error en verifyBiometric:", error);
     if (setStatus) setStatus("Error en el proceso.");
-    return { verified: false, reason: 'error', message: "Error técnico durante la verificación.", score: 0 };
+    return {
+      verified: false, reason: 'error', detail: 'exception', score: 0,
+      message: "Error técnico durante la verificación.",
+    };
   }
 };
 

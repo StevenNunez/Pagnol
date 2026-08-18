@@ -30,6 +30,7 @@ import {
   MapPin,
   Settings2,
   Warehouse as WarehouseIcon,
+  AlertTriangle,
 } from 'lucide-react';
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from '@/modules/core/lib/supabase';
@@ -38,13 +39,14 @@ import { generateContractPDF } from '@/lib/contract-pdf-generator';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { PageHeader } from '@/components/page-header';
+import { SecureFileLink } from '@/components/secure-file-link';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { verifyBiometric, searchIdentity1N, captureEvidenceFrame, MATCH_THRESHOLD, verifyLiveness } from '@/lib/biometricService';
+import { verifyBiometric, searchIdentity1N, captureEvidenceFrame, MATCH_THRESHOLD, verifyLiveness, type BiometricFailureDetail } from '@/lib/biometricService';
 import type { MatchReason } from '@/modules/data/mutations/matchMath';
 import {
   pickChallenge,
@@ -73,6 +75,12 @@ interface ScanDiag {
   distance?: number;
   runnerUpDistance?: number;
   evaluated?: number;
+  /**
+   * Motivo técnico, cuando el escaneo se detuvo por un fallo del equipo o de la
+   * red. Reintentar a ciegas contra una cámara ausente o un servidor caído no
+   * lo va a resolver, así que acá el bucle para y esto es lo que explica por qué.
+   */
+  failureDetail?: BiometricFailureDetail;
 }
 
 /**
@@ -121,11 +129,36 @@ function explicarDiagnostico(d: ScanDiag): { titulo: string; detalle: string; to
         tono: 'warning',
       };
     default:
-      return {
-        titulo: 'Error de verificación',
-        detalle: 'No se pudo consultar al servidor. Reintenta o usa la selección manual.',
-        tono: 'destructive',
-      };
+      // Fallo técnico. Cada uno se arregla en un lugar distinto —el equipo, la
+      // red, el enrolamiento— y por eso se dicen distinto: "error de
+      // verificación" a secas manda al pañolero a reintentar contra algo que no
+      // va a cambiar solo.
+      switch (d.failureDetail) {
+        case 'no_camera':
+          return {
+            titulo: 'Sin cámara',
+            detalle: 'No se encontró una cámara con qué verificar. Revisa el permiso del navegador o el equipo, y usa la selección manual mientras tanto.',
+            tono: 'destructive',
+          };
+        case 'server_unreachable':
+          return {
+            titulo: 'Sin conexión con el servidor',
+            detalle: 'No hubo respuesta al verificar. Revisa la señal: mientras no vuelva, la biometría no puede resolver y hay que usar la selección manual.',
+            tono: 'destructive',
+          };
+        case 'not_enrolled':
+          return {
+            titulo: 'Trabajador sin enrolar',
+            detalle: 'Esta persona no tiene rostro enrolado, así que no hay contra qué comparar. Hay que enrolarla, o entregar con la vía de excepción.',
+            tono: 'info',
+          };
+        default:
+          return {
+            titulo: 'Error de verificación',
+            detalle: 'No se pudo completar la verificación. Reintenta o usa la selección manual.',
+            tono: 'destructive',
+          };
+      }
   }
 }
 
@@ -239,6 +272,21 @@ export default function MovimientosPagnolPage() {
    * insistir o usar la selección manual.
    */
   const [scanDiag, setScanDiag] = useState<ScanDiag | null>(null);
+  /**
+   * Detiene el escaneo 1:N cuando el fallo es técnico (sin cámara, sin
+   * servidor, sin enrolamiento).
+   *
+   * Antes el bucle sólo se detenía al ACERTAR: ante un fallo técnico volvía a
+   * intentar cada 1,5 s indefinidamente, y como cada vuelta deja constancia del
+   * acto, escribía una fila de evidencia por intento en una tabla append-only
+   * —de la que no se puede borrar nada—. Se ve en los hechos del 13-ago-2026:
+   * siete `error` en ráfagas de dos y tres segundos que son dos o tres
+   * episodios, no siete problemas.
+   *
+   * Reintentar contra una cámara ausente tampoco la va a hacer aparecer, así que
+   * lo que corresponde es parar y decir qué pasa.
+   */
+  const [scanHalt, setScanHalt] = useState<BiometricFailureDetail | null>(null);
   const [manualUserSearch, setManualUserSearch] = useState('');
   const [justReturnedIds, setJustReturnedIds] = useState<Set<string>>(new Set());
   const [pendingReturnTxs, setPendingReturnTxs] = useState<DisplayTransaction[]>([]);
@@ -410,6 +458,7 @@ export default function MovimientosPagnolPage() {
     setReturnConditions({});
     setSelectedEmployee(null);
     setScanDiag(null); // el diagnóstico es del intento anterior, no del que empieza
+    setScanHalt(null); // y el corte también: una transacción nueva parte escaneando
     setSearchAsset('');
     setDescription('');
     setManualUserSearch('');
@@ -590,7 +639,7 @@ export default function MovimientosPagnolPage() {
   const registrarHechoBiometrico = useCallback(async (p: {
     emp: { id: string; name: string };
     stage: 'identificacion' | 'recepcion';
-    check: { verified: boolean; reason: string; score: number };
+    check: { verified: boolean; reason: string; score: number; detail?: BiometricFailureDetail };
     guardarFoto: boolean;
     requestId?: string | null;
     transactionCode?: string | null;
@@ -614,6 +663,11 @@ export default function MovimientosPagnolPage() {
         subject: { id: p.emp.id, name: p.emp.name },
         stage: p.stage,
         outcome,
+        // El motivo fino del fallo. Sin esto, `error` en la tabla no permite
+        // distinguir un equipo sin cámara de una faena sin señal de un
+        // trabajador sin enrolar, y el diagnóstico hay que reconstruirlo a mano
+        // desde la hora y el sujeto — cuando se puede.
+        failureDetail: p.check.detail ?? null,
         // La distancia sólo significa algo si hubo rostro que comparar.
         distance: p.check.reason === 'no_face' ? null : p.check.score,
         threshold: MATCH_THRESHOLD,
@@ -689,6 +743,14 @@ export default function MovimientosPagnolPage() {
           ? `El rostro no coincide con ${emp.name}.`
           : check.message,
       });
+      // Un fallo técnico detiene el escaneo: insistir cada 1,5 s no arregla una
+      // cámara ausente ni una señal caída, y cada vuelta escribiría otra fila de
+      // evidencia que después no se puede borrar.
+      if (check.reason === 'error') {
+        const detalle = check.detail ?? 'exception';
+        setScanHalt(detalle);
+        setScanDiag({ reason: 'error', failureDetail: detalle });
+      }
     }
     setIsBiometricPulse(false);
   };
@@ -697,7 +759,9 @@ export default function MovimientosPagnolPage() {
   useEffect(() => {
     let interval: NodeJS.Timeout;
 
-    if (flowStep === 'SCANNING' && cameraStream && videoRef.current && !isSearching1N) {
+    // `scanHalt` corta el escaneo: al setearse, este efecto se rehace, el
+    // cleanup limpia el intervalo y la condición impide que vuelva a armarse.
+    if (flowStep === 'SCANNING' && cameraStream && videoRef.current && !isSearching1N && !scanHalt) {
       interval = setInterval(async () => {
         if (!videoRef.current) return;
         setIsSearching1N(true);
@@ -732,7 +796,7 @@ export default function MovimientosPagnolPage() {
     // completar su ciclo de 1,5 s. El efecto ya se rehace con `isSearching1N` en cada
     // pasada, de modo que la versión que usa nunca queda vieja.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flowStep, cameraStream, users, isSearching1N, usersMap]);
+  }, [flowStep, cameraStream, users, isSearching1N, usersMap, scanHalt]);
 
   // Once returnRequests updates from DB, clear optimistic state
   useEffect(() => {
@@ -1018,6 +1082,14 @@ export default function MovimientosPagnolPage() {
               score: Number(r.score.toFixed(4)),
               threshold: LIVENESS_MIN_AMPLITUDE,
               method: LIVENESS_METHOD,
+              // Cuántos frames vieron rostro y cuántos lo perdieron. Es lo que
+              // convierte un `timeout` en un dato accionable: la máquina de
+              // estados reinicia el progreso del gesto cada vez que pierde la
+              // cara, así que sin estos números no se sabe si el umbral está
+              // alto o si el detector no aguantó — y son arreglos opuestos.
+              frames: r.frames,
+              framesLost: r.framesLost,
+              durationMs: Math.round(r.durationMs),
             };
           } catch (e) {
             console.error('Prueba de vida interrumpida:', e);
@@ -1465,14 +1537,12 @@ export default function MovimientosPagnolPage() {
                   </td>
                   <td className="px-6 sm:px-10 py-6">
                     {tx.contractUrl ? (
-                      <a
-                        href={tx.contractUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <SecureFileLink
+                        stored={tx.contractUrl}
                         className="flex items-center gap-1.5 text-[9px] font-black text-pagnol-orange hover:text-pagnol-orange/90 transition-colors"
                       >
                         <Download size={13} /> Ver Acta
-                      </a>
+                      </SecureFileLink>
                     ) : tx.deliveryDate ? (
                       <span className="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest">Sin acta</span>
                     ) : (
@@ -1670,6 +1740,19 @@ export default function MovimientosPagnolPage() {
                               {scanDiag.evaluated !== undefined && ` · ${scanDiag.evaluated} enrolados`}
                             </p>
                           )}
+                          {/* El escaneo está detenido: sin una forma explícita de
+                              reanudarlo, la única salida sería cerrar el modal y
+                              volver a empezar la transacción entera. */}
+                          {scanHalt && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="mt-3 h-8 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                              onClick={() => { setScanHalt(null); setScanDiag(null); }}
+                            >
+                              Reintentar escaneo
+                            </Button>
+                          )}
                         </div>
                       );
                     })()}
@@ -1737,7 +1820,7 @@ export default function MovimientosPagnolPage() {
                       ))}
                     </div>
                   </div>
-                  <Button variant="ghost" onClick={() => { setFlowStep('SCANNING'); startFaceDetect(); }} className="w-full text-muted-foreground text-[10px] uppercase font-bold">
+                  <Button variant="ghost" onClick={() => { setScanHalt(null); setScanDiag(null); setFlowStep('SCANNING'); startFaceDetect(); }} className="w-full text-muted-foreground text-[10px] uppercase font-bold">
                     Volver a Escáner
                   </Button>
                 </div>
@@ -2055,6 +2138,30 @@ export default function MovimientosPagnolPage() {
                           <span className="text-muted-foreground">Pañol</span>
                           <ArrowRight size={12} className="text-muted-foreground" />
                           <span className="text-pagnol-orange">{site || 'Sin destino especificado'}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Lo que va a quedar EN BLANCO en el acta, dicho antes de
+                        firmarla y no después. No bloquea la entrega —el trabajador
+                        está ahí con la herramienta en la mano— pero el pañolero es
+                        el único que puede completarlo, y sólo en este momento.
+                        El acta es un contrato de responsabilidad: sin RUT
+                        identifica a la persona sólo por su nombre de pila. */}
+                    {selectedType === 'WITHDRAWAL' && selectedEmployee && (!selectedEmployee.rut?.trim() || !site.trim()) && (
+                      <div className="flex items-start gap-3 p-4 bg-warning-subtle text-warning-subtle-foreground rounded-2xl">
+                        <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                        <div className="text-[10px] font-bold leading-snug">
+                          <p className="font-black uppercase tracking-widest text-[9px]">
+                            El acta saldrá incompleta
+                          </p>
+                          <p className="mt-1">
+                            {!selectedEmployee.rut?.trim() && (
+                              <>Este trabajador <strong>no tiene RUT registrado</strong>, así que el contrato de responsabilidad lo identificará sólo por su nombre. </>
+                            )}
+                            {!site.trim() && <>No se indicó la <strong>faena de destino</strong>. </>}
+                            Puedes continuar igual, pero queda así en el documento.
+                          </p>
                         </div>
                       </div>
                     )}

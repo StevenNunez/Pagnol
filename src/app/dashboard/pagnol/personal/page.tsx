@@ -20,7 +20,8 @@ import {
   Building2, Calendar, AlertTriangle, Send, Pencil, CheckCheck, Briefcase
 } from 'lucide-react';
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from '@/lib/utils';
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ClientContractFilter, contractIdsOfClient, CC_ALL, CC_POOL } from "@/components/client-contract-filter";
@@ -514,9 +515,9 @@ export default function PersonalPage() {
                               {tx.assetIds.map(aid => <Badge key={aid} variant="secondary" className="text-[9px]">{materialsMap.get(aid)?.name}</Badge>)}
                             </div>
                             {tx.contractUrl && (
-                              <a href={tx.contractUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] font-black text-pagnol-orange">
+                              <SecureFileLink stored={tx.contractUrl} className="flex items-center gap-1 text-[10px] font-black text-pagnol-orange">
                                 <Download size={14} /> Acta
-                              </a>
+                              </SecureFileLink>
                             )}
                           </div>
                         ))
@@ -1055,11 +1056,18 @@ export default function PersonalPage() {
                                   </p>
                                 </div>
                               </div>
-                              <a href={tx.contractUrl!} target="_blank" rel="noopener noreferrer">
-                                <Button size="sm" className="h-8 px-4 rounded-xl bg-pagnol-orange hover:bg-pagnol-orange/90 text-white text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                                  <Download size={12} /> Acta Firmada
-                                </Button>
-                              </a>
+                              {/* El estilo sale de `buttonVariants` y no de <Button>:
+                                  SecureFileLink ya renderiza un <button>, y anidar
+                                  botones es HTML inválido. Así se ve idéntico. */}
+                              <SecureFileLink
+                                stored={tx.contractUrl}
+                                className={cn(
+                                  buttonVariants({ size: 'sm' }),
+                                  'h-8 px-4 rounded-xl bg-pagnol-orange hover:bg-pagnol-orange/90 text-white text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5',
+                                )}
+                              >
+                                <Download size={12} /> Acta Firmada
+                              </SecureFileLink>
                             </div>
                           ))}
                         </div>

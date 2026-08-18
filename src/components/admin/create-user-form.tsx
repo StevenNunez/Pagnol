@@ -22,6 +22,9 @@ const FormSchema = z.object({
   phone: z.string().optional(),
   rut: z.string().optional(),
   internalId: z.string().optional(),
+  // El cargo se pide acá, no después: es el que hereda "Personal en obra" de la
+  // OT al elegir al trabajador. Si nace vacío, ese autocompletado no sirve.
+  cargo: z.string().optional(),
 });
 
 type FormData = z.infer<typeof FormSchema>;
@@ -51,6 +54,7 @@ export function CreateUserForm() {
       phone: '',
       rut: '',
       internalId: '',
+      cargo: '',
     }
   });
 
@@ -127,6 +131,7 @@ export function CreateUserForm() {
         columns={1}
         showPassword
         showPhone
+        showCargo
       />
 
       <Button type="submit" className="w-full h-14 rounded-2xl bg-pagnol-orange hover:bg-orange-600 font-black text-[11px] uppercase tracking-widest shadow-xl shadow-orange-500/20 transform hover:scale-[1.02] transition-all" disabled={isSubmitting}>

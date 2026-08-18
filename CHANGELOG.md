@@ -18,6 +18,219 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado — En la OT, "Equipos" y "Materiales" ya no ofrecen el catálogo completo
+
+Los dos desplegables de la OT mostraban **todo** `materials`: la maquinaria, las herramientas, los
+insumos y los EPP mezclados en una sola lista de ~100 filas, con el mismo activo repetido una vez
+por contrato. Elegir un equipo obligaba a scrollear entre cascos y guantes.
+
+`src/modules/core/lib/material-kind.ts` clasifica un ítem del catálogo en `equipment` / `supply` /
+`ppe` y arma las opciones de cada desplegable:
+
+- **Equipos y maquinaria** → sólo lo que acumula HM: `Activo Fijo`, `Herramienta Menor`,
+  `IT Controlado` y `Reutilizable Controlado` (más los legacy `Permanente` / `Retornable`).
+- **Materiales** → sólo lo que se consume por cantidad: `Consumible` y `Repuesto Crítico`.
+- **EPP** → fuera de ambos. No se distingue por `usage_type` —los cascos viven en "Reutilizable
+  Controlado" junto a los taladros y los guantes en "Consumible" junto al cable— así que se detecta
+  por categoría. El EPP se entrega por Pañol; la OT no lo reporta.
+
+Además, las opciones se **deduplican por nombre** (el mismo activo repetido por contrato ensuciaba
+la lista sin aportar: quien reporta escribe el nombre, no elige la fila) y se **agrupan por
+categoría** con encabezado.
+
+`CatalogCombobox` acepta ahora un `group` opcional por opción: parte la lista en secciones y hace
+que la búsqueda matchee **también por categoría** — escribir "herramienta" trae toda la familia
+aunque el nombre del ítem no contenga la palabra.
+
+### Cambiado — El Reporte Semanal ya no pide tipear cliente, faena, obra ni contrato
+
+Los cuatro eran campos de texto libre. Ahora son selectores buscables (`CatalogCombobox`):
+
+- **Cliente** y **N° Contrato** salen del catálogo de Reportes de Trabajo y se pueden crear al vuelo.
+- **Faena** y **Obra** no tienen catálogo propio, así que ofrecen los valores ya usados en Diarios y
+  Semanales anteriores.
+
+Los cuatro siguen aceptando un valor nuevo escrito a mano: dejaron de obligar a tipear lo de
+siempre, sin volverse cerrados. (La herencia automática desde los Diarios consolidados ya existía y
+se mantiene: al marcar el primer Diario, la cabecera se completa sola.)
+
+### Corregido — Los Reportes Diarios se borraban solos al crearlos (StrictMode)
+
+**Ningún Reporte Diario llegaba a la base de datos.** Se creaba, se podía llenar, consolidaba las
+OT, se veía normal… y la tabla `work_reports` quedaba vacía. El listado siempre decía "Sin
+informes de terreno" y el correlativo volvía a `IT-2026-0001` una y otra vez.
+
+La causa está en la limpieza de "Diario fantasma" de `work-reports/[id]`: un `useEffect` con
+cleanup que, al desmontar, borra el informe si sigue vacío. Con `reactStrictMode: true` React
+**monta → limpia efectos → vuelve a montar**, así que ese cleanup corría de inmediato, sin que el
+usuario saliera de ninguna parte, y borraba el informe recién creado.
+
+Lo que lo hacía difícil de ver: después del borrado **nada falla**. Los guardados posteriores son
+`UPDATE`s que matchean 0 filas y no lanzan (el gotcha de RLS ya documentado en CLAUDE.md), así que
+la página seguía comportándose con normalidad. El problema recién aparecía al firmar, como un
+`Cannot coerce the result to a single JSON object` — el `.single()` de `transitionWorkReport`
+sobre una fila que ya no existía.
+
+La secuencia se confirmó instrumentando `fetch` en el navegador: `POST 201` (crear) y, tres
+segundos después, `DELETE 204` sobre el mismo id.
+
+El borrado ahora se **difiere** (`GHOST_DELETE_DELAY_MS`) y se registra en un `Map` a nivel de
+módulo por id de reporte; al montar se cancela el borrado pendiente de ese id. El doble montaje de
+StrictMode lo cancela solo, y también el caso de salir y volver a entrar rápido al mismo informe.
+La limpieza real —salir dejando un informe vacío— sigue funcionando igual.
+
+### Agregado — El cargo del trabajador se hereda de su ficha en "Personal en obra" (OT)
+
+Al elegir un trabajador en la OT, el **Cargo** ya no se tipea: se hereda de la ficha del usuario
+(`profiles.cargo`), que es donde vive esa información desde que se crea o se enrola a la persona.
+El campo sigue siendo editable para el caso puntual (subcontratista, cargo distinto ese día).
+
+Si el trabajador elegido no tiene cargo en su ficha, el campo se **limpia** en vez de conservar el
+anterior: ese cargo pertenecía al trabajador previo y dejarlo pegado se lo atribuiría a la persona
+equivocada. Un trabajador libre — nombre escrito a mano, fuera del catálogo de usuarios — no
+matchea ninguna ficha, así que ahí se respeta lo que el usuario escribió.
+
+**Lo que faltaba aguas arriba:** el cargo *no se podía informar al dar de alta a la persona*. El
+formulario "Crear Nuevo Usuario" y el wizard de enrolamiento no lo pedían — sólo aparecía después,
+editando la ficha en la pestaña Contrato/RRHH — así que en la práctica casi todos los perfiles
+nacían sin cargo y la herencia no tenía de dónde tomarlo. Ahora:
+
+- `UserIdentityFields` (el bloque compartido por alta y enrolamiento) acepta `showCargo` y expone
+  **Cargo / Puesto**. `UserPanel` lo deja apagado: su pestaña Contrato/RRHH ya trae el suyo y
+  saldría duplicado.
+- `CreateUserForm` y `EnrollmentWizard` lo piden e incluyen en el payload.
+- `addUser` → `/api/users/create` → `profiles` ahora persisten `cargo`.
+
+**Bug adyacente del mismo tramo:** `phone` tenía exactamente el mismo problema — el formulario de
+alta pedía "Teléfono Operativo" y la mutación nunca lo enviaba, así que se descartaba en silencio.
+Ahora también se persiste.
+
+### Corregido — En la OT no se veía qué eran los campos numéricos (HH / HM / cantidad)
+
+En `work-reports/ot/[id]` las filas de **Personal en obra**, **Equipos y maquinaria** y
+**Materiales** mostraban los controles pelados, sin ninguna etiqueta: el usuario veía una caja con
+`0` y no había forma de saber si eran horas hombre, horas máquina o unidades.
+
+La causa: los inputs traían `placeholder="Horas"` / `"Cantidad"`, pero **el placeholder nunca se
+muestra** porque el valor arranca en `0` (no en vacío). Y aun mostrándose, "Horas" no distingue HH
+de HM, que es justo lo que el módulo mide.
+
+Cada control quedó envuelto en el helper `Field` que ya existía en el archivo (micro-label
+industrial de la firma Pagnol, `text-[10px] font-black uppercase tracking-widest`), con las mismas
+etiquetas que usa el resto del módulo:
+
+- Personal: **Trabajador · Cargo · Horas (HH)**
+- Equipos: **Equipo · Horas (HM)**
+- Materiales: **Material · Cantidad · Unidad**
+
+Las columnas de números pasaron de `110px` a `130px` para que quepa la etiqueta, el grid usa
+`items-end` para que el botón de eliminar siga alineado con los inputs, y los placeholders ahora
+son ejemplos útiles (`Ej: Mecánico A`, `Ej: un, kg, m`) en vez de repetir el nombre del campo. En
+móvil, donde el grid colapsa a una columna, cada campo queda etiquetado por separado.
+
+El Reporte Diario ya usaba `Field` en estas mismas secciones — este cambio alinea la OT con él.
+
+### Corregido — El acta de entrega no se abría: tres `<a href>` con el path del bucket
+
+Abrir el acta de una entrega llevaba a
+`https://www.pagnol.cl/dashboard/pagnol/contracts/<requestId>/Contrato_<código>_<nombre>.pdf`, que
+**no es ninguna ruta de la app** → 404.
+
+**El PDF nunca fue el problema.** Verificado contra el bucket: el archivo de `MTL-TX-0011` está
+ahí, **1.280.802 bytes**, cabecera `%PDF-`, y se firma y descarga sin problema. No es una regresión
+de la migración de jspdf, aunque el contrato de responsabilidad esté en la lista de los 8 PDF sin
+revisar a ojo.
+
+**La causa:** `contract_url` guarda el **path** del bucket (`contracts/<requestId>/<archivo>.pdf`),
+que es lo correcto desde que el bucket pasó a privado — una URL firmada expira, así que persistirla
+la dejaría muerta. Pero tres enlaces seguían poniéndolo crudo en un `href`, y el navegador lo
+resuelve **relativo a la página actual**: `/dashboard/pagnol/` + `contracts/…` da exactamente la URL
+del 404. Es literalmente lo que el backlog anticipó tras cerrar el bucket: *"si falla será un
+`<a href>` que se escapó"*.
+
+- `pagnol/personal` — historial de transacciones ("Acta") y sección VIII del EA ("Acta Firmada").
+  El archivo **ya usaba `SecureFileLink` en otros dos sitios**: estos dos quedaron fuera.
+- `pagnol/movimientos` — columna "Ver Acta" del historial.
+
+Los tres pasan a `<SecureFileLink>`, que firma en el clic. En el caso del botón el estilo sale de
+`buttonVariants` en vez de `<Button>`: `SecureFileLink` ya renderiza un `<button>` y anidar botones
+es HTML inválido.
+
+**Verificado con una sesión de usuario real, no sólo con la llave de servicio** (que ignora las
+políticas y habría dado un falso verde): firma → `200`, descarga → `200`, 1.280.802 bytes, `%PDF-`.
+Y de paso se comprobó el aislamiento, porque este path **no lleva el tenant**: con la cuenta de otra
+empresa el mismo archivo da **404 `NoSuchKey`**.
+
+*(Observado al pasar, sin tocar: los documentos de RRHH y de proveedores no tienen este defecto
+porque guardan una URL **firmada absoluta** — la de RRHH con **10 años** de vigencia, lo que es un
+asunto distinto y anotado aparte.)*
+
+### Agregado — La evidencia biométrica ahora dice POR QUÉ falló
+
+✅ **Migración `20260817000000_biometric_failure_detail.sql` APLICADA y VERIFICADA** (2026-08-14).
+No sólo que las columnas existan: se comprobó que **cada CHECK rechaza lo suyo, con su propio
+nombre** —`biometric_failure_detail_check` para el vocabulario inventado,
+`biometric_failure_detail_needs_error` para un motivo pegado a un `match`,
+`biometric_liveness_counts_nonneg` para conteos negativos— y, como contraprueba, que un motivo
+**válido sí pasa**. Sin esa contraprueba, "todo se rechaza" se lee igual que "el CHECK funciona".
+Las sondas llevaban un `tenant_id` inexistente para que la clave foránea las frenara aunque un
+CHECK fallara: en una tabla append-only una fila de prueba no se podría borrar después. Los 12
+hechos anteriores quedaron intactos, con `failure_detail` en NULL.
+
+**El problema.** `outcome = 'error'` era un cajón con **cinco causas** dentro, que el código ya
+sabía separar y mostraba bien en pantalla, pero perdía al guardar: no había cámara · el servidor de
+match no respondió · el trabajador no está enrolado · el descriptor no le sirvió al servidor · una
+excepción cualquiera. Las tres primeras se arreglan en tres lugares distintos (el equipo, la señal,
+el enrolamiento) y ninguna se parece a las otras.
+
+**Cómo se destapó:** las 7 filas de `error` del 13-ago-2026 son **indiagnosticables a posteriori**.
+Sondeando la base sólo se pudo descartar: no fue "no enrolado" (hay matches del mismo sujeto **un
+segundo después**, 22:04:08 → 22:04:09) y no fue falta de rostro (eso se escribe `no_face`). Ahí se
+acaba lo que se puede afirmar. Es el mismo defecto que ya se corrigió al separar `no_face` de
+`no_match` y al diagnosticar el 1:N, sobreviviendo un nivel más abajo: en lo que queda escrito.
+
+- **`failure_detail`** en `biometric_verifications`, con vocabulario propio (`no_camera` ·
+  `server_unreachable` · `not_enrolled` · `bad_input` · `exception`) y un CHECK que sólo lo admite
+  junto a un `outcome = 'error'`.
+- **No se exige lo contrario** (que todo `error` traiga detalle) a propósito: ese CHECK se validaría
+  contra las filas ya existentes y **abortaría la migración entera** por las 7 de agosto, que
+  nacieron sin él. Las nuevas lo traen porque el código las escribe con él.
+- **La pantalla también mejora**, no sólo la tabla: el escáner distingue *"Sin cámara"*, *"Sin
+  conexión con el servidor"* y *"Trabajador sin enrolar"* —tres textos con tres acciones— donde
+  antes decía "Error de verificación" para las cinco.
+- La red y el 5xx se unifican en `server_unreachable`: antes un `fetch` que lanzaba (faena sin
+  señal, el caso corriente) se escapaba al `catch` general y quedaba como `exception`,
+  indistinguible de un error de programación.
+
+### Corregido — El escáner 1:N reintentaba para siempre y escribía una fila de evidencia por vuelta
+
+El bucle de identificación sólo se detenía **al acertar**: ante un fallo técnico volvía a intentar
+cada 1,5 s indefinidamente, y como cada vuelta deja constancia del acto, escribía **una fila por
+intento** en una tabla **append-only**, de la que no se puede borrar nada.
+
+Se ve en los propios hechos del 13-ago: las 7 filas de `error` llegan en ráfagas de 2 y 3 segundos
+(21:52:00 y :02 · 21:57:49, :52 y :55), o sea son **dos o tres episodios**, no siete problemas
+distintos. Un backlog que los contara como siete estaría midiendo el reintento, no la falla.
+
+Ahora un fallo técnico **detiene el escaneo** y explica el motivo, con un botón *Reintentar
+escaneo* para reanudarlo. Insistir contra una cámara ausente no la hace aparecer.
+
+### Agregado — Instrumentación del desafío de vida (`liveness_frames`, `_frames_lost`, `_duration_ms`)
+
+Se guardaba la amplitud del gesto pero **no cuántos frames vieron rostro**, y sin eso un `timeout`
+es ilegible: la máquina de estados **reinicia el progreso del gesto cada vez que pierde la cara**,
+así que muchos frames perdidos significan *"el detector no aguantó"* y cero significa *"el umbral
+del gesto está mal calibrado"* — la misma fila en la tabla y **dos arreglos opuestos** en el código.
+
+**No es hipotético:** el primer `timeout` real (14-ago-2026, 08:46, `MTL-TX-0011`) trae amplitud
+**0,4015** contra un mínimo exigido de **0,08** — cinco veces el umbral. El gesto se hizo y se
+rechazó igual, y con lo que se guardaba no se puede saber cuál de las dos causas fue. En modo
+observación la recepción se completó, que es exactamente para lo que se dejó sin bloquear; con el
+bloqueo activo esa entrega no se habría podido cerrar.
+
+*(Dato relacionado, para cuando se calibre: esa misma verificación dio `distance` **0,496** contra
+un umbral de **0,5**. Pasó por 0,004.)*
+
 ### Corregido — La red de seguridad de RFC-005 gritaba con el manifiesto correcto
 
 Entrar a `/dashboard/pagnol` desde otra ruta imprimía en consola *"la colección 'requests' se

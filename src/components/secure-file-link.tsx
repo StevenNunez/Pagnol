@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { getContractsSignedUrl } from '@/modules/core/lib/storage';
+import { CONTRACTS_BUCKET, getSignedUrl } from '@/modules/core/lib/storage';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -21,9 +21,15 @@ interface SecureFileLinkProps {
     className?: string;
     /** Cuánto vive la URL firmada. Por defecto 5 minutos. */
     expiresIn?: number;
+    /**
+     * Bucket donde vive el archivo. Por defecto `contracts`, que es de donde
+     * salió este componente; `hr-documents` y `supplier-documents` lo usan
+     * también desde que dejaron de persistir su URL firmada.
+     */
+    bucket?: string;
 }
 
-export function SecureFileLink({ stored, children, className, expiresIn }: SecureFileLinkProps) {
+export function SecureFileLink({ stored, children, className, expiresIn, bucket }: SecureFileLinkProps) {
     const { toast } = useToast();
     const [loading, setLoading] = React.useState(false);
 
@@ -33,7 +39,7 @@ export function SecureFileLink({ stored, children, className, expiresIn }: Secur
         if (loading) return;
         setLoading(true);
         try {
-            const url = await getContractsSignedUrl(stored, expiresIn);
+            const url = await getSignedUrl(bucket ?? CONTRACTS_BUCKET, stored, expiresIn);
             if (!url) {
                 toast({
                     variant: 'destructive',

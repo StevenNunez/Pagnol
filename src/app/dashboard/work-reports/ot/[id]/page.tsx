@@ -16,6 +16,7 @@ import { useAppState } from '@/modules/core/contexts/app-provider';
 import { supabase } from '@/modules/core/lib/supabase';
 import { compressImage } from '@/lib/compress-image';
 import { CatalogCombobox } from '@/components/catalog-combobox';
+import { materialOptionsByKind } from '@/modules/core/lib/material-kind';
 import { useAuth } from '@/modules/auth/useAuth';
 import { useOnlineStatus } from '@/hooks/use-online-status';
 import { useOfflineDraft } from '@/modules/offline/use-offline-draft';
@@ -78,14 +79,18 @@ export default function WorkOrderDetailPage() {
   // Listas por tipo del catálogo genérico (cliente/contrato/ubicación/turno/jornada).
   const catBy = (kind: string) => (workReportCatalogs || []).filter((c) => c.kind === kind);
 
-  // Catálogo de materiales (bodega) para autocompletar nombre + materialId + unidad,
-  // y también para "Equipos" (Activos = superficie única: la maquinaria vive
-  // en el mismo catálogo de materiales).
+  // Activos = superficie única: maquinaria, herramientas, insumos y EPP viven en
+  // el mismo catálogo (`materials`). Para reportar terreno hay que separarlos:
+  // en "Equipos" sólo va lo que acumula HM y en "Materiales" sólo lo que se
+  // consume por cantidad. El EPP no entra en ninguna de las dos — se entrega por
+  // Pañol, no se reporta en la OT. Ver `material-kind.ts`.
+  const equipmentOptions = React.useMemo(
+    () => materialOptionsByKind(materials, 'equipment'),
+    [materials],
+  );
+
   const materialOptions = React.useMemo(
-    () => (materials || [])
-      .filter((m) => !m.archived)
-      .map((m) => ({ id: m.id, name: m.name }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    () => materialOptionsByKind(materials, 'supply'),
     [materials],
   );
 
@@ -500,20 +505,34 @@ export default function WorkOrderDetailPage() {
       <Section title="Personal en obra">
         <div className="space-y-3">
           {(draft.labor || []).map((item, index) => (
-            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_110px_auto] gap-3 rounded-[1.5rem] border p-3">
-              <CatalogCombobox
-                value={item.name}
-                options={userOptions}
-                disabled={!editable}
-                placeholder="Nombre y apellidos"
-                onCreate={async () => { /* permite trabajador libre (subcontratista) fuera del catálogo de usuarios */ }}
-                onChange={(name) => {
-                  const matched = (users || []).find((u) => u.name === name);
-                  patchDraft({ labor: replaceAt(draft.labor, index, { ...item, name, userId: matched?.id }) });
-                }}
-              />
-              <Input className="rounded-xl" placeholder="Cargo" value={item.role} disabled={!editable} onChange={(e) => patchDraft({ labor: replaceAt(draft.labor, index, { ...item, role: e.target.value }) })} />
-              <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="Horas" value={item.hours} disabled={!editable} onChange={(e) => patchDraft({ labor: replaceAt(draft.labor, index, { ...item, hours: Number(e.target.value) }) })} />
+            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_130px_auto] gap-3 rounded-[1.5rem] border p-3 items-end">
+              <Field label="Trabajador">
+                <CatalogCombobox
+                  value={item.name}
+                  options={userOptions}
+                  disabled={!editable}
+                  placeholder="Nombre y apellidos"
+                  onCreate={async () => { /* permite trabajador libre (subcontratista) fuera del catálogo de usuarios */ }}
+                  onChange={(name) => {
+                    const matched = (users || []).find((u) => u.name === name);
+                    // El cargo vive en la ficha del trabajador (creación de usuario /
+                    // enrolamiento), así que no se vuelve a tipear acá: se hereda al
+                    // elegirlo. Si el elegido no tiene cargo en su ficha, el campo se
+                    // limpia — el cargo que quedaba era del trabajador ANTERIOR y
+                    // dejarlo pegado lo atribuiría a la persona equivocada. Un
+                    // trabajador libre (subcontratista fuera del catálogo) no matchea
+                    // ninguna ficha: ahí se respeta lo que el usuario escribió.
+                    const role = matched ? (matched.cargo || '') : item.role;
+                    patchDraft({ labor: replaceAt(draft.labor, index, { ...item, name, userId: matched?.id, role }) });
+                  }}
+                />
+              </Field>
+              <Field label="Cargo">
+                <Input className="rounded-xl" placeholder="Ej: Mecánico A" value={item.role} disabled={!editable} onChange={(e) => patchDraft({ labor: replaceAt(draft.labor, index, { ...item, role: e.target.value }) })} />
+              </Field>
+              <Field label="Horas (HH)">
+                <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="0" value={item.hours} disabled={!editable} onChange={(e) => patchDraft({ labor: replaceAt(draft.labor, index, { ...item, hours: Number(e.target.value) }) })} />
+              </Field>
               <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => patchDraft({ labor: draft.labor.filter((x) => x.id !== item.id) })}><Trash2 className="h-4 w-4" /></Button>
             </div>
           ))}
@@ -524,19 +543,23 @@ export default function WorkOrderDetailPage() {
       <Section title="Equipos y maquinaria">
         <div className="space-y-3">
           {(draft.equipment || []).map((item, index) => (
-            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_110px_auto] gap-3 rounded-[1.5rem] border p-3">
-              <CatalogCombobox
-                value={item.equipment}
-                options={materialOptions}
-                disabled={!editable}
-                placeholder="Equipo (del catálogo de activos o libre)"
-                onCreate={async () => { /* permite equipo libre fuera del catálogo de activos */ }}
-                onChange={(name) => {
-                  const matched = (materials || []).find((m) => m.name === name);
-                  patchDraft({ equipment: replaceAt(draft.equipment, index, { ...item, equipment: name, assetId: matched?.id }) });
-                }}
-              />
-              <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="Horas" value={item.hours} disabled={!editable} onChange={(e) => patchDraft({ equipment: replaceAt(draft.equipment, index, { ...item, hours: Number(e.target.value) }) })} />
+            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_130px_auto] gap-3 rounded-[1.5rem] border p-3 items-end">
+              <Field label="Equipo">
+                <CatalogCombobox
+                  value={item.equipment}
+                  options={equipmentOptions}
+                  disabled={!editable}
+                  placeholder="Busca maquinaria, herramienta o instrumento"
+                  onCreate={async () => { /* permite equipo libre fuera del catálogo de activos */ }}
+                  onChange={(name) => {
+                    const matched = (materials || []).find((m) => m.name === name);
+                    patchDraft({ equipment: replaceAt(draft.equipment, index, { ...item, equipment: name, assetId: matched?.id }) });
+                  }}
+                />
+              </Field>
+              <Field label="Horas (HM)">
+                <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="0" value={item.hours} disabled={!editable} onChange={(e) => patchDraft({ equipment: replaceAt(draft.equipment, index, { ...item, hours: Number(e.target.value) }) })} />
+              </Field>
               <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => patchDraft({ equipment: draft.equipment.filter((x) => x.id !== item.id) })}><Trash2 className="h-4 w-4" /></Button>
             </div>
           ))}
@@ -547,20 +570,26 @@ export default function WorkOrderDetailPage() {
       <Section title="Materiales">
         <div className="space-y-3">
           {(draft.materials || []).map((item, index) => (
-            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_110px_110px_auto] gap-3 rounded-[1.5rem] border p-3">
-              <CatalogCombobox
-                value={item.material}
-                options={materialOptions}
-                disabled={!editable}
-                placeholder="Material (del catálogo o libre)"
-                onCreate={async () => { /* permite material libre fuera del catálogo */ }}
-                onChange={(name) => {
-                  const matched = (materials || []).find((m) => m.name === name);
-                  patchDraft({ materials: replaceAt(draft.materials, index, { ...item, material: name, materialId: matched?.id, unit: item.unit || matched?.unit || '' }) });
-                }}
-              />
-              <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="Cantidad" value={item.quantity} disabled={!editable} onChange={(e) => patchDraft({ materials: replaceAt(draft.materials, index, { ...item, quantity: Number(e.target.value) }) })} />
-              <Input className="rounded-xl" placeholder="Unidad" value={item.unit || ''} disabled={!editable} onChange={(e) => patchDraft({ materials: replaceAt(draft.materials, index, { ...item, unit: e.target.value }) })} />
+            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_130px_130px_auto] gap-3 rounded-[1.5rem] border p-3 items-end">
+              <Field label="Material">
+                <CatalogCombobox
+                  value={item.material}
+                  options={materialOptions}
+                  disabled={!editable}
+                  placeholder="Busca el insumo consumido"
+                  onCreate={async () => { /* permite material libre fuera del catálogo */ }}
+                  onChange={(name) => {
+                    const matched = (materials || []).find((m) => m.name === name);
+                    patchDraft({ materials: replaceAt(draft.materials, index, { ...item, material: name, materialId: matched?.id, unit: item.unit || matched?.unit || '' }) });
+                  }}
+                />
+              </Field>
+              <Field label="Cantidad">
+                <Input className="rounded-xl" type="number" inputMode="decimal" placeholder="0" value={item.quantity} disabled={!editable} onChange={(e) => patchDraft({ materials: replaceAt(draft.materials, index, { ...item, quantity: Number(e.target.value) }) })} />
+              </Field>
+              <Field label="Unidad">
+                <Input className="rounded-xl" placeholder="Ej: un, kg, m" value={item.unit || ''} disabled={!editable} onChange={(e) => patchDraft({ materials: replaceAt(draft.materials, index, { ...item, unit: e.target.value }) })} />
+              </Field>
               <Button size="icon" variant="ghost" className="rounded-xl" disabled={!editable} onClick={() => patchDraft({ materials: draft.materials.filter((x) => x.id !== item.id) })}><Trash2 className="h-4 w-4" /></Button>
             </div>
           ))}

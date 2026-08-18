@@ -67,6 +67,16 @@ const EMPTY_ACTIVITY: WorkReportActivity = { id: '', description: '' };
 const EMPTY_INTERFERENCE: WorkReportInterference = { id: '', reason: '' };
 const EMPTY_NEXT_DAY: WorkReportNextDayPlan = { id: '', description: '' };
 
+/**
+ * Borrados de Diario "fantasma" agendados, por id de reporte. Vive a nivel de
+ * módulo — no en un `useRef` — para que un remontaje con OTRA instancia del
+ * componente (salir y volver a entrar al mismo informe) también encuentre y
+ * cancele el borrado pendiente.
+ */
+const ghostDeleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Margen para que un remontaje cancele el borrado antes de que se ejecute. */
+const GHOST_DELETE_DELAY_MS = 1500;
+
 function interferenceTotalHH(item: WorkReportInterference) {
   return (Number(item.hours) || 0) * (Number(item.workerCount) || 0);
 }
@@ -268,7 +278,20 @@ export default function WorkReportDetailPage() {
   draftRef.current = draft;
   const editableRef = React.useRef(editable);
   editableRef.current = editable;
+  // El borrado se DIFIERE en vez de correr en el cleanup: con
+  // `reactStrictMode` React monta → limpia efectos → vuelve a montar, y ese
+  // cleanup de mentira borraba el Diario recién creado sin que el usuario
+  // saliera de ninguna parte. La fila desaparecía de la BD mientras la página
+  // seguía abierta: los `update` posteriores no fallan (un UPDATE que matchea 0
+  // filas no lanza) y el problema recién explotaba al firmar, con un 406 de
+  // PostgREST. Al remontar se cancela el borrado pendiente de ESE id, así que
+  // sólo se ejecuta cuando la salida es real.
   React.useEffect(() => {
+    const pending = ghostDeleteTimers.get(params.id);
+    if (pending) {
+      clearTimeout(pending);
+      ghostDeleteTimers.delete(params.id);
+    }
     return () => {
       const d = draftRef.current;
       if (!d || !editableRef.current) return;
@@ -279,7 +302,12 @@ export default function WorkReportDetailPage() {
         && !(d.labor || []).some((l) => l.name?.trim())
         && !(d.equipment || []).length && !(d.materials || []).length
         && !(d.photos || []).length;
-      if (pristine) deleteWorkReport(d.id).catch(() => {});
+      if (!pristine) return;
+      const timer = setTimeout(() => {
+        ghostDeleteTimers.delete(d.id);
+        deleteWorkReport(d.id).catch(() => {});
+      }, GHOST_DELETE_DELAY_MS);
+      ghostDeleteTimers.set(d.id, timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

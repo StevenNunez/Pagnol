@@ -15,7 +15,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'No autorizado para crear personal.' }, { status: 403 });
         }
 
-        const { email, password, name, role, tenantId: bodyTenantId, internalId, rut,
+        const { email, password, name, role, tenantId: bodyTenantId, internalId, rut, cargo, phone,
                 biometric_template: templateDelCuerpo,
                 kyc_face_image: kycCaraDelCuerpo,
                 kyc_id_front: kycFrenteDelCuerpo,
@@ -86,6 +86,8 @@ export async function POST(request: Request) {
                 role,
                 tenant_id: tenantId,
                 internal_id: internalId,
+                cargo: cargo || null,
+                phone: phone || null,
                 qr_code: qrCode,
                 // El descriptor NO se guarda acá: va a la bóveda más abajo.
                 enrolled_by: enrolledByName || 'System',

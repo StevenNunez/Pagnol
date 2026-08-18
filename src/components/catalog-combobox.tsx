@@ -7,7 +7,17 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 
-interface Option { id?: string; name: string }
+interface Option {
+  id?: string;
+  name: string;
+  /**
+   * Agrupador opcional (la categoría del catálogo de activos). Cuando alguna
+   * opción lo trae, la lista se parte en secciones con encabezado y la búsqueda
+   * pasa a matchear también por él: escribir "herramienta" trae toda la familia
+   * aunque el nombre del ítem no diga "herramienta".
+   */
+  group?: string;
+}
 
 /**
  * Combobox de catálogo con creación al vuelo. Muestra las opciones precargadas
@@ -35,10 +45,24 @@ export function CatalogCombobox({
   const [creating, setCreating] = React.useState(false);
 
   const q = search.trim();
+  const needle = q.toLowerCase();
   const filtered = q
-    ? options.filter((o) => o.name.toLowerCase().includes(q.toLowerCase()))
+    ? options.filter((o) => o.name.toLowerCase().includes(needle) || (o.group || '').toLowerCase().includes(needle))
     : options;
-  const exactExists = options.some((o) => o.name.toLowerCase() === q.toLowerCase());
+  const exactExists = options.some((o) => o.name.toLowerCase() === needle);
+
+  // Secciones por categoría, en el orden en que vienen las opciones (ya llegan
+  // ordenadas por grupo). Sin grupos, una sola sección sin encabezado.
+  const sections = React.useMemo(() => {
+    const map = new Map<string, Option[]>();
+    for (const option of filtered) {
+      const key = option.group || '';
+      const bucket = map.get(key);
+      if (bucket) bucket.push(option);
+      else map.set(key, [option]);
+    }
+    return [...map.entries()];
+  }, [filtered]);
 
   const select = (name: string) => {
     onChange(name);
@@ -76,20 +100,25 @@ export function CatalogCombobox({
           <CommandInput placeholder="Buscar o crear…" value={search} onValueChange={setSearch} />
           <CommandList>
             {filtered.length === 0 && !q && <CommandEmpty>Sin opciones. Escribe para crear una.</CommandEmpty>}
-            <CommandGroup>
-              {filtered.map((o) => (
-                <CommandItem key={o.id || o.name} value={o.name} onSelect={() => select(o.name)}>
-                  <Check className={cn('mr-2 h-4 w-4', value === o.name ? 'opacity-100' : 'opacity-0')} />
-                  {o.name}
-                </CommandItem>
-              ))}
-              {q && !exactExists && onCreate && (
+            {filtered.length === 0 && q && !onCreate && <CommandEmpty>Sin resultados para «{q}».</CommandEmpty>}
+            {sections.map(([group, items]) => (
+              <CommandGroup key={group || '__sin_grupo__'} heading={group || undefined}>
+                {items.map((o) => (
+                  <CommandItem key={o.id || o.name} value={o.name} onSelect={() => select(o.name)}>
+                    <Check className={cn('mr-2 h-4 w-4 shrink-0', value === o.name ? 'opacity-100' : 'opacity-0')} />
+                    <span className="truncate">{o.name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+            {q && !exactExists && onCreate && (
+              <CommandGroup>
                 <CommandItem value={`__create__${q}`} onSelect={create} disabled={creating}>
                   <Plus className="mr-2 h-4 w-4 text-primary" />
                   <span>Crear «<b>{q}</b>»</span>
                 </CommandItem>
-              )}
-            </CommandGroup>
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

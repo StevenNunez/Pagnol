@@ -18,6 +18,47 @@ Categorías: **Agregado** (nuevo), **Cambiado** (modificado), **Corregido** (bug
 
 Cambios en el árbol de trabajo, aún sin commit/push.
 
+### Cambiado — README reescrito: ahora explica qué es Pagnol, no sólo cómo instalarlo
+
+El README era el genérico de siempre: tagline, tabla de stack, lista de módulos y cuatro
+comandos. Servía para levantar el proyecto, pero no para entenderlo — quien llegaba nuevo
+sabía que había un módulo "Bodega" sin tener idea de por qué el stock se desglosa por
+contrato, ni por qué un asiento financiero no se edita.
+
+El nuevo parte por el problema real (el cuaderno del pañolero y las cuatro preguntas que
+no puede responder) y luego expone **las cinco ideas que sostienen el sistema**: la RLS
+como frontera entre empresas, los hechos económicos que se reversan en vez de editarse,
+el invariante `sum(material_stocks) == materials.stock`, la biometría que nunca sale del
+navegador y el modo offline de las OT. Cada una dice *por qué* es así, no sólo que lo es.
+
+Se agregó además el **recorrido de una entrega** — un diagrama que sigue un dato real
+desde el escaneo del QR hasta el margen del contrato, pasando por biometría, contrato,
+ledger y kardex. Es la vía más corta para entender la arquitectura sin abrir `src/`.
+
+El crédito de **Teo Labs** ® queda en la cabecera y en el cierre, enlazado a
+`https://www.teolabs.app`.
+
+Detalles corregidos de paso: la URL de clonado era un placeholder (`tu-usuario/pagnol`),
+faltaba el `--legacy-peer-deps` que exige `vercel.json`, y no se advertía que las 114
+migraciones de `supabase/migrations/` se aplican **a mano**. No se referencia `docs/`
+porque está fuera del control de versiones a propósito.
+
+### Corregido — Producción sirvió durante 5 días un build viejo (integración Vercel caída)
+
+Los cambios del 18-ago (entre ellos las etiquetas **HH / HM / Cantidad** de la OT) se veían
+en localhost pero no en producción. No era un bug de código: el commit `20a6d62` llegó a
+GitHub y **Vercel nunca lo construyó** — no hubo deployment fallido ni cancelado, no hubo
+ninguno. Producción seguía en `7b2bc00`, del 13-ago.
+
+Causa: la **GitHub App de Vercel estaba pidiendo permisos actualizados**. Mientras esa
+aprobación queda pendiente, GitHub suspende la entrega de eventos de la instalación, así
+que el push no generó ni el commit status (el punto amarillo/verde del commit) ni el build.
+Aprobados los permisos, la integración volvió; los pushes anteriores **no se reconstruyen
+solos** y necesitan uno nuevo para salir.
+
+Verificado: `npm run build` sobre `20a6d62` termina en exit 0, así que el commit siempre
+fue desplegable. Sin cambios de código.
+
 ### Cambiado — En la OT, "Equipos" y "Materiales" ya no ofrecen el catálogo completo
 
 Los dos desplegables de la OT mostraban **todo** `materials`: la maquinaria, las herramientas, los

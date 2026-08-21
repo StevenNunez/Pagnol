@@ -1,12 +1,16 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+#
+# Criterio de este repo: acá vive SOLO lo que Vercel necesita para compilar y
+# dejar la app en vivo. El material de trabajo (documentación interna, notas,
+# planes, scripts de diagnóstico) se queda en disco, fuera del control de versiones.
 
-# Dependencies
+# Dependencias
 /node_modules
 /.pnp
 .pnp.js
 yarn.lock
 
-# Build artifacts
+# Artefactos de build
 /.next/
 /out/
 /build
@@ -18,69 +22,57 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 
-# Local environment variables — NEVER commit these
-.env
-.env.local
-.env*.local
-.env.production
-.env.development
+# Variables de entorno — NUNCA se commitean.
+# .env.example es la excepción: documenta qué variables hacen falta, sin valores.
+.env*
+!.env.example
+
+# Vercel
+.vercel
 
 # IDE / Editor
 .vscode/
 .cursor/
 .idea/
-.claudecode/
-.claude/
-# Claude Code / AI tooling (local settings)
-.agent
-.claude/settings.local.json
 
-# Source/design files
+# Herramientas de IA (configuración local del asistente)
+.claude/
+.claudecode/
+.agent
+.agent/
+CLAUDE.md
+.CLAUDE.md
+
+# Archivos de diseño / fuente
 *.xcf
 *.psd
 *.ai
 
-# Misc
+# Varios del sistema
 .DS_Store
 .npm
 *.pem
 Thumbs.db
 
-# Vercel
-.vercel
+# ─────────────────────────────────────────────────────────────────────────────
+# Material interno de desarrollo — no hace falta para compilar ni correr la app
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Scripts — SQL migrations (DB secrets)
-scripts/*.sql
-scripts/
-
-
-# Agents
-
-.agent
-.agent/
-.claudecode
-.claudecode/
-.claude/
-.claude/settings.local.json
-.claude/settings.local.jsonc    
-.cursor/
-.vscode/
-.agent/
-
-
-
-# Docs
-
+# Documentación interna (RFCs, ADRs, manifiesto arquitectónico, planes de fase).
+docs/
 .docs
 
-# Documentación interna de desarrollo (RFCs, ADRs, manifiesto, planes de fase).
-# No hace falta para compilar ni correr la app: es material de trabajo.
-docs/
-
-CLAUDE.md
-.CLAUDE.md
-.CHANGELOG.md
+# Notas de trabajo y seguimiento.
+CHANGELOG.md
 PENDIENTES.md
 
-.vercel
-.env*
+# SQL legacy y utilitarios de desarrollo (algunos leen credenciales de .env.local).
+scripts/
+scripts/*.sql
+
+# Scripts de verificación y diagnóstico de un solo uso.
+# Suelen traer rutas locales y apuntar a cuentas reales: nunca a un repo público.
+test-*.mjs
+test-*.js
+__*.mjs
+*.spec.mjs

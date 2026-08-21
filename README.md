@@ -162,21 +162,22 @@ git clone https://github.com/StevenNunez/Pagnol.git
 cd Pagnol
 npm install --legacy-peer-deps
 
-cp .env.example .env.local      # Supabase, Gemini, SMTP y VAPID
-node scripts/download-models.js # modelos de face-api → public/models
+cp .env.example .env.local  # Supabase, Gemini, SMTP y VAPID
 
 npm run dev
 ```
+
+Los modelos de face-api ya viajan en `public/models`, así que la biometría funciona
+desde el primer arranque — no hay que descargar nada aparte.
 
 Las **migraciones no se aplican solas**. Viven en `supabase/migrations/` (114 archivos con
 marca de tiempo) y se ejecutan a mano en el editor SQL de Supabase, en orden.
 
 ```bash
-npm run build       # build de producción
-npm run lint        # ESLint
-npm test            # Vitest — motor offline y matemática del ledger financiero
-npx tsc --noEmit    # chequeo de tipos, la herramienta principal de corrección
-npm run demo:create # siembra un tenant de demostración
+npm run build    # build de producción
+npm run lint     # ESLint
+npm test         # Vitest — motor offline y matemática del ledger financiero
+npx tsc --noEmit # chequeo de tipos, la herramienta principal de corrección
 ```
 
 ---

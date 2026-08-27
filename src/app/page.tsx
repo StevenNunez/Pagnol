@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { SiteFooter } from "@/components/marketing/site-footer";
 import {
   BarChart3,
   PackageCheck,
@@ -210,6 +211,7 @@ const LandingPage: React.FC = () => {
           <Link href="#iso" className="hover:text-foreground transition-colors">ISO 55001</Link>
           <Link href="#hardware" className="hover:text-foreground transition-colors">Hardware</Link>
           <Link href="#about" className="hover:text-foreground transition-colors">Nosotros</Link>
+          <Link href="/ayuda" className="hover:text-foreground transition-colors">Ayuda</Link>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
           <Button asChild variant="outline" className="inline-flex bg-transparent border-[#1A3A44] text-[#1A3A44] dark:border-[#1A3A44] dark:text-[#1A3A44] px-3 py-2.5 rounded-xl font-bold text-[10px] sm:text-xs transition-all hover:bg-[#1A3A44] hover:text-white gap-2 uppercase tracking-widest shrink-0">
@@ -245,6 +247,7 @@ const LandingPage: React.FC = () => {
             ["#iso", "ISO 55001"],
             ["#hardware", "Hardware"],
             ["#about", "Nosotros"],
+            ["/ayuda", "Centro de Ayuda"],
           ].map(([href, label]) => (
             <Link key={href} href={href} onClick={() => setMobileMenuOpen(false)} className="py-2.5 px-3 rounded-xl hover:bg-muted hover:text-foreground transition-colors">
               {label}
@@ -591,10 +594,8 @@ const LandingPage: React.FC = () => {
             </Link>
           </Button>
         </div>
-        <div className="mt-24 border-t border-white/10">
-          <div className="max-w-7xl mx-auto px-8 py-6 flex flex-col md:flex-row items-center justify-center text-white/60 text-[10px] font-bold uppercase tracking-widest gap-4">
-            <p className="text-center">© {new Date().getFullYear()} PAGNOL ASSET MANAGEMENT. ALL RIGHTS RESERVED.</p>
-          </div>
+        <div className="mt-24 relative z-10">
+          <SiteFooter />
         </div>
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[1200px] h-[400px] bg-primary/10 rounded-full blur-[120px] -z-0"></div>
       </footer>

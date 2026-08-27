@@ -4,6 +4,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { useToast } from "@/modules/core/hooks/use-toast";
+import { useRecordFields, fetchRecordFields } from "@/modules/core/hooks/use-record-fields";
 import { User, UserRole, MaterialRequest, ReturnRequest, Tenant } from "@/modules/core/lib/data";
 import { supabase } from "@/modules/core/lib/supabase";
 import { generateEAPDF } from "@/lib/ea-pdf-generator";
@@ -140,6 +141,22 @@ export default function PersonalPage() {
   // EA Modal state
   const [isEAModalOpen, setIsEAModalOpen] = useState(false);
   const [selectedEmployeeForEA, setSelectedEmployeeForEA] = useState<User | null>(null);
+
+  // La firma es base64 y NO viaja en la colección `users` (ver PROFILE_COLUMNS
+  // en DataProvider): se pide sólo para el trabajador cuya Acta EA se está
+  // abriendo.
+  //
+  // Se guarda el registro entero, no sólo la firma, para poder separar
+  // "todavía no llega" de "no tiene firma": el hook devuelve `null` en ambos
+  // casos, y la fila de un profile siempre existe, así que recibirla ya
+  // significa "cargó". Sin esa distinción, el cartel de abajo afirmaría que el
+  // trabajador no tiene firma registrada durante el viaje de red — el mismo
+  // error que ya costó un ADR (cargando ≠ vacío).
+  const eaSignatureRecord = useRecordFields<{ signature: string | null }>(
+    'profiles', selectedEmployeeForEA?.id, 'signature'
+  );
+  const eaSignatureLoading = !!selectedEmployeeForEA && eaSignatureRecord === null;
+  const eaSignature = eaSignatureRecord?.signature ?? null;
 
   // Puede enrolar quien gestiona usuarios O tiene el permiso específico de enrolar
   // (p.ej. Calidad, sin control total de usuarios).
@@ -651,6 +668,13 @@ export default function PersonalPage() {
         const handleGenerateEA = async () => {
           setEAGenerating(true);
           try {
+            // Si el usuario aprieta "Generar" antes de que vuelva el hook, el
+            // PDF saldría sin firma y sin decirlo. El fallback la busca; en el
+            // caso normal ya está en memoria y no hay viaje extra.
+            const signatureForPdf = eaSignature ?? (await fetchRecordFields<{ signature: string | null }>(
+              'profiles', selectedEmployeeForEA.id, 'signature'
+            ))?.signature ?? null;
+
             const blob = await generateEAPDF({
               employee: {
                 name: selectedEmployeeForEA.name,
@@ -658,7 +682,7 @@ export default function PersonalPage() {
                 role: selectedEmployeeForEA.role,
                 internalId: selectedEmployeeForEA.internalId,
               },
-              employeeSignatureUrl: selectedEmployeeForEA.signature || null,
+              employeeSignatureUrl: signatureForPdf,
               tenant: {
                 name: currentTenant?.name || '',
                 rut: currentTenant?.rut,
@@ -1007,24 +1031,26 @@ export default function PersonalPage() {
                       {/* Firma trabajador con imagen digital */}
                       <div className="text-center">
                         <div className="h-16 border-b-2 border-muted-foreground/40 mb-3 relative flex items-end justify-center overflow-hidden">
-                          {selectedEmployeeForEA.signature ? (
+                          {eaSignature ? (
                             <img
-                              src={selectedEmployeeForEA.signature}
+                              src={eaSignature}
                               alt="Firma Digital"
                               className="h-14 object-contain mx-auto"
                             />
                           ) : (
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <p className="text-[8px] text-muted-foreground/50 font-bold uppercase tracking-widest">Sin firma registrada</p>
+                              <p className="text-[8px] text-muted-foreground/50 font-bold uppercase tracking-widest">
+                                {eaSignatureLoading ? 'Cargando firma…' : 'Sin firma registrada'}
+                              </p>
                             </div>
                           )}
                         </div>
                         <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Trabajador: {selectedEmployeeForEA.name}</p>
-                        {selectedEmployeeForEA.signature ? (
+                        {eaSignature ? (
                           <p className="text-[8px] text-success font-black mt-1 flex items-center justify-center gap-1">
                             <CheckCircle size={10} /> Firma Digital Registrada — Identidad Biométricamente Validada
                           </p>
-                        ) : (
+                        ) : eaSignatureLoading ? null : (
                           <p className="text-[8px] text-warning font-bold mt-1">⚠ El trabajador no tiene firma digital guardada en su perfil</p>
                         )}
                       </div>

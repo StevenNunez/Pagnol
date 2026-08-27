@@ -38,6 +38,7 @@ import { authHeaders } from '@/modules/core/lib/auth-header';
 import { generateContractPDF } from '@/lib/contract-pdf-generator';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { useToast } from '@/modules/core/hooks/use-toast';
+import { fetchRecordFields } from '@/modules/core/hooks/use-record-fields';
 import { PageHeader } from '@/components/page-header';
 import { SecureFileLink } from '@/components/secure-file-link';
 import { Button } from "@/components/ui/button";
@@ -1161,12 +1162,19 @@ export default function MovimientosPagnolPage() {
             return { name: m?.name || 'Item', id: id, internalCode: m?.internalCode, condition: 'OK' };
           });
 
+          // La firma no viaja en la colección `users` (es base64 y pesa; ver
+          // PROFILE_COLUMNS en DataProvider): se pide para este trabajador y
+          // sólo acá, que es donde de verdad se dibuja.
+          const employeeSignature = (await fetchRecordFields<{ signature: string | null }>(
+            'profiles', selectedEmployee.id, 'signature'
+          ))?.signature || null;
+
           // 1. Generar PDF
           const { blob, filename } = await generateContractPDF({
             transactionId: pendingDeliveryCode || pendingDeliveryId || `TX-ERR`,
             employeeName: selectedEmployee.name,
             employeeRut: selectedEmployee.rut || '',
-            employeeSignatureUrl: selectedEmployee.signature || null,
+            employeeSignatureUrl: employeeSignature,
             site: site,
             items: itemsForContract,
             deliveryTimestamp: new Date(),
@@ -1237,11 +1245,16 @@ export default function MovimientosPagnolPage() {
             return { name: m?.name || 'Item', id: id, internalCode: m?.internalCode, condition: 'OK' };
           });
 
+          // Ver la nota de la entrega con solicitud: la firma se pide por fila.
+          const employeeSignature = (await fetchRecordFields<{ signature: string | null }>(
+            'profiles', selectedEmployee.id, 'signature'
+          ))?.signature || null;
+
           const { blob, filename } = await generateContractPDF({
             transactionId: directTxCode,
             employeeName: selectedEmployee.name,
             employeeRut: selectedEmployee.rut || '',
-            employeeSignatureUrl: selectedEmployee.signature || null,
+            employeeSignatureUrl: employeeSignature,
             site: site,
             items: itemsForContract,
             deliveryTimestamp: new Date(),

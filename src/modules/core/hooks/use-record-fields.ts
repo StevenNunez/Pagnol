@@ -35,3 +35,24 @@ export function useRecordFields<T = Record<string, any>>(
 
     return data;
 }
+
+/**
+ * Versión imperativa de `useRecordFields`, para handlers async (generar un PDF,
+ * subir un documento) donde no se puede usar un hook.
+ *
+ * Mismo motivo de existir: los campos pesados (firmas en base64) salen de los
+ * collections globales y se piden por fila, sólo cuando de verdad se usan.
+ */
+export async function fetchRecordFields<T = Record<string, any>>(
+    table: string,
+    id: string | null | undefined,
+    columns: string
+): Promise<T | null> {
+    if (!id) return null;
+    const { data } = await supabase
+        .from(table)
+        .select(columns)
+        .eq('id', id)
+        .maybeSingle();
+    return (data as T) ?? null;
+}

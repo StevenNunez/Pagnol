@@ -48,6 +48,7 @@ import {
   HardDrive,
   ArrowLeftRight,
   LogOut,
+  LifeBuoy,
   Building2,
   Search,
   Target,
@@ -489,7 +490,18 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       </div>
 
       {/* Footer Info & Logout */}
-      <div className="mt-auto p-4 border-t border-white/5 bg-black/10">
+      <div className="mt-auto p-4 border-t border-white/5 bg-black/10 space-y-1">
+        <Button
+          asChild
+          variant="ghost"
+          className="w-full justify-start gap-4 hover:bg-white/5 hover:text-white text-slate-400 rounded-xl h-11"
+        >
+          {/* Se abre aparte: el manual no debe hacerle perder lo que está haciendo. */}
+          <Link href="/ayuda" target="_blank" rel="noopener noreferrer">
+            <LifeBuoy size={18} />
+            <span className="uppercase tracking-widest text-[10px] font-black">Centro de Ayuda</span>
+          </Link>
+        </Button>
         <Button
           variant="ghost"
           className="w-full justify-start gap-4 hover:bg-red-500/10 hover:text-red-400 text-slate-400 rounded-xl h-11"

@@ -73,16 +73,53 @@ import * as biometricMutations from './mutations/biometricMutations';
  *
  * `deleted_at` no hace falta: el `softDelete` del hook filtra server-side.
  *
+ * 🔴 `signature` NO va acá, y no es un olvido. Es un PNG en base64 y domina el
+ * peso de la colección: medido contra la base real, **89,4% del promedio de
+ * todas las filas** y **41% del payload del tenant con más gente** (donde no
+ * todos están enrolados todavía — la proporción sube a medida que enrolan).
+ * Y `users` se carga en casi todos los módulos, así que cada carga de página
+ * arrastra las firmas de toda la empresa para dibujar, como mucho, una.
+ * Quien la necesita la pide por fila con `useRecordFields` / `fetchRecordFields`
+ * (`src/modules/core/hooks/use-record-fields.ts`) — que existe exactamente para
+ * esto. Si aparece un consumidor nuevo, el camino es ése, no volver a meterla
+ * en la lista.
+ *
  * ⚠️ Si se agrega un campo nuevo a `mappers.profiles`, hay que agregarlo aquí o
- * llegará `undefined` **en silencio** — `tsc` no lo detecta.
+ * llegará `undefined` **en silencio** — `tsc` no lo detecta. (`signature` es la
+ * excepción deliberada de arriba: llega `undefined` a propósito.)
  */
 const PROFILE_COLUMNS = [
     'id', 'name', 'email', 'role', 'qr_code', 'tenant_id', 'rut', 'internal_id',
     'cargo', 'phone', 'fecha_ingreso', 'base_salary', 'afp', 'tipo_salud',
-    'cargas_familiares', 'signature', 'enrolled_by', 'enrolled_at',
+    'cargas_familiares', 'enrolled_by', 'enrolled_at',
     'onboarding_completed', 'granted_permissions', 'address', 'birth_date',
     'emergency_contact_name', 'emergency_contact_phone', 'employment_status',
     'biometric_enrolled',
+].join(', ');
+
+/**
+ * Columnas de `materials`, explícitas por el mismo motivo que PROFILE_COLUMNS:
+ * es la colección más pesada del sistema (medido: 5.000 filas ≈ 4,78 MB en el
+ * tenant más grande) y `select=*` traía además `tenant_id`, `created_at`,
+ * `updated_at` y `deleted_at`, que ningún consumidor lee — el mapper de
+ * `mappers.materials` no los toca.
+ *
+ * En una tabla de 39 columnas eso no es sólo el dato: PostgREST repite el
+ * nombre de cada columna en cada objeto del JSON, y esos nombres son ~55% del
+ * peso transferido.
+ *
+ * ⚠️ Misma regla que profiles: campo nuevo en `mappers.materials` ⇒ campo nuevo
+ * acá, o llega `undefined` en silencio y `tsc` no lo ve.
+ */
+const MATERIAL_COLUMNS = [
+    'id', 'name', 'stock', 'in_use', 'min_stock', 'unit', 'category',
+    'supplier_id', 'archived', 'criticality', 'usage_type', 'description',
+    'unit_cost', 'acquisition_date', 'serial_number', 'status', 'photos',
+    'requires_maintenance', 'next_maintenance_date', 'is_it_asset',
+    'internal_code', 'location', 'brand', 'technical_sheet_url',
+    'technical_sheet_name', 'condition_score', 'failure_probability',
+    'failure_impact', 'parent_id', 'ownership', 'rental_contract_id',
+    'rental_asset_id', 'client_id',
 ].join(', ');
 
 const initialState: AppDataState = {
@@ -230,7 +267,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         return () => { supabase.removeChannel(channel); };
     }, [tenantId, refreshVersion]);
 
-    const materialsData = useSupabaseCollection('materials', { tenantId, enabled: on('materials'), mapper: mappers.materials, softDelete: true });
+    const materialsData = useSupabaseCollection('materials', { tenantId, enabled: on('materials'), mapper: mappers.materials, softDelete: true, columns: MATERIAL_COLUMNS });
     const usersData = useSupabaseCollection('profiles', { tenantId, enabled: on('users'), mapper: mappers.profiles, softDelete: true, columns: PROFILE_COLUMNS });
     const requestsData = useSupabaseCollection('material_requests', { tenantId, enabled: on('requests'), mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, enabled: on('returnRequests'), mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });

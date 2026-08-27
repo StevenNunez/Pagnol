@@ -8,7 +8,6 @@ import {
     ClipboardList,
     HardHat,
     Wallet,
-    Clock,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -23,27 +22,25 @@ const GUIDES = [
     {
         href: '/ayuda/control-de-activos',
         icon: Boxes,
-        code: 'PROC-01',
         title: 'Control de Activos y Abastecimiento',
         desc:
-            'El proceso completo: desde que en terreno aparece una necesidad hasta que el activo se da de baja, incluyendo su costo. Diagrama de flujo, las diez fases explicadas una a una y la matriz de responsabilidades.',
-        tags: ['Diagrama de flujo', '10 fases', 'Matriz RACI'],
+            'Desde que en terreno alguien necesita algo hasta que el equipo se da de baja, incluyendo lo que costó. El recorrido completo, los diez pasos explicados uno por uno y quién responde por cada uno.',
+        tags: ['Cómo funciona', 'Paso a paso', 'Quién hace qué'],
     },
     {
         href: '/ayuda/roles',
         icon: Users,
-        code: 'ROLES',
         title: 'Roles y Responsabilidades',
         desc:
-            'Los 24 roles de Pagnol: qué hace cada uno, qué módulos ve y cómo se resuelve un permiso. La referencia para decidir quién entra a qué.',
-        tags: ['24 roles', 'Permisos', 'Módulos'],
+            'Qué hace cada rol y qué parte de la aplicación ve. La referencia para decidir a quién le das cada acceso.',
+        tags: ['Los roles', 'Qué ve cada uno', 'Permisos'],
     },
 ];
 
 const COMING = [
-    { icon: ClipboardList, title: 'Asistencia, remuneraciones y finiquitos' },
-    { icon: HardHat, title: 'Reportes de trabajo en cascada' },
-    { icon: ShieldCheck, title: 'Prevención de riesgos y CPHS' },
+    { icon: ClipboardList, title: 'Asistencia, sueldos y finiquitos' },
+    { icon: HardHat, title: 'Reportes de terreno' },
+    { icon: ShieldCheck, title: 'Prevención de riesgos y Comité Paritario' },
     { icon: Wallet, title: 'Control de obra y estados de pago' },
 ];
 
@@ -53,21 +50,21 @@ export default function CentroDeAyudaPage() {
             {/* Encabezado */}
             <header className="space-y-6">
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary">
-                    Manual de uso · Documentación viva
+                    Manual de uso de Pagnol
                 </p>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-balance">
                     Centro de Ayuda
                 </h1>
                 <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
-                    Cómo funciona Pagnol por dentro: los procesos de negocio explicados fase por
-                    fase, con las pantallas donde ocurre cada cosa y quién responde por cada paso.
+                    Cómo funciona Pagnol, explicado paso por paso: dónde se hace cada cosa, quién
+                    la hace y quién responde por ella.
                 </p>
             </header>
 
             {/* Guías disponibles */}
             <section className="space-y-6">
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    Documentos disponibles
+                    Guías disponibles
                 </p>
                 <div className="grid grid-cols-1 gap-5">
                     {GUIDES.map((g) => (
@@ -78,14 +75,9 @@ export default function CentroDeAyudaPage() {
                                         <g.icon className="h-7 w-7" />
                                     </div>
                                     <div className="space-y-3 min-w-0">
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                                {g.code}
-                                            </span>
-                                            <h2 className="text-xl font-bold tracking-tight group-hover:text-primary transition-colors">
-                                                {g.title}
-                                            </h2>
-                                        </div>
+                                        <h2 className="text-xl font-bold tracking-tight group-hover:text-primary transition-colors">
+                                            {g.title}
+                                        </h2>
                                         <p className="text-muted-foreground leading-relaxed">{g.desc}</p>
                                         <div className="flex flex-wrap gap-2 pt-1">
                                             {g.tags.map((t) => (
@@ -124,7 +116,23 @@ export default function CentroDeAyudaPage() {
                 </div>
             </section>
 
-            {/* Nota de documento vivo */}
+            {/* Cierre: dónde preguntar */}
+            <section className="rounded-[1.5rem] border-2 border-primary bg-primary/5 p-7 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">
+                    ¿No encuentras lo que buscas?
+                </p>
+                <p className="leading-relaxed max-w-2xl">
+                    Estas guías se van actualizando a medida que Pagnol crece, así que cuentan lo que
+                    la aplicación hace hoy. Si algo no está o no se entiende, escríbenos a{' '}
+                    <a
+                        href="mailto:contacto@pagnol.cl"
+                        className="font-bold text-primary hover:underline"
+                    >
+                        contacto@pagnol.cl
+                    </a>{' '}
+                    y lo agregamos.
+                </p>
+            </section>
 
         </div>
     );

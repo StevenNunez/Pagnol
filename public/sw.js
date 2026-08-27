@@ -13,7 +13,7 @@
 // Sube CACHE_VERSION en cada cambio de esta estrategia para invalidar cachés
 // viejas en el `activate`.
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const STATIC_CACHE = `pagnol-static-${CACHE_VERSION}`;
 const PAGES_CACHE = `pagnol-pages-${CACHE_VERSION}`;
 const IMAGES_CACHE = `pagnol-images-${CACHE_VERSION}`;

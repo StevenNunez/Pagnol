@@ -4,6 +4,7 @@ import React from 'react';
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SiteFooter } from "@/components/marketing/site-footer";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import {
   BarChart3,
   PackageCheck,
@@ -204,7 +205,7 @@ const LandingPage: React.FC = () => {
             <p className="text-[8px] sm:text-xs font-bold tracking-[0.2em] text-primary leading-none sm:mt-1">ASSET MANAGEMENT</p>
           </Link>
         </div>
-        <div className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-widest text-muted-foreground">
+        <div className="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
           <Link href="#panol" className="hover:text-foreground transition-colors">Pañol</Link>
           <Link href="#modules" className="hover:text-foreground transition-colors">Módulos</Link>
           <Link href="#suite" className="hover:text-foreground transition-colors">Suite</Link>
@@ -214,7 +215,8 @@ const LandingPage: React.FC = () => {
           <Link href="/ayuda" className="hover:text-foreground transition-colors">Ayuda</Link>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
-          <Button asChild variant="outline" className="inline-flex bg-transparent border-[#1A3A44] text-[#1A3A44] dark:border-[#1A3A44] dark:text-[#1A3A44] px-3 py-2.5 rounded-xl font-bold text-[10px] sm:text-xs transition-all hover:bg-[#1A3A44] hover:text-white gap-2 uppercase tracking-widest shrink-0">
+          <ThemeSwitcher />
+          <Button asChild variant="outline" className="inline-flex bg-transparent border-pagnol-teal text-pagnol-teal hover:bg-pagnol-teal hover:text-white dark:border-foreground dark:text-foreground dark:hover:bg-foreground dark:hover:text-background px-3 py-2.5 rounded-xl font-bold text-[10px] sm:text-xs transition-all gap-2 uppercase tracking-widest shrink-0">
             <Link href="/pricing">
               <Building2 className="h-4 w-4" />
               <span>Comenzar</span>

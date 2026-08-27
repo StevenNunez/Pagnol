@@ -7,12 +7,12 @@ import { ProcessFlow } from './process-flow';
 export const metadata: Metadata = {
     title: 'Control de Activos y Abastecimiento',
     description:
-        'Proceso de control de activos de PAGNOL asociado al área de Abastecimiento: diagrama de flujo, ' +
-        'manual de las diez fases (del maestro de activos ISO 55001 al cierre económico) y descriptor de ' +
-        'roles y responsabilidades con matriz RACI.',
+        'Cómo funciona el control de activos en PAGNOL, paso a paso: quién pide, quién autoriza, ' +
+        'quién compra, quién entrega y cómo queda anotado el costo. Con el recorrido completo y ' +
+        'quién responde por cada paso.',
 };
 
-const FECHA_CORTE = '27 de agosto de 2026';
+const ACTUALIZADO = '27 de agosto de 2026';
 
 /* ── Primitivos locales del documento ─────────────────────────── */
 
@@ -44,7 +44,7 @@ function Phase({
     return (
         <section id={id} className="scroll-mt-24 border-t pt-8">
             <div className="flex flex-wrap items-baseline gap-3 mb-3">
-                <span className="rounded-xl border-2 border-primary bg-primary/10 px-2.5 py-1 text-xs font-black text-primary">
+                <span className="rounded-xl border-2 border-primary bg-primary/10 px-2.5 py-1 text-xs font-black text-primary whitespace-nowrap">
                     {code}
                 </span>
                 <h3 className="text-2xl font-bold tracking-tight text-balance">{title}</h3>
@@ -120,53 +120,59 @@ function Route({ children }: { children: string }) {
 /* ── Índice lateral ───────────────────────────────────────────── */
 
 const TOC = [
-    { group: 'Parte A', items: [{ id: 'flujo', label: 'Diagrama de flujo' }, { id: 'puertas', label: 'Las tres puertas' }] },
     {
-        group: 'Parte B · Fases',
+        group: 'Cómo funciona',
         items: [
-            { id: 'f0', label: 'F0 · Maestro de activos' },
-            { id: 'f1', label: 'F1 · Necesidad en terreno' },
-            { id: 'f2', label: 'F2 · Autorización ADC' },
-            { id: 'f3', label: 'F3 · Aprobación por clase' },
-            { id: 'abastecimiento', label: 'F4 · Compra y arriendo' },
-            { id: 'f5', label: 'F5 · Entrega en pañol' },
-            { id: 'f6', label: 'F6 · Custodia y kardex' },
-            { id: 'f7', label: 'F7 · Devolución' },
-            { id: 'f8', label: 'F8 · Recepción' },
-            { id: 'f9', label: 'F9 · Factura y pago' },
-            { id: 'f10', label: 'F10 · Cierre económico' },
-            { id: 'ciclo', label: 'Mantención y baja' },
+            { id: 'flujo', label: 'El recorrido completo' },
+            { id: 'puertas', label: 'Las tres formas de pedir' },
         ],
     },
     {
-        group: 'Parte C · Roles',
+        group: 'Paso a paso',
         items: [
-            { id: 'roles', label: 'Quién hace qué' },
+            { id: 'f0', label: 'Antes · Dar de alta el equipo' },
+            { id: 'f1', label: '1 · Se pide desde terreno' },
+            { id: 'f2', label: '2 · Lo autoriza el ADC' },
+            { id: 'f3', label: '3 · Lo aprueba el pañol' },
+            { id: 'abastecimiento', label: '4 · Se compra o se arrienda' },
+            { id: 'f5', label: '5 · Se entrega en el pañol' },
+            { id: 'f6', label: '6 · Todo queda anotado' },
+            { id: 'f7', label: '7 · Se devuelve' },
+            { id: 'f8', label: '8 · Llega lo comprado' },
+            { id: 'f9', label: '9 · Se factura y se paga' },
+            { id: 'f10', label: '10 · Se anota el costo' },
+            { id: 'ciclo', label: 'Después · Mantención y baja' },
+        ],
+    },
+    {
+        group: 'Quién hace qué',
+        items: [
+            { id: 'roles', label: 'Cada rol en este proceso' },
             { id: 'raci', label: 'Matriz RACI' },
-            { id: 'sod', label: 'Separación de funciones' },
-            { id: 'aislamiento', label: 'Aislamiento' },
+            { id: 'sod', label: 'Nadie puede solo' },
+            { id: 'aislamiento', label: 'Cada empresa ve lo suyo' },
         ],
     },
-    { group: 'Cierre', items: [{ id: 'pendiente', label: 'Qué está en desarrollo' }] },
+    { group: 'Al final', items: [{ id: 'pendiente', label: 'Lo que falta' }] },
 ];
 
-/* ── Matriz RACI ──────────────────────────────────────────────── */
+/* ── Tabla de quién hace qué ──────────────────────────────────── */
 
-const RACI_HEAD = ['Fase', 'Supervisor', 'ADC', 'Abastec.', 'Pañolero', 'Finanzas', 'Admin.'];
+const RACI_HEAD = ['Paso', 'Supervisor', 'ADC', 'Abastec.', 'Pañolero', 'Finanzas', 'Admin.'];
 const RACI_ROWS: [string, string, string, string, string, string, string][] = [
-    ['F0 Alta y clasificación', 'I', 'I', 'C', 'R', 'I', 'A'],
-    ['F1 Solicitud desde terreno', 'R/A', 'I', '–', 'I', '–', 'I'],
-    ['F2 Autorización', 'I', 'R/A', 'I', 'I', 'I', 'C'],
-    ['F3 Aprobación por clase', 'I', 'I', '–', 'R (B/C)', '–', 'A (clase A)'],
-    ['F4 Cotización y OC', 'I', 'I', 'R/A', 'I', 'C', 'I'],
-    ['F5 Entrega verificada', 'C', 'I', '–', 'R/A', '–', 'I'],
-    ['F6 Custodia y kardex', 'A', 'I', 'I', 'R', 'I', 'I'],
-    ['F7 Devolución', 'R', 'I', '–', 'A', '–', 'I'],
-    ['F8 Recepción', 'I', 'I', 'R/A', 'R', 'I', 'I'],
-    ['F9 Factura y pago', '–', 'I', 'R', '–', 'A', 'I'],
-    ['F10 Cierre económico', '–', 'C', 'C', '–', 'R/A', 'I'],
-    ['Mantenimiento', 'I', '–', 'C', 'C', 'I', 'A'],
-    ['Baja del activo', 'I', 'C', 'I', 'R', 'C', 'A'],
+    ['Antes · Dar de alta el equipo', 'I', 'I', 'C', 'R', 'I', 'A'],
+    ['1 · Se pide desde terreno', 'R/A', 'I', '–', 'I', '–', 'I'],
+    ['2 · Autorización', 'I', 'R/A', 'I', 'I', 'I', 'C'],
+    ['3 · Aprobación en el pañol', 'I', 'I', '–', 'R (B/C)', '–', 'A (clase A)'],
+    ['4 · Cotización y orden de compra', 'I', 'I', 'R/A', 'I', 'C', 'I'],
+    ['5 · Entrega verificada', 'C', 'I', '–', 'R/A', '–', 'I'],
+    ['6 · Custodia y kardex', 'A', 'I', 'I', 'R', 'I', 'I'],
+    ['7 · Devolución', 'R', 'I', '–', 'A', '–', 'I'],
+    ['8 · Recepción', 'I', 'I', 'R/A', 'R', 'I', 'I'],
+    ['9 · Factura y pago', '–', 'I', 'R', '–', 'A', 'I'],
+    ['10 · Se anota el costo', '–', 'C', 'C', '–', 'R/A', 'I'],
+    ['Después · Mantención', 'I', '–', 'C', 'C', 'I', 'A'],
+    ['Después · Baja del equipo', 'I', 'C', 'I', 'R', 'C', 'A'],
 ];
 
 const RACI_COLOR: Record<string, string> = {
@@ -177,9 +183,8 @@ const RACI_COLOR: Record<string, string> = {
 };
 
 function RaciCell({ value }: { value: string }) {
-    // "R/A" y "R (B/C)" comparten celda: se colorea la letra inicial.
-    const key = value.charAt(0);
-    return <span className={RACI_COLOR[key] ?? 'text-muted-foreground'}>{value}</span>;
+    // "R/A" y "R (B/C)" comparten celda: se colorea según la letra inicial.
+    return <span className={RACI_COLOR[value.charAt(0)] ?? 'text-muted-foreground'}>{value}</span>;
 }
 
 /* ── Página ───────────────────────────────────────────────────── */
@@ -197,18 +202,16 @@ export default function ControlDeActivosPage() {
 
             {/* Cabecera */}
             <header className="border-b-2 border-foreground pb-8 mb-12">
-                <div className="flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-6">
-                    <span className="text-primary">PROC-01</span>
-                    <span>Documento vivo</span>
-                    <span>Corte: {FECHA_CORTE}</span>
-                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-6">
+                    Actualizado: {ACTUALIZADO}
+                </p>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-balance mb-5">
-                    Control de activos asociado a Abastecimiento
+                    Control de activos
                 </h1>
                 <p className="text-lg text-muted-foreground leading-relaxed max-w-3xl">
-                    Desde que en terreno aparece una necesidad hasta que el activo se da de baja,
-                    incluyendo su costo. Diagrama de flujo, las diez fases explicadas una a una, y
-                    quién responde por cada una.
+                    Desde que en terreno alguien necesita algo hasta que el equipo se da de baja,
+                    incluyendo lo que costó. El recorrido completo, los diez pasos explicados uno por
+                    uno, y quién responde por cada uno.
                 </p>
             </header>
 
@@ -216,7 +219,7 @@ export default function ControlDeActivosPage() {
                 {/* Índice */}
                 {/* En móvil el índice sería una lista de 20 enlaces antes del contenido. */}
                 <nav
-                    aria-label="Contenido del documento"
+                    aria-label="Contenido de la página"
                     className="hidden lg:block lg:sticky lg:top-24 border-l-2 pl-5 text-sm"
                 >
                     {TOC.map((section) => (
@@ -241,429 +244,418 @@ export default function ControlDeActivosPage() {
                 </nav>
 
                 <main className="min-w-0 space-y-10">
-                    {/* Principio */}
+                    {/* La idea de fondo */}
                     <div className="rounded-[1.5rem] border-2 border-primary bg-primary/5 p-7">
                         <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-3">
-                            Principio que gobierna el proceso
+                            La regla que sostiene todo
                         </p>
                         <p className="text-xl font-bold leading-snug text-balance">
-                            Ningún activo entra, sale, se mueve o se consume sin dejar un hecho
-                            registrado, atribuido a una persona y a un contrato.
+                            Nada entra, sale, se mueve ni se gasta sin que quede anotado quién lo hizo
+                            y para qué contrato fue.
                         </p>
                     </div>
 
                     <div className="space-y-4 leading-relaxed">
-                        <p>De ahí salen las cuatro reglas duras del sistema:</p>
+                        <p>De ahí salen las cuatro reglas que no se saltan nunca:</p>
                         <ol className="list-decimal pl-6 space-y-2 marker:font-bold marker:text-primary">
                             <li>
-                                <strong>Toda compra nace de una solicitud.</strong> No existe la orden
-                                de compra espontánea.
+                                <strong>Toda compra empieza con un pedido.</strong> No existe la orden
+                                de compra que aparece sola.
                             </li>
                             <li>
-                                <strong>Toda solicitud de terreno pasa por el ADC</strong> antes de que
-                                Abastecimiento la vea.
+                                <strong>Todo pedido de terreno lo autoriza el ADC</strong> antes de que
+                                Abastecimiento lo vea.
                             </li>
                             <li>
-                                <strong>El stock total siempre cuadra con su desglose</strong> por
-                                contrato y pañol. Es un invariante, no una aspiración.
+                                <strong>El stock total siempre calza</strong> con lo que hay en cada
+                                contrato y en cada pañol. Si no calza, algo se hizo mal.
                             </li>
                             <li>
-                                <strong>Los hechos económicos no se editan ni se borran</strong>: se
-                                corrigen con un asiento inverso.
+                                <strong>Los movimientos de plata no se editan ni se borran</strong>: si
+                                hay un error, se anota un movimiento en contra.
                             </li>
                         </ol>
                     </div>
 
-                    {/* ── PARTE A ── */}
+                    {/* ── CÓMO FUNCIONA ── */}
                     <section id="flujo" className="scroll-mt-24 space-y-6 pt-4">
-                        <div className="flex items-baseline gap-4 border-t-2 border-foreground pt-5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-primary">
-                                Parte A
-                            </span>
-                            <h2 className="text-3xl font-black tracking-tight">Diagrama de flujo</h2>
+                        <div className="border-t-2 border-foreground pt-5">
+                            <h2 className="text-3xl font-black tracking-tight">
+                                Cómo funciona, de principio a fin
+                            </h2>
                         </div>
 
                         <ProcessFlow />
 
                         <div id="puertas" className="scroll-mt-24 space-y-4">
-                            <h3 className="text-xl font-bold tracking-tight">Las tres puertas de entrada</h3>
+                            <h3 className="text-xl font-bold tracking-tight">Las tres formas de pedir</h3>
                             <Table
-                                head={['Puerta', 'Cuándo se usa', 'Pantalla']}
+                                head={['Tipo de pedido', 'Cuándo se usa', 'Dónde se hace']}
                                 rows={[
-                                    [<strong key="a">Solicitud de Material</strong>, 'El ítem existe y hay stock en el pañol', <Route key="b">/supervisor/request</Route>],
-                                    [<strong key="c">Solicitud de Compra</strong>, 'No hay stock, o el ítem no existe todavía', <Route key="d">/supervisor/purchase-request-form</Route>],
-                                    [<strong key="e">Solicitud de Arriendo</strong>, 'El equipo se arrienda, no se compra', <Route key="f">/supervisor/rental-request</Route>],
+                                    [<strong key="a">Pedido de material</strong>, 'El ítem existe y hay stock en el pañol', <Route key="b">/supervisor/request</Route>],
+                                    [<strong key="c">Pedido de compra</strong>, 'No hay stock, o el ítem no existe todavía', <Route key="d">/supervisor/purchase-request-form</Route>],
+                                    [<strong key="e">Pedido de arriendo</strong>, 'El equipo se arrienda, no se compra', <Route key="f">/supervisor/rental-request</Route>],
                                 ]}
                             />
                             <p className="leading-relaxed">
-                                Las tres desembocan en la <strong>misma bandeja del ADC</strong>. Esa es
-                                la puerta única del gasto.
+                                Los tres llegan a <strong>la misma bandeja del ADC</strong>. Por ahí pasa
+                                todo el gasto, sin excepción.
                             </p>
                         </div>
                     </section>
 
-                    {/* ── PARTE B ── */}
+                    {/* ── PASO A PASO ── */}
                     <section className="space-y-8 pt-4">
-                        <div className="flex items-baseline gap-4 border-t-2 border-foreground pt-5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-primary">
-                                Parte B
-                            </span>
-                            <h2 className="text-3xl font-black tracking-tight">Las diez fases</h2>
+                        <div className="border-t-2 border-foreground pt-5">
+                            <h2 className="text-3xl font-black tracking-tight">Paso a paso</h2>
                         </div>
 
-                        <Phase id="f0" code="F0" title="Maestro de activos: alta y clasificación">
+                        <Phase id="f0" code="Antes" title="Dar de alta el equipo o material">
                             <Meta donde="/pagnol/activos" quien="Pañolero · Jefe de Mantención · Administrador" />
                             <p>
-                                Antes de que exista movimiento tiene que existir el activo. Pagnol
-                                clasifica cada uno siguiendo la lógica de ISO 55000/55001:
+                                Antes de que haya movimiento tiene que existir la ficha. Pagnol la arma
+                                con estos datos, siguiendo la norma internacional de gestión de activos
+                                (ISO 55001):
                             </p>
                             <Table
-                                head={['Campo', 'Para qué sirve', 'Valores']}
+                                head={['Dato', 'Para qué sirve', 'Opciones']}
                                 rows={[
-                                    [<strong key="1">Clase</strong>, <>Define <strong>quién puede aprobar</strong> una solicitud de ese ítem</>, 'A crítico · B importante · C fungible'],
-                                    [<strong key="2">Tipo de uso</strong>, 'Distingue lo que se consume de lo que se devuelve', 'Consumible · Reutilizable Controlado · Herramienta Menor · Repuesto Crítico · Activo Fijo · IT Controlado'],
-                                    [<strong key="3">Naturaleza contable</strong>, 'Cómo pega en el resultado', 'CAPEX · OPEX · Inventario Estratégico · Activo Menor Capitalizable'],
-                                    [<strong key="4">Propiedad</strong>, 'De quién es el activo', 'Propio · Arrendado · Del cliente (comodato) · Subcontrato'],
-                                    [<strong key="5">Estado</strong>, 'Situación actual', 'Disponible · En Uso · En Mantenimiento · Para Baja · Extraviado'],
-                                    [<strong key="6">Riesgo</strong>, 'Matriz probabilidad × impacto (1–5)', 'Prioriza el plan de mantenimiento'],
-                                    [<strong key="7">Confiabilidad</strong>, 'MTBF, MTTR, % de disponibilidad', 'Indicadores del activo'],
+                                    [<strong key="1">Qué tan crítico es</strong>, <>Define <strong>quién puede aprobar</strong> un pedido de ese ítem</>, 'A crítico · B importante · C fungible'],
+                                    [<strong key="2">Tipo de uso</strong>, 'Separa lo que se consume de lo que se devuelve', 'Consumible · Reutilizable controlado · Herramienta menor · Repuesto crítico · Activo fijo · Equipo informático'],
+                                    [<strong key="3">Cómo se contabiliza</strong>, 'Si es inversión o gasto del mes', 'CAPEX · OPEX · Inventario estratégico · Activo menor'],
+                                    [<strong key="4">De quién es</strong>, 'Distingue lo propio de lo prestado', 'Propio · Arrendado · Del cliente (prestado) · De un subcontrato'],
+                                    [<strong key="5">Cómo está hoy</strong>, 'Situación actual del equipo', 'Disponible · En uso · En mantención · Para baja · Extraviado'],
+                                    [<strong key="6">Riesgo de falla</strong>, 'Ordena el plan de mantención por prioridad', 'Qué tan probable es que falle × qué tan grave sería'],
+                                    [<strong key="7">Confiabilidad</strong>, 'Cuánto aguanta y cuánto tarda en repararse', 'Horas entre fallas, horas de reparación, % disponible'],
                                 ]}
                             />
                             <p>
-                                Se suman número de serie, marca, vida útil, costo unitario, ficha
-                                técnica, fotos, documentos (manual, garantía, certificado, análisis de
-                                causa raíz) y jerarquía padre-hijo.
+                                Se suman número de serie, marca, vida útil, costo, ficha técnica, fotos,
+                                documentos (manual, garantía, certificado) y de qué equipo mayor forma
+                                parte.
                             </p>
                             <p>
-                                <strong>Cómo se define la clase:</strong> la empresa configura dos
-                                umbrales de monto. Sobre el umbral A el ítem es crítico; entre A y B es
-                                importante; bajo B es fungible. La clase se puede ajustar a mano por ítem.
+                                <strong>Cómo se decide si es A, B o C:</strong> la empresa fija dos montos
+                                de referencia. Sobre el primero el ítem es crítico; entre los dos es
+                                importante; bajo el segundo es fungible. También se puede fijar a mano
+                                ítem por ítem.
                             </p>
-                            <Note tone="warn" title="Por qué importa">
-                                La clase no es una etiqueta decorativa — es lo que decide quién firma. Un
-                                ítem mal clasificado deja pasar un gasto crítico con una firma de menor
-                                rango.
+                            <Note tone="warn" title="Ojo con esto">
+                                Que un ítem sea A, B o C no es una etiqueta de adorno: es lo que decide
+                                quién firma. Si está mal clasificado, un gasto importante puede salir con
+                                la firma de alguien que no correspondía.
                             </Note>
                             <p>
-                                <strong>Alta masiva:</strong> <Route>/pagnol/carga-masiva</Route> sube el
-                                catálogo inicial por planilla.
+                                <strong>Para cargar muchos de una vez:</strong> <Route>/pagnol/carga-masiva</Route>{' '}
+                                sube el inventario inicial desde una planilla.
                             </p>
                         </Phase>
 
-                        <Phase id="f1" code="F1" title="Detección de la necesidad en terreno">
+                        <Phase id="f1" code="Paso 1" title="Alguien en terreno necesita algo">
                             <Meta
                                 donde="/supervisor"
                                 quien="Supervisor · Jefe de Terreno · Jefe de Mantención · Jefe de Oficina Técnica · ADC"
                             />
-                            <p>El solicitante arma un <strong>carrito</strong> con uno o varios ítems y declara:</p>
+                            <p>Quien pide arma un <strong>carrito</strong> con uno o varios ítems y dice:</p>
                             <ul className="list-disc pl-6 space-y-2">
                                 <li>
-                                    <strong>Contrato o área</strong> al que se imputa — de aquí sale
-                                    después la atribución del costo.
+                                    <strong>Para qué contrato o área es</strong> — de ahí sale después a
+                                    quién se le carga el costo.
                                 </li>
                                 <li>
-                                    <strong>Justificación</strong>, obligatoria en la solicitud de compra.
+                                    <strong>Para qué lo necesita</strong>, obligatorio cuando hay que comprar.
                                 </li>
                                 <li>
-                                    <strong>Beneficiario</strong>, es decir quién retira: el propio
-                                    solicitante, una persona dirigida, o <em>retiro abierto</em> — el
-                                    receptor se identifica recién al momento de la entrega.
+                                    <strong>Quién lo va a retirar</strong>: él mismo, otra persona en
+                                    particular, o nadie definido todavía — en ese caso el que retira se
+                                    identifica recién en el pañol.
                                 </li>
                             </ul>
                             <p>
-                                Al enviarse, la solicitud recibe un <strong>código correlativo legible</strong>{' '}
-                                (por ejemplo <Route>PAG-PRQ-0007</Route>) y nace pendiente, sin
-                                autorización. Mientras no la tenga, Abastecimiento y el pañol{' '}
-                                <strong>no la ven</strong>.
+                                Al enviarlo, el pedido recibe un <strong>número</strong> (por ejemplo{' '}
+                                <Route>PAG-PRQ-0007</Route>) y queda pendiente de autorización. Hasta que
+                                el ADC no lo autorice, <strong>ni Abastecimiento ni el pañol lo ven</strong>.
                             </p>
-                            <Note title="Variante — suministro del cliente">
-                                Una solicitud de compra puede dirigirse al cliente del contrato en vez de a
-                                un proveedor: el ADC autoriza, se envía el correo al cliente, y la
-                                recepción materializa el ítem como activo de propiedad <em>cliente</em>. Es
-                                un comodato — se devuelve al cierre del contrato, y su stock vive en una
-                                fila separada del propio: nunca se mezclan.
+                            <Note title="Cuando el material lo pone el cliente">
+                                Un pedido de compra puede ir dirigido al cliente del contrato en vez de a
+                                un proveedor: el ADC lo autoriza, se le manda el correo al cliente, y
+                                cuando llega se ingresa como equipo <em>del cliente</em>. Es material
+                                prestado — se devuelve cuando termina el contrato, y su stock se lleva
+                                aparte del propio: nunca se mezclan.
                             </Note>
                         </Phase>
 
-                        <Phase id="f2" code="F2" title="Autorización del Administrador de Contratos">
+                        <Phase id="f2" code="Paso 2" title="El Administrador de Contratos lo autoriza">
                             <Meta donde="/authorizations" quien="ADC · Director de Faena · Administrador" />
                             <p>
-                                Es <strong>el gate del proceso</strong>: una sola bandeja con tres
-                                pestañas — material, compra y arriendo — que muestra únicamente lo
-                                pendiente y sin autorizar.
+                                Este es <strong>el filtro del proceso</strong>: una sola bandeja con tres
+                                pestañas — material, compra y arriendo — que muestra sólo lo que está
+                                esperando autorización.
                             </p>
                             <p>
-                                El ADC ve quién pide, para qué contrato, qué ítems, la justificación, la
-                                clase más alta del carrito y el monto estimado. Autoriza (y queda
-                                estampado quién y cuándo) o rechaza (y queda el motivo y la fecha).
+                                El ADC ve quién pide, para qué contrato, qué ítems, para qué los necesita,
+                                qué tan crítico es lo más crítico del carrito y cuánto costaría. Si
+                                autoriza, queda grabado quién y cuándo. Si rechaza, queda cerrado con el
+                                motivo y la fecha.
                             </p>
-                            <Note tone="ok" title="Regla">
-                                La autorización del ADC es un hecho fechado y atribuido, no un check. Viaja
-                                con la solicitud el resto de su vida.
+                            <Note tone="ok" title="Por qué importa">
+                                La autorización no es un simple visto bueno: queda con nombre y hora, y
+                                acompaña al pedido el resto de su vida. Siempre se puede saber quién
+                                dejó pasar un gasto.
                             </Note>
                         </Phase>
 
-                        <Phase id="f3" code="F3" title="Aprobación por criticidad">
+                        <Phase id="f3" code="Paso 3" title="El pañol lo aprueba según qué tan crítico sea">
                             <Meta donde="/bodega/requests" quien="Pañolero · Administrador · Director de Faena" />
                             <p>
-                                Autorizada por el ADC, la solicitud de material llega al pañol. Quien
-                                aprueba debe tener el permiso de la{' '}
-                                <strong>clase más alta presente en el carrito</strong>:
+                                Con la autorización del ADC, el pedido llega al pañol. Quien aprueba tiene
+                                que estar habilitado para{' '}
+                                <strong>el ítem más crítico que traiga el carrito</strong>:
                             </p>
                             <Table
-                                head={['Clase', 'Significado', 'Quién aprueba por defecto']}
+                                head={['Clase', 'Qué significa', 'Quién aprueba']}
                                 rows={[
-                                    [<strong key="a">A</strong>, 'Crítico', 'Administrador · Soporte Pagnol · Director de Faena'],
+                                    [<strong key="a">A</strong>, 'Crítico', 'Administrador · Director de Faena'],
                                     [<strong key="b">B</strong>, 'Importante', <>Los anteriores <strong>+ Pañolero</strong></>],
                                     [<strong key="c">C</strong>, 'Fungible', <>Los anteriores <strong>+ Pañolero</strong></>],
                                 ]}
                             />
                             <p>
-                                Si el pañolero no tiene la clase requerida, no puede aprobar: la solicitud
-                                espera al mando que sí la tiene.
+                                Si el pañolero no está habilitado para esa clase, no puede aprobar: el
+                                pedido queda esperando al jefe que sí puede.
                             </p>
                         </Phase>
 
-                        <Phase id="abastecimiento" code="F4" title="Gestión de compra y cotización de arriendo">
+                        <Phase id="abastecimiento" code="Paso 4" title="Abastecimiento compra o arrienda">
                             <Meta donde="/abastecimiento" quien="Abastecimiento" />
                             <p>
-                                El hub muestra el flujo obligatorio en la propia pantalla:{' '}
-                                <strong>Solicitudes → RFQ → Comparador → Órdenes → Recepción → Pagos</strong>.
+                                El módulo muestra el camino obligatorio en la propia pantalla:{' '}
+                                <strong>
+                                    Pedidos → Cotizaciones → Comparar → Orden de compra → Recepción → Pagos
+                                </strong>
+                                .
                             </p>
                             <Table
-                                head={['Paso', 'Pantalla', 'Qué ocurre']}
+                                head={['Etapa', 'Dónde', 'Qué pasa ahí']}
                                 rows={[
-                                    [<strong key="1">Solicitudes</strong>, <Route key="1r">/solicitudes</Route>, <>Bandeja de lo autorizado. Se agrupan en <strong>lotes</strong> para cotizar junto lo que conviene junto.</>],
-                                    [<strong key="2">RFQ</strong>, <Route key="2r">/rfq</Route>, 'Se pide cotización a uno o varios proveedores del maestro.'],
-                                    [<strong key="3">Comparador</strong>, <Route key="3r">/comparador</Route>, 'Las cotizaciones se ponen lado a lado para adjudicar.'],
-                                    [<strong key="4">Órdenes</strong>, <Route key="4r">/ordenes</Route>, 'Se emite la OC con centro de costo y contrato. Generada → enviada → cerrada, o anulada.'],
-                                    [<strong key="5">Proveedores</strong>, <Route key="5r">/proveedores</Route>, 'Maestro 360°: sus órdenes, recepciones y pagos.'],
+                                    [<strong key="1">Pedidos</strong>, <Route key="1r">/solicitudes</Route>, <>Lo que el ADC ya autorizó. Se juntan varios pedidos en un <strong>lote</strong> para cotizar de una vez lo que conviene junto.</>],
+                                    [<strong key="2">Cotizaciones (RFQ)</strong>, <Route key="2r">/rfq</Route>, 'Se le pide precio a uno o varios proveedores.'],
+                                    [<strong key="3">Comparar</strong>, <Route key="3r">/comparador</Route>, 'Las cotizaciones se ponen lado a lado para elegir.'],
+                                    [<strong key="4">Órdenes de compra</strong>, <Route key="4r">/ordenes</Route>, 'Se emite la orden, con su contrato y centro de costo. Pasa de generada a enviada y después a cerrada, o se anula.'],
+                                    [<strong key="5">Proveedores</strong>, <Route key="5r">/proveedores</Route>, 'La ficha de cada proveedor: sus órdenes, lo que entregó y lo que se le pagó.'],
                                 ]}
                             />
                             <p>
-                                <strong>Arriendo:</strong> al confirmar la OC, el equipo se materializa
-                                automáticamente como activo de propiedad <em>arrendado</em>, conservando
-                                el vínculo al contrato de arriendo. Se devuelve al arrendador al término,
-                                cerrando el activo.
+                                <strong>Arriendo:</strong> al confirmar la orden, el equipo entra solo al
+                                inventario marcado como <em>arrendado</em>, con el vínculo a su contrato
+                                de arriendo. Cuando se devuelve al arrendador, se cierra.
                             </p>
-                            <Note title="Trazabilidad">
-                                La OC conserva el vínculo a la solicitud que la originó, y ésta al ADC que
-                                la autorizó y al supervisor que la pidió. La cadena se reconstruye desde
-                                cualquier extremo.
+                            <Note title="Se puede seguir el hilo completo">
+                                La orden de compra guarda de qué pedido salió, ese pedido guarda quién lo
+                                autorizó, y esa autorización guarda quién lo pidió. Se puede reconstruir la
+                                cadena entera, empezando por cualquier punta.
                             </Note>
                         </Phase>
 
-                        <Phase id="f5" code="F5" title="Entrega en pañol con verificación de identidad">
+                        <Phase id="f5" code="Paso 5" title="Se entrega en el pañol, verificando quién retira">
                             <Meta donde="/pagnol/movimientos" quien="Pañolero" />
                             <p>
-                                Es el momento más delicado del proceso: el activo cambia de manos. Pagnol
-                                lo cierra con <strong>verificación biométrica facial en el navegador</strong>.
+                                Este es el momento más delicado: el equipo cambia de manos. Pagnol lo
+                                cierra <strong>verificando la cara de quien retira</strong>.
                             </p>
                             <ol className="list-decimal pl-6 space-y-2 marker:font-bold marker:text-primary">
-                                <li>El pañolero abre la solicitud aprobada y confirma ítems y cantidades.</li>
+                                <li>El pañolero abre el pedido aprobado y confirma ítems y cantidades.</li>
                                 <li>
-                                    La cámara captura el rostro del receptor y lo compara contra su
-                                    plantilla enrolada.{' '}
-                                    <strong>La comparación ocurre en el dispositivo</strong>: nunca sale
-                                    una imagen del rostro.
+                                    La cámara toma la cara y la compara con la que esa persona registró al
+                                    ingresar.{' '}
+                                    <strong>La comparación se hace en el mismo equipo</strong>: la foto
+                                    nunca sale del dispositivo.
                                 </li>
                                 <li>
-                                    Si coincide, la entrega se cierra: quedan registrados quién entregó,
-                                    quién recibió, cuándo y cómo se acreditó.
+                                    Si coincide, la entrega se cierra: queda quién entregó, quién recibió,
+                                    cuándo y cómo se comprobó.
                                 </li>
                             </ol>
-                            <Note tone="warn" title="Excepción">
-                                Si la verificación no es posible — sin cámara, condiciones de terreno — la
-                                entrega puede salir en modo excepción, y eso exige autorización de un ADC
-                                o Administrador. Queda marcado como excepción: no se disimula como si
-                                hubiera sido verificado.
+                            <Note tone="warn" title="Cuando no se puede verificar">
+                                Si no hay cámara o las condiciones no lo permiten, la entrega puede salir
+                                igual, pero necesita que la autorice un ADC o el Administrador. Queda
+                                marcada como excepción: no se disfraza de entrega verificada.
                             </Note>
                             <p>
-                                <strong>Atribución automática.</strong> El <strong>contrato</strong> sale
-                                del vínculo trabajador ↔ contrato activo: uno solo se auto-completa,
-                                varios hacen que el pañolero elija, ninguno cae al pozo común de la
-                                empresa. El <strong>pañol</strong> se marca solo si quien atiende
-                                administra uno.
+                                <strong>Lo que el sistema completa solo.</strong> El <strong>contrato</strong>{' '}
+                                sale de a qué contrato está asignada la persona: si tiene uno, se llena
+                                solo; si tiene varios, el pañolero elige; si no tiene ninguno, se carga al
+                                stock general de la empresa. El <strong>pañol</strong> se marca solo si
+                                quien atiende tiene uno a cargo.
                             </p>
                         </Phase>
 
-                        <Phase id="f6" code="F6" title="Custodia y trazabilidad">
+                        <Phase id="f6" code="Paso 6" title="Todo queda anotado y cuadrado">
                             <Meta donde="/reports/contract-stock" quien="Pañolero · Supervisor · Reportes" />
-                            <p>
-                                Cada movimiento escribe en <strong>dos lugares que tienen que cuadrar</strong>:
-                            </p>
+                            <p>Cada movimiento se escribe en <strong>dos lados que tienen que dar lo mismo</strong>:</p>
                             <ul className="list-disc pl-6 space-y-2">
                                 <li>
                                     <strong>El kardex</strong> — la historia: qué se movió, cuánto, cuándo,
-                                    quién, a qué contrato y desde qué pañol.
+                                    quién, para qué contrato y desde qué pañol.
                                 </li>
                                 <li>
-                                    <strong>El ledger de stock</strong> — la foto: cuánto hay de cada
-                                    material por contrato y por pañol. «Sin contrato» es el pozo común de
-                                    la empresa.
+                                    <strong>El saldo</strong> — cuánto hay hoy de cada cosa, separado por
+                                    contrato y por pañol. Lo que no está asignado a ningún contrato es el
+                                    stock general de la empresa.
                                 </li>
                             </ul>
                             <p>
-                                El invariante <em>suma del desglose = stock total</em> se sostiene en las
-                                tres operaciones del ledger: aporte, consumo (que cascadea contrato pedido
-                                → pozo común → otros contratos, del mayor al menor) y transferencia
-                                estricta entre contratos.
+                                La suma de todos los saldos siempre tiene que dar el stock total. Cuando se
+                                descuenta, el sistema saca primero del contrato que pidió, después del
+                                stock general, y recién ahí de otros contratos, empezando por el que más
+                                tiene.
                             </p>
-                            <Note tone="ok" title="Quién es el custodio">
-                                En orden: receptor verificado por biometría → beneficiario dirigido →
-                                solicitante. La misma fórmula alimenta «cuánto tengo pendiente de
-                                devolver» y «quién tiene este activo», para que las dos vistas nunca se
-                                contradigan.
+                            <Note tone="ok" title="Quién queda responsable de lo entregado">
+                                En este orden: la persona que se verificó con la cara al retirar; si no, la
+                                persona a la que iba dirigido; si no, quien lo pidió. Con esa misma regla se
+                                calcula «cuánto tengo pendiente de devolver» y «quién tiene este equipo», así
+                                las dos pantallas nunca se contradicen.
                             </Note>
                             <p>
-                                El reporte de stock por contrato entrega la valorización (cantidad × costo
-                                unitario), la matriz material × contrato y el kardex del período, con
-                                exportación a Excel.
+                                El reporte de stock por contrato muestra cuánto vale lo que hay (cantidad ×
+                                costo), qué material está en qué contrato, y todos los movimientos del
+                                período, con salida a Excel.
                             </p>
                         </Phase>
 
-                        <Phase id="f7" code="F7" title="Devolución y reintegro">
+                        <Phase id="f7" code="Paso 7" title="Se devuelve lo que no se usó">
                             <Meta
                                 donde="/supervisor/return-request → /bodega/return-requests"
-                                quien="Custodio · Pañolero"
+                                quien="Quien lo tiene a cargo · Pañolero"
                             />
                             <p>
-                                El custodio declara qué devuelve. El sistema{' '}
-                                <strong>recalcula el saldo pendiente en el servidor</strong> antes de
-                                aceptar: suma lo que esa persona tomó en solicitudes aprobadas y resta lo
-                                que ya devolvió. La pantalla puede mostrar un saldo optimista, pero nunca
-                                es la única barrera — nadie devuelve más de lo que tiene.
+                                Quien lo tiene declara qué devuelve. Antes de aceptarlo, el sistema{' '}
+                                <strong>recalcula cuánto debe esa persona</strong>: suma lo que retiró y
+                                resta lo que ya devolvió. La pantalla puede mostrar un número optimista,
+                                pero nunca es lo único que revisa — nadie puede devolver más de lo que
+                                tiene.
                             </p>
                             <p>
-                                El pañolero aprueba o rechaza. Aprobada, la cantidad vuelve al stock{' '}
-                                <strong>al mismo contrato y pañol de donde salió</strong>, y se escribe el
-                                movimiento inverso en el kardex.
+                                El pañolero acepta o rechaza. Si acepta, la cantidad vuelve{' '}
+                                <strong>al mismo contrato y pañol de donde salió</strong>, y queda el
+                                movimiento de vuelta en el kardex.
                             </p>
                         </Phase>
 
-                        <Phase id="f8" code="F8" title="Recepción y materialización del activo">
+                        <Phase id="f8" code="Paso 8" title="Llega lo que se compró">
                             <Meta donde="/abastecimiento/recepcion" quien="Abastecimiento · Pañolero" />
                             <p>
-                                La recepción está <strong>ligada a la Orden de Compra</strong>: se recibe
-                                contra lo que se ordenó, no contra lo que llegó suelto. Se registra la
-                                cantidad efectivamente recibida, se pueden adjuntar fotos del ingreso, y
-                                ahí ocurre lo importante:
+                                La recepción va <strong>contra la orden de compra</strong>: se recibe
+                                contra lo que se pidió, no contra lo que llegó suelto. Se anota cuánto
+                                llegó de verdad, se pueden adjuntar fotos, y ahí pasa lo importante:
                             </p>
                             <ul className="list-disc pl-6 space-y-2">
                                 <li>
-                                    Si el ítem <strong>no existía</strong> en el maestro, la recepción lo{' '}
-                                    <strong>crea como activo</strong> — vuelve a F0 para completar su
-                                    clasificación.
+                                    Si el ítem <strong>no existía</strong> en el inventario, la recepción lo{' '}
+                                    <strong>crea</strong> — y hay que completarle la ficha.
                                 </li>
                                 <li>
-                                    Si ya existía, <strong>suma stock</strong> al contrato y pañol
-                                    correspondientes y escribe el kardex.
+                                    Si ya existía, <strong>suma stock</strong> al contrato y pañol que
+                                    corresponde, y escribe el movimiento en el kardex.
                                 </li>
                                 <li>
-                                    Si vino del cliente, nace con propiedad <em>cliente</em> y su stock
-                                    queda separado.
+                                    Si vino del cliente, entra marcado como <em>del cliente</em> y su stock
+                                    queda aparte.
                                 </li>
                             </ul>
-                            <Note tone="warn" title="En desarrollo">
-                                La distinción entre comprar un <strong>bien</strong> y contratar un{' '}
-                                <strong>servicio</strong>. Un servicio no debe tocar el inventario al
-                                recibirse; el modelo de datos ya lo contempla y la recepción diferenciada
-                                está en curso.
+                            <Note tone="warn" title="Todavía en construcción">
+                                Separar comprar un <strong>producto</strong> de contratar un{' '}
+                                <strong>servicio</strong>. Un servicio no debería tocar el inventario cuando
+                                se recibe; el sistema ya lo tiene contemplado y la pantalla está en camino.
                             </Note>
                         </Phase>
 
-                        <Phase id="f9" code="F9" title="Factura y pago">
+                        <Phase id="f9" code="Paso 9" title="Se factura y se paga">
                             <Meta donde="/abastecimiento/pagos" quien="Abastecimiento · Jefe de Finanzas" />
                             <p>
-                                Recepcionado el pedido, se registra la factura del proveedor y se
-                                administra su pago: <strong>pendiente → pagada</strong>, o{' '}
-                                <strong>vencida</strong> si pasó su fecha. El hub de Abastecimiento
-                                muestra el monto por pagar (pendiente + vencido) y cuántos pagos están
-                                vencidos.
+                                Recibido el pedido, se registra la factura del proveedor y se lleva su
+                                pago: <strong>pendiente → pagada</strong>, o <strong>vencida</strong> si se
+                                pasó la fecha. La portada de Abastecimiento muestra cuánto hay por pagar
+                                (pendiente + vencido) y cuántos pagos están atrasados.
                             </p>
-                            <Note tone="warn" title="En desarrollo">
-                                La facturación electrónica chilena (DTE) tiene la interfaz lista y la
-                                integración con el SII pendiente.
+                            <Note tone="warn" title="Todavía en construcción">
+                                La factura electrónica (SII) tiene las pantallas listas, falta conectarla.
                             </Note>
                         </Phase>
 
-                        <Phase id="f10" code="F10" title="Cierre económico: el ledger financiero">
+                        <Phase id="f10" code="Paso 10" title="Se anota el costo donde corresponde">
                             <Meta donde="/finanzas" quien="Jefe de Finanzas · Administrador" />
                             <p>
-                                El proceso de abastecimiento no termina en la bodega: termina en el
-                                resultado del contrato. Cada transición de estado emite un{' '}
-                                <strong>hecho económico inmutable</strong>:
+                                Comprar no termina en la bodega: termina en cuánto ganó o perdió el
+                                contrato. Cada vez que el pedido cambia de estado, se anota un movimiento
+                                que ya no se toca:
                             </p>
                             <Table
-                                head={['Cuándo', 'Qué se registra']}
+                                head={['Cuándo', 'Qué queda anotado']}
                                 rows={[
-                                    ['Se emite la Orden de Compra', <><strong>Comprometido</strong> — plata que ya no está disponible aunque no se haya gastado</>],
-                                    ['Se recepciona la mercadería', <><strong>Devengado</strong> — el gasto ocurrió</>],
+                                    ['Se emite la orden de compra', <><strong>Comprometido</strong> — plata que ya está tomada, aunque todavía no se haya gastado</>],
+                                    ['Llega la mercadería', <><strong>Gastado</strong> — la compra ya ocurrió</>],
                                     ['Se paga la factura', <><strong>Pagado</strong> — la plata salió</>],
                                 ]}
                             />
                             <p>
-                                Esos tres momentos alimentan <strong>presupuesto contra real</strong> y el{' '}
-                                <strong>margen por contrato</strong> — ingresos contra costos, incluyendo
-                                mano de obra y arriendos.
+                                Esos tres momentos alimentan el{' '}
+                                <strong>presupuesto contra lo real</strong> y{' '}
+                                <strong>cuánto gana o pierde cada contrato</strong> — ingresos contra
+                                costos, incluyendo sueldos y arriendos.
                             </p>
-                            <Note tone="ok" title="Regla de oro">
-                                Un asiento nunca se edita ni se borra. Una corrección es un asiento
-                                inverso. Por eso el histórico es auditable: se puede reconstruir el estado
-                                del contrato a cualquier fecha pasada.
+                            <Note tone="ok" title="La regla de oro">
+                                Un movimiento de plata nunca se edita ni se borra. Si hay un error, se anota
+                                otro en contra. Por eso siempre se puede ver cómo estaba el contrato en
+                                cualquier fecha pasada, sin que nadie haya podido cambiar la historia.
                             </Note>
                         </Phase>
 
-                        <Phase id="ciclo" code="···" title="Ciclo de vida posterior: mantenimiento y baja">
+                        <Phase id="ciclo" code="Después" title="Mantención y baja del equipo">
                             <p>
-                                <strong>Mantenimiento</strong> (<Route>/pagnol/mantenimiento</Route>):
-                                órdenes de trabajo preventivas, correctivas y predictivas, con prioridad,
-                                responsable asignado, repuestos consumidos — que descuentan del stock —,
-                                horas de detención, costo total y análisis de causa raíz. El activo pasa a{' '}
-                                <em>En Mantenimiento</em> y vuelve a <em>Disponible</em> al cerrar.
+                                <strong>Mantención</strong> (<Route>/pagnol/mantenimiento</Route>): órdenes
+                                de trabajo preventivas, correctivas o por falla, con prioridad, responsable,
+                                repuestos usados — que descuentan del stock —, horas que el equipo estuvo
+                                parado, costo total y por qué falló. El equipo pasa a{' '}
+                                <em>En mantención</em> y vuelve a <em>Disponible</em> al cerrarla.
                             </p>
                             <p>
-                                <strong>Baja:</strong> un activo llega a <em>Para Baja</em> (fin de vida
-                                útil, obsolescencia) o <em>Extraviado</em>. Los arrendados se cierran al
-                                devolverlos al arrendador; los del cliente, al cierre del contrato. El
-                                activo se archiva — <strong>no se borra</strong>: su kardex y su historia
-                                siguen siendo consultables.
+                                <strong>Baja:</strong> un equipo llega a <em>Para baja</em> (se acabó su
+                                vida útil, quedó obsoleto) o <em>Extraviado</em>. Los arrendados se cierran
+                                al devolverlos; los del cliente, cuando termina el contrato. El equipo se
+                                archiva — <strong>no se borra</strong>: su historia sigue disponible.
                             </p>
                         </Phase>
                     </section>
 
-                    {/* ── PARTE C ── */}
+                    {/* ── QUIÉN HACE QUÉ ── */}
                     <section id="roles" className="scroll-mt-24 space-y-6 pt-4">
-                        <div className="flex items-baseline gap-4 border-t-2 border-foreground pt-5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-primary">
-                                Parte C
-                            </span>
-                            <h2 className="text-3xl font-black tracking-tight">Roles y responsabilidades</h2>
+                        <div className="border-t-2 border-foreground pt-5">
+                            <h2 className="text-3xl font-black tracking-tight">Quién hace qué</h2>
                         </div>
 
                         <Table
-                            head={['Rol', 'Responsabilidad en el control de activos', 'Dónde actúa']}
+                            head={['Rol', 'De qué se hace cargo', 'Dónde trabaja']}
                             rows={[
-                                [<strong key="1">Supervisor</strong>, 'Detecta la necesidad y la solicita. Registra devoluciones. Responde por lo que su cuadrilla tiene en custodia.', 'Solicitudes, devoluciones'],
-                                [<strong key="2">Jefe de Terreno</strong>, 'Igual que el supervisor, sobre el avance físico de la obra.', 'Solicitudes, devoluciones'],
-                                [<strong key="3">Jefe de Mantención</strong>, 'Solicita repuestos y materiales. Ejecuta las OT y edita la ficha del activo.', 'Solicitudes, mantenimiento'],
-                                [<strong key="4">Jefe de Oficina Técnica</strong>, 'Solicita imputando a cualquier contrato. Vigila que el gasto calce con el presupuesto y la Gantt.', 'Solicitudes, control de obra'],
-                                [<span key="5"><strong>ADC</strong><br /><span className="text-muted-foreground text-xs">Administrador de Contratos</span></span>, <><strong>Autoriza o rechaza toda solicitud de terreno</strong> antes de que llegue a Abastecimiento. Es el control de gasto del proceso.</>, 'Autorizaciones'],
-                                [<strong key="6">Abastecimiento</strong>, 'Cotiza, compara, adjudica, emite las OC, recepciona, mantiene el maestro de proveedores y gestiona los pagos.', 'Módulo Abastecimiento'],
-                                [<strong key="7">Pañolero</strong>, 'Custodia física del inventario. Aprueba clases B y C, entrega con verificación de identidad, recibe devoluciones, ingresa stock y transfiere entre pañoles.', 'Pañol / Movimientos'],
-                                [<strong key="8">Jefe de Finanzas</strong>, 'Facturas, pagos a proveedores, control del gasto comprometido y devengado.', 'Pagos, Finanzas'],
-                                [<strong key="9">Director de Faena</strong>, 'Responsable técnico y legal de la operación (DS 132). Autoriza como mando superior y aprueba clase A.', 'Autorizaciones, reportes'],
-                                [<strong key="10">Administrador</strong>, 'Dueño de la cuenta. Configura umbrales de criticidad, pañoles, contratos, usuarios y permisos.', 'Toda la aplicación'],
-                                [<strong key="11">Operador</strong>, <><strong>No opera la aplicación: queda registrado en ella.</strong> Recibe activos verificado biométricamente y ve las herramientas a su cargo.</>, 'Recepción de entregas'],
-                                [<strong key="12">Gerente General</strong>, 'Observador: visualiza y descarga, sin editar ni aprobar.', 'Reportes'],
+                                [<strong key="1">Supervisor</strong>, 'Detecta lo que hace falta y lo pide. Registra las devoluciones. Responde por lo que su cuadrilla tiene a cargo.', 'Pedidos, devoluciones'],
+                                [<strong key="2">Jefe de Terreno</strong>, 'Lo mismo que el supervisor, sobre el avance de la obra.', 'Pedidos, devoluciones'],
+                                [<strong key="3">Jefe de Mantención</strong>, 'Pide repuestos y materiales para los equipos. Ejecuta las órdenes de trabajo y mantiene la ficha del equipo.', 'Pedidos, mantención'],
+                                [<strong key="4">Jefe de Oficina Técnica</strong>, 'Pide cargando a cualquier contrato. Vigila que el gasto calce con el presupuesto y el programa.', 'Pedidos, control de obra'],
+                                [<span key="5"><strong>ADC</strong><br /><span className="text-muted-foreground text-xs">Administrador de Contratos</span></span>, <><strong>Autoriza o rechaza todo pedido de terreno</strong> antes de que llegue a Abastecimiento. Es quien controla el gasto.</>, 'Autorizaciones'],
+                                [<strong key="6">Abastecimiento</strong>, 'Cotiza, compara, elige, emite las órdenes de compra, recibe la mercadería, mantiene los proveedores y lleva los pagos.', 'Módulo Abastecimiento'],
+                                [<strong key="7">Pañolero</strong>, 'Tiene el inventario a su cargo. Aprueba pedidos B y C, entrega verificando quién retira, recibe devoluciones, ingresa stock y mueve material entre pañoles.', 'Pañol'],
+                                [<strong key="8">Jefe de Finanzas</strong>, 'Facturas, pagos a proveedores y control de lo comprometido y lo gastado.', 'Pagos, Finanzas'],
+                                [<strong key="9">Director de Faena</strong>, 'Responsable técnico y legal de la faena. Autoriza como jefatura superior y aprueba los pedidos clase A.', 'Autorizaciones, reportes'],
+                                [<strong key="10">Administrador</strong>, 'Dueño de la cuenta. Configura montos de referencia, pañoles, contratos, usuarios y permisos.', 'Toda la aplicación'],
+                                [<strong key="11">Operador</strong>, <><strong>No usa la aplicación: queda registrado en ella.</strong> Recibe equipos verificándose con la cara y ve las herramientas que tiene a cargo.</>, 'Recibe entregas'],
+                                [<strong key="12">Gerente General</strong>, 'Mira y descarga, sin editar ni aprobar.', 'Reportes'],
                             ]}
                         />
 
                         <div className="rounded-[1.25rem] border bg-card p-5 flex items-start gap-4">
                             <Users className="h-5 w-5 shrink-0 text-primary mt-0.5" aria-hidden="true" />
                             <p className="text-sm text-muted-foreground leading-relaxed">
-                                El catálogo completo de los 24 roles de Pagnol, con los módulos que ve
-                                cada uno, está en{' '}
+                                La lista completa de roles de Pagnol, con lo que ve cada uno, está en{' '}
                                 <Link href="/ayuda/roles" className="font-bold text-primary hover:underline">
                                     Roles y Responsabilidades
                                 </Link>
@@ -687,7 +679,7 @@ export default function ControlDeActivosPage() {
                                                 <th
                                                     key={h}
                                                     className={`px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground whitespace-nowrap ${
-                                                        i === 0 ? 'text-left min-w-[180px]' : 'text-center'
+                                                        i === 0 ? 'text-left min-w-[200px]' : 'text-center'
                                                     }`}
                                                 >
                                                     {h}
@@ -712,66 +704,65 @@ export default function ControlDeActivosPage() {
                         </div>
 
                         <div id="sod" className="scroll-mt-24 space-y-4">
-                            <h3 className="text-xl font-bold tracking-tight">Separación de funciones</h3>
+                            <h3 className="text-xl font-bold tracking-tight">
+                                Nadie puede cerrar el círculo solo
+                            </h3>
                             <p className="leading-relaxed">
-                                El diseño impide, por construcción, que una sola persona cierre el círculo
-                                del gasto:
+                                El sistema está armado para que una sola persona no pueda pedir, autorizar,
+                                comprar, recibir y pagar:
                             </p>
                             <Table
-                                head={['Control', 'Cómo se hace cumplir']}
+                                head={['La regla', 'Cómo se hace cumplir']}
                                 rows={[
-                                    [<strong key="1">Quien pide no autoriza</strong>, 'El solicitante de terreno no tiene el permiso de autorización del ADC.'],
-                                    [<strong key="2">Quien autoriza no compra</strong>, 'El ADC no emite órdenes de compra.'],
-                                    [<strong key="3">Quien compra no custodia</strong>, 'Abastecimiento emite la OC; el pañolero tiene la existencia física.'],
-                                    [<strong key="4">Quien custodia no aprueba lo crítico</strong>, 'El pañolero aprueba clases B y C; la clase A exige un mando superior.'],
-                                    [<strong key="5">Quien recibe queda identificado</strong>, 'La entrega se cierra con verificación biométrica del receptor, o con excepción autorizada — nunca en silencio.'],
-                                    [<strong key="6">Quien corrige deja rastro</strong>, 'Los hechos económicos no se editan: se revierten con un asiento inverso fechado y atribuido.'],
+                                    [<strong key="1">Quien pide no autoriza</strong>, 'El que pide desde terreno no tiene el permiso del ADC.'],
+                                    [<strong key="2">Quien autoriza no compra</strong>, 'El ADC no puede emitir órdenes de compra.'],
+                                    [<strong key="3">Quien compra no guarda</strong>, 'Abastecimiento emite la orden; el pañolero tiene el material.'],
+                                    [<strong key="4">Quien guarda no aprueba lo crítico</strong>, 'El pañolero aprueba B y C; la clase A la firma un jefe.'],
+                                    [<strong key="5">Quien recibe queda identificado</strong>, 'La entrega se cierra verificando la cara, o con una excepción autorizada — nunca en silencio.'],
+                                    [<strong key="6">Quien corrige deja rastro</strong>, 'Los movimientos de plata no se editan: se corrigen con otro movimiento, con nombre y fecha.'],
                                 ]}
                             />
                             <p className="leading-relaxed">
-                                Todos los permisos son <strong>configurables por empresa</strong>: esta
-                                tabla describe la configuración por defecto, que cada organización puede
-                                endurecer o relajar.
+                                Los permisos se configuran empresa por empresa: esta tabla muestra cómo
+                                viene de fábrica, y cada organización puede apretarlo o soltarlo.
                             </p>
                         </div>
 
                         <div id="aislamiento" className="scroll-mt-24 space-y-4">
-                            <h3 className="text-xl font-bold tracking-tight">Aislamiento entre empresas</h3>
+                            <h3 className="text-xl font-bold tracking-tight">Cada empresa ve sólo lo suyo</h3>
                             <p className="leading-relaxed">
-                                Pagnol es multi-empresa. Cada dato lleva la empresa a la que pertenece, y
-                                la base de datos <strong>rechaza en su propio motor</strong> cualquier
-                                lectura o escritura fuera de ella — no depende de que la aplicación se
-                                acuerde de filtrar. Ninguna empresa ve el catálogo, el kardex, los precios
-                                ni las personas de otra.
+                                En Pagnol conviven varias empresas. Cada dato sabe a cuál pertenece, y la
+                                base de datos <strong>bloquea por sí misma</strong> cualquier intento de
+                                leer o escribir fuera de ella — no depende de que la aplicación se acuerde
+                                de filtrar. Ninguna empresa ve el inventario, los precios ni la gente de
+                                otra.
                             </p>
                         </div>
                     </section>
 
-                    {/* ── Cierre ── */}
+                    {/* ── LO QUE FALTA ── */}
                     <section id="pendiente" className="scroll-mt-24 space-y-6 pt-4">
-                        <div className="flex items-baseline gap-4 border-t-2 border-foreground pt-5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-primary">
-                                Cierre
-                            </span>
-                            <h2 className="text-3xl font-black tracking-tight">Qué está en desarrollo</h2>
+                        <div className="border-t-2 border-foreground pt-5">
+                            <h2 className="text-3xl font-black tracking-tight">
+                                Lo que todavía estamos construyendo
+                            </h2>
                         </div>
                         <p className="leading-relaxed">
-                            El proceso está operativo de punta a punta. Lo que sigue abierto, a la fecha
-                            de corte:
+                            El proceso funciona completo, de principio a fin. Esto es lo que sigue en
+                            camino:
                         </p>
                         <Table
-                            head={['Tema', 'Estado']}
+                            head={['Qué', 'Cómo va']}
                             rows={[
-                                [<>Recepción diferenciada de <strong>servicios</strong>, que no toquen inventario</>, 'En desarrollo'],
-                                [<>Autorización del ADC <strong>por lote</strong></>, 'En backlog'],
-                                [<>Facturación electrónica <strong>DTE / SII</strong></>, 'Interfaz lista, integración pendiente'],
-                                [<>Material de <strong>subcontratistas</strong></>, 'Modelado, sin interfaz'],
-                                [<>Prueba manual del <strong>cierre biométrico</strong> por contrato</>, 'Pendiente'],
+                                [<>Recibir <strong>servicios</strong> sin que toquen el inventario</>, 'En construcción'],
+                                [<>Que el ADC pueda autorizar <strong>varios pedidos de una vez</strong></>, 'Anotado, todavía no empieza'],
+                                [<>Factura electrónica conectada al <strong>SII</strong></>, 'Pantallas listas, falta conectar'],
+                                [<>Material de <strong>subcontratistas</strong></>, 'Pensado, sin pantalla todavía'],
                             ]}
                         />
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                            Este documento se actualiza junto con la aplicación: describe lo que Pagnol
-                            hace hoy, no lo que hará.
+                            Esta página se actualiza junto con la aplicación: cuenta lo que Pagnol hace
+                            hoy, no lo que va a hacer.
                         </p>
                     </section>
                 </main>

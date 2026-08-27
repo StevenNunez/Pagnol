@@ -5,102 +5,101 @@ import { ArrowLeft, Info } from 'lucide-react';
 export const metadata: Metadata = {
     title: 'Roles y Responsabilidades',
     description:
-        'Los 24 roles de PAGNOL: qué hace cada uno, qué módulos ve y cómo se resuelve un permiso. ' +
-        'Referencia para decidir quién entra a qué dentro del ERP.',
+        'Los roles de PAGNOL: qué hace cada uno y qué parte de la aplicación ve. ' +
+        'La referencia para decidir a quién le das cada acceso.',
 };
 
-const FECHA_CORTE = '27 de agosto de 2026';
+const ACTUALIZADO = '27 de agosto de 2026';
 
 type Role = { name: string; what: string; sees: string };
 
 const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
     {
-        title: 'Administración de la plataforma',
-        hint: 'Control total, con distinto alcance',
+        title: 'Quien manda en la cuenta',
+        hint: 'Control total de la empresa',
         roles: [
-
             {
                 name: 'Administrador',
                 what: 'Dueño de la cuenta. Control total de su empresa: usuarios, roles, módulos y configuración.',
-                sees: 'Todos los de su empresa',
+                sees: 'Todo',
             },
             {
                 name: 'Soporte Pagnol',
-                what: 'Cuenta de soporte interno creada por el administrador de la empresa. Mismos permisos, pero identificable por separado en la lista de usuarios y en la auditoría.',
-                sees: 'Todos los de su empresa',
+                what: 'Cuenta de apoyo que crea el administrador para el equipo de Pagnol. Puede lo mismo, pero se distingue en la lista de usuarios para saber quién hizo qué.',
+                sees: 'Todo',
             },
         ],
     },
     {
-        title: 'Mando operacional',
+        title: 'Jefaturas',
         hint: 'Quienes autorizan, validan y firman',
         roles: [
             {
                 name: 'Director de Faena',
-                what: 'Responsable técnico y legal de la operación minera (DS 132). Visibilidad total operacional; autoriza como mando superior y aprueba solicitudes clase A.',
-                sees: 'Pagnol · Bodega · Control de Obra · Reportes de Trabajo · Seguridad · Asistencia · Reportes · Compras · Usuarios · Autorizaciones',
+                what: 'Responsable técnico y legal de la faena (DS 132). Ve toda la operación, autoriza como jefatura superior y aprueba los pedidos más críticos.',
+                sees: 'Pañol · Bodega · Control de Obra · Reportes de Terreno · Seguridad · Asistencia · Reportes · Compras · Usuarios · Autorizaciones',
             },
             {
                 name: 'ADC — Administrador de Contratos',
-                what: 'Autoriza las solicitudes de terreno (material, compra y arriendo) antes de que Abastecimiento las gestione. Da la aprobación final de los informes de trabajo y aprueba y paga estados de pago.',
-                sees: 'Autorizaciones · Reportes de Trabajo · Arriendos',
+                what: 'Autoriza los pedidos de terreno (material, compra y arriendo) antes de que Abastecimiento los gestione. Da la aprobación final de los reportes de terreno, y aprueba y paga los estados de pago.',
+                sees: 'Autorizaciones · Reportes de Terreno · Arriendos',
             },
             {
                 name: 'Jefe de Operaciones',
-                what: 'Valida, firma y descarga los informes de terreno en revisión operacional.',
-                sees: 'Reportes de Trabajo',
+                what: 'Revisa, firma y descarga los reportes de terreno.',
+                sees: 'Reportes de Terreno',
             },
             {
                 name: 'Gerente General',
-                what: 'Observador de alto nivel: visualiza y descarga informes, sin editar ni aprobar.',
-                sees: 'Reportes de Trabajo',
+                what: 'Sólo mira y descarga informes. No edita ni aprueba nada.',
+                sees: 'Reportes de Terreno',
             },
             {
                 name: 'Jefe de Turno',
-                what: 'Gestiona un turno: personal presente, herramientas y seguridad del período.',
-                sees: 'Pagnol · Asistencia · Seguridad',
+                what: 'Lleva un turno: quién está presente, las herramientas y la seguridad del período.',
+                sees: 'Pañol · Asistencia · Seguridad',
             },
         ],
     },
     {
-        title: 'Terreno y ejecución',
-        hint: 'De donde nace la necesidad',
+        title: 'Terreno',
+        hint: 'De aquí nacen los pedidos',
         roles: [
             {
                 name: 'Jefe de Terreno',
-                what: 'Gestiona el avance físico de la obra y a los supervisores. Solicita y devuelve.',
-                sees: 'Control de Obra · Bodega · Reportes de Trabajo · Arriendos',
+                what: 'Lleva el avance de la obra y a los supervisores. Pide y devuelve material.',
+                sees: 'Control de Obra · Bodega · Reportes de Terreno · Arriendos',
             },
             {
                 name: 'Supervisor',
-                what: 'Solicita materiales, registra devoluciones y gestiona su cuadrilla. Crea y firma los informes de terreno.',
-                sees: 'Pagnol · Reportes de Trabajo',
+                what: 'Pide materiales, registra devoluciones y maneja su cuadrilla. Crea y firma los reportes de terreno.',
+                sees: 'Pañol · Reportes de Terreno',
             },
             {
                 name: 'Operador',
-                what: 'No opera la aplicación: queda registrado en ella. Ve las herramientas a su cargo; su participación es ser identificado en asistencia, entregas y firmas.',
-                sees: 'Pagnol (sólo sus herramientas)',
+                what: 'No usa la aplicación: queda registrado en ella. Ve las herramientas que tiene a cargo; su participación es quedar identificado en asistencia, entregas y firmas.',
+                sees: 'Sólo sus herramientas',
             },
             {
                 name: 'Contratista',
-                what: 'Accede a sus contratos y estados de pago, y registra el avance de sus partidas.',
+                what: 'Entra a sus contratos y estados de pago, y registra el avance de sus partidas.',
                 sees: 'Control de Obra',
             },
         ],
     },
     {
-        title: 'Técnica y calidad',
-        hint: 'Planificación, medición y verificación',
+        title: 'Oficina técnica y calidad',
+        hint: 'Planificación, medición y control',
         roles: [
             {
                 name: 'Jefe de Oficina Técnica',
-                what: 'Planifica la Carta Gantt y los presupuestos; supervisa el avance técnico y financiero de la obra. Solicita imputando a cualquier contrato.',
-                sees: 'Control de Obra · Compras · Bodega · Reportes · Reportes de Trabajo · Arriendos',
+                what: 'Arma el programa y los presupuestos; sigue el avance técnico y financiero de la obra. Puede pedir cargando a cualquier contrato.',
+                sees: 'Control de Obra · Compras · Bodega · Reportes · Reportes de Terreno · Arriendos',
             },
             {
                 name: 'Calidad',
-                what: 'Verifica la correcta ejecución de las partidas de obra y aprueba los protocolos.',
-                sees: 'Control de Obra · Reportes de Trabajo',
+                what: 'Verifica que las partidas estén bien ejecutadas y aprueba los protocolos.',
+                sees: 'Control de Obra · Reportes de Terreno',
             },
             {
                 name: 'Geólogo',
@@ -109,34 +108,34 @@ const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
             },
             {
                 name: 'Topógrafo',
-                what: 'Registra mediciones y avances; genera reportes de levantamiento.',
+                what: 'Registra mediciones y avances; genera los reportes de levantamiento.',
                 sees: 'Control de Obra · Reportes',
             },
         ],
     },
     {
-        title: 'Activos, abastecimiento y dinero',
-        hint: 'El ciclo que documenta PROC-01',
+        title: 'Pañol, compras y plata',
+        hint: 'El ciclo del control de activos',
         roles: [
             {
                 name: 'Pañolero',
-                what: 'Operador diario del pañol digital: inventario, entregas verificadas, devoluciones, ingreso de stock y transferencias. Aprueba solicitudes clase B y C.',
-                sees: 'Pagnol · Bodega',
+                what: 'Lleva el pañol día a día: inventario, entregas verificadas, devoluciones, ingreso de stock y traslados entre pañoles. Aprueba los pedidos de clase B y C.',
+                sees: 'Pañol · Bodega',
             },
             {
                 name: 'Abastecimiento',
-                what: 'Ciclo completo de compras: solicitudes, RFQ, comparación, órdenes de compra, recepción, proveedores, pagos y arriendos.',
-                sees: 'Abastecimiento · Compras · Pagos · Bodega · Pagnol · Arriendos',
+                what: 'Todo el ciclo de compras: pedidos, cotizaciones, comparación, órdenes de compra, recepción, proveedores, pagos y arriendos.',
+                sees: 'Abastecimiento · Compras · Pagos · Bodega · Pañol · Arriendos',
             },
             {
                 name: 'Jefe de Mantención',
-                what: 'Mantenimiento de equipos y herramientas; solicita repuestos y materiales.',
-                sees: 'Pagnol · Bodega · Compras · Reportes',
+                what: 'Mantención de equipos y herramientas; pide repuestos y materiales.',
+                sees: 'Pañol · Bodega · Compras · Reportes',
             },
             {
                 name: 'Jefe de Finanzas',
                 what: 'Facturas, pagos a proveedores y control de la planilla.',
-                sees: 'DTE · Pagos · Compras · Asistencia · Reportes · Reportes de Trabajo',
+                sees: 'Facturación · Pagos · Compras · Asistencia · Reportes · Reportes de Terreno',
             },
         ],
     },
@@ -147,12 +146,12 @@ const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
             {
                 name: 'Recursos Humanos',
                 what: 'Ficha de empleados, vacaciones y licencias, documentos, asistencia y usuarios.',
-                sees: 'RRHH · Asistencia · Usuarios · Reportes de Trabajo',
+                sees: 'RRHH · Asistencia · Usuarios · Reportes de Terreno',
             },
             {
                 name: 'APR (Prevencionista)',
                 what: 'Checklists, inspecciones y observaciones de seguridad.',
-                sees: 'Seguridad · Usuarios · Bodega · Reportes · Reportes de Trabajo',
+                sees: 'Seguridad · Usuarios · Bodega · Reportes · Reportes de Terreno',
             },
             {
                 name: 'Comité Paritario (CPHS)',
@@ -161,19 +160,11 @@ const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
             },
             {
                 name: 'Guardia',
-                what: 'Registra asistencia con QR en el acceso a faena.',
+                what: 'Toma la asistencia con código QR en la entrada a la faena.',
                 sees: 'Asistencia',
             },
         ],
     },
-];
-
-const RESOLUTION = [
-    { n: '1', q: '¿Es Super Admin?', a: 'Puede todo.' },
-    { n: '2', q: '¿Es Administrador o Soporte Pagnol?', a: 'Control total de su empresa.' },
-    { n: '3', q: '¿Tiene el permiso otorgado individualmente?', a: 'Los permisos extra dados a esa persona en particular.' },
-    { n: '4', q: '¿Lo tiene el rol tal como esta empresa lo configuró?', a: 'La fila del rol en esta empresa.' },
-    { n: '5', q: '¿Lo tiene el rol por defecto?', a: 'La definición de fábrica.' },
 ];
 
 export default function RolesPage() {
@@ -188,57 +179,67 @@ export default function RolesPage() {
             </Link>
 
             <header className="border-b-2 border-foreground pb-8">
-                <div className="flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-6">
-                    <span className="text-primary">Roles</span>
-                    <span>Documento vivo</span>
-                    <span>Corte: {FECHA_CORTE}</span>
-                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-6">
+                    Actualizado: {ACTUALIZADO}
+                </p>
                 <h1 className="text-4xl sm:text-5xl font-black tracking-tighter text-balance mb-5">
                     Roles y responsabilidades
                 </h1>
                 <p className="text-lg text-muted-foreground leading-relaxed max-w-2xl">
-                    Pagnol trae 24 roles predefinidos, pensados para la estructura real de una faena
-                    minera o de construcción. Cada rol es un punto de partida configurable: la empresa
-                    puede endurecerlo o ampliarlo permiso a permiso.
+                    Cada persona en Pagnol tiene un rol, y ese rol decide qué ve y qué puede hacer.
+                    Están pensados para cómo se organiza de verdad una faena, y ninguno está grabado
+                    en piedra: la empresa puede apretarlos o soltarlos.
                 </p>
             </header>
 
-            {/* Cómo se resuelve un permiso */}
+            {/* Cómo funcionan */}
             <section className="space-y-5">
-                <h2 className="text-2xl font-black tracking-tight">Cómo se resuelve un permiso</h2>
+                <h2 className="text-2xl font-black tracking-tight">Cómo funcionan</h2>
                 <p className="leading-relaxed">
-                    Hay <strong>158 permisos</strong> agrupados en 20 familias. Cuando el sistema
-                    pregunta «¿puede esta persona hacer esto?», resuelve en este orden y se detiene en
-                    la primera respuesta afirmativa:
+                    Hay más de 150 permisos distintos, agrupados por tema: materiales y stock, pedidos,
+                    compras, pagos, autorizaciones, reportes, seguridad, personas, control de obra,
+                    arriendos, usuarios y configuración. Un rol es simplemente un paquete de esos
+                    permisos, armado para un cargo real.
                 </p>
-                <ol className="space-y-3">
-                    {RESOLUTION.map((r) => (
-                        <li key={r.n} className="flex gap-4 rounded-[1.25rem] border bg-card px-5 py-4">
+                <ul className="space-y-3">
+                    {[
+                        {
+                            t: 'El rol define el piso',
+                            d: 'Cada rol viene con un paquete de permisos pensado para ese cargo. Es el punto de partida.',
+                        },
+                        {
+                            t: 'La empresa lo ajusta',
+                            d: 'Se le pueden agregar o quitar permisos al rol completo, y eso vale sólo para esa empresa: no afecta a las demás.',
+                        },
+                        {
+                            t: 'Y una persona puede tener algo extra',
+                            d: 'Si alguien necesita un permiso puntual, se le da a esa persona sin cambiarle el rol a todo el mundo.',
+                        },
+                    ].map((r, i) => (
+                        <li key={r.t} className="flex gap-4 rounded-[1.25rem] border bg-card px-5 py-4">
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-black text-primary">
-                                {r.n}
+                                {i + 1}
                             </span>
                             <div className="min-w-0">
-                                <p className="font-bold leading-snug">{r.q}</p>
-                                <p className="text-sm text-muted-foreground mt-0.5">{r.a}</p>
+                                <p className="font-bold leading-snug">{r.t}</p>
+                                <p className="text-sm text-muted-foreground mt-0.5">{r.d}</p>
                             </div>
                         </li>
                     ))}
-                </ol>
+                </ul>
                 <div className="rounded-[1.25rem] border-l-4 border-y border-r border-info bg-info-subtle text-info-subtle-foreground p-5 flex gap-4">
                     <Info className="h-5 w-5 shrink-0 mt-0.5" aria-hidden="true" />
                     <div className="space-y-2 text-sm leading-relaxed">
                         <p>
-                            <strong>Dos consecuencias prácticas:</strong> un permiso puede darse a una
-                            persona sin cambiarle el rol a todo el mundo; y cambiar un rol en una empresa
-                            no afecta a las demás.
+                            <strong>Dos permisos que conviene entender:</strong> los de{' '}
+                            <strong>acceso a un módulo</strong> deciden si ese módulo aparece o no en el
+                            menú de la izquierda — son el interruptor grueso.
                         </p>
                         <p>
-                            Dos permisos tienen forma especial: los de{' '}
-                            <strong>acceso a módulo</strong> controlan si el módulo aparece en el menú
-                            lateral, y los de <strong>clase A / B / C</strong> escalonan la aprobación
-                            según la criticidad del ítem — ver{' '}
+                            Y los de <strong>clase A, B y C</strong> escalonan quién puede aprobar un
+                            pedido según qué tan crítico sea lo que se pide — está explicado en{' '}
                             <Link href="/ayuda/control-de-activos#f3" className="font-bold underline">
-                                la fase F3 del control de activos
+                                el paso 3 del control de activos
                             </Link>
                             .
                         </p>
@@ -246,9 +247,9 @@ export default function RolesPage() {
                 </div>
             </section>
 
-            {/* Los 24 roles */}
+            {/* Los roles */}
             <section className="space-y-10">
-                <h2 className="text-2xl font-black tracking-tight">Los 24 roles</h2>
+                <h2 className="text-2xl font-black tracking-tight">Los roles, uno por uno</h2>
                 {GROUPS.map((group) => (
                     <div key={group.title} className="space-y-4">
                         <div className="border-t pt-5">
@@ -272,8 +273,6 @@ export default function RolesPage() {
                     </div>
                 ))}
             </section>
-
-            {/* Nota de dimensionamiento */}
 
         </div>
     );

@@ -1,15 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { usePathname } from "next/navigation";
 import { ThemeProvider as NextThemesProvider, type ThemeProviderProps } from "next-themes";
 
-// Rutas públicas/comerciales: SIEMPRE en modo claro, ignorando la preferencia
-// guardada en localStorage. El toggle de tema vive solo dentro del dashboard.
-const FORCED_LIGHT_ROUTES = ["/", "/pricing", "/demo"];
-
+/**
+ * El tema por defecto es **claro en toda la aplicación**, para todo el mundo:
+ * `defaultTheme="light"` + `enableSystem={false}` (en el layout raíz) hacen que
+ * quien entra por primera vez vea claro, sin importar cómo tenga configurado su
+ * sistema operativo.
+ *
+ * A partir de ahí manda la elección de la persona, y vale en todas las páginas
+ * por igual — landing, Centro de Ayuda y dashboard. Antes las páginas públicas
+ * forzaban el claro, y eso hacía que la app "saltara" de un modo al otro al
+ * navegar entre ellas.
+ */
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
-  const pathname = usePathname();
-  const forcedTheme = FORCED_LIGHT_ROUTES.includes(pathname ?? "") ? "light" : undefined;
-  return <NextThemesProvider {...props} forcedTheme={forcedTheme}>{children}</NextThemesProvider>;
+  return <NextThemesProvider {...props}>{children}</NextThemesProvider>;
 }

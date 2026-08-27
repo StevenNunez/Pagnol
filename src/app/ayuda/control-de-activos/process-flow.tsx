@@ -80,88 +80,89 @@ export function ProcessFlow() {
     return (
         <div className="rounded-[1.5rem] border bg-card p-6 sm:p-8">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-6">
-                Flujo del proceso — de la necesidad a la baja
+                De la necesidad en terreno hasta que el equipo se da de baja
             </p>
 
             {/* Nivel 1 — las tres puertas */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Node tone="terreno" step="F1 · Terreno" title="Solicitud de Material" detail="Hay stock en el pañol" />
-                <Node tone="terreno" step="F1 · Terreno" title="Solicitud de Compra" detail="No hay stock, o el ítem no existe" />
-                <Node tone="terreno" step="F1 · Terreno" title="Solicitud de Arriendo" detail="El equipo se arrienda" />
+                <Node tone="terreno" step="Paso 1" title="Pedido de material" detail="Hay stock en el pañol" />
+                <Node tone="terreno" step="Paso 1" title="Pedido de compra" detail="No hay stock, o el ítem no existe" />
+                <Node tone="terreno" step="Paso 1" title="Pedido de arriendo" detail="El equipo se arrienda" />
             </div>
 
-            <Down label="Las tres convergen" />
+            <Down label="Los tres pasan por el mismo lugar" />
 
             {/* Nivel 2 — el gate */}
             <Node
                 tone="gate"
-                step="F2 · Puerta única del gasto"
-                title="Autorización del Administrador de Contratos (ADC)"
-                detail="Sin esta firma, ni el pañol ni Abastecimiento ven la solicitud. Rechazar la cierra con motivo y fecha."
+                step="Paso 2 · Aquí se filtra todo el gasto"
+                title="El Administrador de Contratos autoriza"
+                detail="Sin esa autorización, ni el pañol ni Abastecimiento ven el pedido. Si lo rechaza, queda cerrado con el motivo y la fecha."
             />
 
-            <Down label="Se bifurca según el tipo" />
+            <Down label="Se separa según lo que se pidió" />
 
             {/* Nivel 3 — las dos ramas */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* Rama material */}
                 <div className="rounded-[1.25rem] border-2 border-primary bg-primary/5 p-5 space-y-4">
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">
-                        Rama Material · el pañol
+                        Si hay stock en el pañol
                     </p>
                     <div className="space-y-3">
-                        <Node tone="panol" step="F3" title="Aprobación por criticidad" detail="Clase A, B o C según el ítem más crítico del carrito" />
-                        <LaneStep tone="panol" text="El pañolero aprueba B y C. La clase A exige un mando superior." />
-                        <Node tone="panol" step="F5" title="Entrega en pañol" detail="Verificación biométrica del receptor, o excepción autorizada" />
-                        <LaneStep tone="panol" text="Quedan quién entregó, quién recibió, cuándo y cómo se acreditó." />
+                        <Node tone="panol" step="Paso 3" title="Aprobación según qué tan crítico es el ítem" detail="Clase A, B o C" />
+                        <LaneStep tone="panol" text="El pañolero aprueba B y C. La clase A la firma un jefe." />
+                        <Node tone="panol" step="Paso 5" title="Entrega en el pañol" detail="Se verifica con la cara quién retira, o se autoriza una excepción" />
+                        <LaneStep tone="panol" text="Queda quién entregó, quién recibió, cuándo y cómo se comprobó." />
                     </div>
                 </div>
 
                 {/* Rama compra */}
                 <div className="rounded-[1.25rem] border-2 border-border bg-muted/40 p-5 space-y-4">
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                        Rama Compra y Arriendo · Abastecimiento
+                        Si hay que comprar o arrendar
                     </p>
                     <div className="space-y-3">
-                        <Node tone="compra" step="F4" title="RFQ → Comparador → Orden de Compra" detail="Se cotiza, se compara y se adjudica. La OC lleva contrato y centro de costo." />
-                        <LaneStep tone="compra" text="El arriendo confirmado materializa el equipo como activo arrendado." />
-                        <Node tone="compra" step="F8" title="Recepción ligada a la OC" detail="Ingreso físico con fotos. Si el ítem no existía, aquí nace como activo." />
-                        <LaneStep tone="compra" text="Se recibe contra lo ordenado, no contra lo que llegó suelto." />
+                        <Node tone="compra" step="Paso 4" title="Se pide cotización, se compara y se emite la orden de compra" detail="La orden lleva el contrato y el centro de costo" />
+                        <LaneStep tone="compra" text="Al confirmar un arriendo, el equipo entra al inventario como equipo arrendado." />
+                        <Node tone="compra" step="Paso 8" title="Recepción contra la orden de compra" detail="Ingreso físico con fotos. Si el ítem no existía, aquí se crea." />
+                        <LaneStep tone="compra" text="Se recibe contra lo que se pidió, no contra lo que llegó suelto." />
                     </div>
                 </div>
             </div>
 
-            <Down label="Ambas ramas terminan en el mismo lugar" />
+            <Down label="Los dos caminos terminan igual" />
 
             {/* Nivel 4 — kardex */}
             <Node
                 tone="panol"
-                step="F6 · Trazabilidad"
-                title="Kardex y ledger de stock por contrato × pañol"
-                detail="Dos registros que tienen que cuadrar: la historia de cada movimiento y la foto de cuánto hay, desglosado por contrato y por pañol."
+                step="Paso 6 · Todo queda anotado"
+                title="Kardex y stock por contrato y por pañol"
+                detail="Dos registros que tienen que dar lo mismo: la historia de cada movimiento y cuánto hay hoy, separado por contrato y por pañol."
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5">
-                <Node tone="panol" step="F7" title="Devolución" detail="El saldo pendiente se recalcula en el servidor antes de aceptar" />
-                <Node tone="compra" step="Ciclo de vida" title="Mantenimiento" detail="OT preventiva, correctiva o predictiva" />
-                <Node tone="cierre" step="Cierre" title="Baja del activo" detail="Se archiva, nunca se borra: su historia sigue consultable" />
+                <Node tone="panol" step="Paso 7" title="Devolución" detail="El sistema calcula cuánto debe esa persona antes de aceptarla" />
+                <Node tone="compra" step="Después" title="Mantención" detail="Preventiva, correctiva o por falla" />
+                <Node tone="cierre" step="Después" title="Baja del equipo" detail="Se archiva, nunca se borra: su historia sigue disponible" />
             </div>
 
-            <Down label="En paralelo, el dinero" />
+            <Down label="En paralelo, la plata" />
 
-            {/* Nivel 5 — ledger financiero */}
+            {/* Nivel 5 — el costo */}
             <div className="rounded-[1.25rem] border-2 border-success bg-success-subtle/50 p-5 space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-success">
-                    F9 y F10 · El hecho económico
+                    Pasos 9 y 10 · Cómo se anota el costo
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <Node tone="dinero" step="Al emitir la OC" title="Comprometido" detail="Plata que ya no está disponible" />
-                    <Node tone="dinero" step="Al recepcionar" title="Devengado" detail="El gasto ocurrió" />
+                    <Node tone="dinero" step="Al emitir la orden" title="Comprometido" detail="Plata que ya está tomada, aunque no se haya gastado" />
+                    <Node tone="dinero" step="Al recibir" title="Gastado" detail="La compra ya ocurrió" />
                     <Node tone="dinero" step="Al pagar la factura" title="Pagado" detail="La plata salió" />
                 </div>
                 <p className="text-sm text-success-subtle-foreground">
-                    Los tres alimentan el presupuesto contra real y el margen por contrato. Ningún
-                    asiento se edita ni se borra: una corrección es un asiento inverso.
+                    Los tres alimentan el presupuesto contra lo real y cuánto gana o pierde cada
+                    contrato. Nada se edita ni se borra: una corrección se anota como un movimiento
+                    en contra.
                 </p>
             </div>
         </div>

@@ -15,12 +15,17 @@ import { useToast } from '@/modules/core/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { ProtocolTemplate } from '@/modules/core/lib/data';
 import { cn } from '@/lib/utils';
+import { useActiveProject, useProjectWorkItems } from '@/components/operations/active-project';
 
 type Step = 'select-template' | 'fill-info';
 
 export default function NuevoProtocoloPage() {
   const { can } = useAuth();
-  const { protocolTemplates, workItems, createProtocol } = useAppState();
+  const { protocolTemplates, workItems: allWorkItems, createProtocol } = useAppState();
+  // Solo partidas de la obra activa: elegir una de otra obra desde acá era
+  // posible y el protocolo quedaba colgando del árbol equivocado.
+  const workItems = useProjectWorkItems(allWorkItems);
+  const { project } = useActiveProject();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -33,7 +38,11 @@ export default function NuevoProtocoloPage() {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<'inicio' | 'entrega'>('inicio');
   const [activityType, setActivityType] = useState('');
-  const [obra, setObra] = useState('');
+  // Se precarga con la obra activa (antes había que teclearla a mano, aunque el
+  // sistema ya sabe en qué obra está parado el usuario). Editable: el campo
+  // admite además la ubicación puntual dentro de la obra.
+  const [obraEditada, setObra] = useState<string | null>(null);
+  const obra = obraEditada ?? project?.name ?? '';
   const [workItemId, setWorkItemId] = useState<string>('none');
 
   const leafWorkItems = (workItems || []).filter(

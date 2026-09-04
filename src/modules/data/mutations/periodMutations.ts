@@ -1,5 +1,4 @@
 import { supabase } from '@/modules/core/lib/supabase';
-import { userCan } from '@/modules/core/lib/permissions';
 import type { FinancePeriodEvent, FinancePeriodWarning } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
 import { closedMonthsFromEvents } from '@/lib/finance-periods';
@@ -77,10 +76,10 @@ async function emitEvent(
     month: string,
     action: 'close' | 'reopen',
     reason: string | null,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<FinancePeriodEvent> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'finance:manage'))
+    if (!can('finance:manage'))
         throw new Error('No tienes permiso para administrar el cierre de períodos.');
 
     const { data, error } = await supabase

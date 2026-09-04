@@ -5,8 +5,20 @@ import { AssignedSafetyTask, ChecklistTemplate, DailyTalk, User } from '../../co
 
 import type { MutationContext as Context } from './context';
 
-export async function addChecklistTemplate(template: Pick<ChecklistTemplate, 'title' | 'items'>, { user, tenantId }: Context) {
+/**
+ * Puerta de permisos de Prevención de Riesgos.
+ *
+ * El límite real lo pone la base (migración 20260902050000); esto cubre el
+ * camino de la aplicación y da un mensaje entendible. `can` resuelve igual que
+ * la pantalla, incluidos los permisos que cada empresa personalizó.
+ */
+function exigir(can: Context['can'], permiso: Parameters<Context['can']>[0], accion: string) {
+    if (!can(permiso)) throw new Error(`No tienes permiso para ${accion}.`);
+}
+
+export async function addChecklistTemplate(template: Pick<ChecklistTemplate, 'title' | 'items'>, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+    exigir(can, 'safety_templates:create', 'crear plantillas de checklist');
 
     const { error } = await supabase.from('checklist_templates').insert({
         title: template.title,
@@ -19,14 +31,16 @@ export async function addChecklistTemplate(template: Pick<ChecklistTemplate, 'ti
     if (error) throw error;
 }
 
-export async function deleteChecklistTemplate(templateId: string, { tenantId }: Context) {
+export async function deleteChecklistTemplate(templateId: string, { tenantId, can }: Context) {
     if (!tenantId) throw new Error("Inquilino no válido.");
+    exigir(can, 'safety_templates:create', 'eliminar plantillas de checklist');
     const { error } = await supabase.from('checklist_templates').delete().eq('id', templateId).eq('tenant_id', tenantId);
     if (error) throw error;
 }
 
-export async function assignChecklistToSupervisors(template: ChecklistTemplate, supervisorIds: string[], workArea: string, { user, tenantId }: Context) {
+export async function assignChecklistToSupervisors(template: ChecklistTemplate, supervisorIds: string[], workArea: string, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+    exigir(can, 'safety_templates:create', 'asignar checklists');
 
     for (const supervisorId of supervisorIds) {
         await supabase.from('assigned_checklists').insert({
@@ -47,19 +61,23 @@ export async function assignChecklistToSupervisors(template: ChecklistTemplate, 
 export async function completeAssignedChecklist(checklist: AssignedSafetyTask, { tenantId }: Context) {
     if (!tenantId) throw new Error("Inquilino no válido.");
 
-    const { error } = await supabase.from('assigned_checklists').update({
+    const { data: rows, error } = await supabase.from('assigned_checklists').update({
         items: checklist.items,
         status: 'completed',
         completed_at: new Date().toISOString(),
-    }).eq('id', checklist.id).eq('tenant_id', tenantId);
+    }).eq('id', checklist.id).eq('tenant_id', tenantId).select('id');
 
     if (error) throw error;
+    if (!rows || rows.length === 0) {
+        throw new Error('No se pudo completar el checklist: no existe o no tienes permiso para modificarlo.');
+    }
 }
 
-export async function reviewAssignedChecklist(checklistId: string, status: 'approved' | 'rejected', notes: string, signature: string, { user, tenantId }: Context) {
+export async function reviewAssignedChecklist(checklistId: string, status: 'approved' | 'rejected', notes: string, signature: string, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
+    exigir(can, 'safety_checklists:review', 'revisar checklists');
 
-    const { error } = await supabase.from('assigned_checklists').update({
+    const { data: rows, error } = await supabase.from('assigned_checklists').update({
         status,
         rejection_notes: status === 'rejected' ? notes : null,
         reviewed_by: {
@@ -68,9 +86,12 @@ export async function reviewAssignedChecklist(checklistId: string, status: 'appr
             signature,
             date: new Date().toISOString()
         }
-    }).eq('id', checklistId).eq('tenant_id', tenantId);
+    }).eq('id', checklistId).eq('tenant_id', tenantId).select('id');
 
     if (error) throw error;
+    if (!rows || rows.length === 0) {
+        throw new Error('No se pudo revisar el checklist: no existe o no tienes permiso para modificarlo.');
+    }
 }
 
 export async function deleteAssignedChecklist(checklistId: string, { tenantId }: Context) {
@@ -105,19 +126,23 @@ export async function addSafetyInspection(data: any, { user, tenantId }: Context
 export async function completeSafetyInspection(inspectionId: string, data: any, { user, tenantId }: Context) {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
-    const { error } = await supabase.from('safety_inspections').update({
+    const { data: rows, error } = await supabase.from('safety_inspections').update({
         ...data,
         status: 'completed',
         completed_at: new Date().toISOString(),
         completion_executor: user.name,
-    }).eq('id', inspectionId).eq('tenant_id', tenantId);
+    }).eq('id', inspectionId).eq('tenant_id', tenantId).select('id');
     if (error) throw error;
+    if (!rows || rows.length === 0) {
+        throw new Error('No se pudo completar la inspección: no existe o no tienes permiso para modificarla.');
+    }
 }
 
-export async function reviewSafetyInspection(inspectionId: string, status: 'approved' | 'rejected', notes: string, signature: string, { user, tenantId }: Context) {
+export async function reviewSafetyInspection(inspectionId: string, status: 'approved' | 'rejected', notes: string, signature: string, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+    exigir(can, 'safety_inspections:review', 'revisar inspecciones');
 
-    const { error } = await supabase.from('safety_inspections').update({
+    const { data: rows, error } = await supabase.from('safety_inspections').update({
         status,
         rejection_notes: status === 'rejected' ? notes : null,
         reviewed_by: {
@@ -126,8 +151,11 @@ export async function reviewSafetyInspection(inspectionId: string, status: 'appr
             signature,
             date: new Date().toISOString(),
         },
-    }).eq('id', inspectionId).eq('tenant_id', tenantId);
+    }).eq('id', inspectionId).eq('tenant_id', tenantId).select('id');
     if (error) throw error;
+    if (!rows || rows.length === 0) {
+        throw new Error('No se pudo revisar la inspección: no existe o no tienes permiso para modificarla.');
+    }
 }
 
 export async function addBehaviorObservation(data: any, { user, tenantId }: Context) {

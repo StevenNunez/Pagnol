@@ -328,10 +328,10 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       return { navItems: getAbastecimientoNavItems(), moduleTitle: 'Abastecimiento', moduleIcon: PackageSearch };
     }
     if (pathname.startsWith('/dashboard/pagnol')) {
-      return { navItems: getPanolNavItems(can), moduleTitle: 'Módulo Pagnol', moduleIcon: Warehouse };
+      return { navItems: getPanolNavItems(can), moduleTitle: 'Control de Activos', moduleIcon: Warehouse };
     }
     if (pathname.startsWith('/dashboard/construction-control')) {
-      return { navItems: getConstructionNavItems(can), moduleTitle: 'Obra', moduleIcon: Construction };
+      return { navItems: getConstructionNavItems(can), moduleTitle: 'Control de Obras', moduleIcon: Construction };
     }
     if (pathname.startsWith('/dashboard/purchasing')) {
       return { navItems: getPurchasingNavItems(), moduleTitle: 'Compras', moduleIcon: ShoppingCart };
@@ -349,7 +349,7 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       return { navItems: getRentalsNavItems(), moduleTitle: 'Arriendos', moduleIcon: KeyRound };
     }
     if (pathname.startsWith('/dashboard/work-reports')) {
-      return { navItems: getWorkReportsNavItems(), moduleTitle: 'Reportes Trabajo', moduleIcon: NotebookPen };
+      return { navItems: getWorkReportsNavItems(), moduleTitle: 'Reportabilidad', moduleIcon: NotebookPen };
     }
     if (pathname.startsWith('/dashboard/rrhh')) {
       return { navItems: getRrhhNavItems(can), moduleTitle: 'Recursos Humanos', moduleIcon: UserCog };
@@ -379,7 +379,7 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
     // Bodega fusionada en el Módulo Pagnol: las rutas viejas redirigen, pero si
     // el usuario aterriza en una, mostramos el nav de Pagnol.
     if (pathname.startsWith('/dashboard/bodega')) {
-      return { navItems: getPanolNavItems(can), moduleTitle: 'Módulo Pagnol', moduleIcon: Warehouse };
+      return { navItems: getPanolNavItems(can), moduleTitle: 'Control de Activos', moduleIcon: Warehouse };
     }
     if (pathname.startsWith('/dashboard/dte')) {
       return { navItems: getDteNavItems(), moduleTitle: 'Facturación DTE', moduleIcon: Receipt };

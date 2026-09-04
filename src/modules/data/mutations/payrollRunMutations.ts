@@ -1,5 +1,4 @@
 import { supabase } from '@/modules/core/lib/supabase';
-import { userCan } from '@/modules/core/lib/permissions';
 import type {
     PayrollRun, PayrollLine, PayrollRunStatus, EmploymentContract,
     PayrollParameters, AfpRate, SalaryAdvance,
@@ -326,18 +325,18 @@ export async function proposePayrollLines(
 
 // ── Escritura ───────────────────────────────────────────────────────────────
 
-function requireHr(user: Context['user']) {
+function requireHr(user: Context['user'], can: Context['can']) {
     if (!user) throw new Error('No autenticado.');
-    if (!userCan(user, 'hr_employees:edit'))
+    if (!can('hr_employees:edit'))
         throw new Error('No tienes permiso para administrar remuneraciones.');
 }
 
 /** Crea el borrador del período (uno por mes: lo garantiza el UNIQUE). */
 export async function createPayrollRun(
     month: string,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<PayrollRun> {
-    requireHr(user);
+    requireHr(user, can);
     if (!tenantId) throw new Error('Sin inquilino.');
     const { data, error } = await supabase
         .from('payroll_runs')
@@ -375,9 +374,9 @@ export async function savePayrollDraft(
         ufValue: number;
         utmValue: number;
     },
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<{ run: PayrollRun; results: Record<string, PayrollResult> }> {
-    requireHr(user);
+    requireHr(user, can);
     if (!tenantId) throw new Error('Sin inquilino.');
 
     const { data: run, error: rErr } = await supabase
@@ -520,9 +519,9 @@ export async function savePayrollDraft(
 export async function closePayrollRun(
     runId: string,
     parameters: PayrollParameters,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<PayrollRun> {
-    requireHr(user);
+    requireHr(user, can);
     const { data: run, error: rErr } = await supabase
         .from('payroll_runs').select('*').eq('id', runId).single();
     if (rErr) throw rErr;
@@ -576,9 +575,9 @@ export async function closePayrollRun(
 export async function markPayrollRunPaid(
     runId: string,
     paymentDate: string,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<PayrollRun> {
-    requireHr(user);
+    requireHr(user, can);
     if (!paymentDate) throw new Error('Falta la fecha de pago.');
     const { data, error } = await supabase
         .from('payroll_runs')
@@ -603,8 +602,8 @@ export async function markPayrollRunPaid(
 }
 
 /** Elimina un borrador. El trigger rechaza cerradas y pagadas. */
-export async function deletePayrollRun(runId: string, { user }: Context): Promise<void> {
-    requireHr(user);
+export async function deletePayrollRun(runId: string, { user, can }: Context): Promise<void> {
+    requireHr(user, can);
     const { error } = await supabase.from('payroll_runs').delete().eq('id', runId);
     if (error) throw error;
 }

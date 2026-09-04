@@ -16,6 +16,8 @@ import {
   Send,
   Search,
   UserCheck,
+  HardHat,
+  Pencil,
   Loader2,
 } from 'lucide-react';
 import {
@@ -26,8 +28,10 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { WorkItem, ProgressLog } from '@/modules/core/lib/data';
+import { WorkItem, ProgressLog, WorkProject } from '@/modules/core/lib/data';
 import { CreateWorkItemForm } from '@/components/operations/create-work-item-form';
+import { ProjectSwitcher, useActiveProject, useProjectWorkItems } from '@/components/operations/active-project';
+import { WorkProjectDialog } from '@/components/operations/work-project-dialog';
 import { RegisterProgressForm } from '@/components/operations/register-progress-form';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -168,13 +172,24 @@ const WorkItemTree = ({ workItems, onSelect, selectedId }: { workItems: WorkItem
 
 export default function ConstructionWBSPage() {
   const { can } = useAuth();
-  const { workItems, isLoading, progressLogs, submitForQualityReview, updateWorkItem, users, seedExampleWorkItems } = useAppState();
-  const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
+  const { workItems: allWorkItems, isLoading, progressLogs, submitForQualityReview, updateWorkItem, users } = useAppState();
+  const { project, projects } = useActiveProject();
+  // Todo el módulo trabaja sobre UNA obra a la vez (RFC-006 F1).
+  const workItems = useProjectWorkItems(allWorkItems);
+  const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<WorkProject | null>(null);
+  const [selectedItemRaw, setSelectedItem] = useState<WorkItem | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isSubmittingProtocol, setIsSubmittingProtocol] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
   const { toast } = useToast();
+
+  // Al cambiar de obra, la partida seleccionada ya no pertenece a lo que se ve.
+  // Se deriva en el render y no en un efecto: con un efecto, el panel derecho
+  // alcanzaría a pintar un frame con la partida de la obra anterior.
+  const selectedItem = selectedItemRaw && workItems.some(i => i.id === selectedItemRaw.id)
+    ? selectedItemRaw
+    : null;
 
   const filteredItems = useMemo(() => {
     if (!workItems) return [];
@@ -203,6 +218,11 @@ export default function ConstructionWBSPage() {
     return workItems.filter(item => matchingIds.has(item.id) || ancestorIds.has(item.id));
   }, [workItems, searchTerm]);
 
+
+  const userNames = useMemo(
+    () => new Map((users || []).map(u => [u.id, u.name])),
+    [users],
+  );
 
   const selectedItemLogs = useMemo(() => {
     if (!selectedItem || !progressLogs) return [];
@@ -267,18 +287,6 @@ export default function ConstructionWBSPage() {
     }
   };
 
-  const handleSeedExample = async () => {
-    setIsSeeding(true);
-    try {
-      await seedExampleWorkItems();
-      toast({ title: 'Estructura de ejemplo cargada', description: 'Puedes editarla o eliminarla libremente.' });
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'No se pudo cargar el ejemplo.' });
-    } finally {
-      setIsSeeding(false);
-    }
-  };
-
   const formatDate = (date: Date | string | undefined) => {
     if (!date) return 'N/A';
     const jsDate = date instanceof Date ? date : new Date(date as any);
@@ -289,7 +297,54 @@ export default function ConstructionWBSPage() {
     <PageShell
       title="Partidas de Obra (EDT)"
       description="Gestiona la estructura de desglose del trabajo y registra el avance físico."
+      toolbar={
+        <div className="w-full flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <ProjectSwitcher />
+          {can('construction_control:manage_projects') && (
+            <div className="flex gap-2">
+              {project && (
+                <Button
+                  variant="ghost"
+                  className="gap-2 rounded-xl"
+                  onClick={() => { setEditingProject(project); setIsProjectDialogOpen(true); }}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Editar obra
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="gap-2 rounded-xl"
+                onClick={() => { setEditingProject(null); setIsProjectDialogOpen(true); }}
+              >
+                <HardHat className="h-4 w-4" />
+                Nueva Obra
+              </Button>
+            </div>
+          )}
+        </div>
+      }
     >
+      <WorkProjectDialog
+        open={isProjectDialogOpen}
+        onOpenChange={(open) => { setIsProjectDialogOpen(open); if (!open) setEditingProject(null); }}
+        project={editingProject}
+      />
+
+      {projects.length === 0 ? (
+        <EmptyState
+          icon={<HardHat size={22} />}
+          title="Todavía no hay obras"
+          description={can('construction_control:manage_projects')
+            ? 'Crea la primera obra para empezar a cargarle partidas y su programación.'
+            : 'Un administrador debe crear la obra antes de que puedas cargar partidas.'}
+          action={can('construction_control:manage_projects') && (
+            <Button className="gap-2 rounded-xl" onClick={() => { setEditingProject(null); setIsProjectDialogOpen(true); }}>
+              <HardHat size={14} /> Crear la primera obra
+            </Button>
+          )}
+        />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Columna Izquierda: Estructura y Creación */}
         <div className="lg:col-span-1 space-y-6">
@@ -318,16 +373,11 @@ export default function ConstructionWBSPage() {
               ) : (
                 <EmptyState
                   icon={<FolderTree size={22} />}
-                  title="Sin estructura de obra"
+                  title="Esta obra no tiene partidas"
                   description={can('construction_control:edit_structure')
-                    ? 'Crea tu primer contrato/partida con el formulario de abajo, o carga una estructura de ejemplo para explorar el módulo.'
-                    : 'Aún no se ha definido la estructura de desglose de la obra.'}
-                  action={can('construction_control:edit_structure') && (
-                    <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={handleSeedExample} disabled={isSeeding}>
-                      {isSeeding ? <Loader2 size={14} className="animate-spin" /> : <FolderTree size={14} />}
-                      Cargar Estructura de Ejemplo
-                    </Button>
-                  )}
+                    ? 'Cárgale su primera partida con el formulario de abajo.'
+                    : 'Aún no se ha definido la estructura de desglose de esta obra.'}
+
                 />
               )}
             </CardContent>
@@ -342,7 +392,7 @@ export default function ConstructionWBSPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <CreateWorkItemForm workItems={workItems || []} />
+                <CreateWorkItemForm workItems={workItems} />
               </CardContent>
             </Card>
           )}
@@ -404,12 +454,29 @@ export default function ConstructionWBSPage() {
                       </div>
                     )}
                     
+                    {/* El motivo del rechazo se veía solo en "Mis Partidas". Acá es
+                        donde el ejecutor corrige y reenvía: sin el motivo a la vista,
+                        reenvía lo mismo y Calidad lo vuelve a rechazar. */}
+                    {selectedItem.status === 'rejected' && (
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>
+                          Rechazada por Calidad
+                          {selectedItem.reviewedAt && ` · ${formatDate(selectedItem.reviewedAt)}`}
+                          {selectedItem.reviewedBy && userNames.get(selectedItem.reviewedBy) && ` · ${userNames.get(selectedItem.reviewedBy)}`}
+                        </AlertTitle>
+                        <AlertDescription>
+                          {selectedItem.rejectionReason || 'Sin motivo registrado.'}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
                     { selectedItem.progress < 100 && selectedItem.status !== 'pending-quality-review' ? (
                        <RegisterProgressForm workItem={selectedItem} />
                     ) : (
                         <div className="py-4">
                             {selectedItem.status === 'pending-quality-review' ? (
-                                 <Alert className="bg-blue-50 border-blue-200 text-blue-800 [&>svg]:text-blue-600">
+                                 <Alert className="bg-info-subtle border-info/30 text-info-subtle-foreground [&>svg]:text-info">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertTitle>Pendiente de Revisión</AlertTitle>
                                     <AlertDescription>
@@ -418,19 +485,29 @@ export default function ConstructionWBSPage() {
                                 </Alert>
                             ) : (
                                 <>
-                                 <Alert className="bg-green-50 border-green-200 text-green-800 [&>svg]:text-green-600">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertTitle>Partida Completada</AlertTitle>
-                                    <AlertDescription>
-                                        Esta partida ha alcanzado el 100% de su avance.
-                                    </AlertDescription>
-                                </Alert>
-                                <div className="mt-4 text-center">
+                                 {/* Una partida rechazada está al 100% igual, pero decirle
+                                     "Completada" arriba del motivo del rechazo es contradictorio:
+                                     lo que corresponde ahí es corregir y reenviar. */}
+                                 {selectedItem.status !== 'rejected' && (
+                                   <Alert className="bg-success-subtle border-success/30 text-success-subtle-foreground [&>svg]:text-success">
+                                      <AlertCircle className="h-4 w-4" />
+                                      <AlertTitle>Partida Completada</AlertTitle>
+                                      <AlertDescription>
+                                          Esta partida ha alcanzado el 100% de su avance.
+                                          {selectedItem.status === 'completed' && selectedItem.reviewedAt && (
+                                              <> Aprobada por {userNames.get(selectedItem.reviewedBy ?? '') ?? 'Calidad'} el {formatDate(selectedItem.reviewedAt)}.</>
+                                          )}
+                                      </AlertDescription>
+                                  </Alert>
+                                 )}
+                                {selectedItem.status !== 'completed' && (
+                                  <div className="mt-4 text-center">
                                     <Button onClick={handleSendToProtocol} disabled={isSubmittingProtocol}>
                                         {isSubmittingProtocol ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Send className="mr-2 h-4 w-4" />}
-                                        Enviar a Revisión de Calidad
+                                        {selectedItem.status === 'rejected' ? 'Corregir y reenviar a Calidad' : 'Enviar a Revisión de Calidad'}
                                     </Button>
-                                </div>
+                                  </div>
+                                )}
                                 </>
                             )}
                         </div>
@@ -469,6 +546,7 @@ export default function ConstructionWBSPage() {
           </Card>
         </div>
       </div>
+      )}
     </PageShell>
   );
 }

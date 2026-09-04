@@ -1,5 +1,4 @@
 import { supabase } from '@/modules/core/lib/supabase';
-import { userCan } from '@/modules/core/lib/permissions';
 import type {
     Severance, PublicHoliday, EmploymentContract, SalaryAdvance,
 } from '@/modules/core/lib/data';
@@ -23,9 +22,9 @@ import { emitSeveranceCost, emitSeverancePayment } from './severanceLedger';
 // emitir: la causal de término, si se dio el aviso de 30 días, y los días de
 // feriado progresivo que el trabajador haya acreditado.
 
-function requireHr(user: Context['user']) {
+function requireHr(user: Context['user'], can: Context['can']) {
     if (!user) throw new Error('No autenticado.');
-    if (!userCan(user, 'hr_employees:edit'))
+    if (!can('hr_employees:edit'))
         throw new Error('No tienes permiso para administrar finiquitos.');
 }
 
@@ -306,9 +305,9 @@ function toRow(input: SeveranceDraftInput, result: SeveranceResult, tenantId: st
 /** Crea el borrador corriendo el motor. */
 export async function saveSeveranceDraft(
     input: SeveranceDraftInput,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<{ severance: Severance; result: SeveranceResult }> {
-    requireHr(user);
+    requireHr(user, can);
     if (!tenantId) throw new Error('Sin inquilino.');
 
     const result = runEngine(input);
@@ -330,9 +329,9 @@ export async function saveSeveranceDraft(
 export async function recalculateSeveranceDraft(
     id: string,
     input: SeveranceDraftInput,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<{ severance: Severance; result: SeveranceResult }> {
-    requireHr(user);
+    requireHr(user, can);
     if (!tenantId) throw new Error('Sin inquilino.');
 
     const result = runEngine(input);
@@ -358,9 +357,9 @@ export async function recalculateSeveranceDraft(
  */
 export async function closeSeverance(
     id: string,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<Severance> {
-    requireHr(user);
+    requireHr(user, can);
     const { data: row, error: rErr } = await supabase
         .from('severances').select('*').eq('id', id).single();
     if (rErr) throw rErr;
@@ -408,9 +407,9 @@ export async function closeSeverance(
 export async function markSeverancePaid(
     id: string,
     paymentDate: string,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<Severance> {
-    requireHr(user);
+    requireHr(user, can);
     const { data: row, error: rErr } = await supabase
         .from('severances').select('*').eq('id', id).single();
     if (rErr) throw rErr;
@@ -442,8 +441,8 @@ export async function markSeverancePaid(
 }
 
 /** Elimina un borrador. Los cerrados los protege el trigger (Art. 2). */
-export async function deleteSeveranceDraft(id: string, { user }: Context): Promise<void> {
-    requireHr(user);
+export async function deleteSeveranceDraft(id: string, { user, can }: Context): Promise<void> {
+    requireHr(user, can);
     const { error } = await supabase.from('severances').delete().eq('id', id);
     if (error) throw error;
 }

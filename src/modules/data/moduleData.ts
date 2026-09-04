@@ -47,7 +47,7 @@ export const ALL_COLLECTIONS = [
     'suppliers', 'materialCategories', 'units', 'purchaseLots', 'purchaseOrders',
     'quoteRequests', 'goodsReceipts', 'costCenters', 'supplierPayments',
     'salaryAdvances', 'attendanceLogs', 'assignedChecklists', 'biometricVerifications', 'safetyInspections',
-    'checklistTemplates', 'behaviorObservations', 'stockMovements', 'workItems',
+    'checklistTemplates', 'behaviorObservations', 'stockMovements', 'workItems', 'workProjects',
     'progressLogs', 'paymentStates', 'dailyTalks', 'maintenanceOrders',
     'maintenanceLogs', 'eaDocuments', 'protocolTemplates', 'protocols',
     'shiftSchedules', 'clients', 'contracts', 'contractWorkers', 'rentalParties',
@@ -92,12 +92,12 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
     ],
     'construction-control': [
         'contracts', 'progressLogs', 'protocolTemplates', 'protocols', 'users',
-        'workItems',
+        'workItems', 'workProjects',
     ],
     'cphs': [],
     'dte': [],
     'estado-pago': [
-        'paymentStates', 'progressLogs', 'workItems',
+        'paymentStates', 'progressLogs', 'workItems', 'workProjects',
     ],
     'finanzas': [
         'attendanceLogs', 'contracts', 'users',

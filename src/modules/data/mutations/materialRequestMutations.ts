@@ -75,7 +75,7 @@ export async function addMaterialRequest(
   },
   context: Context
 ) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
   const supervisorName = requestData.supervisorName || user.name || 'Usuario';
@@ -89,7 +89,7 @@ export async function addMaterialRequest(
 
   // Si quien crea ya puede autorizar (ADC o superior), la solicitud entra
   // pre-autorizada y salta el gate del ADC, directo a la cola del pañol.
-  const preAuthorized = userCan(user, 'material_requests:authorize');
+  const preAuthorized = can('material_requests:authorize');
   const now = new Date().toISOString();
 
   const { error } = await supabase
@@ -236,9 +236,9 @@ export async function addAndApproveMaterialRequest(
  * — solo levanta el gate `adc_authorized_at`.
  */
 export async function authorizeMaterialRequest(requestId: string, context: Context) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-  if (!userCan(user, 'material_requests:authorize'))
+  if (!can('material_requests:authorize'))
     throw new Error('No tienes permiso para autorizar solicitudes de material.');
 
   const { error } = await supabase
@@ -454,7 +454,7 @@ async function computeReturnBalances(tenantId: string, userId: string): Promise<
 export async function addReturnRequest(
   items: { materialId: string; quantity: number; materialName: string; unit: string; contractId?: string | null; contractName?: string | null }[],
   notes: string,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
   if (items.length === 0) throw new Error("Debes indicar al menos un ítem a devolver.");
@@ -597,7 +597,7 @@ export async function updateReturnRequestStatus(
   requestId: string,
   status: 'completed' | 'rejected',
   additionalData: { condition: 'OK' | 'CON FALLA' | 'ROTO', evidenceUrl?: string } | undefined,
-  { user, tenantId }: Context,
+  { user, tenantId, can }: Context,
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
@@ -650,12 +650,12 @@ export async function updateReturnRequestStatus(
   }).eq('id', requestId);
 }
 
-export async function deleteMaterialRequest(requestId: string, { user, tenantId }: Context) {
+export async function deleteMaterialRequest(requestId: string, { user, tenantId, can }: Context) {
   const { error } = await supabase.from('material_requests').delete().eq('id', requestId);
   if (error) throw error;
 }
 
-export async function deleteReturnRequest(requestId: string, { user, tenantId }: Context) {
+export async function deleteReturnRequest(requestId: string, { user, tenantId, can }: Context) {
   const { error } = await supabase.from('return_requests').delete().eq('id', requestId);
   if (error) throw error;
 }

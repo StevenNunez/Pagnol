@@ -36,7 +36,7 @@ export default function DashboardHub() {
 
     const modules = [
         {
-            title: "Módulo Pagnol",
+            title: "Módulo Control de Activos",
             description: "Gestión especializada para minería: activos, pañol, solicitudes y transacciones.",
             icon: Pickaxe,
             href: "/dashboard/pagnol",
@@ -48,7 +48,7 @@ export default function DashboardHub() {
             permissions: ['module_pagnol:view', 'module_bodega:view', 'module_warehouse:view']
         },
         {
-            title: "Control de Obra",
+            title: "Módulo Control de Obras",
             description: "Gestiona el avance físico de la obra.",
             icon: HardHat,
             href: "/dashboard/construction-control",
@@ -57,6 +57,17 @@ export default function DashboardHub() {
             border: "hover:border-orange-300 dark:hover:border-orange-500/50",
             shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
             permission: 'module_construction_control:view'
+        },
+        {
+            title: "Módulo Reportabilidad",
+            description: "Informes diarios de terreno con fotos, HH, HM, firmas y aprobaciones.",
+            icon: NotebookPen,
+            href: "/dashboard/work-reports",
+            color: "text-orange-600 dark:text-orange-400",
+            bg: "bg-orange-100 dark:bg-orange-500/10",
+            border: "hover:border-orange-300 dark:hover:border-orange-500/50",
+            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
+            permission: 'module_work_reports:view'
         },
         {
             title: "Autorizaciones",
@@ -222,17 +233,6 @@ export default function DashboardHub() {
             border: "hover:border-teal-300 dark:hover:border-teal-500/50",
             shadow: "hover:shadow-teal-500/20 dark:hover:shadow-teal-500/10",
             permission: 'module_rentals:view'
-        },
-        {
-            title: "Reportes de Trabajo",
-            description: "Informes diarios de terreno con fotos, HH, HM, firmas y aprobaciones.",
-            icon: NotebookPen,
-            href: "/dashboard/work-reports",
-            color: "text-orange-600 dark:text-orange-400",
-            bg: "bg-orange-100 dark:bg-orange-500/10",
-            border: "hover:border-orange-300 dark:hover:border-orange-500/50",
-            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
-            permission: 'module_work_reports:view'
         },
         {
             title: "Recursos Humanos",

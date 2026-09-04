@@ -9,7 +9,23 @@ import {
   reverseEntriesForSource,
 } from './financeLedger';
 
-export async function addSupplierPayment(data: any, { user, tenantId }: Context) {
+/**
+ * Puerta de permisos de Pagos.
+ *
+ * Los cinco permisos del módulo existían y no se usaban en ninguna parte: se
+ * podían activar en Gestión de Permisos sin ningún efecto. El límite de verdad
+ * lo pone la base (migración 20260902020000); esto cubre el camino de la
+ * aplicación y da un mensaje entendible en vez de un error de Postgres.
+ *
+ * `can` resuelve igual que la pantalla, incluidos los permisos que cada empresa
+ * personalizó — usar `userCan` dejaría fuera a esos roles.
+ */
+function exigir(can: Context['can'], permiso: Parameters<Context['can']>[0], accion: string) {
+    if (!can(permiso)) throw new Error(`No tienes permiso para ${accion}.`);
+}
+
+export async function addSupplierPayment(data: any, { user, tenantId, can }: Context) {
+  exigir(can, 'payments:create', 'ingresar facturas');
   if (!tenantId) throw new Error("Inquilino no válido.");
 
   const { data: inserted, error } = await supabase.from('supplier_payments').insert({
@@ -20,7 +36,7 @@ export async function addSupplierPayment(data: any, { user, tenantId }: Context)
   }).select('id').single();
 
   if (error) throw error;
-  await emitPayableEntry(inserted.id, { user, tenantId });
+  await emitPayableEntry(inserted.id, { user, tenantId, can });
 }
 
 /**
@@ -35,7 +51,7 @@ export async function addSupplierPayment(data: any, { user, tenantId }: Context)
  * UPDATE (Art. 2). `source_type` propio para que el reverso de la obligación no
  * toque el hecho de costo 'supplier_payment' y viceversa.
  */
-async function emitPayableEntry(paymentId: string, { user, tenantId }: Context) {
+async function emitPayableEntry(paymentId: string, { user, tenantId, can }: Context) {
   const { data: p } = await supabase
     .from('supplier_payments')
     .select('id, amount, due_date, invoice_number, supplier_id, purchase_order_id, status')
@@ -67,7 +83,7 @@ async function emitPayableEntry(paymentId: string, { user, tenantId }: Context) 
     counterpartyId: p.supplier_id || null,
     counterpartyName: supplierName,
     notes: `Factura ${p.invoice_number || ''} por pagar${p.due_date ? ` — vence ${p.due_date}` : ' — sin vencimiento'}`,
-  }], { user, tenantId });
+  }], { user, tenantId, can });
 }
 
 /** Contrato heredado de la OC cuando todas sus solicitudes comparten uno. */
@@ -84,7 +100,8 @@ async function contractFromPurchaseOrder(purchaseOrderId: string | null | undefi
   return { contractId: [...distinct.keys()][0], contractName: [...distinct.values()][0] };
 }
 
-export async function updateSupplierPayment(paymentId: string, data: any, { user, tenantId }: Context) {
+export async function updateSupplierPayment(paymentId: string, data: any, { user, tenantId, can }: Context) {
+  exigir(can, 'payments:edit', 'editar facturas');
   if (!tenantId) throw new Error("Inquilino no válido.");
 
   const { data: before } = await supabase
@@ -106,9 +123,9 @@ export async function updateSupplierPayment(paymentId: string, data: any, { user
     await reverseEntriesForSource(
       'supplier_payment', paymentId,
       `Monto de factura corregido por ${user?.name || 'usuario'}`,
-      { user, tenantId },
+      { user, tenantId, can },
     );
-    await emitPaidEntry(paymentId, { user, tenantId });
+    await emitPaidEntry(paymentId, { user, tenantId, can });
   }
 
   // Si cambió el monto o el VENCIMIENTO de una factura pendiente, su obligación
@@ -118,9 +135,9 @@ export async function updateSupplierPayment(paymentId: string, data: any, { user
     await reverseEntriesForSource(
       'supplier_invoice', paymentId,
       `Factura corregida por ${user?.name || 'usuario'}`,
-      { user, tenantId },
+      { user, tenantId, can },
     );
-    await emitPayableEntry(paymentId, { user, tenantId });
+    await emitPayableEntry(paymentId, { user, tenantId, can });
   }
 }
 
@@ -128,7 +145,7 @@ export async function updateSupplierPayment(paymentId: string, data: any, { user
 // la factura es BRUTO con IVA 19% → el ledger guarda el neto derivado. El
 // contrato se hereda de la OC vinculada cuando todas sus solicitudes comparten
 // uno; si no, queda "sin contrato" (visible como alerta en el panel).
-async function emitPaidEntry(paymentId: string, { user, tenantId }: Context) {
+async function emitPaidEntry(paymentId: string, { user, tenantId, can }: Context) {
   const { data: payment } = await supabase
     .from('supplier_payments')
     .select('*')
@@ -183,11 +200,12 @@ async function emitPaidEntry(paymentId: string, { user, tenantId }: Context) {
     notes: payment.purchase_order_id
       ? `Pago factura ${payment.invoice_number || ''} (OC ${payment.purchase_order_id})`
       : `Pago factura ${payment.invoice_number || ''} — sin OC vinculada`,
-  }], { user, tenantId });
+  }], { user, tenantId, can });
 }
 
-export async function markPaymentAsPaid(paymentId: string, details: { paymentDate: Date; paymentMethod: string; }, { user, tenantId }: Context) {
+export async function markPaymentAsPaid(paymentId: string, details: { paymentDate: Date; paymentMethod: string; }, { user, tenantId, can }: Context) {
   if (!tenantId) throw new Error("Inquilino no válido.");
+  exigir(can, 'payments:mark_as_paid', 'marcar facturas como pagadas');
 
   const { data: rows, error } = await supabase.from('supplier_payments').update({
     status: 'paid',
@@ -203,25 +221,26 @@ export async function markPaymentAsPaid(paymentId: string, details: { paymentDat
   await reverseEntriesForSource(
     'supplier_invoice', paymentId,
     `Factura pagada por ${user?.name || 'usuario'}`,
-    { user, tenantId },
+    { user, tenantId, can },
   );
-  await emitPaidEntry(paymentId, { user, tenantId });
+  await emitPaidEntry(paymentId, { user, tenantId, can });
 }
 
-export async function deleteSupplierPayment(paymentId: string, { user, tenantId }: Context) {
+export async function deleteSupplierPayment(paymentId: string, { user, tenantId, can }: Context) {
   if (!tenantId) throw new Error("Inquilino no válido.");
+  exigir(can, 'payments:delete', 'eliminar facturas');
   // Reverso ANTES de borrar: si estaba pagada, su hecho queda neteado en 0
   // (idempotente — una factura pendiente no tiene hechos que reversar).
   await reverseEntriesForSource(
     'supplier_payment', paymentId,
     `Factura eliminada por ${user?.name || 'usuario'}`,
-    { user, tenantId },
+    { user, tenantId, can },
   );
   // …y su obligación de caja, si seguía pendiente (idempotente si ya se apagó).
   await reverseEntriesForSource(
     'supplier_invoice', paymentId,
     `Factura eliminada por ${user?.name || 'usuario'}`,
-    { user, tenantId },
+    { user, tenantId, can },
   );
   const { error } = await supabase.from('supplier_payments').delete().eq('id', paymentId).eq('tenant_id', tenantId);
   if (error) throw error;
@@ -229,7 +248,7 @@ export async function deleteSupplierPayment(paymentId: string, { user, tenantId 
 
 export async function addSalaryAdvanceRequest(
   data: { workerId: string; workerName: string; amount: number; },
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
@@ -254,7 +273,7 @@ export async function addSalaryAdvanceRequest(
 
 export async function approveSalaryAdvance(
   advanceId: string,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
@@ -274,7 +293,7 @@ export async function approveSalaryAdvance(
     throw new Error('No se pudo aprobar el anticipo: no tienes permiso para autorizarlo.');
   }
 
-  await emitAdvancePayable(rows[0], { user, tenantId });
+  await emitAdvancePayable(rows[0], { user, tenantId, can });
 }
 
 /**
@@ -291,7 +310,7 @@ export async function approveSalaryAdvance(
  */
 async function emitAdvancePayable(
   adv: { id: string; amount: number; user_id: string; worker_name?: string | null },
-  { user, tenantId }: Context,
+  { user, tenantId, can }: Context,
 ) {
   const monto = Math.round(Number(adv.amount) || 0);
   if (monto <= 0) return;
@@ -307,7 +326,7 @@ async function emitAdvancePayable(
     counterpartyId: adv.user_id,
     counterpartyName: adv.worker_name || null,
     notes: `Anticipo de sueldo aprobado · por transferir a ${adv.worker_name || 'el trabajador'}`,
-  }], { user, tenantId });
+  }], { user, tenantId, can });
 }
 
 /**
@@ -317,7 +336,7 @@ async function emitAdvancePayable(
 export async function markSalaryAdvancePaid(
   advanceId: string,
   details: { paymentDate: string; paymentMethod: string },
-  { user, tenantId }: Context,
+  { user, tenantId, can }: Context,
 ) {
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
   if (!details.paymentDate) throw new Error('La fecha de pago es obligatoria.');
@@ -339,14 +358,14 @@ export async function markSalaryAdvancePaid(
   await reverseEntriesForSource(
     'salary_advance', advanceId,
     `Anticipo transferido el ${details.paymentDate} por ${user.name || 'usuario'}`,
-    { user, tenantId },
+    { user, tenantId, can },
   );
 }
 
 export async function rejectSalaryAdvance(
   advanceId: string,
   rejectionReason: string,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 

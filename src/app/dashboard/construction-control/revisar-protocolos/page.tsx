@@ -15,6 +15,7 @@ import {
   CheckSquare,
   Inbox,
   Clock,
+  HardHat,
   MessageSquare,
 } from 'lucide-react';
 import {
@@ -45,7 +46,16 @@ import { es } from 'date-fns/locale';
 
 export default function RevisarProtocolosPage() {
   const { can } = useAuth();
-  const { workItems, isLoading, approveWorkItem, rejectWorkItem, users } = useAppState();
+  const { workItems, isLoading, approveWorkItem, rejectWorkItem, users, workProjects } = useAppState();
+
+  // Esta bandeja es global a propósito: quien aprueba tiene que ver todo lo
+  // que espera revisión, no solo lo de la obra que tenga elegida. Pero sin el
+  // nombre de la obra el código de EDT es ambiguo — '01/03/02/01' significa
+  // cosas distintas en cada obra, y se estaría aprobando a ciegas.
+  const obraDe = useMemo(
+    () => new Map((workProjects || []).map(p => [p.id, p.name])),
+    [workProjects],
+  );
   const { toast } = useToast();
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -116,6 +126,12 @@ export default function RevisarProtocolosPage() {
                         {itemsForReview.map(item => (
                             <div key={item.id} className="grid grid-cols-12 items-center gap-4 p-4 border rounded-md hover:bg-muted/50 transition-colors">
                                 <div className="col-span-8 space-y-1">
+                                    {obraDe.get(item.workProjectId ?? '') && (
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                                            <HardHat className="h-3 w-3" />
+                                            {obraDe.get(item.workProjectId ?? '')}
+                                        </p>
+                                    )}
                                     <p className="font-semibold text-foreground">{item.path} — {item.name}</p>
                                     <p className="text-sm text-muted-foreground">{item.quantity.toLocaleString()} {item.unit}</p>
                                     <div className="flex flex-wrap gap-x-4 gap-y-0.5">

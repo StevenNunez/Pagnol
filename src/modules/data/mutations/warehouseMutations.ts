@@ -1,5 +1,4 @@
 import { supabase } from '@/modules/core/lib/supabase';
-import { userCan } from '@/modules/core/lib/permissions';
 import type { Warehouse } from '@/modules/core/lib/data';
 import { mappers } from '../mappers';
 import { transferInLedger } from './stockLedger';
@@ -19,10 +18,10 @@ export async function addWarehouse(
         notes?: string | null;
         contractIds?: string[];
     },
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<Warehouse> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'warehouses:manage')) throw new Error('No tienes permiso para gestionar pañoles.');
+    if (!can('warehouses:manage')) throw new Error('No tienes permiso para gestionar pañoles.');
 
     const { data: inserted, error } = await supabase
         .from('warehouses')
@@ -47,10 +46,10 @@ export async function addWarehouse(
 export async function updateWarehouse(
     id: string,
     data: Partial<Warehouse> & { contractIds?: string[] },
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'warehouses:manage')) throw new Error('No tienes permiso para gestionar pañoles.');
+    if (!can('warehouses:manage')) throw new Error('No tienes permiso para gestionar pañoles.');
 
     const payload: Record<string, unknown> = {};
     if (data.name !== undefined) payload.name = data.name;
@@ -74,9 +73,9 @@ export async function updateWarehouse(
     if (data.contractIds) await syncWarehouseContracts(id, data.contractIds, tenantId);
 }
 
-export async function deleteWarehouse(id: string, { user, tenantId }: Context): Promise<void> {
+export async function deleteWarehouse(id: string, { user, tenantId, can }: Context): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'warehouses:manage')) throw new Error('No tienes permiso para gestionar pañoles.');
+    if (!can('warehouses:manage')) throw new Error('No tienes permiso para gestionar pañoles.');
 
     const { error } = await supabase.from('warehouses').delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) {
@@ -131,10 +130,10 @@ export async function transferMaterialStock(
         warehouseId?: string | null;
         justification?: string;
     },
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'stock:transfer')) throw new Error('No tienes permiso para transferir stock entre contratos.');
+    if (!can('stock:transfer')) throw new Error('No tienes permiso para transferir stock entre contratos.');
 
     const { data: mat, error: matErr } = await supabase
         .from('materials')

@@ -18,6 +18,17 @@ async function getResponses(rfqId: string, tenantId: string): Promise<QuoteRespo
     return (data.responses || []) as QuoteResponse[];
 }
 
+/**
+ * Puerta de permisos de cotizaciones y adjudicación.
+ *
+ * Adjudicar es elegir a qué proveedor se le compra: crea la orden de compra y
+ * compromete el gasto. La pantalla del comparador lo gatea con
+ * `finance:manage_purchase_orders`; acá se exige lo mismo, ni más estricto.
+ */
+function exigir(can: Context['can'], permiso: Parameters<Context['can']>[0], accion: string) {
+    if (!can(permiso)) throw new Error(`No tienes permiso para ${accion}.`);
+}
+
 export async function addQuoteRequest(
     data: { title: string; requestIds: string[]; items: QuoteItem[]; supplierIds: string[]; deadline?: string; notes?: string },
     { user, tenantId }: Context,
@@ -127,8 +138,9 @@ export async function uploadQuoteAttachment(
 // Adjudica la RFQ a una cotización ganadora y GENERA la Orden de Compra
 // (regla de oro: la OC nace de una RFQ adjudicada). Marca las solicitudes
 // incluidas como 'ordered' y deja la RFQ en estado 'awarded'.
-export async function awardQuote(rfqId: string, quoteId: string, { user, tenantId }: Context): Promise<string> {
+export async function awardQuote(rfqId: string, quoteId: string, { user, tenantId, can }: Context): Promise<string> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+    exigir(can, 'finance:manage_purchase_orders', 'adjudicar una cotización');
 
     const { data: rfq, error: rfqErr } = await supabase
         .from('quote_requests')

@@ -18,10 +18,27 @@ import type { MutationContext as Context } from './context';
 
 // ── Contrapartes (arrendadores / clientes) ───────────────────────────────────
 
+/**
+ * Puerta de permisos de Arriendos.
+ *
+ * Las 19 mutaciones del módulo no validaban nada: la pantalla sí gatea sus
+ * botones (`rentals:manage_contracts` / `manage_payments` / `manage_parties`),
+ * pero por la API quedaba todo abierto — confirmar una OC de arriendo
+ * materializa activos y compromete plata en el ledger.
+ *
+ * `can` resuelve igual que la pantalla, incluidos los permisos que cada empresa
+ * personalizó.
+ */
+function exigir(can: Context['can'], permiso: Parameters<Context['can']>[0], accion: string) {
+    if (!can(permiso)) throw new Error(`No tienes permiso para ${accion}.`);
+}
+
 export async function addRentalParty(
   data: Omit<RentalParty, 'id' | 'tenantId' | 'createdAt'>,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<RentalParty> {
+    exigir(can, 'rentals:manage_parties', 'crear arrendadores');
+
   if (!user || !tenantId) throw new Error('No autenticado.');
 
   const { data: inserted, error } = await supabase
@@ -50,8 +67,10 @@ export async function addRentalParty(
 export async function updateRentalParty(
   id: string,
   data: Partial<RentalParty>,
-  { tenantId }: Context
+  { tenantId, can }: Context
 ): Promise<void> {
+    exigir(can, 'rentals:manage_parties', 'editar arrendadores');
+
   if (!tenantId) throw new Error('No autenticado.');
 
   const payload: any = {};
@@ -76,7 +95,9 @@ export async function updateRentalParty(
   if (error) throw error;
 }
 
-export async function deleteRentalParty(id: string, { tenantId }: Context): Promise<void> {
+export async function deleteRentalParty(id: string, { tenantId, can }: Context): Promise<void> {
+    exigir(can, 'rentals:manage_parties', 'eliminar arrendadores');
+
   if (!tenantId) throw new Error('No autenticado.');
 
   const { error } = await supabase
@@ -92,8 +113,10 @@ export async function deleteRentalParty(id: string, { tenantId }: Context): Prom
 
 export async function addRentalContract(
   data: Omit<RentalContract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<RentalContract> {
+    exigir(can, 'rentals:manage_contracts', 'crear contratos de arriendo');
+
   if (!user || !tenantId) throw new Error('No autenticado.');
 
   const { data: inserted, error } = await supabase
@@ -131,8 +154,10 @@ export async function addRentalContract(
 export async function updateRentalContract(
   id: string,
   data: Partial<RentalContract>,
-  { tenantId }: Context
+  { tenantId, can }: Context
 ): Promise<void> {
+    exigir(can, 'rentals:manage_contracts', 'editar contratos de arriendo');
+
   if (!tenantId) throw new Error('No autenticado.');
 
   const payload: any = {};
@@ -206,6 +231,8 @@ async function rentalFinanceContext(contractRow: {
 }
 
 export async function deleteRentalContract(id: string, context: Context): Promise<void> {
+    exigir(context.can, 'rentals:manage_contracts', 'eliminar contratos de arriendo');
+
   const { tenantId } = context;
   if (!tenantId) throw new Error('No autenticado.');
 
@@ -246,8 +273,10 @@ export async function deleteRentalContract(id: string, context: Context): Promis
 export async function closeRentalContract(
   contractId: string,
   opts: { returnDate: Date | string; notes?: string; cancelFuturePayments?: boolean },
-  { user, tenantId }: Context,
+  { user, tenantId, can }: Context,
 ): Promise<void> {
+    exigir(can, 'rentals:manage_contracts', 'cerrar contratos de arriendo');
+
   if (!user || !tenantId) throw new Error('No autenticado.');
 
   const returnDateStr = format(new Date(opts.returnDate as any), 'yyyy-MM-dd');
@@ -354,8 +383,10 @@ export async function closeRentalContract(
 export async function returnRentalAsset(
   id: string,
   returnDate: Date | string,
-  { tenantId }: Context,
+  { tenantId, can }: Context,
 ): Promise<void> {
+    exigir(can, 'rentals:manage_contracts', 'registrar devoluciones de equipos');
+
   if (!tenantId) throw new Error('No autenticado.');
 
   const { error } = await supabase
@@ -385,8 +416,10 @@ export async function returnRentalAsset(
  */
 export async function materializeRentalContractAssets(
   contractId: string,
-  { user, tenantId }: Context,
+  { user, tenantId, can }: Context,
 ): Promise<number> {
+    exigir(can, 'rentals:manage_contracts', 'materializar los equipos del contrato');
+
   if (!user || !tenantId) throw new Error('No autenticado.');
 
   // Solo los activos AÚN en arriendo: un equipo ya devuelto no debe reingresar al inventario.
@@ -481,8 +514,10 @@ export async function materializeRentalContractAssets(
 
 export async function addRentalAsset(
   data: Omit<RentalAsset, 'id' | 'tenantId' | 'createdAt'>,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<RentalAsset> {
+    exigir(can, 'rentals:manage_contracts', 'agregar equipos al contrato');
+
   if (!user || !tenantId) throw new Error('No autenticado.');
 
   const { data: inserted, error } = await supabase
@@ -510,8 +545,10 @@ export async function addRentalAsset(
 export async function updateRentalAsset(
   id: string,
   data: Partial<RentalAsset>,
-  { tenantId }: Context
+  { tenantId, can }: Context
 ): Promise<void> {
+    exigir(can, 'rentals:manage_contracts', 'editar equipos del contrato');
+
   if (!tenantId) throw new Error('No autenticado.');
 
   const payload: any = {};
@@ -534,7 +571,9 @@ export async function updateRentalAsset(
   if (error) throw error;
 }
 
-export async function deleteRentalAsset(id: string, { tenantId }: Context): Promise<void> {
+export async function deleteRentalAsset(id: string, { tenantId, can }: Context): Promise<void> {
+    exigir(can, 'rentals:manage_contracts', 'eliminar equipos del contrato');
+
   if (!tenantId) throw new Error('No autenticado.');
 
   const { error } = await supabase
@@ -550,8 +589,10 @@ export async function deleteRentalAsset(id: string, { tenantId }: Context): Prom
 
 export async function addRentalPayment(
   data: Omit<RentalPayment, 'id' | 'tenantId' | 'createdAt' | 'status'> & { status?: RentalPayment['status'] },
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<RentalPayment> {
+    exigir(can, 'rentals:manage_payments', 'registrar pagos de arriendo');
+
   if (!user || !tenantId) throw new Error('No autenticado.');
 
   const { data: inserted, error } = await supabase
@@ -594,8 +635,10 @@ export async function generateRentalSchedule(
   contractId: string,
   installments: number,
   opts: { startFrom?: Date | string; firstDueOffsetDays?: number } | undefined,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<void> {
+    exigir(can, 'rentals:manage_payments', 'generar el calendario de pagos');
+
   if (!user || !tenantId) throw new Error('No autenticado.');
 
   const { data: contractRow, error: cErr } = await supabase
@@ -666,6 +709,8 @@ export async function markRentalPaymentPaid(
   details: { paidDate: Date | string; paymentMethod?: string; reference?: string },
   context: Context
 ): Promise<void> {
+    exigir(context.can, 'rentals:manage_payments', 'marcar pagos de arriendo como pagados');
+
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado.');
 
@@ -728,6 +773,8 @@ export async function updateRentalPayment(
   data: Partial<RentalPayment>,
   context: Context
 ): Promise<void> {
+    exigir(context.can, 'rentals:manage_payments', 'editar pagos de arriendo');
+
   const { tenantId } = context;
   if (!tenantId) throw new Error('No autenticado.');
 
@@ -798,6 +845,8 @@ async function reemitRentalInstallmentPayable(paymentId: string, context: Contex
 }
 
 export async function deleteRentalPayment(id: string, context: Context): Promise<void> {
+    exigir(context.can, 'rentals:manage_payments', 'eliminar pagos de arriendo');
+
   const { tenantId } = context;
   if (!tenantId) throw new Error('No autenticado.');
 
@@ -818,7 +867,9 @@ export async function deleteRentalPayment(id: string, context: Context): Promise
 // ── Orden de Compra (OC) del arriendo ─────────────────────────────────────────
 
 /** Marca la OC del contrato como ENVIADA al arrendador. */
-export async function markRentalOcSent(contractId: string, { tenantId }: Context): Promise<void> {
+export async function markRentalOcSent(contractId: string, { tenantId, can }: Context): Promise<void> {
+    exigir(can, 'rentals:manage_contracts', 'marcar la OC como enviada');
+
   if (!tenantId) throw new Error('No autenticado.');
   const { error } = await supabase
     .from('rental_contracts')
@@ -838,6 +889,8 @@ export async function confirmRentalOc(
   opts: { installments: number; firstDueOffsetDays?: number },
   context: Context,
 ): Promise<void> {
+    exigir(context.can, 'rentals:manage_contracts', 'confirmar la OC de arriendo');
+
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado.');
 

@@ -1,7 +1,6 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { mappers } from '../mappers';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
-import { userCan } from '@/modules/core/lib/permissions';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 import { addRentalContract, addRentalAsset } from './rentalMutations';
 import type {
@@ -76,7 +75,7 @@ export async function addRentalRequest(
      */
     internalCode?: string;
   },
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<string> {
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
@@ -89,7 +88,7 @@ export async function addRentalRequest(
   const internalCode = data.internalCode || await nextInternalCode(tenantId, 'ARR', 'SOLPED');
 
   // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
-  const preAuthorized = userCan(user, 'rentals:authorize');
+  const preAuthorized = can('rentals:authorize');
   const now = new Date().toISOString();
 
   const { data: created, error } = await supabase.from('rental_requests').insert({
@@ -126,9 +125,9 @@ export async function addRentalRequest(
  * Autorización ADC de una solicitud de arriendo. No cambia el `status` (sigue
  * 'pending') — solo levanta el gate para que Abastecimiento la cotice.
  */
-export async function authorizeRentalRequest(requestId: string, { user, tenantId }: Context): Promise<void> {
+export async function authorizeRentalRequest(requestId: string, { user, tenantId, can }: Context): Promise<void> {
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-  if (!userCan(user, 'rentals:authorize'))
+  if (!can('rentals:authorize'))
     throw new Error('No tienes permiso para autorizar solicitudes de arriendo.');
 
   const { error } = await supabase
@@ -143,7 +142,7 @@ export async function updateRentalRequestStatus(
   requestId: string,
   status: 'approved' | 'rejected' | 'quoting',
   reason: string | undefined,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<void> {
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
@@ -191,7 +190,7 @@ export async function addRentalQuoteRequest(
     deadline?: string;
     notes?: string;
   },
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<RentalQuoteRequest> {
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
@@ -271,7 +270,7 @@ export async function sendRentalQuoteRequest(id: string, { tenantId }: Context):
 export async function recordRentalQuoteResponse(
   quoteRequestId: string,
   response: Omit<RentalQuoteResponse, 'id' | 'createdAt'> & { id?: string },
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<void> {
   if (!user || !tenantId) throw new Error('No autenticado.');
 

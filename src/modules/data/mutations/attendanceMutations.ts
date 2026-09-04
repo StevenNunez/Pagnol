@@ -20,6 +20,17 @@ function calcIsRestDay(
   return pos >= daysOn;
 }
 
+/**
+ * Puerta de permisos de Asistencia.
+ *
+ * Un registro de asistencia no es un dato administrativo: alimenta la planilla,
+ * o sea define lo que a una persona le pagan. Editarlo o borrarlo cambia un
+ * sueldo, y hasta ahora no lo validaba nadie.
+ */
+function exigir(can: Context['can'], permiso: Parameters<Context['can']>[0], accion: string) {
+    if (!can(permiso)) throw new Error(`No tienes permiso para ${accion}.`);
+}
+
 export async function handleAttendanceScan(
   qrCode: string,
   { user, tenantId }: Context
@@ -161,9 +172,10 @@ export async function addManualAttendance(
   date: Date,
   time: string,
   type: 'in' | 'out',
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ) {
   if (!user || !tenantId) throw new Error('No autenticado.');
+  exigir(can, 'attendance:edit', 'registrar asistencia a mano');
 
   const [hours, minutes] = time.split(':').map(Number);
   const timestamp = new Date(date);
@@ -207,9 +219,10 @@ export async function updateAttendanceLog(
   newTimestamp: Date,
   newType: 'in' | 'out',
   originalTimestamp: Date,
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ) {
   if (!user || !tenantId) throw new Error('No autenticado.');
+  exigir(can, 'attendance:edit', 'editar registros de asistencia');
 
   const { error } = await supabase
     .from('attendance_logs')
@@ -226,8 +239,9 @@ export async function updateAttendanceLog(
   if (error) throw error;
 }
 
-export async function deleteAttendanceLog(logId: string, { tenantId }: Context) {
+export async function deleteAttendanceLog(logId: string, { tenantId, can }: Context) {
   if (!tenantId) throw new Error('No autenticado.');
+  exigir(can, 'attendance:edit', 'eliminar registros de asistencia');
 
   const { error } = await supabase
     .from('attendance_logs')

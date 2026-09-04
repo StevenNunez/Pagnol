@@ -9,9 +9,9 @@ import type { UserRole } from "./data";
    =================================================================== */
 export const ALL_PERMISSIONS = {
     // ── Acceso a Módulos ─────────────────────────────────────────────
-    'module_pagnol:view': { label: 'Acceder a Módulo Pagnol', group: 'Acceso a Módulos' },
+    'module_pagnol:view': { label: 'Acceder a Módulo Control de Activos', group: 'Acceso a Módulos' },
     'module_warehouse:view': { label: 'Acceder al Pañol Central', group: 'Acceso a Módulos' },
-    'module_bodega:view': { label: 'Acceder al Pañol (ex Bodega, fusionada en Módulo Pagnol)', group: 'Acceso a Módulos' },
+    'module_bodega:view': { label: 'Acceder al Pañol (ex Bodega, fusionada en Control de Activos)', group: 'Acceso a Módulos' },
     'module_purchasing:view': { label: 'Acceder a Compras', group: 'Acceso a Módulos' },
     'module_users:view': { label: 'Acceder a Usuarios', group: 'Acceso a Módulos' },
     'module_subscriptions:view': { label: 'Acceder a Suscripciones', group: 'Plataforma' },
@@ -20,9 +20,9 @@ export const ALL_PERMISSIONS = {
     'module_payments:view': { label: 'Acceder a Pagos', group: 'Acceso a Módulos' },
     'module_reports:view': { label: 'Acceder a Reportes', group: 'Acceso a Módulos' },
     'module_permissions:view': { label: 'Ver Gestión de Permisos', group: 'Acceso a Módulos' },
-    'module_construction_control:view': { label: 'Acceder a Control de Obra', group: 'Acceso a Módulos' },
+    'module_construction_control:view': { label: 'Acceder a Módulo Control de Obras', group: 'Acceso a Módulos' },
     'module_dte:view': { label: 'Acceder a Facturación DTE', group: 'Acceso a Módulos' },
-    'module_work_reports:view': { label: 'Acceder a Reportes de Trabajo', group: 'Acceso a Módulos' },
+    'module_work_reports:view': { label: 'Acceder a Módulo Reportabilidad', group: 'Acceso a Módulos' },
     'module_abastecimiento:view': { label: 'Acceder a Abastecimiento', group: 'Acceso a Módulos' },
     'module_authorizations:view': { label: 'Acceder a Autorizaciones (ADC)', group: 'Acceso a Módulos' },
     'module_settings:view': { label: 'Acceder a Configuración de App', group: 'Acceso a Módulos' },
@@ -154,6 +154,7 @@ export const ALL_PERMISSIONS = {
     'construction_control:edit_structure': { label: 'Editar Estructura de Partidas', group: 'Control de Obra' },
     'construction_control:view_reports': { label: 'Ver Reportes de Avance', group: 'Control de Obra' },
     'construction_control:review_protocols': { label: 'Revisar y Aprobar Protocolos', group: 'Control de Obra' },
+    'construction_control:manage_projects': { label: 'Crear y Editar Obras', group: 'Control de Obra' },
 
     // ── Arriendos ────────────────────────────────────────────────────
     'module_rentals:view': { label: 'Acceder a Arriendos', group: 'Acceso a Módulos' },
@@ -226,6 +227,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             // Control de Obra
             'construction_control:register_progress', 'construction_control:edit_structure',
             'construction_control:view_reports', 'construction_control:review_protocols',
+            'construction_control:manage_projects',
             // Permisos
             'permissions:manage',
             // Pagnol
@@ -283,6 +285,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'work_reports:view_all', 'work_reports:download_pdf', 'work_reports:send',
             'construction_control:register_progress', 'construction_control:edit_structure',
             'construction_control:view_reports', 'construction_control:review_protocols',
+            'construction_control:manage_projects',
         ],
     },
     'jefe-oficina-tecnica': {
@@ -292,6 +295,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'module_construction_control:view',
             'construction_control:edit_structure', 'construction_control:register_progress',
             'construction_control:view_reports', 'construction_control:review_protocols',
+            'construction_control:manage_projects',
             'module_purchasing:view', 'purchase_requests:create', 'purchase_requests:view_all',
             'module_warehouse:view', 'materials:view_all', 'material_requests:create', 'material_requests:select_any_contract',
             'module_reports:view', 'reports:view', 'module_work_reports:view',

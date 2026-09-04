@@ -37,7 +37,7 @@ const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
             {
                 name: 'Director de Faena',
                 what: 'Responsable técnico y legal de la faena (DS 132). Ve toda la operación, autoriza como jefatura superior y aprueba los pedidos más críticos.',
-                sees: 'Pañol · Bodega · Control de Obra · Reportes de Terreno · Seguridad · Asistencia · Reportes · Compras · Usuarios · Autorizaciones',
+                sees: 'Pañol · Bodega · Control de Obras · Reportes de Terreno · Seguridad · Asistencia · Reportes · Compras · Usuarios · Autorizaciones',
             },
             {
                 name: 'ADC — Administrador de Contratos',
@@ -68,7 +68,7 @@ const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
             {
                 name: 'Jefe de Terreno',
                 what: 'Lleva el avance de la obra y a los supervisores. Pide y devuelve material.',
-                sees: 'Control de Obra · Bodega · Reportes de Terreno · Arriendos',
+                sees: 'Control de Obras · Bodega · Reportes de Terreno · Arriendos',
             },
             {
                 name: 'Supervisor',
@@ -83,7 +83,7 @@ const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
             {
                 name: 'Contratista',
                 what: 'Entra a sus contratos y estados de pago, y registra el avance de sus partidas.',
-                sees: 'Control de Obra',
+                sees: 'Control de Obras',
             },
         ],
     },
@@ -94,22 +94,22 @@ const GROUPS: { title: string; hint: string; roles: Role[] }[] = [
             {
                 name: 'Jefe de Oficina Técnica',
                 what: 'Arma el programa y los presupuestos; sigue el avance técnico y financiero de la obra. Puede pedir cargando a cualquier contrato.',
-                sees: 'Control de Obra · Compras · Bodega · Reportes · Reportes de Terreno · Arriendos',
+                sees: 'Control de Obras · Compras · Bodega · Reportes · Reportes de Terreno · Arriendos',
             },
             {
                 name: 'Calidad',
                 what: 'Verifica que las partidas estén bien ejecutadas y aprueba los protocolos.',
-                sees: 'Control de Obra · Reportes de Terreno',
+                sees: 'Control de Obras · Reportes de Terreno',
             },
             {
                 name: 'Geólogo',
                 what: 'Datos técnicos de avance, cubicaciones y reportes geológicos.',
-                sees: 'Control de Obra · Reportes',
+                sees: 'Control de Obras · Reportes',
             },
             {
                 name: 'Topógrafo',
                 what: 'Registra mediciones y avances; genera los reportes de levantamiento.',
-                sees: 'Control de Obra · Reportes',
+                sees: 'Control de Obras · Reportes',
             },
         ],
     },

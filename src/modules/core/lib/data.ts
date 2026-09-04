@@ -2020,10 +2020,46 @@ export interface DailyTalk {
 }
 
 
+/**
+ * Una **Obra** (RFC-006 D1): el sujeto del módulo Control de Obras. Se liga a un
+ * contrato de forma opcional — por ahí entra el costo real del ledger — pero no
+ * es un contrato: un contrato puede tener dos frentes de obra, y una obra puede
+ * existir antes de que se firme el contrato.
+ *
+ * Conserva su raíz en la EDT (`work_items` con `parentId === null` y este
+ * `workProjectId`): Estado de Pago y la generación de `path` se apoyan en ella.
+ */
+export interface WorkProject {
+  id: string;
+  tenantId: string;
+  contractId?: string | null;
+  name: string;
+  code?: string | null;
+  location?: string | null;
+  status: 'planning' | 'active' | 'suspended' | 'closed';
+  startDate?: Date | null;
+  endDate?: Date | null;
+  managerId?: string | null;
+  description?: string | null;
+  createdBy?: string | null;
+  createdAt: Date;
+}
+
+export const WORK_PROJECT_STATUS_LABELS: Record<WorkProject['status'], string> = {
+  planning: 'En preparación',
+  active: 'En ejecución',
+  suspended: 'Suspendida',
+  closed: 'Cerrada',
+};
+
 export interface WorkItem {
   id: string;
   tenantId: string;
-  projectId: string; // Main obra ID
+  /** La obra a la que pertenece la partida (RFC-006). */
+  workProjectId?: string | null;
+  /** @deprecated Columna legacy: guarda el tenantId o el literal '1'. Nunca
+   *  identificó una obra. Se elimina en una migración posterior. */
+  projectId: string;
   // Puente WBS↔contratos (ADR-004 §1): solo se usa en la RAÍZ de la obra;
   // los estados de pago lo heredan de ahí.
   contractId?: string | null;
@@ -2043,6 +2079,11 @@ export interface WorkItem {
   assignedTo?: string | null;
   createdBy?: string;
   rejectionReason?: string | null;
+  /** Quién revisó la partida y cuándo. Las columnas existían y se escribían en
+   *  cada aprobación/rechazo, pero no llegaban a la pantalla: no había forma de
+   *  saber quién aprobó una partida. */
+  reviewedBy?: string | null;
+  reviewedAt?: Date | null;
 }
 
 export interface PaymentState {

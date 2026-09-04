@@ -1,6 +1,5 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
-import { userCan } from '@/modules/core/lib/permissions';
 import type { WorkItem } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
 import { emitFinanceEntries, reverseEntriesForSource, DEFAULT_TAX_RATE } from './financeLedger';
@@ -26,7 +25,7 @@ export interface AddPaymentStateInput {
 
 export async function addPaymentState(
     data: AddPaymentStateInput,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<string> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
@@ -113,9 +112,9 @@ async function getPaymentState(id: string, tenantId: string) {
  * período. El emisor es parte de la transición: si el hecho no puede
  * registrarse, la aprobación no ocurre.
  */
-export async function approvePaymentState(id: string, { user, tenantId }: Context): Promise<void> {
+export async function approvePaymentState(id: string, { user, tenantId, can }: Context): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'payment_states:approve'))
+    if (!can('payment_states:approve'))
         throw new Error('No tienes permiso para aprobar estados de pago.');
 
     const ps = await getPaymentState(id, tenantId);
@@ -185,7 +184,7 @@ export async function approvePaymentState(id: string, { user, tenantId }: Contex
         counterpartyId: clientId,
         counterpartyName: clientName,
         notes: 'EP aprobado por cobrar — sin fecha de cobro comprometida',
-    }], { user, tenantId });
+    }], { user, tenantId, can });
 }
 
 /**
@@ -195,10 +194,10 @@ export async function approvePaymentState(id: string, { user, tenantId }: Contex
 export async function markPaymentStatePaid(
     id: string,
     paidDate: string, // YYYY-MM-DD
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'payment_states:pay'))
+    if (!can('payment_states:pay'))
         throw new Error('No tienes permiso para registrar cobros de estados de pago.');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) throw new Error('Fecha de cobro inválida.');
 
@@ -224,7 +223,7 @@ export async function markPaymentStatePaid(
     if (!updated?.length) throw new Error('No se pudo registrar el cobro (¿el EP cambió de estado?).');
 
     // Cobrado: deja de ser una entrada futura (F4.2).
-    await reverseEntriesForSource('payment_state_receivable', ps.id, 'EP cobrado', { user, tenantId } as Context);
+    await reverseEntriesForSource('payment_state_receivable', ps.id, 'EP cobrado', { user, tenantId, can } as Context);
 
     await emitFinanceEntries([{
         entryDate: paidDate,
@@ -241,7 +240,7 @@ export async function markPaymentStatePaid(
         counterpartyId: clientId,
         counterpartyName: clientName,
         notes: `EP cobrado`,
-    }], { user, tenantId });
+    }], { user, tenantId, can });
 }
 
 /**
@@ -249,9 +248,9 @@ export async function markPaymentStatePaid(
  * vivo del documento (devengado y/o pagado). El EP anulado deja de contar como
  * "último acumulado" para el delta del siguiente EP.
  */
-export async function annulPaymentState(id: string, reason: string, { user, tenantId }: Context): Promise<void> {
+export async function annulPaymentState(id: string, reason: string, { user, tenantId, can }: Context): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'payment_states:approve'))
+    if (!can('payment_states:approve'))
         throw new Error('No tienes permiso para anular estados de pago.');
 
     const ps = await getPaymentState(id, tenantId);
@@ -272,7 +271,7 @@ export async function annulPaymentState(id: string, reason: string, { user, tena
     if (error) throw error;
     if (!updated?.length) throw new Error('No se pudo anular el estado de pago.');
 
-    await reverseEntriesForSource('payment_state', ps.id, reason || 'EP anulado', { user, tenantId } as Context);
+    await reverseEntriesForSource('payment_state', ps.id, reason || 'EP anulado', { user, tenantId, can } as Context);
     // El EP anulado tampoco se va a cobrar: se apaga la entrada proyectada.
-    await reverseEntriesForSource('payment_state_receivable', ps.id, reason || 'EP anulado', { user, tenantId } as Context);
+    await reverseEntriesForSource('payment_state_receivable', ps.id, reason || 'EP anulado', { user, tenantId, can } as Context);
 }

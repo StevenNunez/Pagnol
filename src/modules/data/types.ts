@@ -39,6 +39,7 @@ import {
   UserRole,
   Tenant,
   WorkItem,
+  WorkProject,
   ProgressLog,
   PaymentState,
   DailyTalk,
@@ -118,6 +119,7 @@ export interface AppDataState {
   checklistTemplates: ChecklistTemplate[];
   behaviorObservations: BehaviorObservation[];
   stockMovements: StockMovement[];
+  workProjects: WorkProject[];
   workItems: WorkItem[];
   progressLogs: ProgressLog[];
   paymentStates: PaymentState[];
@@ -232,10 +234,31 @@ export interface AppStateContextType extends AppDataState {
   updateTenant: (tenantId: string, data: Partial<Tenant>) => Promise<void>;
 
   // Work Items
+  addWorkProject: (data: {
+    name: string;
+    contractId?: string | null;
+    location?: string | null;
+    status?: WorkProject['status'];
+    startDate?: Date | string | null;
+    endDate?: Date | string | null;
+    managerId?: string | null;
+    description?: string | null;
+    code?: string | null;
+  }) => Promise<WorkProject>;
+  updateWorkProject: (id: string, data: Partial<{
+    name: string;
+    contractId: string | null;
+    location: string | null;
+    status: WorkProject['status'];
+    startDate: Date | string | null;
+    endDate: Date | string | null;
+    managerId: string | null;
+    description: string | null;
+  }>) => Promise<WorkProject>;
+  deleteWorkProject: (id: string) => Promise<void>;
   addWorkItem: (data: Omit<WorkItem, 'id' | 'tenantId' | 'progress' | 'path'>) => Promise<void>;
   updateWorkItem: (id: string, data: Partial<WorkItem>) => Promise<void>;
   deleteWorkItem: (id: string) => Promise<void>;
-  seedExampleWorkItems: () => Promise<void>;
   addWorkItemProgress: (workItemId: string, quantity: number, date: Date, observations: string | undefined) => Promise<void>;
   submitForQualityReview: (workItemId: string) => Promise<void>;
   approveWorkItem: (workItemId: string) => Promise<void>;

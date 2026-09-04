@@ -233,7 +233,7 @@ export default function WorkReportsOperationalHub() {
 
   return (
     <PageShell
-      title="Centro Operativo · OT y Reportes"
+      title="Reportabilidad · OT y Reportes"
       description="El ciclo OT → Diario → Semanal: qué requiere tu acción hoy, y cómo va la medición de HH/HM del período."
       toolbar={
         <div className="w-full flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">

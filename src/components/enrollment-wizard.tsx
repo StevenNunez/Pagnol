@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
-import { loadBiometricModels, captureBiometrics } from '@/lib/biometricService';
+import { loadBiometricModels, captureBiometrics, captureEnrollmentBiometrics } from '@/lib/biometricService';
 import { ROLES_ORDER } from '@/modules/core/lib/permissions';
 import { useAssignableRoles } from '@/modules/core/hooks/use-assignable-roles';
 import { UserIdentityFields } from '@/components/user-identity-fields';
@@ -239,7 +239,25 @@ export function EnrollmentWizard({
             await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(); });
 
             setProcessingProgress(70);
-            const result = await captureBiometrics(img);
+
+            // Varias tomas del VIDEO EN VIVO, promediadas, en vez de la foto
+            // fija: cada toma trae ruido propio (un gesto, una sombra, un
+            // ángulo) y el promedio conserva lo que se repite —la persona— y
+            // diluye lo que no. Guardar una sola toma es lo que dejó a dos
+            // personas de Valar a 0,500 de distancia, o sea confundibles.
+            //
+            // Si la cámara ya no está disponible (el usuario la cerró, o se
+            // enrola desde una imagen subida) se cae a la foto fija, que sigue
+            // siendo mejor que no enrolar.
+            const video = videoRef.current;
+            const result = video && video.readyState >= 2
+                ? await captureEnrollmentBiometrics(video, {
+                    onProgress: (hechas, total) => {
+                        setProcessingStatus(`Tomando muestras del rostro (${hechas}/${total})…`);
+                        setProcessingProgress(70 + Math.round((hechas / total) * 25));
+                    },
+                })
+                : await captureBiometrics(img);
             setProcessingProgress(100);
 
             if (result.success && result.template) {

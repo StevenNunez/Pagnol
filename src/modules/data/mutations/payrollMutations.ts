@@ -1,5 +1,4 @@
 import { supabase } from '@/modules/core/lib/supabase';
-import { userCan } from '@/modules/core/lib/permissions';
 import type {
     EmploymentContract, AfpRate, PayrollParameters,
 } from '@/modules/core/lib/data';
@@ -49,10 +48,10 @@ export function mapEmploymentContract(item: any): EmploymentContract {
  */
 export async function addEmploymentContract(
     data: Omit<EmploymentContract, 'id' | 'tenantId' | 'createdBy' | 'createdByName' | 'createdAt'>,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<EmploymentContract> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'hr_employees:edit'))
+    if (!can('hr_employees:edit'))
         throw new Error('No tienes permiso para administrar contratos laborales.');
 
     if (!data.userId) throw new Error('Falta el trabajador.');

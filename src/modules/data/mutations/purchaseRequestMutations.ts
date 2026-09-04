@@ -4,7 +4,6 @@ import { supabase } from '@/modules/core/lib/supabase';
 import { PurchaseRequest, Material, PurchaseLot, PurchaseOrder, URGENCY_LEAD_DAYS, URGENCY_REASON_MIN } from '@/modules/core/lib/data';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { addRentalRequest } from './rentalRequestMutations';
-import { userCan } from '@/modules/core/lib/permissions';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 import { addToLedger } from './stockLedger';
 import { emitFinanceEntries, reverseEntriesForSource, type FinanceEntryInput } from './financeLedger';
@@ -45,7 +44,7 @@ export async function addPurchaseRequest(
   data: Partial<Omit<PurchaseRequest, 'id' | 'status' | 'createdAt' | 'tenantId'>>,
   context: Context
 ) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
   // 'client' = suministro del cliente del contrato (correlativo propio SCL);
@@ -93,7 +92,7 @@ export async function addPurchaseRequest(
   }
 
   // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
-  const preAuthorized = userCan(user, 'purchase_requests:authorize');
+  const preAuthorized = can('purchase_requests:authorize');
   const now = new Date().toISOString();
 
   // `id` lo genera Postgres (uuid) — requestId es el código legible que va en
@@ -152,7 +151,7 @@ export async function addPurchaseRequest(
  * todavía esté en 'to_send' — sobrescribe fecha y destinatario cada vez.
  */
 export async function markClientRequestsSent(requestIds: string[], sentToEmail: string, context: Context) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
   if (!requestIds.length) return;
 
@@ -176,9 +175,9 @@ export async function markClientRequestsSent(requestIds: string[], sentToEmail: 
  * 'pending') — solo levanta el gate para que Abastecimiento la vea/apruebe.
  */
 export async function authorizePurchaseRequest(requestId: string, context: Context) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-  if (!userCan(user, 'purchase_requests:authorize'))
+  if (!can('purchase_requests:authorize'))
     throw new Error('No tienes permiso para autorizar requerimientos.');
 
   const { error } = await supabase
@@ -195,7 +194,7 @@ export async function updatePurchaseRequestStatus(
   data: Partial<PurchaseRequest>,
   context: Context
 ) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
   const { data: currentReq, error: fetchErr } = await supabase.from('purchase_requests').select('*').eq('id', requestId).single();
@@ -205,14 +204,14 @@ export async function updatePurchaseRequestStatus(
   // Aprobar/rechazar requiere el permiso de gestión de compras — antes
   // cualquier usuario autenticado del tenant podía llamar esta mutación
   // directamente sin pasar por la UI que sí lo verificaba.
-  if ((status === 'approved' || status === 'rejected') && !userCan(user, 'purchase_requests:approve')) {
+  if ((status === 'approved' || status === 'rejected') && !can('purchase_requests:approve')) {
     throw new Error('No tienes permiso para aprobar o rechazar requerimientos.');
   }
 
   // Gate ADC: la cola de Abastecimiento ya oculta las pendientes sin
   // autorización, pero esta mutación (llamada también desde /pagnol/solicitudes-compra)
   // no lo validaba en servidor — se podía aprobar una compra que el ADC nunca autorizó.
-  if (status === 'approved' && !currentReq.adc_authorized_at && !userCan(user, 'purchase_requests:authorize')) {
+  if (status === 'approved' && !currentReq.adc_authorized_at && !can('purchase_requests:authorize')) {
     throw new Error('Esta solicitud aún no ha sido autorizada por el ADC.');
   }
 
@@ -293,7 +292,7 @@ export async function addRentalRequirement(
   },
   context: Context,
 ): Promise<{ code: string; rentalRequestId: string }> {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
   const items = (data.items || []).filter((it) => (it.name || '').trim());
@@ -387,7 +386,7 @@ export async function receivePurchaseRequest(
   existingMaterialId: string | undefined,
   context: Context
 ) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
   const { data: request, error: reqErr } = await supabase.from('purchase_requests').select('*').eq('id', requestId).single();
@@ -571,7 +570,7 @@ export async function generatePurchaseOrder(
   requests: PurchaseRequest[],
   supplierId: string,
   prices: Record<string, number>,
-  { user, tenantId }: Context,
+  { user, tenantId, can }: Context,
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
   if (requests.length === 0) throw new Error("No hay solicitudes para procesar.");
@@ -652,7 +651,7 @@ export async function generatePurchaseOrder(
       counterpartyName: supplier.name,
       notes: `Cotización valorizada — compromiso estimado (${req.materialName} × ${req.quantity})`,
     })),
-    { user, tenantId },
+    { user, tenantId, can },
   );
 
   return orderId;
@@ -660,7 +659,7 @@ export async function generatePurchaseOrder(
 
 export async function createPurchaseOrder(
   { lotId, ocNumber, items, totalAmount }: { lotId: string; ocNumber: string; items: any[], totalAmount: number },
-  { user, tenantId }: Context
+  { user, tenantId, can }: Context
 ): Promise<string> {
   if (!user || !tenantId) throw new Error("Autenticación requerida");
 
@@ -746,13 +745,13 @@ export async function createPurchaseOrder(
           notes: `OC firme (RFQ) — ${item.name} × ${item.quantity}`,
         };
       }),
-    { user, tenantId },
+    { user, tenantId, can },
   );
 
   return order.id;
 }
 
-export async function returnToPool(requestIds: string[], { user, tenantId }: Context) {
+export async function returnToPool(requestIds: string[], { user, tenantId, can }: Context) {
   if (!user || !tenantId) throw new Error("Autenticación requerida");
 
   for (const reqId of requestIds) {
@@ -764,7 +763,7 @@ export async function returnToPool(requestIds: string[], { user, tenantId }: Con
   }
 }
 
-export async function cancelPurchaseOrder(orderId: string, { user, tenantId }: Context) {
+export async function cancelPurchaseOrder(orderId: string, { user, tenantId, can }: Context) {
   if (!user || !tenantId) throw new Error("Autenticación requerida");
 
   const { data: order } = await supabase.from('purchase_orders').select('*').eq('id', orderId).single();
@@ -789,10 +788,10 @@ export async function cancelPurchaseOrder(orderId: string, { user, tenantId }: C
   if (error) throw error;
   if (!rows || rows.length === 0) throw new Error('No se pudo anular la orden (RLS).');
 
-  await reverseEntriesForSource('purchase_order', orderId, `OC anulada por ${user.name}`, { user, tenantId });
+  await reverseEntriesForSource('purchase_order', orderId, `OC anulada por ${user.name}`, { user, tenantId, can });
 }
 
-export async function archiveLot(requestIds: string[], { user, tenantId }: Context) {
+export async function archiveLot(requestIds: string[], { user, tenantId, can }: Context) {
   if (!user || !tenantId) throw new Error("Autenticación requerida");
   for (const id of requestIds) {
     await supabase.from('purchase_requests').update({

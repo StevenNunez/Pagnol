@@ -36,6 +36,7 @@ import { StorageWarning } from '@/components/storage-warning';
 import { FeedbackButton } from '@/components/feedback-button';
 import { OnboardingWizard } from '@/components/onboarding-wizard';
 import { OnboardingBanner } from '@/components/onboarding-banner';
+import { EnrollmentQualityBanner } from '@/components/enrollment-quality-banner';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
 import { BellRing, Send } from 'lucide-react';
 import { toast } from '@/modules/core/hooks/use-toast';
@@ -464,6 +465,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
         <main className="flex-1 overflow-y-auto no-scrollbar relative">
           <OnboardingBanner />
+          <EnrollmentQualityBanner />
           <StorageWarning />
           <div className="p-4 sm:p-6 lg:p-10 max-w-[1600px] mx-auto animate-in fade-in duration-500">
             {children}

@@ -12,6 +12,17 @@ import type { MutationContext as Context } from './context';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
 
+/**
+ * Puerta de permisos. El límite real lo pone la base (migración 20260902030000);
+ * esto cubre el camino de la aplicación y da un mensaje entendible.
+ *
+ * `ctx.can` resuelve igual que la pantalla, incluidos los permisos que cada
+ * empresa personalizó.
+ */
+function exigir(ctx: Context, permiso: Parameters<Context['can']>[0], accion: string) {
+    if (!ctx.can(permiso)) throw new Error(`No tienes permiso para ${accion}.`);
+}
+
 const VALID_TRANSITIONS: Record<WorkReportStatus, WorkReportStatus[]> = {
   draft: ['pending_review'],
   pending_review: ['operations_approved', 'observed'],
@@ -176,12 +187,18 @@ export async function updateWorkReport(
   if (!ctx.user || !ctx.tenantId) throw new Error('No autenticado.');
 
   const row = toRow(data, ctx);
-  const { error } = await supabase
+  // `.select()` para detectar el UPDATE silencioso de 0 filas: sin esto, un
+  // cambio que la base rechaza se reporta como éxito en la pantalla.
+  const { data: rows, error } = await supabase
     .from('work_reports')
     .update(row)
     .eq('id', id)
-    .eq('tenant_id', ctx.tenantId);
+    .eq('tenant_id', ctx.tenantId)
+    .select('id');
   if (error) throw error;
+  if (!rows || rows.length === 0) {
+    throw new Error('No se pudo actualizar el informe: no existe o no tienes permiso para modificarlo.');
+  }
 }
 
 export async function transitionWorkReport(
@@ -204,6 +221,20 @@ export async function transitionWorkReport(
   const isSuperAdmin = ctx.user.role === 'super-admin';
   if (!isSuperAdmin && !VALID_TRANSITIONS[fromStatus]?.includes(toStatus)) {
     throw new Error(`Transición no permitida: el reporte está en "${fromStatus}" y no puede pasar a "${toStatus}".`);
+  }
+
+  // Sólo se gatean las decisiones de REVISIÓN. Enviar a revisión y reenviar tras
+  // una observación los hace quien redacta el informe, y no se tocan.
+  if (toStatus === 'final_approved') {
+    exigir(ctx, 'work_reports:final_approve', 'aprobar informes');
+  } else if (toStatus === 'operations_approved') {
+    if (!ctx.can('work_reports:review_operations') && !ctx.can('work_reports:final_approve')) {
+      throw new Error('No tienes permiso para aprobar informes.');
+    }
+  } else if (toStatus === 'observed') {
+    if (!ctx.can('work_reports:review_operations') && !ctx.can('work_reports:final_approve')) {
+      throw new Error('No tienes permiso para devolver informes con observaciones.');
+    }
   }
   const now = new Date().toISOString();
   const row: Record<string, any> = {
@@ -277,6 +308,13 @@ export async function signWorkReportApproval(
     .eq('tenant_id', ctx.tenantId)
     .single();
   if (readError) throw readError;
+
+  // Cada firma exige su propio permiso: son dos personas distintas por diseño.
+  exigir(
+    ctx,
+    step === 'operations' ? 'work_reports:review_operations' : 'work_reports:final_approve',
+    step === 'operations' ? 'firmar la revisión de operaciones' : 'firmar la aprobación final',
+  );
 
   const fromStatus = current.status as WorkReportStatus;
   const isSuperAdmin = ctx.user.role === 'super-admin';
@@ -369,11 +407,16 @@ export async function deleteWorkReport(id: string, ctx: Context): Promise<void> 
   // Un Diario consolidado en un Reporte Semanal no se puede borrar sin antes
   // desvincularlo — evita que desaparezca en silencio del Semanal (mismo
   // patrón que el guard de OT→Diario en workOrderMutations.deleteWorkOrder).
-  const { data: referencing } = await supabase
+  // El JSON va como STRING: supabase-js serializa un array de JavaScript como
+  // array de Postgres (`{...}`), que sobre una columna jsonb revienta con
+  // "invalid input syntax for type json". Y como el error se descartaba, la
+  // guarda no bloqueaba nada: llevaba desde su creación dejando pasar todo.
+  const { data: referencing, error: refError } = await supabase
     .from('work_weekly_reports')
     .select('title, status')
-    .contains('consolidated_report_ids', [id])
+    .contains('consolidated_report_ids', JSON.stringify([id]))
     .limit(1);
+  if (refError) throw refError;
   if (referencing && referencing.length > 0) {
     const r = referencing[0] as { title?: string; status?: string };
     throw new Error(`Este Diario está consolidado en el Reporte Semanal "${r.title || ''}" (${r.status || ''}). Quítalo de ahí antes de eliminarlo.`);

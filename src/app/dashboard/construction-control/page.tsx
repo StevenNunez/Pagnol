@@ -13,7 +13,6 @@ import {
   FolderTree,
   GanttChartSquare,
   HardHat,
-  ListChecks,
   TrendingUp,
   Activity,
   ArrowRight,
@@ -26,11 +25,20 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatDistanceToNow } from 'date-fns';
+import { activityBucket, rollupProgress } from '@/lib/construction-forecast';
+import { ProjectSwitcher, useActiveProject, useProjectWorkItems } from '@/components/operations/active-project';
+import { ActivityPanel } from '@/components/operations/activity-panel';
+import { SCurveCard } from '@/components/operations/s-curve-card';
+import { PortfolioCard } from '@/components/operations/portfolio-card';
 import { es } from 'date-fns/locale';
 
 export default function ConstructionControlHubPage() {
   const { can } = useAuth();
-  const { workItems, progressLogs } = useAppState();
+  const { workItems: allWorkItems, progressLogs } = useAppState();
+  const { project, projects } = useActiveProject();
+  // El "Avance General" promediaba TODAS las obras del inquilino en un solo
+  // número, que no significaba nada con más de una obra abierta (RFC-006 F1).
+  const workItems = useProjectWorkItems(allWorkItems);
 
   const stats = useMemo(() => {
     const items = workItems || [];
@@ -38,17 +46,23 @@ export default function ConstructionControlHubPage() {
     const hasChildren = (id: string) => items.some(w => w.parentId === id);
     const leafItems = items.filter(item => !hasChildren(item.id));
 
-    const totalQty = leafItems.reduce((s, i) => s + (i.quantity || 0), 0);
-    const overallProgress = totalQty > 0
-      ? leafItems.reduce((s, i) => s + (i.quantity || 0) * (i.progress || 0) / 100, 0) / totalQty * 100
-      : leafItems.length > 0
-        ? leafItems.reduce((s, i) => s + (i.progress || 0), 0) / leafItems.length
-        : 0;
+    const overallProgress = rollupProgress(leafItems);
 
-    const completed  = items.filter(i => i.status === 'completed').length;
-    const pending    = items.filter(i => i.status === 'pending-quality-review').length;
-    const inProgress = items.filter(i => i.status === 'in-progress').length;
-    const rejected   = items.filter(i => i.status === 'rejected').length;
+    // Los contadores hablan de PARTIDAS medibles (hojas), no de fases: una fase
+    // no "está en progreso" por sí misma, lo están las partidas que cuelgan de
+    // ella. Contando todo, el panel decía "21 en progreso" justo encima de una
+    // tarjeta que listaba 5 — el mismo hecho con dos números distintos.
+    //
+    // Se clasifica con `activityBucket`, el MISMO criterio que usa la tarjeta de
+    // Actividades, así los cuatro números suman exactamente las partidas de la
+    // obra. Contarlos por separado ya hacía que una partida al 100% esperando
+    // revisión apareciera a la vez como "en revisión" y como "completada".
+    const buckets = leafItems.map(i => activityBucket({ status: i.status, progress: i.progress || 0 }));
+    const contar = (b: string) => buckets.filter(x => x === b).length;
+    const completed  = contar('done');
+    const pending    = contar('pending');
+    const inProgress = contar('running') + contar('notStarted');
+    const rejected   = contar('rejected');
 
     const phases = items
       .filter(i => i.type === 'phase')
@@ -56,32 +70,23 @@ export default function ConstructionControlHubPage() {
         const phaseLeafs = leafItems.filter(
           i => i.path.startsWith(phase.path + '/') || i.path === phase.path
         );
-        const pQty = phaseLeafs.reduce((s, i) => s + (i.quantity || 0), 0);
-        const progress = pQty > 0
-          ? phaseLeafs.reduce((s, i) => s + (i.quantity || 0) * (i.progress || 0) / 100, 0) / pQty * 100
-          : phaseLeafs.length > 0
-            ? phaseLeafs.reduce((s, i) => s + (i.progress || 0), 0) / phaseLeafs.length
-            : 0;
+        const progress = rollupProgress(phaseLeafs);
         return { id: phase.id, name: phase.name, path: phase.path, progress };
       })
       .sort((a, b) => a.path.localeCompare(b.path));
-
-    const pendingItems = items
-      .filter(i => i.status === 'pending-quality-review')
-      .sort((a, b) => (a.actualEndDate?.getTime() || 0) - (b.actualEndDate?.getTime() || 0))
-      .slice(0, 5);
 
     const rejectedItems = items
       .filter(i => i.status === 'rejected')
       .slice(0, 3);
 
-    return { overallProgress, completed, pending, inProgress, rejected, phases, pendingItems, rejectedItems };
+    return { overallProgress, completed, pending, inProgress, rejected, phases, rejectedItems, leafItems };
   }, [workItems]);
 
   const recentActivity = useMemo(() => {
     if (!progressLogs || !workItems) return [];
     const wMap = new Map((workItems || []).map(i => [i.id, i]));
     return [...progressLogs]
+      .filter(log => wMap.has(log.workItemId))
       .sort((a, b) => new Date(b.date as any).getTime() - new Date(a.date as any).getTime())
       .slice(0, 6)
       .map(log => ({
@@ -102,7 +107,26 @@ export default function ConstructionControlHubPage() {
   }
 
   return (
-    <PageShell title="Control de Obra" description="Panel de seguimiento del avance físico del proyecto.">
+    <PageShell
+      title="Control de Obras"
+      description={project ? `Avance físico de ${project.name}.` : 'Panel de seguimiento del avance físico.'}
+      toolbar={<ProjectSwitcher />}
+    >
+      {projects.length === 0 ? (
+        <EmptyState
+          icon={<HardHat size={22} />}
+          title="Todavía no hay obras"
+          description="Crea una obra en Partidas (EDT) para empezar a seguir su avance."
+          action={
+            <Link href="/dashboard/construction-control/wbs">
+              <Button variant="outline" className="gap-2 rounded-xl">
+                Ir a Partidas (EDT) <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          }
+        />
+      ) : (
+      <>
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="col-span-2 lg:col-span-1 rounded-[1.5rem] border-none shadow-lg bg-card">
@@ -150,6 +174,8 @@ export default function ConstructionControlHubPage() {
         </Card>
       </div>
 
+      <SCurveCard leafItems={stats.leafItems} progressLogs={progressLogs || []} />
+
       {/* Centro */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
@@ -188,47 +214,13 @@ export default function ConstructionControlHubPage() {
         {/* Columna derecha — col 2 */}
         <div className="lg:col-span-2 flex flex-col gap-6">
 
-          {/* Pendientes de Revisión */}
-          <Card className="flex-1 rounded-[1.5rem] border-none shadow-lg bg-card">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-tight">
-                  <ListChecks className="h-4 w-4 text-warning" /> Pendientes
-                </CardTitle>
-                {stats.pending > 0 && (
-                  <Badge className="bg-warning text-warning-foreground text-[10px]">{stats.pending}</Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {stats.pendingItems.length === 0 ? (
-                <div className="flex items-center gap-2 py-3 text-success">
-                  <CheckCircle2 size={16} />
-                  <p className="text-xs font-semibold">Sin partidas pendientes</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {stats.pendingItems.map(item => (
-                    <div key={item.id} className="flex items-center gap-2 py-2 border-b last:border-0">
-                      <Clock size={13} className="text-warning shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold truncate">{item.name}</p>
-                        <p className="text-[10px] text-muted-foreground font-mono">{item.path}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {can('construction_control:review_protocols') && (
-                    <Link href="/dashboard/construction-control/revisar-protocolos" className="block pt-1">
-                      <Button variant="outline" size="sm" className="w-full gap-2 text-xs border-warning/30 text-warning hover:bg-warning-subtle">
-                        <CheckSquare size={13} /> Revisar ahora
-                        <ArrowRight size={13} className="ml-auto" />
-                      </Button>
-                    </Link>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <PortfolioCard allWorkItems={allWorkItems || []} />
+
+          <ActivityPanel
+            leafItems={stats.leafItems}
+            progressLogs={progressLogs || []}
+            canReview={can('construction_control:review_protocols')}
+          />
 
           {/* Rechazadas */}
           {stats.rejected > 0 && (
@@ -240,11 +232,16 @@ export default function ConstructionControlHubPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {stats.rejectedItems.map(item => (
-                  <div key={item.id} className="flex items-center gap-2">
-                    <XCircle size={12} className="text-destructive shrink-0" />
+                  <div key={item.id} className="flex items-start gap-2">
+                    <XCircle size={12} className="text-destructive shrink-0 mt-1" />
                     <div className="min-w-0">
                       <p className="text-xs font-semibold truncate">{item.name}</p>
                       <p className="text-[10px] text-muted-foreground font-mono">{item.path}</p>
+                      {/* El motivo es la única información accionable de esta
+                          tarjeta: sin él dice qué falló pero no por qué. */}
+                      {item.rejectionReason && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{item.rejectionReason}</p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -327,6 +324,8 @@ export default function ConstructionControlHubPage() {
           </Link>
         )}
       </div>
+      </>
+      )}
     </PageShell>
   );
 }

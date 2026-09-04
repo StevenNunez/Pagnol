@@ -21,6 +21,7 @@ import {
   Permission,
   PLANS,
 } from '@/modules/core/lib/permissions';
+import { toast } from '@/modules/core/hooks/use-toast';
 
 interface AuthContextType {
   user: User | null;
@@ -149,6 +150,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           try {
             const { userData, profileError } = await fetchUserProfileWithTimeout();
+
+            // Dar de baja a alguien tiene que cerrarle la puerta. Antes se
+            // construía la sesión igual: una cuenta dada de baja seguía entrando
+            // con su rol y sus permisos intactos. El límite de verdad lo pone la
+            // base (migración 20260903000000, que deja sin empresa a un perfil
+            // de baja y con eso lo bloquea en todas las tablas); esto es la
+            // mitad amable: cierra la sesión y dice por qué, en vez de dejar la
+            // aplicación cargada y vacía sin explicación.
+            if (userData && (userData.deleted_at || userData.is_active === false)) {
+              await supabase.auth.signOut();
+              setUser(null);
+              setSupabaseUser(null);
+              setAuthLoading(false);
+              toast({
+                variant: 'destructive',
+                title: 'Tu cuenta está dada de baja',
+                description: 'Si crees que es un error, contacta al administrador de tu empresa.',
+              });
+              return;
+            }
 
             if (userData && (userData.tenant_id || userData.role === 'super-admin')) {
               const mappedUser: User = {

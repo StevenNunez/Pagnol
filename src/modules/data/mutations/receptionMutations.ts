@@ -13,7 +13,7 @@ const RECEPTION_BUCKET = 'reception-photos';
 export async function uploadReceptionPhoto(
     purchaseOrderId: string,
     file: File,
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<ReceiptPhoto> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
     const ext = file.name.split('.').pop() || 'jpg';
@@ -54,7 +54,7 @@ async function ingestStock(
     item: ReceiptItem,
     poCode: string,
     contract: { contractId: string | null; contractName: string | null },
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<string> {
     let materialId = item.materialId;
     let existingMat: any = null;
@@ -178,7 +178,7 @@ export async function receiveGoodsReceipt(
         photos: ReceiptPhoto[];
         notes?: string;
     },
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
@@ -216,7 +216,7 @@ export async function receiveGoodsReceipt(
             continue;
         }
         const contract = itemContract(contractMaps, it);
-        const materialId = await ingestStock(it, poCode, contract, { user, tenantId });
+        const materialId = await ingestStock(it, poCode, contract, { user, tenantId, can });
         ingestedItems.push({ ...it, materialId });
 
         // Retroalimentación de precios (decisión F0): el precio real de compra
@@ -287,7 +287,7 @@ export async function receiveGoodsReceipt(
                 : `Recepción OC ${poCode} — ${it.name} × ${it.receivedQuantity}${priceNote}`,
         });
     }
-    await emitFinanceEntries(financeEntries, { user, tenantId });
+    await emitFinanceEntries(financeEntries, { user, tenantId, can });
 
     // ¿Quedó completa la OC? Sumamos lo recibido históricamente (ya incluye esta
     // recepción) y comparamos con lo ordenado de cada ítem.
@@ -318,7 +318,7 @@ export async function receiveGoodsReceipt(
 // Elimina una recepción REVERSANDO todo lo que produjo. Fix F0: antes borraba
 // solo la fila de goods_receipts y el stock ingresado quedaba inflado para
 // siempre (violaba el espíritu del Art. 3 — los ledgers cuadran).
-export async function deleteGoodsReceipt(id: string, { user, tenantId }: Context): Promise<void> {
+export async function deleteGoodsReceipt(id: string, { user, tenantId, can }: Context): Promise<void> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
     const { data: receipt, error: rErr } = await supabase
@@ -401,7 +401,7 @@ export async function deleteGoodsReceipt(id: string, { user, tenantId }: Context
     }
 
     // 3. Reverso de los hechos financieros devengados por esta recepción.
-    await reverseEntriesForSource('goods_receipt', id, `Recepción eliminada por ${user.name}`, { user, tenantId });
+    await reverseEntriesForSource('goods_receipt', id, `Recepción eliminada por ${user.name}`, { user, tenantId, can });
 
     const { error } = await supabase.from('goods_receipts').delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) throw error;

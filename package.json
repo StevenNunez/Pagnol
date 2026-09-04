@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
-    "demo:create": "tsx scripts/create-demo.ts"
+    "demo:create": "tsx scripts/create-demo.ts",
+    "demo:obra": "tsx scripts/seed-demo-obra.ts",
+    "check:stock": "tsx scripts/check-stock-integrity.ts",
+    "check:enroll": "tsx scripts/check-enrollment-quality.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.0",

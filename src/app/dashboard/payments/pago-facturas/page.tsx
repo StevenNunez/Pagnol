@@ -47,8 +47,14 @@ export default function SupplierInvoicesPage() {
     const {
         supplierPayments, suppliers, purchaseOrders,
         addSupplierPayment, markPaymentAsPaid, deleteSupplierPayment, isLoading,
+        can,
     } = useAppState();
     const { toast } = useToast();
+    // Los permisos del módulo existían desde hace tiempo y no se consultaban en
+    // ningún lado: se podían activar en Gestión de Permisos sin ningún efecto.
+    const puedeCrear = can('payments:create');
+    const puedePagar = can('payments:mark_as_paid');
+    const puedeEliminar = can('payments:delete');
 
     const [createOpen, setCreateOpen] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -109,14 +115,16 @@ export default function SupplierInvoicesPage() {
                 <Loader2 className="h-4 w-4 animate-spin ml-auto" />
             ) : (
                 <>
-                    {p.status !== "paid" && (
+                    {p.status !== "paid" && puedePagar && (
                         <Button size="sm" variant="outline" className="rounded-xl" onClick={() => { setPayMethod("Transferencia"); setPayTarget(p); }}>
                             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Pagar
                         </Button>
                     )}
-                    <Button size="sm" variant="ghost" className="rounded-xl text-destructive hover:text-destructive" onClick={() => setDeleteTarget(p)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {puedeEliminar && (
+                        <Button size="sm" variant="ghost" className="rounded-xl text-destructive hover:text-destructive" onClick={() => setDeleteTarget(p)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                    )}
                 </>
             ),
         },
@@ -224,12 +232,14 @@ export default function SupplierInvoicesPage() {
 
             {/* Toolbar */}
             <div className="flex justify-end">
-                <Button
-                    onClick={() => setCreateOpen(true)}
-                    className="rounded-[1.5rem] shadow-lg shadow-primary/10 hover:scale-105 active:scale-95"
-                >
-                    <Plus className="mr-2 h-4 w-4" /> Registrar factura
-                </Button>
+                {puedeCrear && (
+                    <Button
+                        onClick={() => setCreateOpen(true)}
+                        className="rounded-[1.5rem] shadow-lg shadow-primary/10 hover:scale-105 active:scale-95"
+                    >
+                        <Plus className="mr-2 h-4 w-4" /> Registrar factura
+                    </Button>
+                )}
             </div>
 
             {/* Tabla */}

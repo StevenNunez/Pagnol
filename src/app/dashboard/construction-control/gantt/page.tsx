@@ -34,6 +34,7 @@ import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
 import type { User as UserType, WorkItem } from '@/modules/core/lib/data';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import { StatCard } from '@/components/admin/stat-card';
+import { ProjectSwitcher, useProjectWorkItems } from '@/components/operations/active-project';
 import { eachDayOfInterval, differenceInDays, startOfDay } from 'date-fns';
 
 // --- Estilos del Gantt (adaptados a tokens Pagnol) ---
@@ -85,7 +86,10 @@ const TYPE_LABELS: Record<WorkItem['type'], string> = {
 
 export default function GanttChartPage() {
   const { can } = useAuth();
-  const { users, workItems, updateWorkItem, deleteWorkItem } = useAppState();
+  const { users, workItems: allWorkItems, updateWorkItem, deleteWorkItem } = useAppState();
+  // El cronograma es de UNA obra: antes dibujaba todas las programaciones
+  // del inquilino encimadas en la misma grilla (RFC-006 F1).
+  const workItems = useProjectWorkItems(allWorkItems);
   const { toast } = useToast();
   const canEditStructure = can('construction_control:edit_structure');
 
@@ -95,6 +99,13 @@ export default function GanttChartPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentTask, setCurrentTask] = useState<Partial<TaskType>>({});
   const [currentType, setCurrentType] = useState<WorkItem['type']>('task');
+
+  // La fila que se está editando, ¿es la obra entera o una partida suya? La obra
+  // no se borra desde acá (dejaría su EDT sin raíz): se elimina en Partidas (EDT).
+  const editandoLaObra = React.useMemo(
+    () => workItems.some(i => i.id === currentTask.id && i.parentId === null),
+    [workItems, currentTask.id],
+  );
 
   // Mapear workItems a Tasks de Gantt cada vez que workItems cambie
   useEffect(() => {
@@ -176,7 +187,12 @@ export default function GanttChartPage() {
     }
   };
 
-  const dateToString = (date?: Date) => date ? date.toISOString().split('T')[0] : '';
+  // Fecha LOCAL, no UTC. `toISOString()` convierte a UTC antes de recortar, así
+  // que una fecha con hora de tarde salta al día siguiente. Hoy no se nota
+  // porque Chile va detrás de UTC y las fechas llegan a medianoche local, pero
+  // es el mismo desfase de un día que ya mordió cuatro veces en este proyecto.
+  const dateToString = (date?: Date) =>
+    date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : '';
   const stringToDate = (str: string) => {
       if(!str) return undefined;
       const [y, m, d] = str.split('-').map(Number);
@@ -213,15 +229,25 @@ export default function GanttChartPage() {
             const taskStart = startOfDay(task.start);
             const taskEnd = startOfDay(task.end);
             const duration = differenceInDays(taskEnd, taskStart) + 1;
+            if (duration <= 0) continue;
 
-            if (duration > 0) {
-              if (day >= taskStart && day <= taskEnd) {
-                  dailyPlanned += 100 / duration;
-              }
-              if (day <= today && day >= taskStart) {
-                  const actualProgressOnDay = Math.min(100, task.progress || 0) / duration;
-                  dailyActual += actualProgressOnDay;
-              }
+            // Programado: la partida reparte su 100% entre sus días planificados.
+            if (day >= taskStart && day <= taskEnd) {
+                dailyPlanned += 100 / duration;
+            }
+
+            // Real: reparte el avance conseguido entre los días YA TRANSCURRIDOS
+            // de la partida, que terminan el día que termina la partida.
+            //
+            // Antes el corte era solo `day <= today`, sin tope en `taskEnd`: una
+            // partida terminada hace tres meses seguía sumando su cuota TODOS
+            // los días siguientes, para siempre. La curva real crecía sola sin
+            // que nadie avanzara nada y el SPI subía sin techo — en la obra de
+            // ejemplo marcaba 2.01 ("Adelantado") con dos partidas atrasadas.
+            const ultimoDiaVivo = taskEnd < today ? taskEnd : today;
+            const diasTranscurridos = differenceInDays(ultimoDiaVivo, taskStart) + 1;
+            if (diasTranscurridos > 0 && day >= taskStart && day <= ultimoDiaVivo) {
+                dailyActual += Math.min(100, task.progress || 0) / diasTranscurridos;
             }
         }
 
@@ -254,7 +280,11 @@ export default function GanttChartPage() {
   }
 
   return (
-    <PageShell title="Cronograma de Obra" description="Gestión visual de tiempos y seguimiento del proyecto.">
+    <PageShell
+      title="Cronograma de Obra"
+      description="Gestión visual de tiempos y seguimiento del proyecto."
+      toolbar={<ProjectSwitcher />}
+    >
       <GanttCustomStyles />
 
       {hasScheduledTasks ? (
@@ -409,7 +439,11 @@ export default function GanttChartPage() {
             </div>
           </div>
           <DialogFooter className="px-6 py-4 bg-muted/30 border-t flex items-center !justify-between">
-            {canEditStructure ? (<Button variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(currentTask as Task)}><Trash2 className="h-4 w-4 mr-2" /> Eliminar</Button>) : <div/>}
+            {canEditStructure && !editandoLaObra ? (
+              <Button variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(currentTask as Task)}><Trash2 className="h-4 w-4 mr-2" /> Eliminar</Button>
+            ) : editandoLaObra ? (
+              <p className="text-xs text-muted-foreground max-w-[18rem]">Esta fila es la obra completa. Se elimina desde Partidas (EDT).</p>
+            ) : <div/>}
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cerrar</Button>
               {canEditStructure && <Button onClick={handleSaveTask}>Guardar Cambios</Button>}

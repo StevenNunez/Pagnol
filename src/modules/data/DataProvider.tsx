@@ -52,6 +52,8 @@ import * as eaMutations from './mutations/eaMutations';
 import * as protocolMutations from './mutations/protocolMutations';
 import * as contractMutations from './mutations/contractMutations';
 import * as warehouseMutations from './mutations/warehouseMutations';
+import * as workProjectMutations from './mutations/workProjectMutations';
+import type { MutationContext } from './mutations/context';
 import * as rentalMutations from './mutations/rentalMutations';
 import * as rentalRequestMutations from './mutations/rentalRequestMutations';
 import * as workReportMutations from './mutations/workReportMutations';
@@ -148,6 +150,7 @@ const initialState: AppDataState = {
     checklistTemplates: [],
     behaviorObservations: [],
     stockMovements: [],
+    workProjects: [],
     workItems: [],
     progressLogs: [],
     paymentStates: [],
@@ -296,6 +299,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     // (useRecordFields). Requiere la migración 20260612000004 (worker_id/worker_name). (S6)
     const behaviorObservationsData = useSupabaseCollection('behavior_observations', { tenantId, enabled: on('behaviorObservations'), mapper: mappers.behavior_observations, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, obra, worker_id, worker_name, worker_rut, observation_date, items, risk_level, feedback, observer_id, observer_name, created_at' });
     const stockMovementsData = useSupabaseCollection('stock_movements', { tenantId, enabled: on('stockMovements'), mapper: mappers.stock_movements, orderBy: { column: 'date', ascending: false } });
+    const workProjectsData = useSupabaseCollection('work_projects', { tenantId, enabled: on('workProjects'), mapper: mappers.work_projects, orderBy: { column: 'created_at', ascending: false } });
     const workItemsData = useSupabaseCollection('work_items', { tenantId, enabled: on('workItems'), mapper: mappers.work_items, orderBy: { column: 'path', ascending: true } });
     const progressLogsData = useSupabaseCollection('progress_logs', { tenantId, enabled: on('progressLogs'), mapper: mappers.progress_logs, orderBy: { column: 'date', ascending: false } });
     const paymentStatesData = useSupabaseCollection('payment_states', { tenantId, enabled: on('paymentStates'), mapper: mappers.payment_states, orderBy: { column: 'created_at', ascending: false } });
@@ -350,11 +354,10 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
 
     const subscriptionPlansData = PLANS; // Local constants as base
 
-    // Nota: la siembra de EDT de ejemplo ya NO es automática (colisionaba entre
-    // tenants — ids globales fijos '1'..'39' hacían que solo el primer tenant
-    // sembrado tuviera datos). Ahora es opt-in: botón "Cargar estructura de
-    // ejemplo" en el estado vacío del EDT → genericMutations.seedExampleWorkItems
-    // (ids prefijados por tenant, sin colisión posible).
+    // Nota: no hay siembra de EDT de ejemplo. La hubo (automática primero,
+    // opt-in después) y se eliminó: una cuenta nueva no debe nacer con la obra
+    // de demostración adentro. La obra de ejemplo vive solo en el tenant demo,
+    // sembrada por scripts/seed-demo-obra.ts.
 
     // Las categorías por defecto ahora las siembra un trigger de Postgres en el
     // INSERT de tenants (migración 20260612000006). Ya no se siembran desde el cliente.
@@ -401,6 +404,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             biometricVerifications: biometricVerificationsData,
             safetyInspections: safetyInspectionsData, checklistTemplates: checklistTemplatesData,
             behaviorObservations: behaviorObservationsData, stockMovements: stockMovementsData,
+            workProjects: workProjectsData,
             workItems: workItemsData, progressLogs: progressLogsData,
             paymentStates: paymentStatesData, dailyTalks: dailyTalksData,
             maintenanceOrders: maintenanceOrdersData, maintenanceLogs: maintenanceLogsData,
@@ -435,13 +439,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             return data; // In Supabase Supabase handles dates as strings or native Date objects if using a library, but here we expect strings
         };
 
-        // NOTA: antes, si `workItemsData` estaba vacío, el estado se rellenaba en
-        // memoria con WORK_ITEMS_SEED — el EDT mostraba una estructura de
-        // ejemplo como si fuera real aunque nunca se hubiese guardado en la BD
-        // (y de hecho el INSERT real estaba roto para tenants nuevos, ver
-        // hardening 20260716000000). Ahora `workItems` refleja siempre la BD;
-        // la estructura de ejemplo se carga de forma explícita (opt-in) desde
-        // el botón del estado vacío del EDT.
+        // NOTA: antes, si `workItemsData` estaba vacío, el estado se rellenaba
+        // en memoria con una estructura de ejemplo — el EDT la mostraba como si
+        // fuera real aunque nunca se hubiese guardado en la BD (y de hecho el
+        // INSERT real estaba roto para tenants nuevos, ver hardening
+        // 20260716000000). Ahora `workItems` refleja siempre la BD.
         const processedWorkItems = processData(workItemsData);
 
         const rolesToUse = dynamicRolesData && Object.keys(dynamicRolesData).length > 0 ? dynamicRolesData : ROLES_DEFAULT;
@@ -476,6 +478,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 checklistTemplates: processData(checklistTemplatesData),
                 behaviorObservations: processData(behaviorObservationsData),
                 stockMovements: processData(stockMovementsData),
+                workProjects: processData(workProjectsData),
                 workItems: processedWorkItems,
                 progressLogs: processData(progressLogsData),
                 paymentStates: processData(paymentStatesData),
@@ -520,7 +523,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, supplierPaymentsData,
         salaryAdvancesData, attendanceLogsData, assignedChecklistsData, biometricVerificationsData, safetyInspectionsData,
         checklistTemplatesData, behaviorObservationsData, stockMovementsData,
-        subscriptionPlansData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
+        subscriptionPlansData, workProjectsData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
         protocolTemplatesData, protocolsData,
         shiftSchedulesData, clientsData, contractsData, contractWorkersData,
@@ -562,15 +565,18 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     // render y el React Compiler abandonaba la optimización del provider entero
     // ("existing memoization could not be preserved"), que es el componente más
     // caliente de la app. El comportamiento no cambia.
-    const bindContext = useCallback(<T extends any[], R>(fn: (...args: [...T, { user: User | null; tenantId: string | null }]) => R) => {
+    const bindContext = useCallback(<T extends any[], R>(fn: (...args: [...T, MutationContext]) => R) => {
         return (...args: T): R => {
-            const context = { user, tenantId };
+            // `can` viaja en el contexto para que las mutaciones validen permisos
+            // con la MISMA resolución que la pantalla (incluye los permisos que
+            // cada empresa personalizó, que `userCan` no conoce).
+            const context: MutationContext = { user, tenantId, can };
             if (context.user === undefined) {
                 throw new Error("Context for mutation is not yet available.");
             }
             return fn(...args, context);
         };
-    }, [user, tenantId]);
+    }, [user, tenantId, can]);
 
     const functions = React.useMemo(() => ({
         // Purchase Requests
@@ -646,10 +652,12 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         updateTenant: bindContext(genericMutations.updateTenant),
 
         // Work Items
+        addWorkProject: bindContext(workProjectMutations.addWorkProject),
+        updateWorkProject: bindContext(workProjectMutations.updateWorkProject),
+        deleteWorkProject: bindContext(workProjectMutations.deleteWorkProject),
         addWorkItem: bindContext(genericMutations.addWorkItem),
         updateWorkItem: bindContext(genericMutations.updateWorkItem),
         deleteWorkItem: bindContext(genericMutations.deleteWorkItem),
-        seedExampleWorkItems: bindContext(genericMutations.seedExampleWorkItems),
         addWorkItemProgress: bindContext(genericMutations.addWorkItemProgress),
         submitForQualityReview: bindContext(genericMutations.submitForQualityReview),
         approveWorkItem: bindContext(genericMutations.approveWorkItem),

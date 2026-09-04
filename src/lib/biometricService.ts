@@ -11,6 +11,10 @@ import {
   type LivenessSample,
 } from '@/modules/data/mutations/livenessMath';
 import { MATCH_THRESHOLD, type MatchReason } from '@/modules/data/mutations/matchMath';
+import {
+  ENROLL_SAMPLES, MIN_DETECTION_SCORE, MIN_FACE_RATIO_ENROLL, MIN_FACE_RATIO_VERIFY,
+  evaluarToma, promediarTomas,
+} from './enrollment-quality';
 import { authHeaders } from '@/modules/core/lib/auth-header';
 
 const MODEL_URL = '/models';
@@ -101,12 +105,70 @@ export const captureEvidenceFrame = async (
   }
 };
 
+/**
+ * Captura de ENROLAMIENTO: varias tomas promediadas en un solo template.
+ *
+ * Esta es la diferencia entre un enrolamiento que sirve y uno que no. Cada toma
+ * trae ruido propio —un gesto, una sombra, un ángulo— y el promedio conserva lo
+ * que se repite (la persona) y diluye lo que no. Guardar una sola toma, que es
+ * lo que se hacía, deja ese ruido dentro del template para siempre.
+ *
+ * Medido sobre los 35 enrolados de Valar (2026-09-04): dos personas quedaron a
+ * 0,500 una de otra —el umbral exacto de identidad, o sea confundibles— y 25 de
+ * 35 en el margen estrecho. Eso es lo que produce guardar la primera toma.
+ *
+ * Exige además un rostro grande en el encuadre: al enrolar la persona está
+ * quieta frente a la cámara y se le puede pedir que se acerque; al verificar,
+ * no.
+ */
+export const captureEnrollmentBiometrics = async (
+  input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+  opciones?: { tomas?: number; onProgress?: (hechas: number, total: number) => void },
+): Promise<BiometricResult> => {
+  const total = opciones?.tomas ?? ENROLL_SAMPLES;
+  const buenas: number[][] = [];
+  let ultimoFallo = '';
+
+  // Se intenta hasta el doble de veces: en faena varias tomas salen malas y
+  // reintentar es más amable que hacer empezar el enrolamiento de nuevo.
+  for (let intento = 0; intento < total * 2 && buenas.length < total; intento++) {
+    const r = await captureBiometrics(input, { minFaceRatio: MIN_FACE_RATIO_ENROLL });
+    if (r.success && r.descriptor) {
+      buenas.push(Array.from(r.descriptor));
+      opciones?.onProgress?.(buenas.length, total);
+    } else {
+      ultimoFallo = r.message;
+    }
+    // Un respiro entre tomas: dos capturas del mismo fotograma no aportan nada.
+    await new Promise(res => setTimeout(res, 250));
+  }
+
+  if (buenas.length === 0) {
+    return { success: false, message: ultimoFallo || NO_FACE_MESSAGE };
+  }
+
+  const { euclideanDistance } = await import('@/modules/data/mutations/matchMath');
+  const resultado = promediarTomas(buenas, euclideanDistance);
+  if (!resultado.ok) {
+    return { success: false, message: resultado.mensaje };
+  }
+
+  return {
+    success: true,
+    message: `Rostro registrado con ${buenas.length} tomas.`,
+    template: JSON.stringify(resultado.template),
+    descriptor: Float32Array.from(resultado.template),
+  };
+};
+
 export interface BiometricResult {
   success: boolean;
   message: string;
   template?: string; // JSON stringified descriptor (number[])
   imageUrl?: string;
   descriptor?: Float32Array;
+  /** Por qué se rechazó la toma, cuando se rechazó (rostro chico, poca luz…). */
+  quality?: { motivo?: string; proporcion: number };
 }
 
 /**
@@ -131,22 +193,51 @@ export const loadBiometricModels = async () => {
 /**
  * Detecta un rostro en el elemento de video y extrae su descriptor biométrico.
  */
-export const captureBiometrics = async (input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement): Promise<BiometricResult> => {
+export const captureBiometrics = async (
+  input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+  opciones?: { minFaceRatio?: number },
+): Promise<BiometricResult> => {
   if (!modelsLoaded) await loadBiometricModels();
   const fa = await getFaceApi();
 
   try {
-    // 1. Detectar rostro mas confiable
-    const detection = await fa.detectSingleFace(input).withFaceLandmarks().withFaceDescriptor();
+    // 1. Detectar el rostro más confiable.
+    //
+    //    El umbral del detector se baja respecto del que trae por defecto (0,5)
+    //    porque en faena el rostro llega con casco, contraluz, polvo y una
+    //    cámara de tablet barata: con el valor por defecto, una cara chica
+    //    dentro de un plano medio —el trabajador parado lejos— sencillamente no
+    //    se detecta, y el usuario ve "No se detectó ningún rostro" una y otra
+    //    vez sin saber qué hacer. Detectarla y decirle "acércate" (abajo) es
+    //    mejor que no verla.
+    const detection = await fa
+      .detectSingleFace(input, new fa.SsdMobilenetv1Options({ minConfidence: MIN_DETECTION_SCORE }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
 
     if (!detection) {
       return { success: false, message: NO_FACE_MESSAGE };
     }
 
-    const { descriptor } = detection;
+    // 2. Calidad de la toma. Antes acá decía "por ahora confiamos en el
+    //    detector" y se guardaba el primer descriptor que saliera. Un rostro
+    //    demasiado chico produce un template pobre, y un template pobre no se
+    //    arregla después con ningún umbral.
+    const encuadre = {
+      width: (input as HTMLVideoElement).videoWidth || (input as HTMLCanvasElement).width || 0,
+      height: (input as HTMLVideoElement).videoHeight || (input as HTMLCanvasElement).height || 0,
+    };
+    const evaluacion = evaluarToma(
+      detection.detection.box,
+      encuadre,
+      detection.detection.score,
+      opciones?.minFaceRatio ?? MIN_FACE_RATIO_VERIFY,
+    );
+    if (!evaluacion.ok) {
+      return { success: false, message: evaluacion.mensaje!, quality: evaluacion };
+    }
 
-    // 2. Comprobaciones de calidad básicas (opcional: verificar tamaño, angulo)
-    // Por ahora confiamos en el detector.
+    const { descriptor } = detection;
 
     // 3. Convertir descriptor a formato guardable
     const descriptorArray = Array.from(descriptor);

@@ -1,5 +1,4 @@
 import { supabase } from '@/modules/core/lib/supabase';
-import { userCan } from '@/modules/core/lib/permissions';
 import type { FinanceBudgetEntry, FinanceCategory } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
 
@@ -14,10 +13,10 @@ export async function addBudgetEntry(
         amountNet: number;
         reason: string;
     },
-    { user, tenantId }: Context,
+    { user, tenantId, can }: Context,
 ): Promise<FinanceBudgetEntry> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'finance:manage'))
+    if (!can('finance:manage'))
         throw new Error('No tienes permiso para administrar presupuestos.');
     const amount = Math.round(Number(data.amountNet));
     if (!Number.isFinite(amount) || amount === 0)

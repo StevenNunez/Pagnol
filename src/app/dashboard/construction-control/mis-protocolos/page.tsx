@@ -34,7 +34,15 @@ const formatDate = (date: Date | string | undefined | null) => {
 
 export default function MisProtocolosPage() {
     const { user, can } = useAuth();
-    const { workItems } = useAppState();
+    const { workItems, workProjects } = useAppState();
+
+    // Un mismo trabajador puede tener partidas en varias obras, y el código de
+    // EDT se repite entre obras: sin el nombre de la obra, dos filas idénticas
+    // pueden ser trabajos totalmente distintos.
+    const obraDe = useMemo(
+        () => new Map((workProjects || []).map(p => [p.id, p.name])),
+        [workProjects],
+    );
 
     const myProtocols = useMemo(() => {
         if (!workItems || !user) return [];
@@ -75,7 +83,7 @@ export default function MisProtocolosPage() {
 
                 {['all', 'pending-quality-review', 'completed', 'rejected'].map(tab => (
                     <TabsContent key={tab} value={tab}>
-                        <ProtocolList protocols={tab === 'all' ? myProtocols : byStatus(tab)} />
+                        <ProtocolList protocols={tab === 'all' ? myProtocols : byStatus(tab)} obraDe={obraDe} />
                     </TabsContent>
                 ))}
             </Tabs>
@@ -83,7 +91,7 @@ export default function MisProtocolosPage() {
     );
 }
 
-function ProtocolList({ protocols }: { protocols: WorkItem[] }) {
+function ProtocolList({ protocols, obraDe }: { protocols: WorkItem[]; obraDe: Map<string, string> }) {
     if (protocols.length === 0) {
         return (
             <EmptyState
@@ -111,6 +119,11 @@ function ProtocolList({ protocols }: { protocols: WorkItem[] }) {
                                 >
                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                         <div className="flex-grow min-w-0">
+                                            {obraDe.get(item.workProjectId ?? '') && (
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground truncate">
+                                                    {obraDe.get(item.workProjectId ?? '')}
+                                                </p>
+                                            )}
                                             <p className="font-semibold text-foreground truncate">{item.path} — {item.name}</p>
                                             <p className="text-xs text-muted-foreground mt-0.5">
                                                 {item.quantity.toLocaleString()} {item.unit}

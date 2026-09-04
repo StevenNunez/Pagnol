@@ -183,11 +183,16 @@ export async function deleteWorkOrder(id: string, ctx: Context): Promise<void> {
   // Una OT consolidada en un Diario (aunque sea borrador) no se puede borrar sin
   // antes desvincularla — evita que desaparezca en silencio del Diario (HH,
   // fotos y columnas de la matriz se esfuman si el registro deja de existir).
-  const { data: referencing } = await supabase
+  // El JSON va como STRING: supabase-js serializa un array de JavaScript como
+  // array de Postgres (`{...}`), que sobre una columna jsonb revienta con
+  // "invalid input syntax for type json". Y como el error se descartaba, la
+  // guarda no bloqueaba nada: llevaba desde su creación dejando pasar todo.
+  const { data: referencing, error: refError } = await supabase
     .from('work_reports')
     .select('internal_code, status')
-    .contains('consolidated_order_ids', [id])
+    .contains('consolidated_order_ids', JSON.stringify([id]))
     .limit(1);
+  if (refError) throw refError;
   if (referencing && referencing.length > 0) {
     const r = referencing[0] as { internal_code?: string; status?: string };
     throw new Error(`Esta OT está consolidada en el Diario ${r.internal_code || ''} (${r.status || ''}). Quítala de ese Diario antes de eliminarla.`);

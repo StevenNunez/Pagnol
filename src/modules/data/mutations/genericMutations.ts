@@ -9,10 +9,9 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { mappers } from '../mappers';
 import type { MutationContext as Context } from './context';
 import { addToLedger, consumeFromLedger } from './stockLedger';
-import { WORK_ITEMS_SEED } from '@/lib/work-items-seed';
 
 // --- Tenant ---
-export async function addTenant({ tenantName, tenantId, adminName, adminEmail }: any, { user }: Context) {
+export async function addTenant({ tenantName, tenantId, adminName, adminEmail }: any, { user, can }: Context) {
     if (user?.role !== 'super-admin') throw new Error("Solo los super-administradores pueden crear inquilinos.");
 
     const { data, error } = await supabase
@@ -58,7 +57,7 @@ export async function updateTenant(tenantId: string, data: Partial<Tenant>, { }:
 }
 
 // --- User ---
-export async function addUser(data: any, { user, tenantId }: Context) {
+export async function addUser(data: any, { user, tenantId, can }: Context) {
     if (!tenantId) throw new Error("Inquilino no válido para crear usuario.");
 
     const res = await fetch('/api/users/create', {
@@ -99,7 +98,7 @@ export async function addUser(data: any, { user, tenantId }: Context) {
 // Enrola biometría + KYC a un usuario existente. Va por service role (/api/users/enroll)
 // para que también puedan enrolar roles no-admin (Calidad con pagnol:enroll_personal) y
 // para escribir los documentos KYC en la tabla protegida profile_documents.
-export async function enrollUser(userId: string, data: any, { user }: Context) {
+export async function enrollUser(userId: string, data: any, { user, can }: Context) {
     const res = await fetch('/api/users/enroll', {
         method: 'POST',
         headers: await authHeaders(),
@@ -142,7 +141,7 @@ export async function hrUpdateUser(userId: string, data: any, { }: Context) {
     return json;
 }
 
-export async function updateUserPermissions(userId: string, permissions: string[], { user }: Context) {
+export async function updateUserPermissions(userId: string, permissions: string[], { user, can }: Context) {
     if (user?.role !== 'administrador' && user?.role !== 'soporte-pagnol' && user?.role !== 'super-admin') {
         throw new Error("Solo los administradores pueden otorgar permisos especiales.");
     }
@@ -165,7 +164,7 @@ export async function updateUserPermissions(userId: string, permissions: string[
     }
 }
 
-export async function updateUser(userId: string, data: any, { user }: Context) {
+export async function updateUser(userId: string, data: any, { user, can }: Context) {
     const updatePayload: any = {
         name: data.name,
         email: data.email,
@@ -225,7 +224,7 @@ export async function deleteUser(userId: string, { }: Context) {
 
 
 // --- Material ---
-export async function addMaterial(data: any, { user, tenantId }: Context) {
+export async function addMaterial(data: any, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
     const { justification, ...materialData } = data;
 
@@ -299,7 +298,7 @@ export async function addMaterial(data: any, { user, tenantId }: Context) {
     }
 }
 
-export async function addManualStockEntry(materialId: string, quantity: number, justification: string, { user, tenantId }: Context) {
+export async function addManualStockEntry(materialId: string, quantity: number, justification: string, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
     const { data: material, error: fetchError } = await supabase
@@ -339,7 +338,7 @@ export async function addManualStockEntry(materialId: string, quantity: number, 
     if (movementError) throw movementError;
 }
 
-export async function updateMaterial(materialId: string, data: any, { user, tenantId }: Context) {
+export async function updateMaterial(materialId: string, data: any, { user, tenantId, can }: Context) {
     if (!tenantId) throw new Error("Inquilino no válido.");
 
     const { data: currentMaterial, error: fetchError } = await supabase
@@ -452,9 +451,9 @@ export async function updateMaterial(materialId: string, data: any, { user, tena
  * pendientes que la referencian, o si viene de un arriendo (ese ciclo de vida
  * lo maneja el módulo Arriendos).
  */
-export async function deleteMaterial(materialId: string, reason: string, { user, tenantId }: Context) {
+export async function deleteMaterial(materialId: string, reason: string, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
-    if (!userCan(user, 'materials:delete')) throw new Error('No tienes permiso para eliminar activos.');
+    if (!can('materials:delete')) throw new Error('No tienes permiso para eliminar activos.');
     if (!reason?.trim()) throw new Error('Debes indicar el motivo de la eliminación.');
 
     const { data: material, error: matErr } = await supabase.from('materials').select('*').eq('id', materialId).single();
@@ -605,7 +604,7 @@ export async function uploadSupplierDocument(
     supplierId: string,
     file: File,
     meta: { name: string; type?: string; expiresAt?: string },
-    { user, tenantId }: Context
+    { user, tenantId, can }: Context
 ): Promise<SupplierDocument> {
     if (!user || !tenantId) throw new Error("No autenticado.");
     const ext = file.name.split('.').pop() || 'bin';
@@ -633,7 +632,7 @@ export async function uploadSupplierDocument(
 
 // Borra el archivo físico de un documento del proveedor (el array `documents`
 // se actualiza aparte vía updateSupplier).
-export async function deleteSupplierDocumentFile(path: string, { user, tenantId }: Context) {
+export async function deleteSupplierDocumentFile(path: string, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error("No autenticado.");
     const { error } = await supabase.storage.from('supplier-documents').remove([path]);
     if (error) throw error;
@@ -648,7 +647,7 @@ export async function deleteSupplier(id: string, { }: Context) {
 }
 
 // --- Lots ---
-export async function createLot(name: string, { user, tenantId }: Context) {
+export async function createLot(name: string, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
     const { error } = await supabase
         .from('purchase_lots')
@@ -737,34 +736,82 @@ export async function updatePlanPermissions(planId: string, permissions: Permiss
 }
 
 // --- Work Items ---
-export async function addWorkItem(data: Omit<WorkItem, 'id' | 'tenantId' | 'progress' | 'path'>, { tenantId, user }: Context) {
+/**
+ * Verifica que el UPDATE haya tocado al menos una fila.
+ *
+ * Un UPDATE que RLS deja en 0 filas **no devuelve error**: Supabase responde
+ * éxito con una lista vacía. Sin esta guarda, la pantalla decía "Partida
+ * Aprobada" y en la base no cambiaba nada.
+ */
+/**
+ * Puerta de permisos de una acción de Control de Obras.
+ *
+ * `can` viene en el contexto y resuelve igual que la pantalla (incluye los
+ * permisos que cada empresa personalizó). Hasta ahora estas mutaciones no
+ * validaban nada: la única barrera era que el botón estuviera oculto, y las
+ * políticas de la base son ciegas al rol — solo separan empresas. Cualquiera
+ * con sesión podía aprobar su propia partida desde la consola del navegador.
+ */
+function exigir(can: Context['can'], permiso: Parameters<Context['can']>[0], accion: string) {
+    if (!can(permiso)) throw new Error(`No tienes permiso para ${accion}.`);
+}
+
+/**
+ * Siguiente código de EDT dentro de un nivel.
+ *
+ * Toma el mayor de los códigos existentes y suma uno, en vez de contar los
+ * hermanos: si se borró uno del medio, contar devuelve un código que YA está en
+ * uso. Los códigos no se reciclan — igual que en una obra real, donde la partida
+ * 02 no reaparece con otro contenido.
+ */
+function siguienteCodigo(hermanos: { path: string | null }[] | null, prefijoPadre: string): string {
+    const largoPrefijo = prefijoPadre ? prefijoPadre.length + 1 : 0;
+    const mayor = (hermanos || []).reduce((max, h) => {
+        const ultimo = Number((h.path ?? '').slice(largoPrefijo));
+        return Number.isFinite(ultimo) && ultimo > max ? ultimo : max;
+    }, 0);
+    return String(mayor + 1).padStart(2, '0');
+}
+
+function assertPartidaTocada(rows: { id: string }[] | null, accion: string) {
+    if (!rows || rows.length === 0) {
+        throw new Error(`No se pudo ${accion}: no existe o no tienes permiso para modificarla.`);
+    }
+}
+
+export async function addWorkItem(data: Omit<WorkItem, 'id' | 'tenantId' | 'progress' | 'path'>, { tenantId, user, can }: Context) {
     if (!tenantId) throw new Error("Inquilino no válido.");
     if (!user) throw new Error("Usuario no autenticado.");
+    exigir(can, 'construction_control:edit_structure', 'crear partidas');
 
     let path = '';
+    // La obra se HEREDA del padre, nunca se recibe del formulario: una partida
+    // pertenece a la misma obra que su padre, siempre (RFC-006 F1).
+    let workProjectId: string | null = null;
     if (data.parentId) {
         const { data: parentDoc } = await supabase
             .from('work_items')
-            .select('path')
+            .select('path, work_project_id')
             .eq('id', data.parentId)
             .single();
 
         if (!parentDoc) throw new Error("El ítem padre no existe.");
+        workProjectId = parentDoc.work_project_id ?? null;
 
-        const { count } = await supabase
+        // El código sigue al ÚLTIMO hermano, no a la cantidad de hermanos.
+        // Contándolos, borrar el 02 y crear otra partida producía un segundo 03:
+        // dos partidas distintas con el mismo código de EDT.
+        const { data: hermanos } = await supabase
             .from('work_items')
-            .select('*', { count: 'exact', head: true })
+            .select('path')
             .eq('parent_id', data.parentId);
 
-        path = `${parentDoc.path}/${String((count || 0) + 1).padStart(2, '0')}`;
+        path = `${parentDoc.path}/${siguienteCodigo(hermanos, parentDoc.path)}`;
     } else {
-        const { count } = await supabase
-            .from('work_items')
-            .select('*', { count: 'exact', head: true })
-            .eq('tenant_id', tenantId)
-            .is('parent_id', null);
-
-        path = String((count || 0) + 1).padStart(2, '0');
+        // Desde RFC-006 F1 una raíz sin obra ya no puede existir: sería una
+        // partida que ninguna pantalla del módulo muestra (todas filtran por
+        // obra). Las raíces las crea addWorkProject junto con su obra.
+        throw new Error('Para crear una obra usa "Nueva Obra". Una partida siempre cuelga de una obra existente.');
     }
 
     const { error } = await supabase
@@ -772,6 +819,7 @@ export async function addWorkItem(data: Omit<WorkItem, 'id' | 'tenantId' | 'prog
         .insert({
             name: data.name,
             type: data.type,
+            work_project_id: workProjectId ?? data.workProjectId ?? null,
             // Puente WBS↔contratos (ADR-004 §1): solo tiene sentido en la raíz.
             contract_id: data.parentId ? null : (data.contractId ?? null),
             parent_id: data.parentId || null,
@@ -794,7 +842,8 @@ export async function addWorkItem(data: Omit<WorkItem, 'id' | 'tenantId' | 'prog
     if (error) throw error;
 }
 
-export async function updateWorkItem(id: string, data: Partial<WorkItem>, { }: Context) {
+export async function updateWorkItem(id: string, data: Partial<WorkItem>, { can }: Context) {
+    exigir(can, 'construction_control:edit_structure', 'editar partidas');
     const snakeData: Record<string, unknown> = {};
     if ('name' in data) snakeData.name = data.name;
     if ('status' in data) snakeData.status = data.status;
@@ -811,14 +860,44 @@ export async function updateWorkItem(id: string, data: Partial<WorkItem>, { }: C
     if ('parentId' in data) snakeData.parent_id = data.parentId;
     if ('contractId' in data) snakeData.contract_id = data.contractId;
 
-    const { error } = await supabase
+    // `.select()` acá cumple doble función: detecta el UPDATE silencioso de 0
+    // filas y devuelve la fila para saber si es la raíz de una obra.
+    const { data: rows, error } = await supabase
         .from('work_items')
         .update(snakeData)
-        .eq('id', id);
+        .eq('id', id)
+        .select('id, parent_id, work_project_id, name');
     if (error) throw error;
+    assertPartidaTocada(rows, 'guardar los cambios de la partida');
+
+    // La raíz de la EDT y la obra comparten nombre (RFC-006 D9). Renombrar la
+    // raíz desde el Gantt dejaba el selector de obras diciendo un nombre y el
+    // EDT otro; `updateWorkProject` ya sincroniza en el sentido contrario.
+    const fila = rows![0] as { parent_id: string | null; work_project_id: string | null; name: string };
+    if ('name' in data && fila.parent_id === null && fila.work_project_id) {
+        await supabase
+            .from('work_projects')
+            .update({ name: fila.name, updated_at: new Date().toISOString() })
+            .eq('id', fila.work_project_id);
+    }
 }
 
-export async function deleteWorkItem(id: string, { }: Context) {
+export async function deleteWorkItem(id: string, { can }: Context) {
+    exigir(can, 'construction_control:edit_structure', 'eliminar partidas');
+    // La raíz de una obra no se borra por su cuenta: sin ella la obra queda sin
+    // árbol, el EDT no tiene de qué colgar partidas nuevas y la obra se vuelve
+    // inservible sin forma de recuperarla desde la pantalla. Una obra recién
+    // creada tiene su raíz sin hijos y sin avances, así que los guards de abajo
+    // la dejaban pasar.
+    const { data: item } = await supabase
+        .from('work_items')
+        .select('parent_id, work_project_id')
+        .eq('id', id)
+        .maybeSingle();
+    if (item && item.parent_id === null && item.work_project_id) {
+        throw new Error('Esta es la obra completa, no una partida. Para eliminarla usa "Editar obra" en Partidas (EDT).');
+    }
+
     const [{ count: childCount }, { count: logCount }] = await Promise.all([
         supabase.from('work_items').select('*', { count: 'exact', head: true }).eq('parent_id', id),
         supabase.from('progress_logs').select('*', { count: 'exact', head: true }).eq('work_item_id', id),
@@ -830,6 +909,27 @@ export async function deleteWorkItem(id: string, { }: Context) {
         throw new Error(`No se puede eliminar: tiene ${logCount} registro(s) de avance asociados.`);
     }
 
+    // Una partida que ya viajó en un estado de pago no se borra: el EP la
+    // cobró. El documento guarda su propia copia y no se corrompe, pero el
+    // avance de la obra —que se recalcula en vivo— dejaría de cuadrar con lo
+    // que se facturó, sin rastro de por qué.
+    // `contains` recibe el JSON como STRING a propósito: supabase-js, cuando le
+    // pasas un array de JavaScript, lo serializa como array de Postgres
+    // (`{[object Object]}`) en vez de como JSON, y el filtro no matchea NUNCA —
+    // la guarda existiría y jamás se dispararía. Con un string lo manda tal cual.
+    const { data: eps, error: epsError } = await supabase
+        .from('payment_states')
+        .select('internal_code, status')
+        .contains('items', JSON.stringify([{ id }]));
+    if (epsError) throw epsError;
+    const vigentes = (eps || []).filter(ep => ep.status !== 'annulled');
+    if (vigentes.length > 0) {
+        const codigos = vigentes.map(ep => ep.internal_code).filter(Boolean).join(', ');
+        throw new Error(
+            `No se puede eliminar: esta partida ya se cobró en ${vigentes.length} estado(s) de pago${codigos ? ` (${codigos})` : ''}.`,
+        );
+    }
+
     const { error } = await supabase
         .from('work_items')
         .delete()
@@ -837,42 +937,9 @@ export async function deleteWorkItem(id: string, { }: Context) {
     if (error) throw error;
 }
 
-/**
- * Siembra la estructura de obra de EJEMPLO (opt-in, botón en el estado vacío
- * del EDT) — reemplaza el auto-seed silencioso que colisionaba entre tenants
- * (usaba ids globales fijos '1'..'39', por lo que solo el primer tenant que
- * sembraba tenía datos y los demás fallaban por RLS). Los ids se generan
- * prefijados por tenant para no chocar nunca con otro tenant ni con el seed
- * histórico ya sembrado (que usa ids cortos sin prefijo).
- */
-export async function seedExampleWorkItems({ tenantId, user }: Context) {
-    if (!tenantId || !user) throw new Error('No autenticado o sin inquilino.');
-
-    const idMap = new Map<string, string>(
-        WORK_ITEMS_SEED.map(item => [item.id, `${tenantId}_${item.id}`])
-    );
-    const dataToInsert = WORK_ITEMS_SEED.map(item => ({
-        id: idMap.get(item.id),
-        project_id: tenantId,
-        name: item.name,
-        type: item.type,
-        parent_id: item.parentId ? idMap.get(item.parentId) : null,
-        path: item.path,
-        unit: item.unit,
-        quantity: item.quantity,
-        unit_price: item.unitPrice,
-        created_by: user.id,
-        tenant_id: tenantId,
-        progress: 0,
-        status: 'in-progress',
-    }));
-
-    const { error } = await supabase.from('work_items').upsert(dataToInsert, { onConflict: 'id' });
-    if (error) throw error;
-}
-
-export async function addWorkItemProgress(workItemId: string, quantity: number, date: Date, observations: string | undefined, { user, tenantId }: Context) {
+export async function addWorkItemProgress(workItemId: string, quantity: number, date: Date, observations: string | undefined, { user, tenantId, can }: Context) {
     if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
+    exigir(can, 'construction_control:register_progress', 'registrar avance');
 
     const { data: workItem, error: fetchError } = await supabase
         .from('work_items')
@@ -921,19 +988,23 @@ export async function addWorkItemProgress(workItemId: string, quantity: number, 
     if (updateError) throw updateError;
 }
 
-export async function submitForQualityReview(workItemId: string, { }: Context) {
-    const { error } = await supabase
+export async function submitForQualityReview(workItemId: string, { can }: Context) {
+    exigir(can, 'module_construction_control:view', 'enviar partidas a revisión');
+    const { data: rows, error } = await supabase
         .from('work_items')
         .update({
             status: 'pending-quality-review',
             actual_end_date: new Date().toISOString(),
         })
-        .eq('id', workItemId);
+        .eq('id', workItemId)
+        .select('id');
     if (error) throw error;
+    assertPartidaTocada(rows, 'enviar la partida a revisión');
 }
 
-export async function rejectWorkItem(workItemId: string, reason: string, { user }: Context) {
-    const { error } = await supabase
+export async function rejectWorkItem(workItemId: string, reason: string, { user, can }: Context) {
+    exigir(can, 'construction_control:review_protocols', 'rechazar partidas');
+    const { data: rows, error } = await supabase
         .from('work_items')
         .update({
             status: 'rejected',
@@ -941,20 +1012,25 @@ export async function rejectWorkItem(workItemId: string, reason: string, { user 
             reviewed_by: user?.id ?? null,
             reviewed_at: new Date().toISOString(),
         })
-        .eq('id', workItemId);
+        .eq('id', workItemId)
+        .select('id');
     if (error) throw error;
+    assertPartidaTocada(rows, 'rechazar la partida');
 }
 
-export async function approveWorkItem(workItemId: string, { user }: Context) {
-    const { error } = await supabase
+export async function approveWorkItem(workItemId: string, { user, can }: Context) {
+    exigir(can, 'construction_control:review_protocols', 'aprobar partidas');
+    const { data: rows, error } = await supabase
         .from('work_items')
         .update({
             status: 'completed',
             reviewed_by: user?.id ?? null,
             reviewed_at: new Date().toISOString(),
         })
-        .eq('id', workItemId);
+        .eq('id', workItemId)
+        .select('id');
     if (error) throw error;
+    assertPartidaTocada(rows, 'aprobar la partida');
 }
 
 // addPaymentState y la máquina de estados del EP viven en paymentStateMutations.ts (F2).

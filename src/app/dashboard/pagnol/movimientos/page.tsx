@@ -834,7 +834,16 @@ export default function MovimientosPagnolPage() {
     e.preventDefault();
     const scId = qrInput.trim();
     if (!scId) return;
-    const asset = materials.find(m => m.id === scId || m.serialNumber === scId);
+    // El QR grabado en la herramienta lleva el código interno (VALAR-ACT-0139).
+    // Se acepta además el número de serie y el id por las etiquetas ya impresas
+    // con formatos anteriores. El código interno va primero porque es el único
+    // garantizado único: el número de serie lo escribe una persona y se repite.
+    const buscado = scId.toUpperCase();
+    const asset = materials.find(m =>
+      (m.internalCode || '').toUpperCase() === buscado ||
+      m.id === scId ||
+      (m.serialNumber || '').toUpperCase() === buscado
+    );
     if (asset) {
       if (!selectedAssetIds.includes(asset.id)) {
         if (selectedType === 'RETURN' && !inPossessionIds.has(asset.id)) {

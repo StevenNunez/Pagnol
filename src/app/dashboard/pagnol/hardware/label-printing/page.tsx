@@ -142,7 +142,7 @@ const LabelPrintingPage: React.FC = () => {
         }
 
         // ID — bold (prefer internalCode, fallback to uuid)
-        const displayId = asset.internalCode || asset.id;
+        const displayId = asset.internalCode || asset.serialNumber || asset.id;
         doc.setFont("helvetica", "bold");
         doc.setFontSize(5);
         doc.setTextColor(30, 30, 30);
@@ -196,7 +196,7 @@ const LabelPrintingPage: React.FC = () => {
         {filteredAssets.map((asset) => (
           <QRCodeCanvas
             key={asset.id}
-            value={asset.internalCode || asset.id}
+            value={asset.internalCode || asset.serialNumber || asset.id}
             size={200}
             level="H"
             imageSettings={{
@@ -547,7 +547,7 @@ const LabelPrintingPage: React.FC = () => {
                       backgroundColor: "#fff",
                     }}
                   >
-                    <QRWithPagnolLogo value={asset.internalCode || asset.id} size={64} />
+                    <QRWithPagnolLogo value={asset.internalCode || asset.serialNumber || asset.id} size={64} />
                     <p
                       style={{
                         fontSize: "6px",
@@ -560,7 +560,7 @@ const LabelPrintingPage: React.FC = () => {
                         marginTop: "4px",
                       }}
                     >
-                      {asset.internalCode || asset.id}
+                      {asset.internalCode || asset.serialNumber || asset.id}
                     </p>
                     <p
                       style={{
@@ -655,7 +655,7 @@ const LabelsPrintSheet: React.FC<{
 
 // ─── Single Print Label ───────────────────────────────────────────────────────
 const PrintLabel: React.FC<{ asset: Material; logoUrl: string }> = ({ asset, logoUrl }) => {
-  const displayId = asset.internalCode || asset.id;
+  const displayId = asset.internalCode || asset.serialNumber || asset.id;
   return (
     <div
       style={{

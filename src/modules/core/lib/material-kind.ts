@@ -34,6 +34,25 @@ export function materialKind(material: Pick<Material, 'category' | 'usageType'>)
   return EQUIPMENT_USAGE.has(material.usageType || '') ? 'equipment' : 'supply';
 }
 
+/**
+ * ¿Se le graba el QR al fierro con la pistola marcadora?
+ *
+ * Se marca lo que sale del pañol y tiene que volver: herramientas y equipos.
+ * Queda fuera el consumible (se descuenta en la solicitud y no vuelve), el EPP
+ * (se asigna a una persona y se controla por entrega, no por una marca en el
+ * fierro) y el repuesto, que se instala y tampoco vuelve.
+ *
+ * Queda fuera también lo que no es de la empresa — equipos arrendados, del
+ * cliente o de un subcontrato. La marca es permanente y no se le raya el fierro
+ * a un tercero; esos equipos se identifican con etiqueta.
+ *
+ * Marcar es permanente: ante la duda, el ítem NO entra al lote.
+ */
+export function isMarkable(material: Pick<Material, 'category' | 'usageType' | 'ownership'>): boolean {
+  if (material.ownership && material.ownership !== 'propio') return false;
+  return materialKind(material) === 'equipment';
+}
+
 interface KindOption {
   id: string;
   name: string;

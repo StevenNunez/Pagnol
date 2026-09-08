@@ -27,6 +27,7 @@ export default defineConfig({
       'src/lib/enrollment-quality.test.ts',
       'src/lib/finance-periods.test.ts',
       'src/lib/numero-a-palabras.test.ts',
+      'src/lib/qrBmp.test.ts',
     ],
   },
 });

@@ -29,6 +29,7 @@ import {
   FileText,
   Sparkles,
   Printer,
+  Crosshair,
   ShieldCheck,
   PieChart,
   Activity,
@@ -811,13 +812,25 @@ export default function ActivosPage() {
             />
           </div>
           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            {/* Dos salidas, según se pueda grabar el fierro o haya que pegar una
+                etiqueta: la pistola para lo propio que sale y vuelve, el adhesivo
+                para el EPP, lo arrendado y lo del cliente. */}
             {can('users:print_qr') && (
               <Button
                 variant="outline"
-                onClick={() => router.push('/dashboard/pagnol/activos/print-qrs')}
+                onClick={() => router.push('/dashboard/pagnol/activos/marcado-qr')}
                 className="w-full sm:w-auto flex items-center justify-center gap-3 px-6 py-5 sm:py-4 rounded-[1.5rem]"
               >
-                <Printer size={18} /> Imprimir QRs
+                <Crosshair size={18} /> Marcar con Pistola
+              </Button>
+            )}
+            {can('users:print_qr') && (
+              <Button
+                variant="outline"
+                onClick={() => router.push('/dashboard/pagnol/hardware/label-printing')}
+                className="w-full sm:w-auto flex items-center justify-center gap-3 px-6 py-5 sm:py-4 rounded-[1.5rem]"
+              >
+                <Printer size={18} /> Imprimir Etiquetas
               </Button>
             )}
             {canManageCatalog && (

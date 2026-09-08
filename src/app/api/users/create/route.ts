@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { requireAuth, resolveTenant, hasPermission } from '@/modules/core/lib/api-auth';
 import { guardarTemplate, consumirSesionEnrolamiento } from '@/modules/core/lib/biometric-vault';
+import {
+    registrarConsentimientoEscritorio,
+    vincularConsentimientoDeSesion,
+    origenDeLaPeticion,
+} from '@/modules/core/lib/biometric-consent-store';
 
 export async function POST(request: Request) {
     try {
@@ -20,7 +25,7 @@ export async function POST(request: Request) {
                 kyc_face_image: kycCaraDelCuerpo,
                 kyc_id_front: kycFrenteDelCuerpo,
                 kyc_id_back: kycDorsoDelCuerpo,
-                enrollmentToken,
+                enrollmentToken, consentAccepted,
                 enrolledByName, contractId, shiftScheduleId, rotationStartDate } = await request.json();
 
         if (!email) {
@@ -52,6 +57,17 @@ export async function POST(request: Request) {
         const kyc_face_image = sesion?.kycFaceImage ?? kycCaraDelCuerpo ?? null;
         const kyc_id_front = sesion?.kycIdFront ?? kycFrenteDelCuerpo ?? null;
         const kyc_id_back = sesion?.kycIdBack ?? kycDorsoDelCuerpo ?? null;
+
+        // Sin autorización no se guarda biometría. Por QR el trabajador ya la
+        // firmó en su teléfono; por escritorio la acaba de aceptar en pantalla.
+        // Se comprueba ANTES de crear la cuenta: si se hiciera después, cada
+        // rechazo dejaría un usuario a medio crear.
+        if (biometric_template && !enrollmentToken && consentAccepted !== true) {
+            return NextResponse.json(
+                { error: 'Falta la autorización de tratamiento de datos biométricos.' },
+                { status: 403 }
+            );
+        }
 
         // Create auth user without affecting the current admin session.
         // Sin password explícita se genera una aleatoria e irrecuperable (el
@@ -115,6 +131,19 @@ export async function POST(request: Request) {
             });
             if (!guardado.ok) {
                 console.error('[users/create] biometría no guardada:', guardado.error);
+            } else if (enrollmentToken) {
+                // La constancia se firmó en el teléfono cuando este perfil todavía
+                // no existía: recién ahora se le puede poner nombre.
+                await vincularConsentimientoDeSesion(admin, enrollmentToken, newUser.id);
+            } else {
+                await registrarConsentimientoEscritorio(admin, {
+                    userId: newUser.id,
+                    tenantId,
+                    nombre: name,
+                    rut,
+                    email: email?.trim().toLowerCase(),
+                    ...origenDeLaPeticion(request),
+                });
             }
         }
 

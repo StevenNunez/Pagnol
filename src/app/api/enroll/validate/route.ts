@@ -23,5 +23,30 @@ export async function GET(request: Request) {
         return NextResponse.json({ valid: false, error: 'Sesión inválida o expirada' });
     }
 
-    return NextResponse.json({ valid: true, session: data });
+    // El nombre de la empresa va en el texto del consentimiento: la responsable
+    // del tratamiento es ella, no Pagnol, que es sólo el proveedor. Un texto que
+    // dijera "autorizo a Pagnol" no serviría de nada ante un reclamo laboral.
+    let companyName = '';
+    if (data.tenant_id) {
+        const { data: tenant } = await admin
+            .from('tenants')
+            .select('name')
+            .eq('id', data.tenant_id)
+            .maybeSingle();
+        companyName = tenant?.name || '';
+    }
+
+    // Si ya aceptó (por ejemplo recargó la página a mitad de camino), no se le
+    // vuelve a pedir la firma.
+    const { count } = await admin
+        .from('biometric_consents')
+        .select('id', { count: 'exact', head: true })
+        .eq('enrollment_token', token);
+
+    return NextResponse.json({
+        valid: true,
+        session: data,
+        companyName,
+        consentGiven: (count ?? 0) > 0,
+    });
 }

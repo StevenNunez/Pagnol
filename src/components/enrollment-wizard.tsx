@@ -12,6 +12,8 @@ import { loadBiometricModels, captureBiometrics, captureEnrollmentBiometrics } f
 import { ROLES_ORDER } from '@/modules/core/lib/permissions';
 import { useAssignableRoles } from '@/modules/core/hooks/use-assignable-roles';
 import { UserIdentityFields } from '@/components/user-identity-fields';
+import { BiometricConsentGate } from '@/components/biometric-consent-gate';
+import { CONSENT_VERSION } from '@/modules/core/lib/biometric-consent';
 import { User } from '@/modules/core/lib/data';
 import {
     X, ChevronRight, ChevronLeft, ScanFace, CheckCircle,
@@ -37,7 +39,7 @@ const FormSchema = z.object({
 type FormData = z.infer<typeof FormSchema>;
 
 type EnrollmentMode = 'choose' | 'desktop' | 'qr';
-type DesktopStep = 'info' | 'document' | 'face' | 'done';
+type DesktopStep = 'info' | 'consent' | 'document' | 'face' | 'done';
 
 interface EnrollmentWizardProps {
     isOpen: boolean;
@@ -60,7 +62,7 @@ export function EnrollmentWizard({
 }: EnrollmentWizardProps) {
     const { toast } = useToast();
     const { user: currentUser } = useAuth();
-    const { contracts, shiftSchedules } = useAppState();
+    const { contracts, shiftSchedules, currentTenant } = useAppState();
     const assignableRoles = useAssignableRoles();
 
     const [mode, setMode] = useState<EnrollmentMode>('choose');
@@ -96,6 +98,16 @@ export function EnrollmentWizard({
     const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
     const [qrPolling, setQrPolling] = useState(false);
     const [qrCompleted, setQrCompleted] = useState(false);
+    // El servidor ya guardó la biometría en la ficha del trabajador (pasa cuando
+    // el QR se generó para un usuario que ya existía). Distinto de `qrCompleted`,
+    // que sólo dice que el trabajador terminó en su teléfono.
+    const [qrEnrolled, setQrEnrolled] = useState(false);
+
+    // Autorización del camino de ESCRITORIO. En el camino por QR la firma la da
+    // el trabajador en su propio teléfono y queda registrada allá; acá el
+    // trabajador está parado frente al computador del administrador, y sin este
+    // paso la captura empezaría sin que nadie le haya explicado nada.
+    const [consentAccepted, setConsentAccepted] = useState(false);
 
     const { control, register, handleSubmit, reset, watch, formState: { errors } } = useForm<FormData>({
         resolver: zodResolver(FormSchema),
@@ -129,7 +141,9 @@ export function EnrollmentWizard({
             setCapturedImages({ idFront: null, idBack: null, face: null });
             setBiometricTemplate(null);
             setQrCompleted(false);
+            setQrEnrolled(false);
             setQrPolling(false);
+            setConsentAccepted(false);
             setContractId('');
             setShiftScheduleId('');
             setRotationStartDate(new Date().toISOString().slice(0, 10));
@@ -322,11 +336,22 @@ export function EnrollmentWizard({
                 console.error('Error consultando la sesión:', e);
             }
 
-            if (estado === 'completed') {
+            // `consumed` = el servidor ya escribió la biometría en la ficha (caso
+            // de un usuario que ya existía). `completed` = los datos llegaron pero
+            // falta cerrar el alta acá. Si sólo se mirara 'completed', el primer
+            // caso no se detectaría nunca y el asistente se quedaría esperando
+            // para siempre un enrolamiento que ya está hecho.
+            if (estado === 'completed' || estado === 'consumed') {
                 clearInterval(pollInterval);
                 setQrCompleted(true);
+                setQrEnrolled(estado === 'consumed');
                 setQrPolling(false);
-                toast({ title: '✅ Enrolamiento Completado', description: 'El trabajador completó su verificación desde el móvil.' });
+                toast({
+                    title: '✅ Enrolamiento Completado',
+                    description: estado === 'consumed'
+                        ? 'La biometría ya quedó guardada en la ficha del trabajador.'
+                        : 'El trabajador completó su verificación desde el móvil.',
+                });
             }
         }, 3000);
 
@@ -348,6 +373,11 @@ export function EnrollmentWizard({
                     kyc_face_image: capturedImages.face !== 'skip' ? capturedImages.face : null,
                     kyc_id_front: capturedImages.idFront !== 'skip' ? capturedImages.idFront : null,
                     kyc_id_back: capturedImages.idBack !== 'skip' ? capturedImages.idBack : null,
+                    // Constancia de la autorización firmada recién acá: el servidor
+                    // la guarda junto con el enrolamiento, en el mismo acto. Por
+                    // QR no va, porque ya quedó registrada desde el teléfono.
+                    consentAccepted,
+                    consentVersion: CONSENT_VERSION,
                 };
 
             if (selectedUser) {
@@ -379,8 +409,8 @@ export function EnrollmentWizard({
         ? `${window.location.origin}/enroll/${enrollmentToken}`
         : '';
 
-    const stepLabels = ['Datos', 'Documento', 'Rostro', 'Listo'];
-    const stepIndex = step === 'info' ? 0 : step === 'document' ? 1 : step === 'face' ? 2 : 3;
+    const stepLabels = ['Datos', 'Autorización', 'Documento', 'Rostro'];
+    const stepIndex = step === 'info' ? 0 : step === 'consent' ? 1 : step === 'document' ? 2 : 3;
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -478,10 +508,16 @@ export function EnrollmentWizard({
                                         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
                                             <CheckCircle size={40} className="text-green-500" />
                                         </div>
-                                        <h3 className="text-xl font-black text-green-700 uppercase">¡Verificación Completada!</h3>
-                                        <p className="text-sm text-slate-500">El trabajador completó su enrolamiento desde el móvil.</p>
+                                        <h3 className="text-xl font-black text-green-700 uppercase">
+                                            {qrEnrolled ? 'Biometría Guardada' : '¡Verificación Completada!'}
+                                        </h3>
+                                        <p className="text-sm text-slate-500 max-w-sm">
+                                            {qrEnrolled
+                                                ? 'El trabajador ya quedó enrolado en su ficha. Cierra cuando quieras.'
+                                                : 'El trabajador completó su enrolamiento desde el móvil. Falta guardar para crear su ficha.'}
+                                        </p>
                                         <Button onClick={handleSubmit(onSubmit)} disabled={isSubmitting} className="mt-4 px-10 py-5 rounded-2xl bg-primary font-black text-xs uppercase tracking-widest">
-                                            {isSubmitting ? <Loader2 className="animate-spin" /> : 'Guardar y Finalizar'}
+                                            {isSubmitting ? <Loader2 className="animate-spin" /> : qrEnrolled ? 'Finalizar' : 'Guardar y Finalizar'}
                                         </Button>
                                     </div>
                                 ) : (
@@ -517,7 +553,7 @@ export function EnrollmentWizard({
                         )}
 
                         {mode === 'desktop' && step === 'info' && (
-                            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(() => setStep('document'))(); }} className="p-8 space-y-5">
+                            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(() => setStep(consentAccepted ? 'document' : 'consent'))(); }} className="p-8 space-y-5">
                                 <UserIdentityFields
                                     register={register}
                                     control={control}
@@ -609,6 +645,18 @@ export function EnrollmentWizard({
                                     </Button>
                                 </div>
                             </form>
+                        )}
+
+                        {mode === 'desktop' && step === 'consent' && (
+                            <BiometricConsentGate
+                                empresa={currentTenant?.name || ''}
+                                onAccept={() => {
+                                    setConsentAccepted(true);
+                                    setStep('document');
+                                    startCamera('environment');
+                                }}
+                                onDecline={() => setStep('info')}
+                            />
                         )}
 
                         {mode === 'desktop' && step === 'document' && (

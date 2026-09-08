@@ -83,6 +83,10 @@ export async function addUser(data: any, { user, tenantId, can }: Context) {
             // Enrolamiento por QR: el servidor lee el descriptor y los documentos
             // de la sesión del móvil. Este navegador nunca los tuvo.
             enrollmentToken: data.enrollmentToken || null,
+            // El trabajador aceptó el tratamiento de sus datos biométricos en esta
+            // pantalla. El servidor levanta la constancia; sin esto rechaza el
+            // enrolamiento. (Por QR la firma ya quedó registrada desde el móvil.)
+            consentAccepted: data.consentAccepted === true,
             enrolledByName: user?.name || 'System',
             contractId: data.contractId || null,
             shiftScheduleId: data.shiftScheduleId || null,
@@ -110,6 +114,7 @@ export async function enrollUser(userId: string, data: any, { user, can }: Conte
             kyc_id_front: data.kyc_id_front || null,
             kyc_id_back: data.kyc_id_back || null,
             enrollmentToken: data.enrollmentToken || null,
+            consentAccepted: data.consentAccepted === true,
             enrolledByName: user?.name || 'System',
         }),
     });

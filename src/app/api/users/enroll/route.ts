@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireAuth, hasPermission } from '@/modules/core/lib/api-auth';
 import { guardarTemplate, consumirSesionEnrolamiento } from '@/modules/core/lib/biometric-vault';
+import {
+    registrarConsentimientoEscritorio,
+    vincularConsentimientoDeSesion,
+    origenDeLaPeticion,
+} from '@/modules/core/lib/biometric-consent-store';
 
 /**
  * Enrola biometría + KYC a un usuario YA EXISTENTE.
@@ -24,6 +29,7 @@ export async function POST(request: Request) {
 
         const {
             userId, internalId, enrolledByName, enrollmentToken,
+            consentAccepted,
             biometric_template: templateDelCuerpo,
             kyc_face_image: kycCaraDelCuerpo,
             kyc_id_front: kycFrenteDelCuerpo,
@@ -65,6 +71,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'No autorizado sobre este usuario.' }, { status: 403 });
         }
 
+        // Sin autorización no se guarda biometría. Por QR ya la firmó el
+        // trabajador en su teléfono (`/api/enroll/consent`, verificado por
+        // `/api/enroll/complete`); por escritorio la acaba de aceptar en pantalla
+        // y la constancia se levanta acá, en el mismo acto que el enrolamiento.
+        if (biometric_template && !enrollmentToken && consentAccepted !== true) {
+            return NextResponse.json(
+                { error: 'Falta la autorización de tratamiento de datos biométricos.' },
+                { status: 403 }
+            );
+        }
+
         const profilePayload: Record<string, any> = {};
         if (internalId !== undefined) profilePayload.internal_id = internalId;
         if (biometric_template) {
@@ -83,6 +100,22 @@ export async function POST(request: Request) {
             profilePayload.enrolled_by = enrolledByName || 'System';
             profilePayload.enrolled_at = new Date().toISOString();
             profilePayload.onboarding_completed = true;
+
+            const origen = origenDeLaPeticion(request);
+            if (enrollmentToken) {
+                await vincularConsentimientoDeSesion(admin, enrollmentToken, userId);
+            } else {
+                const { data: ficha } = await admin
+                    .from('profiles').select('name, rut, email').eq('id', userId).maybeSingle();
+                await registrarConsentimientoEscritorio(admin, {
+                    userId,
+                    tenantId: target.tenant_id,
+                    nombre: ficha?.name,
+                    rut: ficha?.rut,
+                    email: ficha?.email,
+                    ...origen,
+                });
+            }
         }
 
         if (Object.keys(profilePayload).length > 0) {

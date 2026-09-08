@@ -38,6 +38,7 @@ import { authHeaders } from '@/modules/core/lib/auth-header';
 import { generateContractPDF } from '@/lib/contract-pdf-generator';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { useToast } from '@/modules/core/hooks/use-toast';
+import { buscarPorCodigoEscaneado, pareceMalConfigurado } from '@/modules/core/lib/scan-code';
 import { fetchRecordFields } from '@/modules/core/hooks/use-record-fields';
 import { PageHeader } from '@/components/page-header';
 import { SecureFileLink } from '@/components/secure-file-link';
@@ -830,6 +831,10 @@ export default function MovimientosPagnolPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowStep]);
 
+  // Un solo aviso por sesión de que el lector está mal configurado: repetirlo en
+  // cada fierro de una entrega de veinte sería inusable.
+  const avisoLectorDado = useRef(false);
+
   const handleQrScan = (e: React.FormEvent) => {
     e.preventDefault();
     const scId = qrInput.trim();
@@ -838,12 +843,41 @@ export default function MovimientosPagnolPage() {
     // Se acepta además el número de serie y el id por las etiquetas ya impresas
     // con formatos anteriores. El código interno va primero porque es el único
     // garantizado único: el número de serie lo escribe una persona y se repite.
-    const buscado = scId.toUpperCase();
-    const asset = materials.find(m =>
-      (m.internalCode || '').toUpperCase() === buscado ||
-      m.id === scId ||
-      (m.serialNumber || '').toUpperCase() === buscado
+    //
+    // La búsqueda tolera los separadores: una pistola configurada en teclado
+    // inglés manda `VALAR'ACT'0017` en vez de `VALAR-ACT-0017` (ver `scan-code.ts`).
+    const hallazgo = buscarPorCodigoEscaneado(
+      materials,
+      scId,
+      m => [m.internalCode, m.serialNumber, m.id],
+      m => m.id,
     );
+
+    if (hallazgo.tipo === 'ambiguo') {
+      // No se elige por el operador: entregar el activo equivocado es peor que
+      // pedirle que escriba el código completo.
+      toast({
+        variant: 'destructive',
+        title: 'Código ambiguo',
+        description: `Más de un activo calza con «${scId}»: ${hallazgo.candidatos.map(c => c.internalCode || c.name).join(', ')}. Escribe el código completo.`,
+      });
+      setQrInput('');
+      return;
+    }
+
+    // Se leyó igual, pero el lector mandó símbolos que el código no tiene. Se
+    // avisa una vez: si no, el arreglo esconde que la pistola también está
+    // estropeando cualquier otro campo donde se pistolee.
+    if (hallazgo.tipo === 'tolerado' && pareceMalConfigurado(scId) && !avisoLectorDado.current) {
+      avisoLectorDado.current = true;
+      toast({
+        variant: 'warning',
+        title: 'Revisa la configuración del lector',
+        description: `El lector envió «${scId}» en vez del código con guiones. Se reconoció igual, pero conviene configurarlo en teclado español.`,
+      });
+    }
+
+    const asset = hallazgo.tipo === 'exacto' || hallazgo.tipo === 'tolerado' ? hallazgo.item : null;
     if (asset) {
       if (!selectedAssetIds.includes(asset.id)) {
         if (selectedType === 'RETURN' && !inPossessionIds.has(asset.id)) {
@@ -860,7 +894,13 @@ export default function MovimientosPagnolPage() {
         toast({ variant: 'destructive', title: "Repetido", description: "Este ítem ya está en la lista." });
       }
     } else {
-      toast({ variant: 'destructive', title: "No encontrado", description: "QR no válido." });
+      // Mostrar lo que se leyó de verdad: "QR no válido" a secas no deja ver que
+      // el problema está en el lector y no en la etiqueta del fierro.
+      toast({
+        variant: 'destructive',
+        title: 'No encontrado',
+        description: `Ningún activo tiene el código «${scId}».`,
+      });
     }
     setQrInput('');
   };

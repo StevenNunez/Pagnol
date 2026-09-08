@@ -4,9 +4,10 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Camera, ChevronRight, Loader2, AlertCircle, ScanFace, FileImage, Sparkles, X } from 'lucide-react';
 import { loadBiometricModels, captureBiometrics } from '@/lib/biometricService';
+import { BiometricConsentGate } from '@/components/biometric-consent-gate';
 import { cn } from '@/lib/utils';
 
-type Step = 'loading' | 'invalid' | 'id_front' | 'id_back' | 'face' | 'processing' | 'done' | 'error';
+type Step = 'loading' | 'invalid' | 'consent' | 'id_front' | 'id_back' | 'face' | 'processing' | 'done' | 'error';
 
 export default function MobileEnrollPage() {
     const { token } = useParams() as { token: string };
@@ -17,6 +18,13 @@ export default function MobileEnrollPage() {
     const [processingStatus, setProcessingStatus] = useState('');
     const [processingProgress, setProcessingProgress] = useState(0);
     const [errorMsg, setErrorMsg] = useState('');
+    const [companyName, setCompanyName] = useState('');
+    const [savingConsent, setSavingConsent] = useState(false);
+    // Qué pasó de verdad al terminar: `true` = la biometría ya quedó en su ficha;
+    // `false` = los datos llegaron pero el alta la cierra el administrador. La
+    // pantalla final decía "registrado exitosamente" en los dos casos, y en el
+    // segundo eso era falso.
+    const [enrolado, setEnrolado] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
@@ -43,10 +51,22 @@ export default function MobileEnrollPage() {
                 const res = await fetch(`/api/enroll/validate?token=${encodeURIComponent(token)}`);
                 const json = await res.json();
                 if (!json.valid) { setStep('invalid'); return; }
-                if (json.session.status === 'completed') { setStep('done'); return; }
+                if (json.session.status === 'completed' || json.session.status === 'consumed') {
+                    setEnrolado(json.session.status === 'consumed');
+                    setStep('done');
+                    return;
+                }
                 setSession(json.session);
-                setStep('id_front');
-                await startCamera('environment');
+                setCompanyName(json.companyName || '');
+                // La autorización va ANTES de encender la cámara: pedir el
+                // consentimiento después de haberle tomado la cara al trabajador
+                // no es pedir consentimiento.
+                if (json.consentGiven) {
+                    setStep('id_front');
+                    await startCamera('environment');
+                } else {
+                    setStep('consent');
+                }
             } catch {
                 setStep('invalid');
             }
@@ -60,6 +80,30 @@ export default function MobileEnrollPage() {
         // token otra vez y reenciende la cámara. Bucle de fetch + cámara.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
+
+    const aceptarConsentimiento = async () => {
+        setSavingConsent(true);
+        try {
+            const res = await fetch('/api/enroll/consent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token }),
+            });
+            const json = await res.json();
+            if (!res.ok || json.error) {
+                setErrorMsg(json.error || 'No se pudo registrar tu autorización.');
+                setStep('error');
+                return;
+            }
+            setStep('id_front');
+            await startCamera('environment');
+        } catch (e: any) {
+            setErrorMsg('Error de red al registrar la autorización: ' + e.message);
+            setStep('error');
+        } finally {
+            setSavingConsent(false);
+        }
+    };
 
     const capturePhoto = useCallback(() => {
         if (!videoRef.current || !canvasRef.current) return;
@@ -139,6 +183,7 @@ export default function MobileEnrollPage() {
             });
             const json = await res.json();
             if (!res.ok || json.error) { setErrorMsg('Error guardando datos: ' + json.error); setStep('error'); return; }
+            setEnrolado(!!json.enrolled);
             setStep('done');
         } catch (e: any) {
             setErrorMsg('Error de red al guardar: ' + e.message);
@@ -196,6 +241,20 @@ export default function MobileEnrollPage() {
                             <p className="text-white/50 text-sm mt-2">Este QR ha expirado o ya fue utilizado. Solicita uno nuevo al administrador.</p>
                         </div>
                     </div>
+                )}
+
+                {/* CONSENTIMIENTO — puerta obligatoria antes de cualquier captura */}
+                {step === 'consent' && (
+                    <BiometricConsentGate
+                        empresa={companyName}
+                        tone="dark"
+                        saving={savingConsent}
+                        onAccept={aceptarConsentimiento}
+                        onDecline={() => {
+                            setErrorMsg('No se puede continuar sin tu autorización. Si tienes dudas, consulta con tu administrador antes de seguir.');
+                            setStep('error');
+                        }}
+                    />
                 )}
 
                 {/* CAMERA STEPS */}
@@ -256,16 +315,30 @@ export default function MobileEnrollPage() {
                             <div className="w-28 h-28 bg-green-900/30 rounded-3xl flex items-center justify-center overflow-hidden">
                                 {capturedImages.face ? <img src={capturedImages.face} className="w-full h-full object-cover [transform:scaleX(-1)]" alt="" /> : <CheckCircle size={48} className="text-green-400" />}
                             </div>
-                            <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center border-4 border-slate-950">
+                            <div className={cn(
+                                'absolute -bottom-2 -right-2 w-10 h-10 rounded-full flex items-center justify-center border-4 border-slate-950',
+                                enrolado ? 'bg-green-500' : 'bg-amber-500',
+                            )}>
                                 <CheckCircle size={18} className="text-white" />
                             </div>
                         </div>
                         <div>
-                            <h2 className="text-2xl font-black uppercase text-green-400">¡Verificación Completa!</h2>
-                            <p className="text-white/50 text-sm mt-2">Tu identidad ha sido verificada y los datos enviados. Puedes cerrar esta ventana.</p>
+                            <h2 className={cn('text-2xl font-black uppercase', enrolado ? 'text-green-400' : 'text-amber-400')}>
+                                {enrolado ? '¡Verificación Completa!' : 'Datos Enviados'}
+                            </h2>
+                            <p className="text-white/50 text-sm mt-2">
+                                {enrolado
+                                    ? 'Tu biometría quedó registrada en tu ficha. Puedes cerrar esta ventana.'
+                                    : 'Tus datos llegaron correctamente. Falta que el administrador confirme tu registro desde su computador — avísale antes de irte.'}
+                            </p>
                         </div>
-                        <div className="flex items-center gap-2 bg-green-900/20 border border-green-500/20 rounded-2xl px-6 py-4 text-green-400 text-xs font-bold uppercase tracking-widest">
-                            <Sparkles size={14} /> Biometría Registrada Exitosamente
+                        <div className={cn(
+                            'flex items-center gap-2 border rounded-2xl px-6 py-4 text-xs font-bold uppercase tracking-widest',
+                            enrolado
+                                ? 'bg-green-900/20 border-green-500/20 text-green-400'
+                                : 'bg-amber-900/20 border-amber-500/20 text-amber-400',
+                        )}>
+                            <Sparkles size={14} /> {enrolado ? 'Biometría Registrada Exitosamente' : 'Pendiente de Confirmación'}
                         </div>
                     </div>
                 )}

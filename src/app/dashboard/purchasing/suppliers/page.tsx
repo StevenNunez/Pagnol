@@ -250,7 +250,7 @@ function SupplierDetail({ supplier }: { supplier: Supplier }) {
                                     <AlertDialogHeader>
                                         <AlertDialogTitle>¿Eliminar a {supplier.name}?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                            Esta acción no se puede deshacer. Si el proveedor está asignado a materiales u órdenes, la acción fallará.
+                                            El proveedor dejará de aparecer en las listas. Sus órdenes y pagos anteriores conservan el registro.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>

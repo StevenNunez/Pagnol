@@ -275,7 +275,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const requestsData = useSupabaseCollection('material_requests', { tenantId, enabled: on('requests'), mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, enabled: on('returnRequests'), mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const purchaseRequestsData = useSupabaseCollection('purchase_requests', { tenantId, enabled: on('purchaseRequests'), mapper: mappers.purchase_requests, orderBy: { column: 'created_at', ascending: false } });
-    const suppliersData = useSupabaseCollection('suppliers', { tenantId, enabled: on('suppliers'), mapper: mappers.suppliers });
+    const suppliersData = useSupabaseCollection('suppliers', { tenantId, enabled: on('suppliers'), mapper: mappers.suppliers, softDelete: true });
     const materialCategoriesData = useSupabaseCollection('material_categories', { tenantId, enabled: on('materialCategories'), mapper: mappers.material_categories });
     const unitsData = useSupabaseCollection('units', { tenantId, enabled: on('units') });
     const purchaseLotsData = useSupabaseCollection('purchase_lots', { tenantId, enabled: on('purchaseLots'), mapper: mappers.purchase_lots });

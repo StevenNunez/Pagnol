@@ -14,6 +14,7 @@ import { useToast } from "@/modules/core/hooks/use-toast";
 import { supabase } from "@/modules/core/lib/supabase";
 import { getInitials } from "@/modules/core/lib/sequence-utils";
 import { generateApiToken, type GeneratedApiToken } from "@/modules/core/lib/api-tokens-client";
+import { ApiKeysCard } from "./api-keys-card";
 import {
   Building2, Hash, ImageIcon, Loader2, Save, Trash2, UploadCloud, Lock, Plus, X,
   KeyRound, Copy, Check, AlertTriangle, Bot,
@@ -57,6 +58,8 @@ export default function ConfiguracionPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const canManage = can("module_settings:view");
+  // Las llaves de la API son de la empresa: sólo su administración las gestiona (mismo criterio que la RLS de api_keys).
+  const canManageApiKeys = ["super-admin", "administrador", "director-faena", "soporte-pagnol"].includes(user?.role ?? "");
 
   // ── Tokens de API (MCP externo) ──────────────────────────────────────────
   const [tokens, setTokens] = useState<ApiTokenRow[]>([]);
@@ -539,6 +542,10 @@ export default function ConfiguracionPage() {
           )}
         </CardContent>
       </Card>
+
+      {canManageApiKeys && currentTenant?.id && user?.id && (
+        <ApiKeysCard tenantId={currentTenant.id} userId={user.id} />
+      )}
     </PageShell>
   );
 }

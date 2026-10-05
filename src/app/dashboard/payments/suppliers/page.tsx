@@ -113,7 +113,7 @@ export default function AdminSuppliersPage() {
                                                             <AlertDialogHeader>
                                                                 <AlertDialogTitle>¿Seguro que quieres eliminar a {supplier.name}?</AlertDialogTitle>
                                                                 <AlertDialogDescription>
-                                                                    Esta acción no se puede deshacer. Se eliminará permanentemente al proveedor.
+                                                                    El proveedor dejará de aparecer en las listas. Sus órdenes y pagos anteriores conservan el registro.
                                                                     Si este proveedor está asignado a algún material, la acción fallará.
                                                                 </AlertDialogDescription>
                                                             </AlertDialogHeader>

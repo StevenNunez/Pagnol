@@ -643,12 +643,18 @@ export async function deleteSupplierDocumentFile(path: string, { user, tenantId,
     if (error) throw error;
 }
 
-export async function deleteSupplier(id: string, { }: Context) {
-    const { error } = await supabase
+// Borrado lógico: la fila queda con `deleted_at` para que las OC y pagos que la
+// referencian sigan resolviendo el nombre, y para que un sistema integrado por
+// la API (que sincroniza por `updated_since`) reciba la baja como `activo: false`.
+export async function deleteSupplier(id: string, { user }: Context) {
+    const { data, error } = await supabase
         .from('suppliers')
-        .delete()
-        .eq('id', id);
+        .update({ deleted_at: new Date().toISOString(), deleted_by: user?.id ?? null })
+        .eq('id', id)
+        .select('id');
     if (error) throw error;
+    // RLS no lanza error al filtrar 0 filas: sin esta guarda el borrado "funcionaría" sin borrar nada.
+    if (!data?.length) throw new Error('No se pudo eliminar el proveedor (sin permiso o ya no existe).');
 }
 
 // --- Lots ---

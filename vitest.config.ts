@@ -29,6 +29,7 @@ export default defineConfig({
       'src/lib/numero-a-palabras.test.ts',
       'src/lib/qrBmp.test.ts',
       'src/modules/core/lib/scan-code.test.ts',
+      'src/lib/api/**/*.test.ts',
     ],
   },
 });

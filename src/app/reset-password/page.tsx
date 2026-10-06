@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/modules/auth/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,8 +10,19 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { ArrowLeft, Mail, ShieldCheck, Loader2, CheckCircle } from "lucide-react";
 
+// El correo "Activa tu acceso" (/api/users/send-access) trae ?email= para que
+// la persona sólo tenga que pulsar enviar.
 export default function ResetPasswordPage() {
-    const [email, setEmail] = useState("");
+    return (
+        <Suspense>
+            <ResetPasswordForm />
+        </Suspense>
+    );
+}
+
+function ResetPasswordForm() {
+    const searchParams = useSearchParams();
+    const [email, setEmail] = useState(() => searchParams.get("email")?.trim() ?? "");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [sent, setSent] = useState(false);
     const { sendPasswordReset } = useAuth();

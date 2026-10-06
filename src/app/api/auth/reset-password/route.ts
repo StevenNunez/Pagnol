@@ -8,7 +8,10 @@ export async function POST(request: Request) {
   let email = '';
 
   try {
-    if (!(await rateLimitByIp(request, 'reset-password', 5, 3600))) {
+    // 20 por hora por IP: una sala de inducción comparte un solo wifi (una sola
+    // IP pública), y con 5 la sexta persona quedaba bloqueada una hora. Sigue
+    // siendo un freno contra el envío masivo de correos desde una misma conexión.
+    if (!(await rateLimitByIp(request, 'reset-password', 20, 3600))) {
       return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
     }
 

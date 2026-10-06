@@ -14,6 +14,7 @@ import { MoreHorizontal, Trash2, Edit, QrCode, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { UserPanel } from "@/components/user-panel";
+import { SendAccessDialog } from "@/components/admin/send-access-dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import QRCode from "react-qr-code";
@@ -32,6 +33,8 @@ export default function AdminUsersPage() {
   const [selectedClientId, setSelectedClientId] = useState<string>(CC_ALL);
   const [selectedContractId, setSelectedContractId] = useState<string>(CC_ALL);
   const { toast } = useToast();
+  // Mismos roles que acepta /api/users/send-access.
+  const canSendAccess = ["administrador", "soporte-pagnol", "super-admin"].includes(authUser?.role ?? "");
 
   // Asignaciones vigentes (sin fecha de término) por usuario: contratos de cliente
   // y áreas internas por igual — ambos son filas de `contracts`.
@@ -160,6 +163,7 @@ export default function AdminUsersPage() {
                 poolLabel="Sin asignar"
                 triggerClassName="w-full sm:w-52 h-12 rounded-xl bg-muted/30 border-none"
               />
+              {canSendAccess && <SendAccessDialog users={users || []} selfId={authUser?.id} />}
               {can('users:print_qr') && (
                 <Button asChild className="h-12 px-6 rounded-xl bg-pagnol-orange hover:bg-orange-600 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-orange-500/20">
                   <Link href="/dashboard/users/print-qrs">

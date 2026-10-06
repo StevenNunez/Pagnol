@@ -16,7 +16,7 @@ import { LoadingState } from "@/components/loading-state";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { supabase } from "@/modules/core/lib/supabase";
 import { generateApiKey } from "@/modules/core/lib/api-keys-client";
-import { API_SCOPES_AVAILABLE, API_SCOPE_LABELS, type ApiScope } from "@/lib/api/scopes";
+import { API_SCOPES_AVAILABLE, API_SCOPES_DEFAULT, API_SCOPE_LABELS, type ApiScope } from "@/lib/api/scopes";
 import { AlertTriangle, Check, Copy, KeyRound, Loader2, Plug, Trash2 } from "lucide-react";
 
 const MICRO_LABEL = "text-[10px] font-black uppercase tracking-widest text-muted-foreground";
@@ -41,7 +41,7 @@ export function ApiKeysCard({ tenantId, userId }: { tenantId: string; userId: st
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<ApiScope[]>([...API_SCOPES_AVAILABLE]);
+  const [scopes, setScopes] = useState<ApiScope[]>([...API_SCOPES_DEFAULT]);
   const [creating, setCreating] = useState(false);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);

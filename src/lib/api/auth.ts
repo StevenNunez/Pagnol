@@ -10,6 +10,8 @@ export const RATE_LIMIT_WINDOW_SECONDS = 60;
 
 export interface ApiKeyContext {
     apiKeyId: string;
+    /** Nombre de la llave: queda como autor en el kardex ("API: <nombre>"). */
+    name: string;
     /** Empresa dueña de la llave. TODA consulta se filtra por este valor. */
     tenantId: string;
     scopes: string[];
@@ -23,11 +25,12 @@ async function sha256Hex(text: string): Promise<string> {
 const KEY_RE = /^pk_(live|test)_[0-9a-f]{64}$/;
 
 /**
- * Valida `Authorization: Bearer pk_...`, resuelve la empresa y exige el scope.
- * 401 si falta la llave, no existe o está revocada; 403 si no tiene el scope;
- * 429 si superó el límite.
+ * Valida `Authorization: Bearer pk_...`, resuelve la empresa y exige el scope
+ * (con una lista, basta cualquiera de ellos). 401 si falta la llave, no existe
+ * o está revocada; 403 si no tiene el scope; 429 si superó el límite.
  */
-export async function authenticate(req: Request, scope: ApiScope): Promise<ApiKeyContext> {
+export async function authenticate(req: Request, scope: ApiScope | readonly ApiScope[]): Promise<ApiKeyContext> {
+    const accepted: readonly ApiScope[] = typeof scope === 'string' ? [scope] : scope;
     const header = req.headers.get('authorization') ?? '';
     const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
     if (!match) throw new ApiError('unauthorized', 'Falta la API key (header `Authorization: Bearer <key>`).');
@@ -39,15 +42,16 @@ export async function authenticate(req: Request, scope: ApiScope): Promise<ApiKe
     const admin = getSupabaseAdmin();
     const { data: key, error } = await admin
         .from('api_keys')
-        .select('id, tenant_id, scopes, revoked_at, last_used_at')
+        .select('id, tenant_id, name, scopes, revoked_at, last_used_at')
         .eq('key_hash', await sha256Hex(raw))
         .maybeSingle();
     if (error) throw error;
     if (!key || key.revoked_at) throw new ApiError('unauthorized', 'API key inválida o revocada.');
 
     const scopes: string[] = key.scopes ?? [];
-    if (!scopes.includes(scope)) {
-        throw new ApiError('forbidden', `La API key no tiene el scope \`${scope}\`.`, { required_scope: scope });
+    if (!accepted.some(s => scopes.includes(s))) {
+        const label = accepted.map(s => `\`${s}\``).join(' o ');
+        throw new ApiError('forbidden', `La API key no tiene el scope ${label}.`, { required_scope: accepted.join(' | ') });
     }
 
     const allowed = await checkRateLimit(`api_v1:${key.id}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_SECONDS);
@@ -69,5 +73,5 @@ export async function authenticate(req: Request, scope: ApiScope): Promise<ApiKe
         });
     }
 
-    return { apiKeyId: key.id, tenantId: key.tenant_id, scopes };
+    return { apiKeyId: key.id, name: key.name, tenantId: key.tenant_id, scopes };
 }

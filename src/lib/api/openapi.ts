@@ -1,6 +1,8 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
+import { z as zod } from 'zod';
 import {
-    ActivoSchema, ActivosQuerySchema, ErrorSchema, IdParamSchema, MaterialSchema, MaterialesQuerySchema,
+    ActivoSchema, ActivosQuerySchema, CreateActivoBodySchema, CreateMovimientoBodySchema, ErrorSchema, ExistenciasSchema,
+    IdParamSchema, MaterialSchema, MaterialesQuerySchema, MovimientoSchema, PanolSchema, PatchActivoBodySchema,
     ProveedorSchema, ProveedoresQuerySchema, listSchema,
 } from './schemas';
 import type { ApiScope } from './scopes';
@@ -23,6 +25,20 @@ const commonErrors = {
         headers: { 'Retry-After': { description: 'Segundos a esperar antes de reintentar.', schema: { type: 'integer' as const } } },
     },
     500: errorResponse('Error interno (`internal_error`).'),
+};
+
+const json = (schema: z.ZodTypeAny, description: string) => ({ description, content: { 'application/json': { schema } } });
+
+const IdempotencyHeader = zod.object({
+    'Idempotency-Key': zod.string().uuid().openapi({
+        description: 'Obligatorio en toda escritura. Repetir la misma llave con el mismo cuerpo (24 h) devuelve la respuesta original sin volver a ejecutar; con otro cuerpo → 409 `idempotency_conflict`.',
+    }),
+});
+
+const writeErrors = {
+    ...commonErrors,
+    404: errorResponse('El material, pañol, proveedor o activo no existe en la empresa de la API key (`not_found`).'),
+    409: errorResponse('`idempotency_conflict` (misma llave, otro cuerpo) o `conflict` (external_ref ya usada para otra cosa, petición en curso, o reverso imposible).'),
 };
 
 interface Resource {
@@ -105,13 +121,59 @@ function buildDocument() {
         });
     }
 
+    // ── Dónde está cada cosa ────────────────────────────────────────────────
+    registry.registerPath({
+        method: 'get', path: '/panoles', operationId: 'listPanoles', tags: ['Pañoles'],
+        summary: 'Pañoles (bodegas) de la empresa, con los contratos que atienden.',
+        description: 'Requiere `activos:read`, `materiales:read` o `productos:read`. Una sola página.',
+        security: [{ apiKey: [] }],
+        responses: { 200: json(listSchema(PanolSchema, 'PanolList'), 'Pañoles.'), ...commonErrors },
+    });
+    registry.registerPath({
+        method: 'get', path: '/materiales/{id}/existencias', operationId: 'getExistencias', tags: ['Materiales'],
+        summary: 'Cuánto hay de un material (o activo) en cada pañol y contrato.',
+        description: 'Requiere `materiales:read`, `productos:read` o `activos:read`.',
+        security: [{ apiKey: [] }],
+        request: { params: IdParamSchema },
+        responses: { 200: json(ExistenciasSchema, 'Existencias.'), 404: errorResponse('No existe en la empresa (`not_found`).'), ...commonErrors },
+    });
+
+    // ── Escritura: lo que llega se registra en Pagnol ───────────────────────
+    registry.registerPath({
+        method: 'post', path: '/activos', operationId: 'createActivo', tags: ['Activos'],
+        summary: 'Crea UNA unidad rastreable al recibirla (una llamada por unidad).',
+        description: 'Requiere `activos:write`. Copia los datos del ítem del catálogo, le asigna código y QR propios, y la deja en el pañol indicado. ' +
+            'No genera gasto en Pagnol: el gasto vive en el sistema que compró. Repetir la misma `external_ref` devuelve el activo ya creado (200).',
+        security: [{ apiKey: [] }],
+        request: { headers: IdempotencyHeader, body: { content: { 'application/json': { schema: CreateActivoBodySchema } } } },
+        responses: { 201: json(ActivoSchema, 'Activo creado.'), 200: json(ActivoSchema, 'Ya existía un activo con esa `external_ref`.'), ...writeErrors },
+    });
+    registry.registerPath({
+        method: 'patch', path: '/activos/{id}', operationId: 'patchActivo', tags: ['Activos'],
+        summary: 'Cambia el estado y/o la ubicación de un activo.',
+        description: 'Requiere `activos:write`. `de_baja` lo marca para baja (no borra nada). Un activo archivado en Pagnol responde 409.',
+        security: [{ apiKey: [] }],
+        request: { params: IdParamSchema, headers: IdempotencyHeader, body: { content: { 'application/json': { schema: PatchActivoBodySchema } } } },
+        responses: { 200: json(ActivoSchema, 'Activo actualizado.'), ...writeErrors },
+    });
+    registry.registerPath({
+        method: 'post', path: '/movimientos', operationId: 'createMovimiento', tags: ['Movimientos'],
+        summary: 'Ingresa stock de un consumible al recibirlo, o revierte un ingreso.',
+        description: 'Requiere `stock:write`. Sólo materiales NO rastreables. Un reverso es un movimiento nuevo que descuenta lo ingresado (nunca se borra el original); ' +
+            'si esas unidades ya se entregaron o movieron, responde 409 y se ajusta en Pagnol. No genera gasto en Pagnol.',
+        security: [{ apiKey: [] }],
+        request: { headers: IdempotencyHeader, body: { content: { 'application/json': { schema: CreateMovimientoBodySchema } } } },
+        responses: { 201: json(MovimientoSchema, 'Movimiento registrado.'), 200: json(MovimientoSchema, 'Ya existía con esa `external_ref`.'), ...writeErrors },
+    });
+
     return new OpenApiGeneratorV31(registry.definitions).generateDocument({
         openapi: '3.1.0',
         info: {
             title: 'Pagnol API',
             version: '1.0.0',
             description:
-                'API pública de Pagnol: catálogo de materiales, productos, proveedores y activos de la empresa dueña de la API key. ' +
+                'API pública de Pagnol: catálogo de materiales, productos, proveedores, activos y pañoles de la empresa dueña de la API key, ' +
+                'y registro de lo que llega (activos y stock). ' +
                 'Campos en snake_case, fechas ISO 8601 UTC. Dentro de v1 sólo hay cambios aditivos.',
         },
         servers: [{ url: 'https://www.pagnol.cl/api/v1' }],

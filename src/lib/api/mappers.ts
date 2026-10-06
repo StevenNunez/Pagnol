@@ -1,4 +1,4 @@
-import type { ActivoDTO, ActivoEstado, MaterialDTO, ProveedorDTO } from './schemas';
+import type { ActivoDTO, ActivoEstado, MaterialDTO, ProveedorDTO, RefDTO } from './schemas';
 
 // Fila de Postgres → DTO público. Funciones puras: se testean sin Supabase.
 //
@@ -8,13 +8,18 @@ import type { ActivoDTO, ActivoEstado, MaterialDTO, ProveedorDTO } from './schem
 //   /productos  → consumibles y repuestos (se compran por cantidad; también los sin tipo)
 //   /materiales → el catálogo completo
 
+// Debe coincidir con public.api_is_trackable() (migración 20261006000000).
 export const ACTIVO_USAGE_TYPES = ['Activo Fijo', 'IT Controlado', 'Herramienta Menor', 'Reutilizable Controlado'] as const;
+
+export function isRastreable(usageType: string | null | undefined): boolean {
+    return (ACTIVO_USAGE_TYPES as readonly string[]).includes(usageType ?? '');
+}
 export const PRODUCTO_USAGE_TYPES = ['Consumible', 'Repuesto Crítico'] as const;
 
 /** Columnas de `materials` que leen los endpoints (nunca `*`: el DTO no debe depender de columnas nuevas). */
 export const MATERIAL_API_COLUMNS =
     'id, name, internal_code, serial_number, description, category, unit, stock, min_stock, archived, deleted_at, ' +
-    'usage_type, ownership, supplier_id, status, location, unit_cost, acquisition_date, updated_at';
+    'usage_type, ownership, supplier_id, status, location, unit_cost, acquisition_date, catalog_material_id, external_ref, updated_at';
 
 export const SUPPLIER_API_COLUMNS = 'id, rut, name, email, phone, deleted_at, updated_at';
 
@@ -37,6 +42,8 @@ export interface MaterialRow {
     location: string | null;
     unit_cost: number | string | null;
     acquisition_date: string | null;
+    catalog_material_id: string | null;
+    external_ref: string | null;
     updated_at: string;
 }
 
@@ -87,6 +94,8 @@ export function toMaterialDTO(row: MaterialRow): MaterialDTO {
         stock_actual: num(row.stock),
         stock_minimo: num(row.min_stock),
         activo: isVigente(row),
+        rastreable: isRastreable(row.usage_type),
+        tipo_uso: text(row.usage_type),
         updated_at: iso(row.updated_at),
     };
 }
@@ -101,19 +110,30 @@ export function activoEstado(row: Pick<MaterialRow, 'status' | 'archived' | 'del
     }
 }
 
-export function toActivoDTO(row: MaterialRow): ActivoDTO {
+/** Dónde está un activo: lo calcula queries.ts desde el libro de stock y las entregas. */
+export interface ActivoLugar {
+    panol: RefDTO | null;
+    contrato: RefDTO | null;
+    responsable: string | null;
+}
+
+export const SIN_LUGAR: ActivoLugar = { panol: null, contrato: null, responsable: null };
+
+export function toActivoDTO(row: MaterialRow, lugar: ActivoLugar = SIN_LUGAR): ActivoDTO {
     return {
         id: row.id,
         codigo: materialCodigo(row),
         nombre: row.name,
-        material_id: null,
+        material_id: row.catalog_material_id ?? null,
         proveedor_id: row.supplier_id ?? null,
         estado: activoEstado(row),
         ubicacion: text(row.location),
-        responsable: null,
+        panol: lugar.panol,
+        contrato: lugar.contrato,
+        responsable: lugar.responsable,
         valor_compra: num(row.unit_cost),
         fecha_compra: row.acquisition_date ? row.acquisition_date.slice(0, 10) : null,
-        external_ref: null,
+        external_ref: text(row.external_ref),
         updated_at: iso(row.updated_at),
     };
 }

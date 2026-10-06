@@ -25,6 +25,8 @@ const row = (over: Partial<MaterialRow> = {}): MaterialRow => ({
     location: ' ',
     unit_cost: 125000,
     acquisition_date: '2026-03-01',
+    catalog_material_id: null,
+    external_ref: null,
     updated_at: '2026-06-28T17:01:09.320138+00:00',
     ...over,
 });
@@ -41,6 +43,10 @@ describe('mappers', () => {
         expect(dto.stock_actual).toBe(1);
         expect(dto.stock_minimo).toBeNull();
         expect(dto.activo).toBe(false);
+        expect(dto.rastreable).toBe(true);
+        expect(dto.tipo_uso).toBe('Herramienta Menor');
+        expect(toMaterialDTO(row({ usage_type: 'Consumible' })).rastreable).toBe(false);
+        expect(toMaterialDTO(row({ usage_type: null })).rastreable).toBe(false);
         expect(dto.updated_at).toBe('2026-06-28T17:01:09.320Z');
         expect(MaterialSchema.parse(dto)).toEqual(dto);
     });
@@ -58,7 +64,11 @@ describe('mappers', () => {
 
     it('activo: campos reservados en null y valida contra el schema', () => {
         const dto = toActivoDTO(row());
-        expect(dto).toMatchObject({ material_id: null, responsable: null, external_ref: null, ubicacion: null, valor_compra: 125000, fecha_compra: '2026-03-01' });
+        expect(dto).toMatchObject({ material_id: null, panol: null, contrato: null, responsable: null, external_ref: null, ubicacion: null, valor_compra: 125000, fecha_compra: '2026-03-01' });
+        const conLugar = toActivoDTO(row({ catalog_material_id: '33333333-3333-4333-8333-333333333333', external_ref: 'valar:x' }),
+            { panol: { id: '44444444-4444-4444-8444-444444444444', nombre: 'Pañol Norte' }, contrato: null, responsable: 'Juan Pérez' });
+        expect(conLugar).toMatchObject({ material_id: '33333333-3333-4333-8333-333333333333', external_ref: 'valar:x', responsable: 'Juan Pérez' });
+        expect(ActivoSchema.parse(conLugar)).toEqual(conLugar);
         expect(ActivoSchema.parse(dto)).toEqual(dto);
     });
 
@@ -104,16 +114,20 @@ describe('paginación', () => {
 });
 
 describe('openapi', () => {
-    it('genera un documento 3.1 con los 8 GET y la seguridad bearer', () => {
+    it('genera un documento 3.1 con todas las rutas y la seguridad bearer', () => {
         const doc = getOpenApiDocument() as any;
         expect(doc.openapi).toBe('3.1.0');
         const paths = Object.keys(doc.paths).sort();
         expect(paths).toEqual([
-            '/activos', '/activos/{id}', '/materiales', '/materiales/{id}',
-            '/productos', '/productos/{id}', '/proveedores', '/proveedores/{id}',
+            '/activos', '/activos/{id}', '/materiales', '/materiales/{id}', '/materiales/{id}/existencias',
+            '/movimientos', '/panoles', '/productos', '/productos/{id}', '/proveedores', '/proveedores/{id}',
         ]);
-        for (const p of paths) expect(doc.paths[p].get.security).toEqual([{ apiKey: [] }]);
+        for (const p of paths) for (const op of Object.values(doc.paths[p]) as any[]) expect(op.security).toEqual([{ apiKey: [] }]);
+        // Toda escritura documenta el Idempotency-Key obligatorio.
+        for (const op of [doc.paths['/activos'].post, doc.paths['/activos/{id}'].patch, doc.paths['/movimientos'].post]) {
+            expect(op.parameters).toContainEqual(expect.objectContaining({ in: 'header', name: 'Idempotency-Key', required: true }));
+        }
         expect(doc.components.securitySchemes.apiKey).toMatchObject({ type: 'http', scheme: 'bearer' });
-        expect(Object.keys(doc.components.schemas)).toEqual(expect.arrayContaining(['Material', 'Proveedor', 'Activo', 'Error']));
+        expect(Object.keys(doc.components.schemas)).toEqual(expect.arrayContaining(['Material', 'Proveedor', 'Activo', 'Panol', 'Existencias', 'Movimiento', 'Error']));
     });
 });

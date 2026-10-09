@@ -35,7 +35,7 @@ import {
   Activity,
   History,
   ChevronDown,
-  ChevronUp,
+  ChevronRight,
   Filter as FilterIcon,
   Box,
   Truck,
@@ -49,7 +49,8 @@ import {
   FileUp
 } from 'lucide-react';
 import { QRWithPagnolLogo } from '@/components/qr-with-pagnol-logo';
-import { ContractStockBreakdown } from '@/components/contract-stock-breakdown';
+import { AssetDetailSheet } from './asset-detail-sheet';
+import { AddStockDialog } from './add-stock-dialog';
 import { ClientContractFilter, contractIdsOfClient } from '@/components/client-contract-filter';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { generateStrategicReport } from '@/actions/ai-actions';
@@ -187,7 +188,8 @@ export default function ActivosPage() {
   const [selectedClient, setSelectedClient] = useState<string>('ALL'); // ALL | clientId (cascada Cliente→Contrato)
   const [selectedContract, setSelectedContract] = useState<string>('ALL'); // ALL | POOL | contractId
   const [segment, setSegment] = useState<'all' | 'assets' | 'consumables'>('all'); // segmento Activos/Consumibles
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [detailAssetId, setDetailAssetId] = useState<string | null>(null);
+  const [addStockAssetId, setAddStockAssetId] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<ModalType>('ADD');
@@ -305,6 +307,11 @@ export default function ActivosPage() {
   };
 
   const canManageCatalog = can('materials:create');
+  const canEditCatalog = canManageCatalog || can('materials:edit');
+  const canAddStock = can('stock:add_manual');
+  // Corregir el total a mano (también hacia abajo) queda sólo para administración;
+  // el resto suma con "Ingresar cantidad", que deja el motivo en el kardex.
+  const canAdjustTotal = currentUser?.role === 'super-admin' || currentUser?.role === 'administrador';
 
   const { register, handleSubmit, control, reset, setValue, watch, getValues, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(assetSchema)
@@ -580,7 +587,7 @@ export default function ActivosPage() {
       usageType: normalizeUsageType(asset.usageType),
       unitCost: asset.unitCost || 0,
       status: asset.status || 'Disponible',
-      stock: asset.stock || 1,
+      stock: asset.stock ?? 0,
       requiresMaintenance: asset.requiresMaintenance ?? false,
       nextMaintenanceDate: asset.nextMaintenanceDate ? toDate(asset.nextMaintenanceDate) : null,
       unit: asset.unit,
@@ -644,6 +651,10 @@ export default function ActivosPage() {
       category: category?.name,
       supplierId: data.supplierId === 'ninguno' ? null : data.supplierId,
     };
+    // Al editar, la cantidad sólo viaja si quien edita puede corregir el total Y
+    // lo cambió. Si no, un ingreso hecho con la ficha abierta se revertiría al
+    // guardar con el número viejo del formulario.
+    if (modalType !== 'ADD' && (!canAdjustTotal || Number(data.stock) === (selectedAsset.stock ?? 0))) delete finalData.stock;
 
     try {
       if (modalType === 'ADD') {
@@ -958,16 +969,23 @@ export default function ActivosPage() {
             const status = getStatusLabel(asset);
 
             return (
-              <div key={asset.id} className="bg-card rounded-[2.5rem] border shadow-sm overflow-hidden group hover:shadow-2xl transition-all duration-300 flex flex-col h-full relative">
-                <div className="relative h-40 bg-muted overflow-hidden">
+              <div
+                key={asset.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetailAssetId(asset.id)}
+                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setDetailAssetId(asset.id); } }}
+                className="bg-card rounded-[2.5rem] border shadow-sm overflow-hidden group hover:shadow-2xl transition-all duration-300 flex flex-col h-full relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <div className="relative aspect-[4/3] bg-muted overflow-hidden">
                   {asset.photos && asset.photos.length > 0 ? (
                     <Image
                       src={asset.photos[0]}
                       alt={asset.name}
-                      layout="fill"
+                      fill
                       loading="lazy"
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw"
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                      className="object-cover group-hover:scale-105 transition-transform duration-700"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-muted-foreground">
@@ -986,6 +1004,11 @@ export default function ActivosPage() {
                   <span className="absolute bottom-6 left-6 px-3 py-1.5 bg-background text-foreground text-[9px] rounded-xl font-black tracking-[0.2em] uppercase">
                     CLASE {asset.class || 'N/A'}
                   </span>
+                  {asset.photos && asset.photos.length > 1 && (
+                    <span className="absolute bottom-6 right-6 inline-flex items-center gap-1 px-2.5 py-1.5 bg-pagnol-dark/70 text-white text-[9px] rounded-xl font-black tracking-widest">
+                      <Camera size={11} /> {asset.photos.length}
+                    </span>
+                  )}
                 </div>
                 <div className="p-4 sm:p-6 flex flex-col flex-1">
                   <div className="flex items-center gap-2 mb-3">
@@ -1037,7 +1060,7 @@ export default function ActivosPage() {
                         <p className="text-[11px] font-black mt-0.5 text-muted-foreground font-mono tracking-tighter">{asset.internalCode || asset.id}</p>
                       </div>
                       <button
-                        onClick={() => openQrModal(asset)}
+                        onClick={(e) => { e.stopPropagation(); openQrModal(asset); }}
                         className="p-2 bg-muted hover:bg-muted/70 rounded-lg text-muted-foreground transition-all"
                         title="Ver Código QR"
                       >
@@ -1061,9 +1084,9 @@ export default function ActivosPage() {
                       <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest mb-1">Costo Unit.</p>
                       <p className="text-[12px] font-black text-foreground">{formatCLP(asset.unitCost || 0)}</p>
                     </div>
-                    {canManageCatalog && (
+                    {canEditCatalog && (
                       <div className="text-right">
-                        <button onClick={(e) => { e.stopPropagation(); openEditModal(asset); }} className="p-3 bg-muted hover:bg-primary hover:text-primary-foreground rounded-xl text-muted-foreground transition-all"><Edit3 size={16} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); openEditModal(asset); }} className="p-3 bg-muted hover:bg-primary hover:text-primary-foreground rounded-xl text-muted-foreground transition-all" title="Editar ficha"><Edit3 size={16} /></button>
                       </div>
                     )}
                   </div>
@@ -1095,7 +1118,7 @@ export default function ActivosPage() {
                   <th className="px-8 py-5 text-[9px] font-black text-muted-foreground uppercase tracking-widest">Clasificación Detallada</th>
                   <th className="px-8 py-5 text-[9px] font-black text-muted-foreground uppercase tracking-widest">Mantenimiento</th>
                   <th className="px-8 py-5 text-[9px] font-black text-muted-foreground uppercase tracking-widest text-right">Costo Unit.</th>
-                  {canManageCatalog && <th className="px-8 py-5 text-[9px] font-black text-muted-foreground uppercase tracking-widest text-center">Acciones</th>}
+                  <th className="px-8 py-5 text-[9px] font-black text-muted-foreground uppercase tracking-widest text-center">Detalle</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1103,18 +1126,21 @@ export default function ActivosPage() {
                   const needsMaint = asset.requiresMaintenance === true;
                   const overdue = needsMaint && isMaintenanceOverdue(asset.nextMaintenanceDate);
                   const soon = needsMaint && isMaintenanceSoon(asset.nextMaintenanceDate);
-                  const isExpanded = expandedRowId === asset.id;
 
                   return (
                     <React.Fragment key={asset.id}>
                       <tr
-                        className={`hover:bg-muted/50 transition-all cursor-pointer group ${isExpanded ? 'bg-pagnol-orange/10' : ''}`}
-                        onClick={() => setExpandedRowId(isExpanded ? null : asset.id)}
+                        className={`hover:bg-muted/50 transition-all cursor-pointer group ${detailAssetId === asset.id ? 'bg-pagnol-orange/10' : ''}`}
+                        onClick={() => setDetailAssetId(asset.id)}
                       >
                         <td className="px-10 py-6">
                           <div className="flex items-center gap-5">
-                            <div className="w-12 h-12 rounded-2xl bg-muted overflow-hidden flex-shrink-0 group-hover:scale-110 transition-transform relative">
-                              {asset.photos && asset.photos.length > 0 ? <Image src={asset.photos[0]} className="w-full h-full object-cover" alt={asset.name} width={48} height={48} loading="lazy" /> : <Camera className="p-3 text-muted-foreground" />}
+                            <div className="w-16 h-16 rounded-2xl bg-muted flex-shrink-0 relative flex items-center justify-center">
+                              {asset.photos && asset.photos.length > 0 ? (
+                                <div className="absolute inset-0 rounded-2xl overflow-hidden">
+                                  <Image src={asset.photos[0]} className="object-cover group-hover:scale-110 transition-transform duration-500" alt={asset.name} fill sizes="64px" loading="lazy" />
+                                </div>
+                              ) : <Camera size={22} strokeWidth={1.5} className="text-muted-foreground" />}
                               {(overdue || soon) && (
                                 <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-sm animate-pulse ${overdue ? 'bg-destructive' : 'bg-warning'}`}>
                                   <AlertTriangle size={8} className="text-white" />
@@ -1122,7 +1148,7 @@ export default function ActivosPage() {
                               )}
                             </div>
                             <div>
-                              <div className="font-black text-sm uppercase tracking-tight line-clamp-1">{asset.name}</div>
+                              <div className="font-black text-sm uppercase tracking-tight line-clamp-2">{asset.name}</div>
                               <div className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{asset.category}</div>
                             </div>
                           </div>
@@ -1148,120 +1174,12 @@ export default function ActivosPage() {
                           )}
                         </td>
                         <td className="px-10 py-6 text-sm text-right font-black tracking-tight">{formatCLP(asset.unitCost || 0)}</td>
-                        {canManageCatalog && (
-                          <td className="px-10 py-6 text-center">
-                            <div className={`p-2.5 rounded-2xl transition-all ${isExpanded ? 'bg-primary text-primary-foreground' : 'text-muted-foreground/50 group-hover:bg-muted/80 group-hover:text-primary'}`}>
-                              {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                            </div>
-                          </td>
-                        )}
+                        <td className="px-10 py-6 text-center">
+                          <div className="inline-flex p-2.5 rounded-2xl transition-all text-muted-foreground/50 group-hover:bg-muted/80 group-hover:text-primary">
+                            <ChevronRight size={20} />
+                          </div>
+                        </td>
                       </tr>
-                      {isExpanded && (
-                        <tr className="bg-muted/30">
-                          <td colSpan={canManageCatalog ? 7 : 6} className="p-8">
-                            <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
-                              <div className="lg:col-span-1">
-                                <div className="w-full max-w-[200px] mx-auto lg:max-w-none lg:mx-0 aspect-square rounded-[2rem] lg:rounded-[3rem] overflow-hidden border-4 lg:border-8 border-card shadow-2xl relative bg-muted">
-                                  {asset.photos && asset.photos.length > 0 ? (
-                                    <>
-                                      <Image
-                                        src={asset.photos[0]}
-                                        alt={asset.name}
-                                        layout="fill"
-                                        loading="lazy"
-                                        sizes="(max-width: 1024px) 200px, 25vw"
-                                        className="w-full h-full object-cover"
-                                      />
-                                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-pagnol-dark/80 backdrop-blur-md text-white rounded-xl text-[9px] font-black uppercase tracking-widest">
-                                        Vista Técnica 01
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground gap-2">
-                                      <Camera size={40} strokeWidth={1} />
-                                      <span className="text-[9px] font-black uppercase tracking-widest">Sin foto</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-10">
-                                <div className="space-y-6">
-                                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <Settings size={14} className="text-primary" /> Parámetros de Fábrica
-                                  </p>
-                                  <div className="space-y-4 pt-2">
-                                    <div className="flex flex-col border-b border-border pb-2">
-                                      <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">N° de Serie / Manufacturer</span>
-                                      <span className="text-xs font-bold text-foreground uppercase mt-0.5">{asset.serialNumber || 'N/A'}</span>
-                                    </div>
-                                    <div className="flex flex-col border-b border-border pb-2">
-                                      <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Fecha de Adquisición</span>
-                                      <span className="text-xs font-bold text-foreground uppercase mt-0.5">{toDate(asset.acquisitionDate)?.toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' }) || 'N/A'}</span>
-                                    </div>
-                                    <div className="flex flex-col border-b border-border pb-2">
-                                      <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Modelo de Uso</span>
-                                      <span className="text-xs font-bold text-foreground uppercase mt-0.5">{asset.usageType || 'N/A'}</span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-6">
-                                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <Activity size={14} className="text-primary" /> Trazabilidad Operativa
-                                  </p>
-                                  <div className="space-y-4 pt-2">
-                                    <div className="flex flex-col border-b border-border pb-2">
-                                      <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Clasificación Matriz</span>
-                                      <span className="text-xs font-bold text-foreground uppercase mt-0.5">CLASE {asset.class} ({asset.class === 'A' ? 'CRÍTICO/ALTO VALOR' : asset.class === 'B' ? 'IMPORTANTE' : 'FUNGIBLE'})</span>
-                                    </div>
-                                    <div className="flex flex-col border-b border-border pb-2">
-                                      <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Criticidad del Recurso</span>
-                                      <span className="text-xs font-bold text-primary uppercase mt-0.5">ALTA (SECTOR ESTRUCTURAS)</span>
-                                    </div>
-                                    <div className="flex flex-col border-b border-border pb-2">
-                                      <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Stock Disponible</span>
-                                      <span className="text-xs font-bold text-foreground uppercase mt-0.5">{asset.stock} {asset.unit === 'unidad' ? 'Unidades Físicas' : asset.unit}</span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                  <div className="bg-card p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 h-full">
-                                    <h6 className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-2">
-                                      <Wrench size={14} /> Gestión Administrativa
-                                    </h6>
-                                    <div className="flex flex-col gap-2 flex-grow justify-center">
-                                      <Button onClick={() => openQrModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 bg-foreground text-background hover:bg-foreground/90 border-none">Imprimir QR <QrCode size={14} /></Button>
-                                      {asset.technicalSheetUrl ? (
-                                        <a
-                                          href={asset.technicalSheetUrl}
-                                          download={asset.technicalSheetName || "ficha_tecnica.pdf"}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="flex items-center"
-                                        >
-                                          <Button variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 bg-pagnol-orange text-white hover:bg-pagnol-orange/90 border-none">Descargar Ficha <Download size={14} /></Button>
-                                        </a>
-                                      ) : (
-                                        <Button disabled variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6 opacity-30">Sin Ficha Técnica <Download size={14} /></Button>
-                                      )}
-                                      <Button onClick={() => openEditModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Editar Ficha <Edit3 size={14} /></Button>
-                                      {asset.requiresMaintenance && (
-                                        <Button onClick={() => openMaintenanceModal(asset)} variant="outline" className="w-full justify-between rounded-[1.5rem] h-12 px-6">Mantenimiento <Calendar size={14} /></Button>
-                                      )}
-                                      {canManageCatalog && <Button onClick={() => openRetireModal(asset)} variant="destructive" className="w-full justify-between bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-[1.5rem] h-12 px-6 border-none shadow-sm">Solicitar Baja <Trash2 size={14} /></Button>}
-                                      {can('materials:delete') && <Button onClick={() => openDeleteModal(asset)} variant="destructive" className="w-full justify-between rounded-[1.5rem] h-12 px-6 shadow-sm">Eliminar Definitivamente <Trash2 size={14} /></Button>}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="mt-8 pt-6 border-t border-border">
-                                <ContractStockBreakdown material={asset} />
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   );
                 })}
@@ -1301,6 +1219,39 @@ export default function ActivosPage() {
           )}
         </div>
       )}
+
+      {/* Ficha del activo: la misma en vista de tarjetas y de lista */}
+      {(() => {
+        const detailAsset = detailAssetId ? (materials.find(m => m.id === detailAssetId) ?? null) : null;
+        const needsMaint = detailAsset?.requiresMaintenance === true;
+        const status = detailAsset ? getStatusLabel(detailAsset) : 'Disponible';
+        return (
+          <AssetDetailSheet
+            asset={detailAsset}
+            onClose={() => setDetailAssetId(null)}
+            status={status}
+            statusClassName={getStatusColor(status)}
+            holderName={detailAsset ? holderMap.get(detailAsset.id)?.name : undefined}
+            overdue={!!detailAsset && needsMaint && isMaintenanceOverdue(detailAsset.nextMaintenanceDate)}
+            soon={!!detailAsset && needsMaint && isMaintenanceSoon(detailAsset.nextMaintenanceDate)}
+            canEdit={canEditCatalog}
+            canManage={canManageCatalog}
+            canDelete={can('materials:delete')}
+            canAddStock={canAddStock}
+            formatCLP={formatCLP}
+            onQr={openQrModal}
+            onEdit={openEditModal}
+            onMaintenance={openMaintenanceModal}
+            onRetire={openRetireModal}
+            onDelete={openDeleteModal}
+            onAddStock={(a) => setAddStockAssetId(a.id)}
+          />
+        );
+      })()}
+      <AddStockDialog
+        asset={addStockAssetId ? (materials.find(m => m.id === addStockAssetId) ?? null) : null}
+        onClose={() => setAddStockAssetId(null)}
+      />
 
       {/* MODALS */}
       {isModalOpen && (
@@ -1493,13 +1444,39 @@ export default function ActivosPage() {
                       )}
                     </div>
 
-                    {currentUsageType === 'Consumible' && (
+                    {modalType === 'ADD' && currentUsageType === 'Consumible' && (
                       <div className="space-y-2">
                         <Label htmlFor="stock" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">
-                          {modalType === 'ADD' ? 'Cantidad Inicial' : 'Cantidad en Stock'}
+                          Cantidad Inicial
                         </Label>
                         <Input id="stock" type="number" min={0} placeholder="0" {...register("stock")} className="py-6 rounded-2xl" />
                         <p className="text-xs text-muted-foreground ml-2">Ej: 500 (sacos de cemento), 200 (metros de cable)...</p>
+                        {errors.stock && <p className="text-xs text-destructive">{errors.stock.message}</p>}
+                      </div>
+                    )}
+
+                    {modalType === 'EDIT' && selectedAsset.id && (
+                      <div className="space-y-2">
+                        <Label htmlFor="stock" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-2">Cantidad en stock</Label>
+                        <div className="flex items-center gap-3">
+                          {canAdjustTotal ? (
+                            <Input id="stock" type="number" min={0} {...register("stock")} className="py-6 rounded-2xl flex-1" />
+                          ) : (
+                            <div className="flex-1 py-3 px-4 rounded-2xl bg-muted text-lg font-black text-foreground">
+                              {materials.find(m => m.id === selectedAsset.id)?.stock ?? selectedAsset.stock ?? 0} <span className="text-xs font-bold text-muted-foreground uppercase">{selectedAsset.unit}</span>
+                            </div>
+                          )}
+                          {canAddStock && (
+                            <Button type="button" onClick={() => setAddStockAssetId(selectedAsset.id!)} className="h-12 rounded-2xl gap-2 shrink-0">
+                              <PackagePlus size={16} /> Ingresar cantidad
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground ml-2">
+                          {canAdjustTotal
+                            ? 'Para sumar usa "Ingresar cantidad". Cambiar el total aquí queda como corrección en el kardex.'
+                            : 'Para sumar unidades usa "Ingresar cantidad": queda registrado con su motivo.'}
+                        </p>
                         {errors.stock && <p className="text-xs text-destructive">{errors.stock.message}</p>}
                       </div>
                     )}

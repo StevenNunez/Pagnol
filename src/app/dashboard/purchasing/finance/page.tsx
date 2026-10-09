@@ -32,6 +32,10 @@ import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { PurchaseLot, PurchaseRequest } from "@/modules/core/lib/data";
+import { ProposalSubmitDialog } from "@/components/approvals/proposal-submit-dialog";
+import { ProposalStatusPanel } from "@/components/approvals/proposal-status-panel";
+import { proposalsForSource, currentProposal } from "@/components/approvals/proposal-utils";
+import type { PurchaseProposalInput } from "@/modules/data/mutations/approvalMutations";
 
 
 // --- Tipos internos ---
@@ -43,7 +47,8 @@ type ProcessingItem = {
 };
 
 export default function FinanceQuoteProcessor() {
-  const { purchaseLots, purchaseRequests, users, createPurchaseOrder, returnToPool } = useAppState();
+  const { purchaseLots, purchaseRequests, users, suppliers, createPurchaseOrder, returnToPool, approvalProposals, approvalSignatures, purchaseOrders } = useAppState();
+  const [draft, setDraft] = React.useState<(PurchaseProposalInput & { title?: string }) | null>(null);
   const { user, can } = useAuth();
   const { toast } = useToast();
 
@@ -52,6 +57,17 @@ export default function FinanceQuoteProcessor() {
   const [ocNumber, setOcNumber] = React.useState("");
   const [itemsState, setItemsState] = React.useState<Record<string, ProcessingItem>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  // RFC-006 F2: la propuesta (firma por monto) del lote abierto.
+  const views = React.useMemo(
+    () => selectedLot
+      ? proposalsForSource(approvalProposals, approvalSignatures, purchaseOrders, p => p.sourceType === 'lot' && p.sourceId === selectedLot.id)
+      : [],
+    [approvalProposals, approvalSignatures, purchaseOrders, selectedLot],
+  );
+  const current = currentProposal(views);
+  // Firmada, o urgente con la firma pendiente (RFC-006 F3).
+  const signed = current && !current.orderId && (current.state === 'approved' || (current.proposal.urgent && current.state === 'pending')) ? current : null;
 
   // Lotes abiertos = esperando que Finanzas los procese la cotización del proveedor
   const pendingLots = React.useMemo(() => {
@@ -68,12 +84,18 @@ export default function FinanceQuoteProcessor() {
     const requestsInLot = (purchaseRequests || []).filter(r => r.lotId === lot.id);
     const initialItems: Record<string, ProcessingItem> = {};
     
+    // Si el lote ya tiene una propuesta firmada, se parte de lo firmado
+    // (precios y cantidades): la OC no puede pasarse de eso.
+    const signedHere = proposalsForSource(approvalProposals, approvalSignatures, purchaseOrders, p => p.sourceType === 'lot' && p.sourceId === lot.id)
+      .find(v => !v.orderId && (v.state === 'approved' || (v.proposal.urgent && v.state === 'pending')));
+    const signedItem = new Map((signedHere?.proposal.items || []).map(i => [i.requestId, i]));
     requestsInLot.forEach(req => {
+      const s = signedItem.get(req.id);
       initialItems[req.id] = {
         requestId: req.id,
-        price: 0, // Inicia en 0 para obligar a verificar
-        confirmed: true,
-        quantity: req.quantity
+        price: s ? Number(s.unitPrice) || 0 : 0, // sin propuesta: en 0 para obligar a verificar
+        confirmed: signedHere ? !!s : true,
+        quantity: s ? s.quantity : req.quantity
       };
     });
     setItemsState(initialItems);
@@ -149,11 +171,13 @@ export default function FinanceQuoteProcessor() {
       const rejectedItems = Object.values(itemsState).filter(i => !i.confirmed || i.quantity <= 0);
 
       // A. Crear la Orden (Items que SÍ llegan) -> Van a Recepción
+      if (!signed) throw new Error("Esta compra todavía no tiene una propuesta firmada.");
       await createPurchaseOrder({
         lotId: selectedLot.id,
         ocNumber: ocNumber.trim(),
         items: confirmedItems,
         totalAmount: calculateTotal(),
+        proposalId: signed.proposal.id,
       });
 
       // B. Devolver al Pool (Items que NO llegan) -> Vuelven al Admin
@@ -178,6 +202,34 @@ export default function FinanceQuoteProcessor() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // RFC-006 F2: arma la propuesta con lo confirmado y la manda a firma.
+  const sendToSign = () => {
+    if (!selectedLot) return;
+    if (!selectedLot.supplierId) {
+      toast({ variant: "destructive", title: "Falta el proveedor", description: "El lote no tiene un proveedor asociado." });
+      return;
+    }
+    const confirmed = Object.values(itemsState).filter(i => i.confirmed && i.quantity > 0);
+    if (confirmed.length === 0 || confirmed.some(i => !(i.price > 0))) {
+      toast({ variant: "destructive", title: "Faltan precios", description: "Cada ítem confirmado necesita su precio unitario neto." });
+      return;
+    }
+    const supplier = (suppliers || []).find(s => s.id === selectedLot.supplierId);
+    setDraft({
+      title: `Lote ${selectedLot.name}`,
+      sourceType: 'lot',
+      sourceId: selectedLot.id,
+      requestIds: confirmed.map(i => i.requestId),
+      supplierId: selectedLot.supplierId,
+      supplierName: supplier?.name || null,
+      items: confirmed.map(i => {
+        const r = purchaseRequests.find(x => x.id === i.requestId);
+        return { requestId: i.requestId, name: r?.materialName || 'Ítem', unit: r?.unit, quantity: i.quantity, unitPrice: i.price };
+      }),
+      netTotal: calculateTotal(),
+    });
   };
 
   // Permiso
@@ -333,10 +385,17 @@ export default function FinanceQuoteProcessor() {
               ${calculateTotal().toLocaleString("es-CL")}
             </p>
           </div>
+          {/* RFC-006 F2: sin firma no hay OC. */}
+          {!current && (
+            <Button size="lg" variant="outline" onClick={sendToSign} disabled={isSubmitting}>
+              Enviar a firma
+            </Button>
+          )}
           <Button
             size="lg"
             onClick={handleGenerateOrder}
-            disabled={!ocNumber.trim() || isSubmitting}
+            disabled={!ocNumber.trim() || isSubmitting || !signed}
+            title={signed ? undefined : "Primero la propuesta tiene que estar firmada"}
             className="bg-green-600 hover:bg-green-700"
           >
             {isSubmitting ? (
@@ -391,6 +450,19 @@ export default function FinanceQuoteProcessor() {
         {/* DERECHA: Formulario */}
         <div className="w-1/2 overflow-y-auto p-6">
           <div className="max-w-2xl mx-auto space-y-6">
+            {current ? (
+              <ProposalStatusPanel view={current} />
+            ) : (
+              <div className="p-3 text-sm rounded-xl bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <p>Esta compra necesita firma antes de la OC. Ingresa los precios de la cotización del proveedor y pulsa <b>Enviar a firma</b>.</p>
+              </div>
+            )}
+            {signed && (
+              <p className="text-xs text-muted-foreground">
+                Firmado: ${signed.proposal.netTotal.toLocaleString("es-CL")} neto. Puedes bajar cantidades o precios, pero la OC no puede pasar ese monto.
+              </p>
+            )}
             <Card>
               <CardContent className="pt-6">
                 <Label className="text-base">Número de Orden de Compra o Cotización</Label>
@@ -424,6 +496,7 @@ export default function FinanceQuoteProcessor() {
           </div>
         </div>
       </div>
+      <ProposalSubmitDialog draft={draft} onClose={() => setDraft(null)} />
     </div>
   );
 }

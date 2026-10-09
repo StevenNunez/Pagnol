@@ -236,7 +236,7 @@ export default function AdminPurchaseRequestsPage() {
     const count = (pred: (s: PurchaseStage) => boolean) => stages.filter(pred).length;
     return {
       total: all.length,
-      waitingAdc: count((s) => s === "waiting_adc"),
+      waitingAdc: count((s) => s === "waiting_adc" || s === "waiting_ops"),
       managing: count((s) => s === "in_review" || s === "to_send"),
       approved: count((s) => s === "approved"),
       ordered: count((s) => s === "ordered"),
@@ -247,7 +247,7 @@ export default function AdminPurchaseRequestsPage() {
 
   const KPI_DEFS: { key: DisplayFilter; label: string; count: number; icon: any; iconCls: string }[] = [
     { key: "all", label: "Todas", count: kpis.total, icon: ShoppingCart, iconCls: "bg-primary/10 text-primary" },
-    { key: "waiting_adc", label: "Esperando ADC", count: kpis.waitingAdc, icon: ShieldQuestion, iconCls: kpis.waitingAdc > 0 ? "bg-warning-subtle text-warning" : "bg-muted text-muted-foreground" },
+    { key: "waiting_adc", label: "Por autorizar", count: kpis.waitingAdc, icon: ShieldQuestion, iconCls: kpis.waitingAdc > 0 ? "bg-warning-subtle text-warning" : "bg-muted text-muted-foreground" },
     { key: "managing", label: "Por Gestionar", count: kpis.managing, icon: Search, iconCls: kpis.managing > 0 ? "bg-info-subtle text-info" : "bg-muted text-muted-foreground" },
     { key: "approved", label: "Aprobadas", count: kpis.approved, icon: Check, iconCls: "bg-success-subtle text-success-subtle-foreground" },
     { key: "ordered", label: "Ordenadas", count: kpis.ordered, icon: Truck, iconCls: "bg-info-subtle text-info" },
@@ -260,7 +260,9 @@ export default function AdminPurchaseRequestsPage() {
     if (statusFilter !== "all") {
       requests = requests.filter((req: PurchaseRequest) => {
         const stage = stageOf(req);
-        return statusFilter === "managing" ? (stage === "in_review" || stage === "to_send") : stage === statusFilter;
+        if (statusFilter === "managing") return stage === "in_review" || stage === "to_send";
+        if (statusFilter === "waiting_adc") return stage === "waiting_adc" || stage === "waiting_ops";
+        return stage === statusFilter;
       });
     }
     if (searchTerm) {
@@ -447,6 +449,9 @@ export default function AdminPurchaseRequestsPage() {
         const stage = stageOf(req);
         if (isRentalDerived(req)) {
           return <span className="text-xs text-muted-foreground">Se gestiona en Arriendos</span>;
+        }
+        if (stage === "waiting_ops") {
+          return <span className="text-xs text-muted-foreground">En revisión del Jefe de Operaciones</span>;
         }
         if (stage === "waiting_adc") {
           return <span className="text-xs text-muted-foreground">Esperando autorización ADC</span>;

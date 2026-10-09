@@ -19,6 +19,7 @@ import { LoadingState } from '@/components/loading-state';
 import { PageHeader } from '@/components/page-header';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
+import { canOpenPath } from '@/modules/core/lib/module-access';
 import { startOfMonth, getDaysInMonth, formatDistanceToNow, isToday, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { EmploymentContract, PayrollLine, PayrollRun } from '@/modules/core/lib/data';
@@ -43,7 +44,9 @@ import { buildLiquidacionPdf, liquidacionFileName } from '@/lib/liquidacion-pdf'
 
 export default function WorkerWallet() {
     const { toast } = useToast();
-    const { user } = useAuth();
+    const { user, can } = useAuth();
+    // "Mi Asistencia" abre el módulo completo: sólo para quien puede abrirlo.
+    const canSeeAttendance = canOpenPath('/dashboard/attendance', can, user?.role);
     const { attendanceLogs, addSalaryAdvanceRequest, dailyTalks, salaryAdvances, users, currentTenant } = useAppState();
     const router = useRouter();
     const [isAdvanceModalOpen, setAdvanceModalOpen] = useState(false);
@@ -346,8 +349,8 @@ export default function WorkerWallet() {
             </div>
 
             {/* Accesos rápidos */}
-            <div className="grid grid-cols-2 gap-4">
-                <button
+            <div className={canSeeAttendance ? "grid grid-cols-2 gap-4" : "grid grid-cols-1 gap-4"}>
+                {canSeeAttendance && <button
                     onClick={() => router.push('/dashboard/attendance')}
                     className="p-5 rounded-[2rem] bg-card border border-border hover:border-info/40 hover:shadow-lg transition-all flex flex-col items-center gap-3 text-center group"
                 >
@@ -355,7 +358,7 @@ export default function WorkerWallet() {
                         <CalendarCheck size={22} />
                     </div>
                     <span className="text-[10px] font-black uppercase tracking-widest">Mi Asistencia</span>
-                </button>
+                </button>}
                 {/* "Mi Finiquito" apuntaba a `/dashboard/attendance/severance`, que
                     desde ADR-012 es solo el aviso de herramienta retirada, y de ahí
                     a un módulo que el trabajador no puede abrir (`hr_employees:edit`).

@@ -15,6 +15,7 @@ import { emitFinanceEntries, reverseEntriesForSource } from './financeLedger';
 import { rentalNetToClp } from './financeMath';
 
 import type { MutationContext as Context } from './context';
+import { isValidRut, formatRut } from '@/lib/rut';
 
 // ── Contrapartes (arrendadores / clientes) ───────────────────────────────────
 
@@ -141,6 +142,8 @@ export async function addRentalContract(
       oc_confirmed_at: data.ocConfirmedAt ?? null,
       payment_terms_days: data.paymentTermsDays ?? 30,
       client_contract_id: data.clientContractId ?? null,
+      ...(data.approvalProposalId ? { approval_proposal_id: data.approvalProposalId } : {}),
+      ...(data.directPurchaseId ? { direct_purchase_id: data.directPurchaseId } : {}),
       notes: data.notes || null,
       created_by: user.id,
     })
@@ -972,4 +975,46 @@ export async function confirmRentalOc(
       }], context);
     }
   }
+}
+
+/**
+ * RFC-006 F5 — Arriendo YA CONTRATADO por fuera del flujo de cotización. Se
+ * registra su respaldo (contrato o factura, arrendador con RUT válido y quién lo
+ * contrató) como hecho inmutable y recién con eso se crea el contrato entrante.
+ * Lo nuevo por arrendar va por Abastecimiento → Arriendos, con su firma.
+ */
+export async function registerDirectRental(
+  contract: Omit<RentalContract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>,
+  doc: { docType: 'contrato' | 'factura'; docNumber: string; lessorName: string; lessorRut: string; contractedById?: string | null; contractedByName: string },
+  context: Context,
+): Promise<RentalContract> {
+  const { user, tenantId } = context;
+  if (!user || !tenantId) throw new Error('No autenticado.');
+  if (contract.direction !== 'incoming') throw new Error('Sólo los arriendos que la empresa toma necesitan respaldo.');
+  if (!doc.docNumber.trim()) throw new Error('Falta el número del contrato o la factura.');
+  if (!isValidRut(doc.lessorRut)) throw new Error('El RUT del arrendador no es válido (revisa el dígito verificador).');
+  if (doc.contractedByName.trim().length < 2) throw new Error('Indica quién contrató el arriendo.');
+
+  const { data: dp, error } = await supabase
+    .from('direct_purchases')
+    .insert({
+      tenant_id: tenantId,
+      kind: 'rental',
+      request_ids: [],
+      doc_type: doc.docType,
+      doc_number: doc.docNumber.trim(),
+      supplier_name: doc.lessorName.trim(),
+      supplier_rut: formatRut(doc.lessorRut),
+      buyer_id: doc.contractedById || null,
+      buyer_name: doc.contractedByName.trim(),
+      created_by: user.id,
+      created_by_name: user.name,
+    })
+    .select('id')
+    .single();
+  if (error) {
+    if (error.code === '23505') throw new Error(`Ese ${doc.docType} de ${doc.lessorName} ya está registrado.`);
+    throw new Error(error.message);
+  }
+  return addRentalContract({ ...contract, directPurchaseId: dp.id }, context);
 }

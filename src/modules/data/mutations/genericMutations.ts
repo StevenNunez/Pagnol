@@ -43,6 +43,8 @@ export async function updateTenant(tenantId: string, data: Partial<Tenant>, { }:
     if (data.codePrefixes !== undefined) payload.code_prefixes = data.codePrefixes ?? {};
     if (data.codeTypes !== undefined) payload.code_types = data.codeTypes ?? {};
     if (data.laborCostFactor !== undefined) payload.labor_cost_factor = data.laborCostFactor;
+    if (data.withdrawalReviewMode !== undefined) payload.withdrawal_review_mode = data.withdrawalReviewMode;
+    if (data.approvalSettings !== undefined) payload.approval_settings = data.approvalSettings;
     // `.select()` para detectar UPDATE silencioso de 0 filas (típico de RLS que no
     // matchea): sin esto Supabase no devuelve error y el cambio no persiste.
     const { data: rows, error } = await supabase
@@ -360,6 +362,11 @@ export async function updateMaterial(materialId: string, data: any, { user, tena
     let finalStock = currentMaterial.stock;
 
     const canEditStock = user?.role === 'super-admin' || user?.role === 'administrador';
+    // Antes se ignoraba en silencio: el pañolero cambiaba la cantidad, veía
+    // "Activo actualizado" y el stock no se movía. Ahora se avisa.
+    if (!canEditStock && stock !== undefined && Number(stock) !== currentMaterial.stock) {
+        throw new Error('La cantidad no se cambia al editar la ficha. Usa "Ingresar cantidad" para sumar unidades.');
+    }
     if (canEditStock && stock !== undefined && stock !== currentMaterial.stock) {
         stockDifference = stock - currentMaterial.stock;
         finalStock = stock;

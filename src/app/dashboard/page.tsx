@@ -28,7 +28,7 @@ import {
     PackageSearch
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import type { Permission } from '@/modules/core/lib/permissions';
+import { canOpenPath } from '@/modules/core/lib/module-access';
 import { PageHeader } from '@/components/page-header';
 
 export default function DashboardHub() {
@@ -45,7 +45,6 @@ export default function DashboardHub() {
             border: "hover:border-cyan-300 dark:hover:border-cyan-500/50",
             shadow: "hover:shadow-cyan-500/20 dark:hover:shadow-cyan-500/10",
             // Bodega fusionada en Pagnol: visible para quien veía cualquiera de los dos.
-            permissions: ['module_pagnol:view', 'module_bodega:view', 'module_warehouse:view']
         },
         {
             title: "Módulo Control de Obras",
@@ -55,8 +54,7 @@ export default function DashboardHub() {
             color: "text-primary",
             bg: "bg-orange-100 dark:bg-orange-500/10",
             border: "hover:border-orange-300 dark:hover:border-orange-500/50",
-            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
-            permission: 'module_construction_control:view'
+            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10"
         },
         {
             title: "Módulo Reportabilidad",
@@ -66,8 +64,7 @@ export default function DashboardHub() {
             color: "text-orange-600 dark:text-orange-400",
             bg: "bg-orange-100 dark:bg-orange-500/10",
             border: "hover:border-orange-300 dark:hover:border-orange-500/50",
-            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
-            permission: 'module_work_reports:view'
+            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10"
         },
         {
             title: "Autorizaciones",
@@ -77,8 +74,7 @@ export default function DashboardHub() {
             color: "text-primary",
             bg: "bg-orange-100 dark:bg-orange-500/10",
             border: "hover:border-orange-300 dark:hover:border-orange-500/50",
-            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10",
-            permission: 'module_authorizations:view'
+            shadow: "hover:shadow-orange-500/20 dark:hover:shadow-orange-500/10"
         },
         {
             title: "Compras y Abastecimiento",
@@ -90,7 +86,6 @@ export default function DashboardHub() {
             border: "hover:border-emerald-300 dark:hover:border-emerald-500/50",
             shadow: "hover:shadow-emerald-500/20 dark:hover:shadow-emerald-500/10",
             // Visible para quien podía ver el viejo Compras O Abastecimiento (consolidado).
-            permissions: ['module_abastecimiento:view', 'module_purchasing:view']
         },
         {
             title: "Gestión de Usuarios y Permisos",
@@ -100,8 +95,7 @@ export default function DashboardHub() {
             color: "text-purple-600 dark:text-purple-400",
             bg: "bg-purple-100 dark:bg-purple-500/10",
             border: "hover:border-purple-300 dark:hover:border-purple-500/50",
-            shadow: "hover:shadow-purple-500/20 dark:hover:shadow-purple-500/10",
-            permission: 'module_users:view'
+            shadow: "hover:shadow-purple-500/20 dark:hover:shadow-purple-500/10"
         },
         {
             title: "Módulo de Suscripciones",
@@ -111,8 +105,7 @@ export default function DashboardHub() {
             color: "text-amber-600 dark:text-amber-400",
             bg: "bg-amber-100 dark:bg-amber-500/10",
             border: "hover:border-amber-300 dark:hover:border-amber-500/50",
-            shadow: "hover:shadow-amber-500/20 dark:hover:shadow-amber-500/10",
-            permission: 'module_subscriptions:view'
+            shadow: "hover:shadow-amber-500/20 dark:hover:shadow-amber-500/10"
         },
         {
             title: "Módulo de Prevención",
@@ -122,8 +115,7 @@ export default function DashboardHub() {
             color: "text-red-600 dark:text-red-400",
             bg: "bg-red-100 dark:bg-red-500/10",
             border: "hover:border-red-300 dark:hover:border-red-500/50",
-            shadow: "hover:shadow-red-500/20 dark:hover:shadow-red-500/10",
-            permission: 'module_safety:view'
+            shadow: "hover:shadow-red-500/20 dark:hover:shadow-red-500/10"
         },
         {
             title: "Módulo de Asistencia",
@@ -133,8 +125,7 @@ export default function DashboardHub() {
             color: "text-indigo-600 dark:text-indigo-400",
             bg: "bg-indigo-100 dark:bg-indigo-500/10",
             border: "hover:border-indigo-300 dark:hover:border-indigo-500/50",
-            shadow: "hover:shadow-indigo-500/20 dark:hover:shadow-indigo-500/10",
-            permission: 'module_attendance:view'
+            shadow: "hover:shadow-indigo-500/20 dark:hover:shadow-indigo-500/10"
         },
         {
             title: "Módulo de Pagos",
@@ -144,8 +135,7 @@ export default function DashboardHub() {
             color: "text-green-600 dark:text-green-400",
             bg: "bg-green-100 dark:bg-green-500/10",
             border: "hover:border-green-300 dark:hover:border-green-500/50",
-            shadow: "hover:shadow-green-500/20 dark:hover:shadow-green-500/10",
-            permission: 'module_payments:view'
+            shadow: "hover:shadow-green-500/20 dark:hover:shadow-green-500/10"
         },
         {
             title: "Módulo de Reportes",
@@ -155,8 +145,7 @@ export default function DashboardHub() {
             color: "text-pink-600 dark:text-pink-400",
             bg: "bg-pink-100 dark:bg-pink-500/10",
             border: "hover:border-pink-300 dark:hover:border-pink-500/50",
-            shadow: "hover:shadow-pink-500/20 dark:hover:shadow-pink-500/10",
-            permission: 'module_reports:view'
+            shadow: "hover:shadow-pink-500/20 dark:hover:shadow-pink-500/10"
         },
         {
             title: "Mi Billetera Digital",
@@ -176,8 +165,7 @@ export default function DashboardHub() {
             color: "text-yellow-600 dark:text-yellow-400",
             bg: "bg-yellow-100 dark:bg-yellow-500/10",
             border: "hover:border-yellow-300 dark:hover:border-yellow-500/50",
-            shadow: "hover:shadow-yellow-500/20 dark:hover:shadow-yellow-500/10",
-            permission: 'material_requests:create'
+            shadow: "hover:shadow-yellow-500/20 dark:hover:shadow-yellow-500/10"
         },
         {
             title: "Estado de Pago",
@@ -187,8 +175,7 @@ export default function DashboardHub() {
             color: "text-cyan-600 dark:text-cyan-400",
             bg: "bg-cyan-100 dark:bg-cyan-500/10",
             border: "hover:border-cyan-300 dark:hover:border-cyan-500/50",
-            shadow: "hover:shadow-cyan-500/20 dark:hover:shadow-cyan-500/10",
-            permission: 'construction_control:register_progress'
+            shadow: "hover:shadow-cyan-500/20 dark:hover:shadow-cyan-500/10"
         },
         {
             title: "Módulo Comité Paritario",
@@ -198,8 +185,7 @@ export default function DashboardHub() {
             color: "text-rose-600 dark:text-rose-400",
             bg: "bg-rose-100 dark:bg-rose-500/10",
             border: "hover:border-rose-300 dark:hover:border-rose-500/50",
-            shadow: "hover:shadow-rose-500/20 dark:hover:shadow-rose-500/10",
-            permission: 'safety_checklists:review'
+            shadow: "hover:shadow-rose-500/20 dark:hover:shadow-rose-500/10"
         },
         {
             title: "Finanzas — Resultado por Contrato",
@@ -209,8 +195,7 @@ export default function DashboardHub() {
             color: "text-teal-600 dark:text-teal-400",
             bg: "bg-teal-100 dark:bg-teal-500/10",
             border: "hover:border-teal-300 dark:hover:border-teal-500/50",
-            shadow: "hover:shadow-teal-500/20 dark:hover:shadow-teal-500/10",
-            permission: 'module_finance:view'
+            shadow: "hover:shadow-teal-500/20 dark:hover:shadow-teal-500/10"
         },
         {
             title: "Facturación DTE",
@@ -220,8 +205,7 @@ export default function DashboardHub() {
             color: "text-violet-600 dark:text-violet-400",
             bg: "bg-violet-100 dark:bg-violet-500/10",
             border: "hover:border-violet-300 dark:hover:border-violet-500/50",
-            shadow: "hover:shadow-violet-500/20 dark:hover:shadow-violet-500/10",
-            permission: 'module_dte:view'
+            shadow: "hover:shadow-violet-500/20 dark:hover:shadow-violet-500/10"
         },
         {
             title: "Módulo de Arriendos",
@@ -231,8 +215,7 @@ export default function DashboardHub() {
             color: "text-teal-600 dark:text-teal-400",
             bg: "bg-teal-100 dark:bg-teal-500/10",
             border: "hover:border-teal-300 dark:hover:border-teal-500/50",
-            shadow: "hover:shadow-teal-500/20 dark:hover:shadow-teal-500/10",
-            permission: 'module_rentals:view'
+            shadow: "hover:shadow-teal-500/20 dark:hover:shadow-teal-500/10"
         },
         {
             title: "Recursos Humanos",
@@ -242,8 +225,7 @@ export default function DashboardHub() {
             color: "text-fuchsia-600 dark:text-fuchsia-400",
             bg: "bg-fuchsia-100 dark:bg-fuchsia-500/10",
             border: "hover:border-fuchsia-300 dark:hover:border-fuchsia-500/50",
-            shadow: "hover:shadow-fuchsia-500/20 dark:hover:shadow-fuchsia-500/10",
-            permission: 'module_rrhh:view'
+            shadow: "hover:shadow-fuchsia-500/20 dark:hover:shadow-fuchsia-500/10"
         },
         {
             title: "Mis Solicitudes RRHH",
@@ -257,11 +239,9 @@ export default function DashboardHub() {
         },
     ];
 
-    const visibleModules = modules.filter((mod: any) => {
-        // Soporta `permissions` (cualquiera de varios) además del `permission` único.
-        if (mod.permissions) return mod.permissions.some((p: Permission) => can(p));
-        return !mod.permission || can(mod.permission as Permission);
-    });
+    // Misma regla que la protección por dirección del layout (module-access.ts):
+    // si ves la tarjeta puedes entrar, y viceversa.
+    const visibleModules = modules.filter(mod => canOpenPath(mod.href, can, user?.role));
 
     return (
         // 1. APLICAMOS UN CONTENEDOR CON FONDO SUTIL

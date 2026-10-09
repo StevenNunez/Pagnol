@@ -34,6 +34,8 @@ import { CollectionGateProvider, useCollectionGate } from './CollectionGate';
 import { type CollectionName } from './moduleData';
 import * as materialRequestMutations from './mutations/materialRequestMutations';
 import * as purchaseRequestMutations from './mutations/purchaseRequestMutations';
+import * as opsReviewMutations from './mutations/opsReviewMutations';
+import * as approvalMutations from './mutations/approvalMutations';
 import * as genericMutations from './mutations/genericMutations';
 import * as paymentStateMutations from './mutations/paymentStateMutations';
 import * as budgetMutations from './mutations/budgetMutations';
@@ -62,6 +64,7 @@ import * as workOrderMutations from './mutations/workOrderMutations';
 import * as workWeeklyReportMutations from './mutations/workWeeklyReportMutations';
 import * as hrMutations from './mutations/hrMutations';
 import * as biometricMutations from './mutations/biometricMutations';
+import * as withdrawalReviewMutations from './mutations/withdrawalReviewMutations';
 
 /**
  * Columnas de `profiles` que consume `mappers.profiles`, listadas a mano.
@@ -146,6 +149,10 @@ const initialState: AppDataState = {
     attendanceLogs: [],
     assignedChecklists: [],
     biometricVerifications: [],
+    withdrawalReviews: [],
+    approvalProposals: [],
+    approvalSignatures: [],
+    withdrawalReviewResolutions: [],
     safetyInspections: [],
     checklistTemplates: [],
     behaviorObservations: [],
@@ -210,7 +217,7 @@ const appReducer = (state: AppDataState, action: AppStateAction): AppDataState =
 // --- Provider value (custom hook consumed by react-tracked container) ---
 
 function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAction>] {
-    const { user, getTenantId, can, authLoading, setDynamicRoles } = useAuth();
+    const { user, getTenantId, can, authLoading, setDynamicRoles, setPermissionsReady } = useAuth();
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [refreshVersion, setRefreshVersion] = useState(0);
     const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
@@ -249,6 +256,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             codePrefixes: t.code_prefixes ?? {},
             codeTypes: t.code_types ?? {},
             laborCostFactor: t.labor_cost_factor != null ? Number(t.labor_cost_factor) : undefined,
+            withdrawalReviewMode: t.withdrawal_review_mode === 'post' ? 'post' as const : 'prior' as const,
+            approvalSettings: t.approval_settings ?? null,
         });
 
         supabase.from('tenants').select('*').eq('id', tenantId).single().then(({ data: t }) => {
@@ -292,6 +301,11 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     // Evidencia biométrica: la lee el pañol (para saber si hay una excepción ya
     // autorizada) y la bandeja de Autorizaciones (para resolverlas).
     const biometricVerificationsData = useSupabaseCollection('biometric_verifications', { tenantId, enabled: on('biometricVerifications'), mapper: mappers.biometric_verifications, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
+    const withdrawalReviewsData = useSupabaseCollection('withdrawal_reviews', { tenantId, enabled: on('withdrawalReviews'), mapper: mappers.withdrawal_reviews, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
+    // RFC-006 F2: propuestas de compra y firmas (estado derivado de las firmas).
+    const approvalProposalsData = useSupabaseCollection('approval_proposals', { tenantId, enabled: on('approvalProposals'), mapper: mappers.approval_proposals, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
+    const approvalSignaturesData = useSupabaseCollection('approval_signatures', { tenantId, enabled: on('approvalSignatures'), mapper: mappers.approval_signatures, orderBy: { column: 'created_at', ascending: true }, version: refreshVersion });
+    const withdrawalReviewResolutionsData = useSupabaseCollection('withdrawal_review_resolutions', { tenantId, enabled: on('withdrawalReviewResolutions'), mapper: mappers.withdrawal_review_resolutions, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const assignedChecklistsData = useSupabaseCollection('assigned_checklists', { tenantId, enabled: on('assignedChecklists'), mapper: mappers.assigned_checklists, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, template_id, template_title, supervisor_id, assigner_id, assigner_name, status, area, items, observations, performed_by, completed_at, reviewed_by, rejection_notes, created_at' });
     const safetyInspectionsData = useSupabaseCollection('safety_inspections', { tenantId, enabled: on('safetyInspections'), mapper: mappers.safety_inspections, orderBy: { column: 'created_at', ascending: false } });
     const checklistTemplatesData = useSupabaseCollection('checklist_templates', { tenantId, enabled: on('checklistTemplates'), mapper: mappers.checklist_templates });
@@ -348,9 +362,13 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
 
     // Inyecta los permisos por-tenant en AuthProvider para que can() los respete.
     // can() hace merge por-rol contra ROLES_DEFAULT, así que basta con pasar lo cargado.
+    // En el mismo efecto que los roles, para que "listos" y los permisos lleguen
+    // juntos (la protección por dirección del layout espera esta marca).
+    const rolesLoaded = !!(rolesArray as any)?.hasLoaded;
     useEffect(() => {
         setDynamicRoles(dynamicRolesData);
-    }, [dynamicRolesData, setDynamicRoles]);
+        setPermissionsReady(rolesLoaded);
+    }, [dynamicRolesData, setDynamicRoles, rolesLoaded, setPermissionsReady]);
 
     const subscriptionPlansData = PLANS; // Local constants as base
 
@@ -402,6 +420,10 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             supplierPayments: supplierPaymentsData, salaryAdvances: salaryAdvancesData,
             attendanceLogs: attendanceLogsData, assignedChecklists: assignedChecklistsData,
             biometricVerifications: biometricVerificationsData,
+            withdrawalReviews: withdrawalReviewsData,
+            withdrawalReviewResolutions: withdrawalReviewResolutionsData,
+            approvalProposals: approvalProposalsData,
+            approvalSignatures: approvalSignaturesData,
             safetyInspections: safetyInspectionsData, checklistTemplates: checklistTemplatesData,
             behaviorObservations: behaviorObservationsData, stockMovements: stockMovementsData,
             workProjects: workProjectsData,
@@ -474,6 +496,10 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 attendanceLogs: processData(attendanceLogsData),
                 assignedChecklists: processData(assignedChecklistsData),
                 biometricVerifications: processData(biometricVerificationsData),
+                withdrawalReviews: processData(withdrawalReviewsData),
+                withdrawalReviewResolutions: processData(withdrawalReviewResolutionsData),
+                approvalProposals: processData(approvalProposalsData),
+                approvalSignatures: processData(approvalSignaturesData),
                 safetyInspections: processData(safetyInspectionsData),
                 checklistTemplates: processData(checklistTemplatesData),
                 behaviorObservations: processData(behaviorObservationsData),
@@ -521,7 +547,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         authLoading, user, usersData, materialsData, requestsData,
         returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
         unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, supplierPaymentsData,
-        salaryAdvancesData, attendanceLogsData, assignedChecklistsData, biometricVerificationsData, safetyInspectionsData,
+        salaryAdvancesData, attendanceLogsData, assignedChecklistsData, biometricVerificationsData, withdrawalReviewsData, withdrawalReviewResolutionsData, approvalProposalsData, approvalSignaturesData, safetyInspectionsData,
         checklistTemplatesData, behaviorObservationsData, stockMovementsData,
         subscriptionPlansData, workProjectsData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
@@ -587,7 +613,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         markClientRequestsSent: bindContext(purchaseRequestMutations.markClientRequestsSent),
         deletePurchaseRequest: bindContext(purchaseRequestMutations.deletePurchaseRequest),
         cancelPurchaseOrder: bindContext(purchaseRequestMutations.cancelPurchaseOrder),
-        archiveLot: bindContext(purchaseRequestMutations.archiveLot),
+        registerDirectPurchase: bindContext(purchaseRequestMutations.registerDirectPurchase),
+        registerDirectRental: bindContext(rentalMutations.registerDirectRental),
         generatePurchaseOrder: bindContext(purchaseRequestMutations.generatePurchaseOrder),
         createPurchaseOrder: bindContext(purchaseRequestMutations.createPurchaseOrder),
         returnToPool: bindContext(purchaseRequestMutations.returnToPool),
@@ -688,6 +715,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         recordBiometricVerification: bindContext(biometricMutations.recordBiometricVerification),
         requestBiometricException: bindContext(biometricMutations.requestBiometricException),
         resolveBiometricException: bindContext(biometricMutations.resolveBiometricException),
+        reviewWithdrawal: bindContext(withdrawalReviewMutations.reviewWithdrawal),
+        justifyWithdrawalObservation: bindContext(withdrawalReviewMutations.justifyWithdrawalObservation),
 
         // Safety
         addChecklistTemplate: bindContext(safetyMutations.addChecklistTemplate),
@@ -784,6 +813,13 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         addRentalRequirement: bindContext(purchaseRequestMutations.addRentalRequirement),
         updateRentalRequestStatus: bindContext(rentalRequestMutations.updateRentalRequestStatus),
         authorizeRentalRequest: bindContext(rentalRequestMutations.authorizeRentalRequest),
+        // RFC-006 F1: revisión del Jefe de Operaciones.
+        reviewPurchaseRequests: bindContext(opsReviewMutations.reviewPurchaseRequests),
+        reviewRentalRequest: bindContext(opsReviewMutations.reviewRentalRequest),
+        // RFC-006 F2: propuesta de compra y firma por monto.
+        createPurchaseProposal: bindContext(approvalMutations.createPurchaseProposal),
+        signProposal: bindContext(approvalMutations.signProposal),
+        withdrawProposal: bindContext(approvalMutations.withdrawProposal),
         deleteRentalRequest: bindContext(rentalRequestMutations.deleteRentalRequest),
         addRentalQuoteRequest: bindContext(rentalRequestMutations.addRentalQuoteRequest),
         updateRentalQuoteRequest: bindContext(rentalRequestMutations.updateRentalQuoteRequest),

@@ -34,6 +34,7 @@ const contractSchema = z.object({
   endDate: z.string().optional(),
   description: z.string().optional(),
   costCenterId: z.string().optional(),
+  adcUserId: z.string().optional(),
   isSubcontractor: z.boolean().default(false),
   parentContractId: z.string().optional(),
   subcontractorCompany: z.string().optional(),
@@ -58,7 +59,7 @@ interface ContractFormDialogProps {
 }
 
 export function ContractFormDialog({ open, onOpenChange, contract, defaultClientId, defaultKind }: ContractFormDialogProps) {
-  const { clients, contracts, costCenters, addClient, addContract, updateContract } = useAppState();
+  const { clients, contracts, costCenters, users, addClient, addContract, updateContract } = useAppState();
   const { toast } = useToast();
   const [creatingClient, setCreatingClient] = useState(false);
   const [newClientName, setNewClientName] = useState("");
@@ -72,6 +73,14 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
     [costCenters]
   );
   const today = format(new Date(), "yyyy-MM-dd");
+  // RFC-006: quién puede ser el ADC del contrato. Primero los ADC; también el
+  // director de faena y la administración, que firman como mando superior.
+  const adcCandidates = useMemo(() => {
+    const rank: Record<string, number> = { adc: 0, 'director-faena': 1, administrador: 2 };
+    return ((users || []) as any[])
+      .filter(u => u.role in rank && u.status !== 'inactive')
+      .sort((a, b) => rank[a.role] - rank[b.role] || String(a.name).localeCompare(String(b.name)));
+  }, [users]);
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<ContractFormData>({
     resolver: zodResolver(contractSchema),
@@ -93,6 +102,7 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
         endDate: toDateStr(contract.endDate),
         description: contract.description ?? "",
         costCenterId: contract.costCenterId ?? "",
+        adcUserId: contract.adcUserId ?? "",
         isSubcontractor: contract.isSubcontractor ?? false,
         parentContractId: contract.parentContractId ?? "",
         subcontractorCompany: contract.subcontractorCompany ?? "",
@@ -142,6 +152,8 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
         startDate: data.startDate, endDate: data.endDate || null,
         description: data.description,
         costCenterId: data.costCenterId || null,
+        // Sólo viaja si cambió: así editar otro dato no depende de la columna nueva.
+        ...((data.adcUserId || null) !== (contract?.adcUserId ?? null) ? { adcUserId: data.adcUserId || null } : {}),
         isSubcontractor: internal ? false : data.isSubcontractor,
         parentContractId: internal ? null : (data.parentContractId || null),
         subcontractorCompany: internal ? null : (data.subcontractorCompany || null),
@@ -245,6 +257,25 @@ export function ContractFormDialog({ open, onOpenChange, contract, defaultClient
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            {/* RFC-006: firma las compras, arriendos y retiros de este contrato hasta el tope. */}
+            <div className="space-y-1">
+              <Label>ADC del contrato</Label>
+              <Select
+                value={watch("adcUserId") || "none"}
+                onValueChange={v => setValue("adcUserId", v === "none" ? "" : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Sin ADC asignado" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin ADC asignado</SelectItem>
+                  {adcCandidates.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}{u.role !== 'adc' ? ` (${u.role === 'administrador' ? 'Administrador' : 'Director de faena'})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">Firma lo de este contrato hasta el monto del ADC.</p>
             </div>
             <div className="space-y-1">
               <Label>{isInternal ? "Ubicación" : "Faena / Ubicación"}</Label>

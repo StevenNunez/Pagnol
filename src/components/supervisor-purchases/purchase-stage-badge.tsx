@@ -2,10 +2,11 @@
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ShieldQuestion, Search, CheckCircle2, Truck, PackageCheck, X, Mail } from 'lucide-react';
+import { ShieldQuestion, Search, CheckCircle2, Truck, PackageCheck, X, Mail, ClipboardCheck } from 'lucide-react';
 import { PurchaseStage, STAGE_META } from './purchase-pipeline';
 
 export const STAGE_ICON: Record<PurchaseStage, any> = {
+    waiting_ops: ClipboardCheck,
     waiting_adc: ShieldQuestion,
     in_review: Search,
     to_send: Mail,

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
         'quién responde por cada paso.',
 };
 
-const ACTUALIZADO = '27 de agosto de 2026';
+const ACTUALIZADO = '8 de octubre de 2026';
 
 /* ── Primitivos locales del documento ─────────────────────────── */
 
@@ -385,8 +385,15 @@ export default function ControlDeActivosPage() {
                             </Note>
                         </Phase>
 
-                        <Phase id="f2" code="Paso 2" title="El Administrador de Contratos lo autoriza">
-                            <Meta donde="/authorizations" quien="ADC · Director de Faena · Administrador" />
+                        <Phase id="f2" code="Paso 2" title="El Jefe de Operaciones lo revisa y el ADC lo autoriza">
+                            <Meta donde="/authorizations" quien="Jefe de Operaciones · ADC · Director de Faena · Administrador" />
+                            <p>
+                                Las <strong>compras y los arriendos</strong> pasan primero por el{' '}
+                                <strong>Jefe de Operaciones</strong> (pestañas &quot;Revisar compras&quot; y
+                                &quot;Revisar arriendos&quot;). Puede corregir cantidades, quitar líneas o
+                                rechazar; lo que cambia queda a la vista del ADC (&quot;pidió 10&quot;) y el
+                                supervisor ve el motivo. Recién después pasa al ADC.
+                            </p>
                             <p>
                                 Este es <strong>el filtro del proceso</strong>: una sola bandeja con tres
                                 pestañas — material, compra y arriendo — que muestra sólo lo que está
@@ -398,6 +405,19 @@ export default function ControlDeActivosPage() {
                                 autoriza, queda grabado quién y cuándo. Si rechaza, queda cerrado con el
                                 motivo y la fecha.
                             </p>
+                            <p>
+                                <strong>Los retiros del pañol también se firman por valor:</strong> el costo
+                                de cada material por la cantidad, más IVA. Hasta el tope de la empresa lo
+                                firma el <strong>ADC del contrato</strong> del pedido; sobre el tope, sólo el{' '}
+                                <strong>Gerente General</strong>. En Autorizaciones → Material cada uno ve
+                                el valor y sólo los retiros que le toca firmar.
+                            </p>
+                            <p>
+                                <strong>Cada ADC ve sólo lo de sus contratos.</strong> El ADC de cada contrato
+                                se asigna en Clientes y Contratos; si un contrato no tiene ADC, sus pedidos los
+                                autoriza administración o el director de faena. El aviso de &quot;por
+                                autorizar&quot; le llega sólo a quien le toca.
+                            </p>
                             <Note tone="ok" title="Por qué importa">
                                 La autorización no es un simple visto bueno: queda con nombre y hora, y
                                 acompaña al pedido el resto de su vida. Siempre se puede saber quién
@@ -406,7 +426,7 @@ export default function ControlDeActivosPage() {
                         </Phase>
 
                         <Phase id="f3" code="Paso 3" title="El pañol lo aprueba según qué tan crítico sea">
-                            <Meta donde="/bodega/requests" quien="Pañolero · Administrador · Director de Faena" />
+                            <Meta donde="/pagnol/solicitudes" quien="Pañolero · Administrador · Director de Faena" />
                             <p>
                                 Con la autorización del ADC, el pedido llega al pañol. Quien aprueba tiene
                                 que estar habilitado para{' '}
@@ -424,6 +444,12 @@ export default function ControlDeActivosPage() {
                                 Si el pañolero no está habilitado para esa clase, no puede aprobar: el
                                 pedido queda esperando al jefe que sí puede.
                             </p>
+                            <p>
+                                Se aprueba en <strong>Entregas y Devoluciones → Por aprobar</strong>. Al
+                                aprobar se descuenta el stock y el pedido pasa a{' '}
+                                <strong>Por entregar</strong>. Si el trabajador está ahí esperando, el botón{' '}
+                                <strong>Aprobar y entregar ahora</strong> salta directo a la entrega.
+                            </p>
                         </Phase>
 
                         <Phase id="abastecimiento" code="Paso 4" title="Abastecimiento compra o arrienda">
@@ -431,9 +457,49 @@ export default function ControlDeActivosPage() {
                             <p>
                                 El módulo muestra el camino obligatorio en la propia pantalla:{' '}
                                 <strong>
-                                    Pedidos → Cotizaciones → Comparar → Orden de compra → Recepción → Pagos
+                                    Pedidos → Cotizaciones → Comparar → Firma → Orden de compra → Recepción → Pagos
                                 </strong>
                                 .
+                            </p>
+                            <p>
+                                <strong>La firma va antes de la OC.</strong> Con la oferta elegida,
+                                Abastecimiento pulsa <strong>Enviar a firma</strong>: el sistema suma el IVA
+                                y decide quién firma según el monto configurado en Configuración. Hasta el
+                                tope firma el <strong>ADC de cada contrato</strong>; sobre el tope, sólo el{' '}
+                                <strong>Gerente General</strong>. Abastecimiento puede mandarla al Gerente
+                                aunque no pase el monto, explicando por qué.
+                            </p>
+                            <p>
+                                Quien firma lo ve en Autorizaciones → <strong>Por firmar</strong>, con el
+                                total, las líneas y las otras ofertas con que se comparó. Firmada, aparece{' '}
+                                <strong>Emitir OC</strong>: sale una sola OC, con los precios firmados y sin
+                                pasar de ese monto. Si la rechazan, Abastecimiento ve el motivo y puede
+                                proponer otra.
+                            </p>
+                            <p>
+                                <strong>Si es urgente</strong> (por ejemplo, un equipo detenido),
+                                Abastecimiento marca <strong>Es urgente</strong> con el motivo y emite la OC
+                                al tiro. La firma queda pendiente: quien firma la ve marcada como urgente y
+                                la ratifica o la rechaza. Todas quedan en <strong>Compras urgentes</strong>,
+                                con su motivo y cómo terminó.
+                            </p>
+                            <p>
+                                <strong>Los arriendos</strong> siguen la misma regla, pero se firma el{' '}
+                                <strong>valor mensual</strong> (un arriendo diario se lleva a 30 días; si dura
+                                menos de un mes, se firma el total). En Arriendos, cada oferta muestra su
+                                valor mensual y se adjudica recién con la firma.
+                            </p>
+                            <p>
+                                <strong>Si la compra ya se hizo por fuera</strong>, en Órdenes de Compra se usa{' '}
+                                <strong>Compra ya realizada</strong>: se registra la factura o boleta, la
+                                empresa con su RUT y quién compró. La misma factura no se puede registrar
+                                dos veces, y los pedidos quedan listos para que el pañol los reciba.
+                            </p>
+                            <p>
+                                <strong>Si el arriendo ya se contrató por fuera</strong>, en Arriendos →{' '}
+                                <strong>Nuevo contrato</strong> se registra con su respaldo: el contrato o la
+                                factura con su número, el RUT del arrendador y quién lo contrató. El mismo
+                                documento no respalda dos arriendos.
                             </p>
                             <Table
                                 head={['Etapa', 'Dónde', 'Qué pasa ahí']}
@@ -458,13 +524,18 @@ export default function ControlDeActivosPage() {
                         </Phase>
 
                         <Phase id="f5" code="Paso 5" title="Se entrega en el pañol, verificando quién retira">
-                            <Meta donde="/pagnol/movimientos" quien="Pañolero" />
+                            <Meta donde="/pagnol/solicitudes" quien="Pañolero" />
                             <p>
                                 Este es el momento más delicado: el equipo cambia de manos. Pagnol lo
                                 cierra <strong>verificando la cara de quien retira</strong>.
                             </p>
                             <ol className="list-decimal pl-6 space-y-2 marker:font-bold marker:text-primary">
-                                <li>El pañolero abre el pedido aprobado y confirma ítems y cantidades.</li>
+                                <li>
+                                    El pañolero ve lo que tiene que entregar apenas entra: arriba en el{' '}
+                                    <strong>Panel principal</strong> (&quot;Para entregar&quot;) y con un número
+                                    en el menú <strong>Entregas y Devoluciones</strong>. Aprieta{' '}
+                                    <strong>Entregar</strong> en el pedido y confirma ítems y cantidades.
+                                </li>
                                 <li>
                                     La cámara toma la cara y la compara con la que esa persona registró al
                                     ingresar.{' '}

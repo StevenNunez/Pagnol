@@ -17,7 +17,11 @@ import {
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { QuoteRequest, QuoteResponse } from "@/modules/core/lib/data";
-import { ListChecks, Award, TrendingDown, Truck, ShieldCheck, CalendarClock, Trophy, CheckCircle2, Paperclip } from "lucide-react";
+import { ListChecks, Award, TrendingDown, Truck, ShieldCheck, CalendarClock, Trophy, CheckCircle2, Paperclip, Signature, XCircle } from "lucide-react";
+import { ProposalSubmitDialog } from "@/components/approvals/proposal-submit-dialog";
+import { ProposalStatusPanel } from "@/components/approvals/proposal-status-panel";
+import { proposalsForSource, currentProposal } from "@/components/approvals/proposal-utils";
+import type { PurchaseProposalInput } from "@/modules/data/mutations/approvalMutations";
 
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const fmtDate = (iso?: string | Date) =>
@@ -55,7 +59,7 @@ function ComparadorInner() {
     return (
         <PageShell
             title="Comparador de Cotizaciones"
-            description="Compara ofertas lado a lado, identifica la más conveniente y adjudica para generar la Orden de Compra."
+            description="Compara ofertas lado a lado, elige la más conveniente y envíala a firma. Con la firma, emites la Orden de Compra."
             toolbar={
                 <div className="w-full xl:w-96">
                     <Select value={picked} onValueChange={(v) => { setPicked(v); router.replace(`/dashboard/abastecimiento/comparador?rfq=${v}`); }}>
@@ -88,9 +92,17 @@ function ComparadorInner() {
 
 function Comparison({ rfq }: { rfq: QuoteRequest }) {
     const router = useRouter();
-    const { awardQuote, can } = useAppState();
+    const { awardQuote, can, approvalProposals, approvalSignatures, purchaseOrders } = useAppState();
     const { toast } = useToast();
-    const [awardingId, setAwardingId] = useState<string | null>(null);
+    const [draft, setDraft] = useState<(PurchaseProposalInput & { title?: string }) | null>(null);
+
+    // RFC-006 F2: la propuesta (firma por monto) de esta RFQ.
+    const views = useMemo(
+        () => proposalsForSource(approvalProposals, approvalSignatures, purchaseOrders, p => p.sourceType === 'rfq' && p.sourceId === rfq.id),
+        [approvalProposals, approvalSignatures, purchaseOrders, rfq.id],
+    );
+    const current = currentProposal(views);
+    const lastRejected = !current && views[0]?.state === 'rejected' ? views[0] : null;
 
     const responses = rfq.responses;
     const prices = responses.map((r) => r.totalPrice);
@@ -118,18 +130,32 @@ function Comparison({ rfq }: { rfq: QuoteRequest }) {
     const isAwarded = rfq.status === "awarded";
     const canAward = can("finance:manage_purchase_orders") && !isAwarded;
 
-    const doAward = async (resp: QuoteResponse) => {
-        setAwardingId(resp.id);
-        try {
-            await awardQuote(rfq.id, resp.id);
-            toast({ title: "RFQ adjudicada", description: `Se generó la Orden de Compra con ${resp.supplierName}.` });
-            router.push(`/dashboard/abastecimiento/ordenes`);
-        } catch (e: any) {
-            toast({ variant: "destructive", title: "Error al adjudicar", description: e?.message || "No se pudo adjudicar." });
-        } finally {
-            setAwardingId(null);
-        }
+    // Con la propuesta firmada: adjudica y emite la OC (una sola, por lo firmado).
+    const emitOrder = async (resp: QuoteResponse, proposalId: string) => {
+        await awardQuote(rfq.id, resp.id, proposalId);
+        toast({ title: "OC emitida", description: `Orden de Compra con ${resp.supplierName}, por lo firmado.` });
+        router.push(`/dashboard/abastecimiento/ordenes`);
     };
+
+    const proposeFor = (resp: QuoteResponse) => setDraft({
+        title: `${rfq.internalCode} — ${rfq.title}`,
+        sourceType: 'rfq',
+        sourceId: rfq.id,
+        quoteId: resp.id,
+        requestIds: rfq.requestIds,
+        supplierId: resp.supplierId,
+        supplierName: resp.supplierName,
+        items: rfq.items.map(it => ({
+            requestId: it.id,
+            name: it.name,
+            unit: it.unit,
+            quantity: it.quantity,
+            unitPrice: resp.itemPrices?.find(ip => ip.itemId === it.id)?.unitPrice ?? null,
+        })),
+        netTotal: resp.totalPrice,
+        // Foto de las demás ofertas: el firmante ve con qué se comparó.
+        comparison: responses.map(x => ({ supplierName: x.supplierName, totalPrice: x.totalPrice, deliveryDays: x.deliveryDays, chosen: x.id === resp.id })),
+    });
 
     const allDetailed = responses.every((r) => r.itemPrices && r.itemPrices.length === rfq.items.length);
 
@@ -142,6 +168,19 @@ function Comparison({ rfq }: { rfq: QuoteRequest }) {
                 <Card className="rounded-[1.5rem]"><CardContent className="p-5"><MicroLabel>Ahorro potencial</MicroLabel><p className="text-2xl font-black mt-1 text-success flex items-center gap-1"><TrendingDown className="h-5 w-5" /> {CLP.format(maxPrice - minPrice)}</p></CardContent></Card>
                 <Card className="rounded-[1.5rem]"><CardContent className="p-5"><MicroLabel>Promedio ofertas</MicroLabel><p className="text-2xl font-black mt-1">{CLP.format(Math.round(avgPrice))}</p></CardContent></Card>
             </div>
+
+            {lastRejected && (
+                <Card className="rounded-[1.5rem] border-destructive/30 bg-destructive/5">
+                    <CardContent className="p-4 flex items-start gap-2 text-sm">
+                        <XCircle className="h-5 w-5 text-destructive shrink-0" />
+                        <p>
+                            <b>{lastRejected.proposal.internalCode} fue rechazada</b>
+                            {lastRejected.signatures.find(s => s.decision === 'rejected')?.note ? `: "${lastRejected.signatures.find(s => s.decision === 'rejected')!.note}"` : ''}.
+                            {' '}Puedes elegir otra oferta (o la misma con otro precio) y enviarla de nuevo.
+                        </p>
+                    </CardContent>
+                </Card>
+            )}
 
             {isAwarded && (
                 <Card className="rounded-[1.5rem] border-success/40 bg-success-subtle">
@@ -200,26 +239,21 @@ function Comparison({ rfq }: { rfq: QuoteRequest }) {
                                         )}
                                     </div>
 
-                                    {canAward && (
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                                <Button className="rounded-xl w-full" disabled={!!awardingId}>
-                                                    <Award className="h-4 w-4 mr-2" /> Adjudicar
-                                                </Button>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>¿Adjudicar a {r.supplierName}?</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        Se generará una Orden de Compra por {CLP.format(r.totalPrice)} y las solicitudes incluidas pasarán a "ordenadas". Esta acción cierra la RFQ.
-                                                    </AlertDialogDescription>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => doAward(r)}>Sí, adjudicar y generar OC</AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
+                                    {/* RFC-006 F2: primero la firma, después la OC. */}
+                                    {!isAwarded && current?.proposal.quoteId === r.id && (
+                                        <ProposalStatusPanel
+                                            view={current}
+                                            emitLabel="Adjudicar y emitir OC"
+                                            onEmit={() => emitOrder(r, current.proposal.id)}
+                                        />
+                                    )}
+                                    {canAward && !current && (
+                                        <Button className="rounded-xl w-full gap-2" onClick={() => proposeFor(r)}>
+                                            <Signature className="h-4 w-4" /> Enviar a firma
+                                        </Button>
+                                    )}
+                                    {!isAwarded && current && current.proposal.quoteId !== r.id && (
+                                        <p className="text-xs text-muted-foreground text-center">Hay otra oferta en firma.</p>
                                     )}
                                 </CardContent>
                             </Card>
@@ -227,6 +261,8 @@ function Comparison({ rfq }: { rfq: QuoteRequest }) {
                     })}
                 </div>
             </div>
+
+            <ProposalSubmitDialog draft={draft} onClose={() => setDraft(null)} />
 
             {/* Detalle por ítem (si todas las ofertas lo tienen) */}
             {allDetailed && (

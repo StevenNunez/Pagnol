@@ -62,11 +62,22 @@ export const ALL_PERMISSIONS = {
     'material_requests:view_all': { label: 'Ver Todas las Solicitudes', group: 'Solicitudes Internas' },
     'material_requests:approve': { label: 'Aprobar/Rechazar Solicitudes', group: 'Solicitudes Internas' },
     'material_requests:select_any_contract': { label: 'Elegir cualquier contrato al solicitar (Oficina)', group: 'Solicitudes Internas' },
+    'material_requests:review_withdrawals': { label: 'Revisar retiros entregados en ventanilla', group: 'Solicitudes Internas' },
+    'material_requests:resolve_observations': { label: 'Cerrar con justificación lo no autorizado de un retiro', group: 'Solicitudes Internas' },
 
     // Etapa previa: el Administrador de Contratos (ADC) autoriza antes de Abastecimiento.
     'material_requests:authorize': { label: 'Autorizar Solicitudes de Material (ADC)', group: 'Autorizaciones (ADC)' },
     'purchase_requests:authorize': { label: 'Autorizar Requerimientos (ADC)', group: 'Autorizaciones (ADC)' },
     'rentals:authorize': { label: 'Autorizar Solicitudes de Arriendo (ADC)', group: 'Autorizaciones (ADC)' },
+
+    // RFC-006 F1: el Jefe de Operaciones revisa lo que pide terreno antes del ADC.
+    'purchase_requests:review_operations': { label: 'Revisar requerimientos de compra (Jefe de Operaciones)', group: 'Revisión de Operaciones' },
+    'rentals:review_operations': { label: 'Revisar solicitudes de arriendo (Jefe de Operaciones)', group: 'Revisión de Operaciones' },
+
+    // RFC-006 F2: firma de propuestas de compra según el monto. Quién firma qué
+    // puesto lo verifica la base (ADC asignado al contrato / Gerente General).
+    'approvals:sign_adc': { label: 'Firmar compras de sus contratos (hasta el monto del ADC)', group: 'Firmas por monto' },
+    'approvals:sign_gerente': { label: 'Firmar compras sobre el monto del ADC (Gerente General)', group: 'Firmas por monto' },
 
     'return_requests:create': { label: 'Crear Devoluciones', group: 'Devoluciones' },
     'return_requests:approve': { label: 'Aprobar Devoluciones', group: 'Devoluciones' },
@@ -197,6 +208,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             // Solicitudes
             'material_requests:create', 'material_requests:view_all', 'material_requests:approve', 'material_requests:select_any_contract',
             'material_requests:approve_class_a', 'material_requests:approve_class_b', 'material_requests:approve_class_c',
+            'material_requests:review_withdrawals', 'material_requests:resolve_observations',
             'return_requests:view_all', 'return_requests:approve', 'return_requests:create',
             'purchase_requests:create', 'purchase_requests:view_all', 'purchase_requests:approve', 'purchase_requests:delete',
             // Compras
@@ -273,6 +285,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'purchase_requests:view_all', 'purchase_requests:create',
             // Autorización ADC (director también puede autorizar como mando superior).
             'module_authorizations:view', 'material_requests:authorize', 'purchase_requests:authorize', 'rentals:authorize',
+            'purchase_requests:review_operations', 'rentals:review_operations',
+            'approvals:sign_adc',
             'users:view',
             'safety_templates:create', 'safety_templates:assign',
             'safety_checklists:complete', 'safety_checklists:review',
@@ -297,7 +311,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'construction_control:view_reports', 'construction_control:review_protocols',
             'construction_control:manage_projects',
             'module_purchasing:view', 'purchase_requests:create', 'purchase_requests:view_all',
-            'module_warehouse:view', 'materials:view_all', 'material_requests:create', 'material_requests:select_any_contract',
+            'materials:view_all', 'material_requests:create', 'material_requests:select_any_contract',
             'module_reports:view', 'reports:view', 'module_work_reports:view',
             'work_reports:view_all', 'work_reports:download_pdf',
             'module_rentals:view', 'rentals:request',
@@ -311,7 +325,6 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'construction_control:register_progress',
             'construction_control:view_reports',
             'construction_control:review_protocols',
-            'module_warehouse:view',
             'material_requests:create',
             'purchase_requests:create',
             'return_requests:create',
@@ -355,11 +368,11 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         label: 'Supervisor',
         description: 'Solicita materiales, registra devoluciones y gestiona su cuadrilla.',
         permissions: [
-            'module_pagnol:view',
             'materials:view_all',
             'tools:view_own',
             'material_requests:create',
             'material_requests:view_own',
+            'material_requests:review_withdrawals',
             'purchase_requests:create',
             'return_requests:create',
             'module_work_reports:view', 'work_reports:create', 'work_reports:edit', 'work_reports:delete',
@@ -370,7 +383,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         label: 'APR (Prevencionista)',
         description: 'Gestiona checklists, inspecciones y observaciones de seguridad.',
         permissions: [
-            'module_safety:view', 'module_users:view', 'module_warehouse:view', 'module_reports:view',
+            'module_safety:view', 'module_users:view', 'module_reports:view',
             'safety_templates:create', 'safety_templates:assign',
             'safety_checklists:complete', 'safety_checklists:review',
             'safety_inspections:create', 'safety_inspections:complete', 'safety_inspections:review',
@@ -385,7 +398,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         label: 'Comité Paritario (CPHS)',
         description: 'Comité Paritario de Higiene y Seguridad.',
         permissions: [
-            'module_safety:view', 'module_warehouse:view', 'module_users:view',
+            'module_safety:view', 'module_users:view',
             'tools:view_own',
             'safety_templates:create', 'safety_templates:assign',
             'safety_checklists:review', 'safety_checklists:complete',
@@ -421,7 +434,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         label: 'Jefe de Turno',
         description: 'Gestiona un turno de trabajo: personal presente, herramientas y seguridad del período.',
         permissions: [
-            'module_pagnol:view', 'module_attendance:view', 'module_safety:view',
+            'module_attendance:view', 'module_safety:view',
             'materials:view_all', 'tools:view_own',
             'material_requests:create', 'material_requests:view_own',
             'return_requests:create',
@@ -468,8 +481,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
     },
     'operador': {
         label: 'Operador',
-        description: 'Operador de la faena. Puede ver y usar las herramientas que le han sido asignadas.',
-        permissions: ['module_pagnol:view', 'tools:view_own'],
+        description: 'Operador de la faena. Usa su billetera, su asistencia y firma las charlas.',
+        permissions: ['tools:view_own'],
     },
     'recursos-humanos': {
         label: 'Recursos Humanos',
@@ -528,10 +541,17 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
     },
     'jefe-operaciones': {
         label: 'Jefe de Operaciones',
-        description: 'Valida, firma y descarga los informes de terreno en revisión operacional.',
+        description: 'Revisa las compras y arriendos que pide terreno antes del ADC, valida los informes de terreno y pide material.',
         permissions: [
             'module_work_reports:view', 'work_reports:view_all',
             'work_reports:review_operations', 'work_reports:download_pdf',
+            // Pide material y compras para la faena (Módulo Supervisor).
+            'materials:view_all', 'material_requests:create', 'material_requests:view_own',
+            'purchase_requests:create', 'return_requests:create',
+            // RFC-006 F1: revisa compras y arriendos de terreno antes del ADC.
+            'module_authorizations:view',
+            'purchase_requests:review_operations', 'purchase_requests:view_all',
+            'rentals:review_operations', 'rentals:request',
         ],
     },
     'adc': {
@@ -545,6 +565,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'material_requests:authorize', 'material_requests:view_all', 'material_requests:select_any_contract',
             'purchase_requests:authorize', 'purchase_requests:view_all', 'purchase_requests:create',
             'rentals:authorize', 'module_rentals:view', 'rentals:request',
+            // RFC-006 F2: firma las compras de los contratos donde es el ADC.
+            'approvals:sign_adc',
             'material_requests:create',
             // F2: el ADC administra el contrato — aprueba y registra el cobro
             // de los estados de pago (ADR-004 §10).
@@ -553,10 +575,14 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
     },
     'gerente-general': {
         label: 'Gerente General',
-        description: 'Observador: visualiza y descarga los informes de terreno, sin editar ni aprobar.',
+        description: 'Firma las compras sobre el monto del ADC y visualiza los informes de terreno.',
         permissions: [
             'material_requests:select_any_contract',
             'module_work_reports:view', 'work_reports:view_all', 'work_reports:download_pdf',
+            // RFC-006 F2: firma las compras sobre el monto del ADC.
+            'module_authorizations:view', 'approvals:sign_gerente',
+            // RFC-006 F5: autoriza los retiros del pañol sobre el tope.
+            'material_requests:authorize', 'material_requests:view_all',
         ],
     },
 };

@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/empty-state";
 
 import {
   Package, ShoppingCart, RotateCcw, Clock, Plus, PackageCheck,
-  ArrowUpRight, ArrowDownLeft, SearchX, KeyRound,
+  ArrowUpRight, ArrowDownLeft, SearchX, KeyRound, ClipboardCheck,
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
@@ -26,6 +26,7 @@ import { StageBadge } from "@/components/supervisor-requests/stage-badge";
 import { resolvePurchaseStage, groupKey, PurchaseStage } from "@/components/supervisor-purchases/purchase-pipeline";
 import { PurchaseStageBadge } from "@/components/supervisor-purchases/purchase-stage-badge";
 import { computeReturnBalanceItems } from "@/components/supervisor-returns/return-balance";
+import { useReviewableWithdrawals } from "@/components/withdrawal-review/use-reviewable-withdrawals";
 
 // ====================== TIPOS ======================
 type ActivityEntry =
@@ -75,6 +76,8 @@ export default function SupervisorHubPage() {
   const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<"all" | ActivityKind>("all");
+  // Retiros que el pañol entregó a su cuadrilla y esperan su revisión.
+  const { canReview, pending: withdrawalsToReview } = useReviewableWithdrawals();
 
   const toDate = (d: any): Date => new Date(d);
 
@@ -133,6 +136,11 @@ export default function SupervisorHubPage() {
   }, [myMaterialRequests, myPurchaseRequests, myRentalRequests, returnBalanceItems]);
 
   const KPI_ITEMS = [
+    ...(canReview ? [{
+      label: "Retiros por revisar", value: withdrawalsToReview.length, icon: ClipboardCheck,
+      iconCls: withdrawalsToReview.length > 0 ? "bg-warning-subtle text-warning" : "bg-muted text-muted-foreground",
+      href: "/dashboard/supervisor/revisar-retiros",
+    }] : []),
     { label: "Pañol en trámite", value: kpis.materialInProgress, icon: Clock, iconCls: "bg-info-subtle text-info", href: "/dashboard/supervisor/request" },
     { label: "Listas para retiro", value: kpis.materialReady, icon: PackageCheck, iconCls: kpis.materialReady > 0 ? "bg-success-subtle text-success-subtle-foreground" : "bg-muted text-muted-foreground", href: "/dashboard/supervisor/request" },
     { label: "Compras en trámite", value: kpis.purchaseInProgress, icon: ShoppingCart, iconCls: "bg-info-subtle text-info", href: "/dashboard/purchasing/purchase-request-form" },
@@ -187,7 +195,7 @@ export default function SupervisorHubPage() {
       className="pb-12"
     >
       {/* KPIs — cada uno navega directo a la página donde se resuelve */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className={cn("grid grid-cols-2 gap-4", canReview ? "lg:grid-cols-6" : "lg:grid-cols-5")}>
         {KPI_ITEMS.map((k) => (
           <Link key={k.label} href={k.href} className="block h-full">
             <Card className="p-5 rounded-[1.5rem] border-none shadow-sm hover:shadow-lg transition-all h-full">

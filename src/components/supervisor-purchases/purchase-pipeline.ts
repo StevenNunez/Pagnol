@@ -1,4 +1,5 @@
 import type { PurchaseRequest, RentalRequest } from '@/modules/core/lib/data';
+import { needsOpsReview } from '@/modules/core/lib/ops-review';
 
 // ── Pipeline desde el punto de vista del SOLICITANTE ────────────────────────
 // `status` ya trae más granularidad que material_requests (pending/approved/
@@ -10,7 +11,7 @@ import type { PurchaseRequest, RentalRequest } from '@/modules/core/lib/data';
 // tramo final distinto: tras la autorización del ADC no van a Abastecimiento —
 // el propio supervisor las envía por correo al cliente ('to_send' → 'ordered').
 
-export type PurchaseStage = 'waiting_adc' | 'in_review' | 'to_send' | 'approved' | 'ordered' | 'received' | 'rejected';
+export type PurchaseStage = 'waiting_ops' | 'waiting_adc' | 'in_review' | 'to_send' | 'approved' | 'ordered' | 'received' | 'rejected';
 
 export function isClientSupply(req: PurchaseRequest): boolean {
     return req.requestTarget === 'client';
@@ -19,6 +20,22 @@ export function isClientSupply(req: PurchaseRequest): boolean {
 /** Requerimiento que derivó a una solicitud de arriendo (RFC-004 F3). */
 export function isRentalDerived(req: PurchaseRequest): boolean {
     return !!req.rentalRequestId;
+}
+
+export { needsOpsReview };
+
+// `opsReviewedAt === undefined` = la base todavía no tiene la columna (migración
+// sin aplicar): se comporta como antes del RFC-006, sin bandeja del JO. Sólo
+// `null` significa "pendiente de revisión".
+
+/** Pendiente en la bandeja del Jefe de Operaciones. */
+export function isWaitingOps(req: PurchaseRequest): boolean {
+    return req.status === 'pending' && needsOpsReview(req) && req.opsReviewedAt === null && !req.adcAuthorizedAt;
+}
+
+/** Pendiente en la bandeja del ADC: ya revisada por el JO (o no lo necesita). */
+export function isWaitingAdc(req: PurchaseRequest): boolean {
+    return req.status === 'pending' && !req.adcAuthorizedAt && (!needsOpsReview(req) || req.opsReviewedAt !== null);
 }
 
 /**
@@ -45,6 +62,7 @@ export function resolvePurchaseStage(req: PurchaseRequest): PurchaseStage {
     // siendo "aprobada, en gestión" desde la mirada del solicitante.
     if (req.status === 'approved' || req.status === 'batched') return 'approved';
     // pending
+    if (isWaitingOps(req)) return 'waiting_ops';
     if (!req.adcAuthorizedAt) return 'waiting_adc';
     // Autorizada: la compra queda en revisión de Abastecimiento; el suministro
     // del cliente queda en manos del supervisor para enviarlo por correo.
@@ -52,6 +70,11 @@ export function resolvePurchaseStage(req: PurchaseRequest): PurchaseStage {
 }
 
 export const STAGE_META: Record<PurchaseStage, { label: string; cls: string; hint: string }> = {
+    waiting_ops: {
+        label: 'Revisión Jefe de Operaciones',
+        cls: 'bg-warning-subtle text-warning',
+        hint: 'El Jefe de Operaciones la revisa antes de pasar al ADC.',
+    },
     waiting_adc: {
         label: 'Esperando ADC',
         cls: 'bg-warning-subtle text-warning',
@@ -99,7 +122,7 @@ export type HistoryFilter = 'all' | 'in_progress' | 'approved' | 'ordered' | 're
 
 export function matchesHistoryFilter(stage: PurchaseStage, filter: HistoryFilter): boolean {
     if (filter === 'all') return true;
-    if (filter === 'in_progress') return stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send';
+    if (filter === 'in_progress') return stage === 'waiting_ops' || stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send';
     return stage === filter;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -14,27 +15,43 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import {
-    Check, X, Loader2, Search, Clock, ShieldQuestion, ArrowRight, PackageCheck, ChevronDown,
+    Check, X, Loader2, Search, Clock, ShieldQuestion, ArrowRight, PackageCheck, ChevronDown, HandHelping,
 } from 'lucide-react';
 import type { Material, User } from '@/modules/core/lib/data';
 import {
-    CompatibleMaterialRequest, RequestStatus, RequestItemsList, RequestStatusBadge,
+    CompatibleMaterialRequest, RequestItemsList, RequestStatusBadge,
     canApproveClass, formatDateTime, daysSince, toDate, requestItems,
 } from './request-shared';
+import { withdrawalQueues, deliveryHref } from './withdrawal-queues';
 
-const STATUS_CHIPS: { key: RequestStatus; label: string }[] = [
-    { key: 'pending', label: 'Por aprobar' },
-    { key: 'approved', label: 'Aprobadas' },
+/** Los pasos del retiro en el pañol, en el orden en que se hacen. */
+export type WithdrawalStep = 'toApprove' | 'toDeliver' | 'delivered' | 'rejected';
+
+const STEP_CHIPS: { key: WithdrawalStep; label: string }[] = [
+    { key: 'toApprove', label: '1 · Por aprobar' },
+    { key: 'toDeliver', label: '2 · Por entregar' },
+    { key: 'delivered', label: 'Entregadas' },
     { key: 'rejected', label: 'Rechazadas' },
 ];
 
+const EMPTY: Record<WithdrawalStep, { title: string; description?: string }> = {
+    toApprove: { title: '¡Todo al día!', description: 'No hay retiros esperando aprobación.' },
+    toDeliver: { title: 'Nada por entregar', description: 'Cuando apruebes un despacho, aparece aquí para entregarlo.' },
+    delivered: { title: 'Aún no hay entregas' },
+    rejected: { title: 'No hay solicitudes rechazadas' },
+};
+
 const PAGE_SIZE = 20;
 
-export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAuthorizations: () => void }) {
+export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations }: {
+    step: WithdrawalStep;
+    onStepChange: (step: WithdrawalStep) => void;
+    onNavigateAuthorizations: () => void;
+}) {
     const { requests, updateMaterialRequestStatus, users, materials, isLoading, can } = useAppState();
     const { toast } = useToast();
+    const router = useRouter();
 
-    const [status, setStatus] = useState<RequestStatus>('pending');
     const [search, setSearch] = useState('');
     const [visible, setVisible] = useState(PAGE_SIZE);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
@@ -49,14 +66,19 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
     }, [requests]);
 
     // Gate ADC: solo las pendientes ya autorizadas llegan al pañol.
-    const pendingReady = useMemo(() => all.filter(r => r.status === 'pending' && r.adcAuthorizedAt), [all]);
-    const waitingAdc = useMemo(() => all.filter(r => r.status === 'pending' && !r.adcAuthorizedAt), [all]);
-    const approved = useMemo(() => all.filter(r => r.status === 'approved'), [all]);
-    const rejected = useMemo(() => all.filter(r => r.status === 'rejected'), [all]);
+    const queues = useMemo(() => withdrawalQueues(all), [all]);
+    // Por entregar: la más antigua primero (es la que lleva más tiempo esperando).
+    const toDeliver = useMemo(() => [...queues.toDeliver].reverse(), [queues.toDeliver]);
+    const waitingAdc = queues.waitingAdc;
 
-    const counts = { pending: pendingReady.length, approved: approved.length, rejected: rejected.length };
+    const counts: Record<WithdrawalStep, number> = {
+        toApprove: queues.toApprove.length,
+        toDeliver: queues.toDeliver.length,
+        delivered: queues.delivered.length,
+        rejected: queues.rejected.length,
+    };
 
-    const activeList = status === 'pending' ? pendingReady : status === 'approved' ? approved : rejected;
+    const activeList = step === 'toDeliver' ? toDeliver : queues[step];
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -70,9 +92,9 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
         });
     }, [activeList, search, userMap, materialMap]);
 
-    const setStatusReset = (s: RequestStatus) => { setStatus(s); setVisible(PAGE_SIZE); };
+    const setStepReset = (s: WithdrawalStep) => { onStepChange(s); setVisible(PAGE_SIZE); };
 
-    const handleUpdate = async (requestId: string, next: 'approved' | 'rejected') => {
+    const handleUpdate = async (requestId: string, next: 'approved' | 'rejected', deliverNow = false) => {
         setProcessingIds(prev => new Set(prev).add(requestId));
         try {
             if (next === 'approved') {
@@ -84,9 +106,13 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
                 if (insufficient.length > 0) throw new Error(`Stock insuficiente para ${insufficient.length} ítem(s). Revisa el inventario.`);
             }
             await updateMaterialRequestStatus(requestId, next);
+            if (next === 'approved' && deliverNow) {
+                router.push(deliveryHref(requestId));
+                return;
+            }
             toast({
-                title: next === 'approved' ? 'Solicitud aprobada' : 'Solicitud rechazada',
-                description: next === 'approved' ? 'El stock fue descontado del inventario.' : 'No se modificó el inventario.',
+                title: next === 'approved' ? 'Despacho aprobado' : 'Solicitud rechazada',
+                description: next === 'approved' ? 'Quedó en "Por entregar" para cuando el trabajador venga a retirarla.' : 'No se modificó el inventario.',
                 variant: next === 'approved' ? 'default' : 'destructive',
             });
             // Realtime refresca la colección sola — sin refetch masivo.
@@ -101,22 +127,29 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
         <div className="space-y-6">
             {/* Chips de estado + búsqueda */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-1 bg-muted/50 border rounded-xl p-1 w-fit">
-                    {STATUS_CHIPS.map(({ key, label }) => (
-                        <button
-                            key={key}
-                            onClick={() => setStatusReset(key)}
-                            className={cn(
-                                'px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5',
-                                status === key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                            )}
-                        >
-                            {label}
-                            {counts[key] > 0 && (
-                                <span className={cn('px-1.5 py-0.5 rounded-md text-[8px]', status === key ? 'bg-primary-foreground/20' : 'bg-muted-foreground/10')}>{counts[key]}</span>
-                            )}
-                        </button>
-                    ))}
+                <div className="flex items-center gap-1 bg-muted/50 border rounded-xl p-1 w-full sm:w-fit overflow-x-auto no-scrollbar">
+                    {STEP_CHIPS.map(({ key, label }) => {
+                        // Los pasos con trabajo pendiente se destacan aunque no estén elegidos.
+                        const urgent = (key === 'toApprove' || key === 'toDeliver') && counts[key] > 0;
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => setStepReset(key)}
+                                className={cn(
+                                    'px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 whitespace-nowrap',
+                                    step === key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                                )}
+                            >
+                                {label}
+                                {counts[key] > 0 && (
+                                    <span className={cn(
+                                        'px-1.5 py-0.5 rounded-md text-[8px]',
+                                        step === key ? 'bg-primary-foreground/20' : urgent ? 'bg-warning text-warning-foreground' : 'bg-muted-foreground/10',
+                                    )}>{counts[key]}</span>
+                                )}
+                            </button>
+                        );
+                    })}
                 </div>
                 <div className="relative w-full sm:max-w-xs">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
@@ -130,7 +163,7 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
             </div>
 
             {/* Aviso: solicitudes atascadas en el ADC (solo cuando revisamos pendientes) */}
-            {status === 'pending' && waitingAdc.length > 0 && (
+            {step === 'toApprove' && waitingAdc.length > 0 && (
                 <button
                     onClick={onNavigateAuthorizations}
                     className="w-full flex items-center gap-4 p-5 rounded-[1.5rem] bg-info-subtle border border-info/20 text-left hover:bg-info-subtle/70 transition-colors group"
@@ -151,9 +184,9 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
                 <LoadingState />
             ) : filtered.length === 0 ? (
                 <EmptyState
-                    icon={status === 'pending' ? <Check size={24} className="text-success" /> : <PackageCheck size={24} />}
-                    title={search ? 'Sin resultados' : status === 'pending' ? '¡Todo al día!' : `No hay solicitudes ${status === 'approved' ? 'aprobadas' : 'rechazadas'}`}
-                    description={search ? `No se encontró "${search}".` : status === 'pending' ? 'No hay retiros pendientes de aprobación.' : undefined}
+                    icon={step === 'toApprove' || step === 'toDeliver' ? <Check size={24} className="text-success" /> : <PackageCheck size={24} />}
+                    title={search ? 'Sin resultados' : EMPTY[step].title}
+                    description={search ? `No se encontró "${search}".` : EMPTY[step].description}
                 />
             ) : (
                 <>
@@ -165,9 +198,11 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
                                 materialMap={materialMap}
                                 supervisorName={userMap.get(req.supervisorId)}
                                 isProcessing={processingIds.has(req.id)}
-                                canAct={status === 'pending' && canApproveClass(can, (req.highestClass || 'C') as 'A' | 'B' | 'C')}
-                                onApprove={() => handleUpdate(req.id, 'approved')}
+                                canAct={step === 'toApprove' && canApproveClass(can, (req.highestClass || 'C') as 'A' | 'B' | 'C')}
+                                canDeliver={step === 'toDeliver'}
+                                onApprove={(deliverNow) => handleUpdate(req.id, 'approved', deliverNow)}
                                 onReject={() => handleUpdate(req.id, 'rejected')}
+                                onDeliver={() => router.push(deliveryHref(req.id))}
                             />
                         ))}
                     </div>
@@ -184,14 +219,16 @@ export function WithdrawalsInbox({ onNavigateAuthorizations }: { onNavigateAutho
     );
 }
 
-function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, canAct, onApprove, onReject }: {
+function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, canAct, canDeliver, onApprove, onReject, onDeliver }: {
     req: CompatibleMaterialRequest;
     materialMap: Map<string, Material>;
     supervisorName?: string;
     isProcessing: boolean;
     canAct: boolean;
-    onApprove: () => void;
+    canDeliver: boolean;
+    onApprove: (deliverNow: boolean) => void;
     onReject: () => void;
+    onDeliver: () => void;
 }) {
     const cls = (req.highestClass || 'C') as 'A' | 'B' | 'C';
     // Aprobada sin retirar: el stock ya salió pero nadie fue a buscarlo.
@@ -202,7 +239,7 @@ function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, canAct
         <div className={cn(
             'relative bg-card rounded-[2rem] border shadow-sm overflow-hidden transition-all',
             isProcessing ? 'opacity-60 pointer-events-none' : 'hover:shadow-xl',
-            req.status === 'pending' && 'border-l-4 border-l-primary',
+            (req.status === 'pending' || canDeliver) && 'border-l-4 border-l-primary',
         )}>
             {isProcessing && (
                 <div className="absolute inset-0 z-10 bg-background/60 flex items-center justify-center gap-2">
@@ -219,7 +256,11 @@ function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, canAct
                         <p className="text-sm font-black uppercase tracking-tight text-foreground truncate mt-0.5">{supervisorName || req.userName || 'Solicitante'}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        {req.status !== 'pending' && <RequestStatusBadge status={req.status} />}
+                        {req.status === 'approved' && req.deliveryDate ? (
+                            <Badge className="badge-success gap-1 border-none text-[9px] font-black uppercase tracking-widest"><PackageCheck className="h-3 w-3" /> Entregada</Badge>
+                        ) : req.status !== 'pending' && !canDeliver ? (
+                            <RequestStatusBadge status={req.status} />
+                        ) : null}
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">{formatDateTime(req.createdAt)}</span>
                     </div>
                 </div>
@@ -290,16 +331,40 @@ function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, canAct
                             </AlertDialogTrigger>
                             <AlertDialogContent className="rounded-[1.5rem]">
                                 <AlertDialogHeader>
-                                    <AlertDialogTitle>Confirmar aprobación</AlertDialogTitle>
-                                    <AlertDialogDescription>Se descontarán los materiales del inventario automáticamente.</AlertDialogDescription>
+                                    <AlertDialogTitle>Aprobar despacho</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Se descontarán los materiales del inventario. Si el trabajador está aquí, entrégaselo ahora;
+                                        si no, queda en &quot;Por entregar&quot; para cuando venga.
+                                    </AlertDialogDescription>
                                 </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction onClick={onApprove} className="bg-success text-success-foreground hover:bg-success/90">Confirmar y descontar</AlertDialogAction>
+                                <AlertDialogFooter className="flex-col sm:flex-col sm:space-x-0 gap-2">
+                                    <AlertDialogAction onClick={() => onApprove(true)} className="w-full h-11 bg-success text-success-foreground hover:bg-success/90 gap-1.5"><HandHelping size={14} /> Aprobar y entregar ahora</AlertDialogAction>
+                                    <AlertDialogAction onClick={() => onApprove(false)} className="w-full h-11 bg-secondary text-secondary-foreground hover:bg-secondary/80">Aprobar, entregar después</AlertDialogAction>
+                                    <AlertDialogCancel className="w-full mt-0">Cancelar</AlertDialogCancel>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
                         </AlertDialog>
                     </div>
+                )}
+
+                {req.status === 'pending' && !canAct && (
+                    <div className="flex items-start gap-3 p-4 rounded-2xl bg-warning-subtle text-warning-subtle-foreground">
+                        <ShieldQuestion size={16} className="shrink-0 mt-0.5" />
+                        <p className="text-xs font-medium">
+                            {cls === 'A'
+                                ? <>Tiene ítems <strong>clase A</strong>: la aprueba un Administrador o el Director de Faena. Cuando la aprueben, aparece en &quot;Por entregar&quot;.</>
+                                : <>No tienes permiso para aprobar clase {cls}. Cuando la aprueben, aparece en &quot;Por entregar&quot;.</>}
+                        </p>
+                    </div>
+                )}
+
+                {canDeliver && (
+                    <Button
+                        onClick={onDeliver}
+                        className="w-full rounded-xl h-12 text-[11px] font-black uppercase tracking-widest gap-2 shadow-lg shadow-primary/10"
+                    >
+                        <HandHelping size={16} /> Entregar
+                    </Button>
                 )}
             </div>
         </div>

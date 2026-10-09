@@ -36,6 +36,85 @@ export interface Tenant {
   // Override de la ETIQUETA de tipo (segmento visible) por documento
   // ({ "PUR": "OC", ... }). No afecta el contador (clave interna estable).
   codeTypes?: Record<string, string>;
+  // Cómo sale un retiro en ventanilla: 'prior' = A y B piden aprobación antes
+  // de entregar (histórico); 'post' = C y B se entregan en el acto y el
+  // supervisor los revisa después; A sigue con aprobación previa.
+  withdrawalReviewMode?: 'prior' | 'post';
+  // RFC-006: montos de firma. Sin valor = los de fábrica (ver approvalMath.ts).
+  approvalSettings?: ApprovalSettings | null;
+}
+
+/** RFC-006 F2: un puesto de firma de una propuesta. */
+export type ApprovalSlot =
+  | { kind: 'adc'; contractId: string; contractName: string; userId: string }
+  | { kind: 'gerente' };
+
+export interface ApprovalProposalItem {
+  requestId?: string;
+  name: string;
+  unit?: string;
+  quantity: number;
+  /** Precio unitario NETO. En una RFQ puede faltar (sólo viene el total). */
+  unitPrice?: number | null;
+}
+
+/**
+ * RFC-006 F2: propuesta de compra que se firma ANTES de emitir la OC. Quién firma
+ * (`requiredSigners`) lo fija la base al crearla. El estado no se guarda: se
+ * deriva de las firmas (approvalMath.deriveProposalState).
+ */
+export interface ApprovalProposal {
+  id: string;
+  tenantId: string;
+  internalCode?: string | null;
+  kind: 'purchase' | 'rental' | 'withdrawal';
+  sourceType: 'rfq' | 'lot' | 'rental_rfq';
+  sourceId?: string | null;
+  quoteId?: string | null;
+  requestIds: string[];
+  supplierId?: string | null;
+  supplierName?: string | null;
+  items: ApprovalProposalItem[];
+  netTotal: number;
+  vatRate: number;
+  grossTotal: number;
+  tier: 'adc' | 'gerente';
+  escalated: boolean;
+  escalationReason?: string | null;
+  requiredSigners: ApprovalSlot[];
+  comparison?: { supplierName: string; totalPrice: number; deliveryDays?: number; chosen?: boolean }[] | null;
+  urgent: boolean;
+  urgencyReason?: string | null;
+  createdById: string;
+  createdByName?: string | null;
+  createdAt: string;
+  withdrawnAt?: string | null;
+  withdrawnReason?: string | null;
+}
+
+export interface ApprovalSignature {
+  id: string;
+  tenantId: string;
+  proposalId: string;
+  slotKind: 'adc' | 'gerente';
+  contractId?: string | null;
+  signerId: string;
+  signerName?: string | null;
+  decision: 'approved' | 'rejected';
+  note?: string | null;
+  createdAt: string;
+}
+
+/** RFC-006: hasta `adcMaxGross` (con IVA) firma el ADC; sobre eso, el Gerente General. */
+export interface ApprovalSettings {
+  adcMaxGross: number;
+  /** Tasa de IVA como fracción (0.19). */
+  vatRate: number;
+  /**
+   * RFC-006 F2: la base rechaza toda OC sin propuesta firmada. Cada empresa lo
+   * enciende cuando está lista (ADC asignados en sus contratos).
+   */
+  enforced?: boolean;
 }
 
 export interface EADocument {
@@ -554,6 +633,43 @@ export interface MaterialRequest {
   // Receptor real verificado (biometría/QR) al momento de la entrega.
   receivedByUserId?: string | null;
   receivedByUserName?: string | null;
+  // Salió en ventanilla con revisión posterior del supervisor (modo 'post').
+  requiresReview?: boolean;
+}
+
+/**
+ * Revisión posterior de una línea de un retiro (tabla `withdrawal_reviews`).
+ * Hecho append-only: no se edita ni se borra. El estado de la revisión de un
+ * retiro se DERIVA de estas filas (ver withdrawalReviewMath.ts).
+ */
+export interface WithdrawalReview {
+  id: string;
+  tenantId: string;
+  requestId: string;
+  materialId: string | null;
+  /** Snapshot del nombre al momento de revisar. */
+  materialName: string;
+  quantity: number;
+  decision: 'authorized' | 'unauthorized';
+  reason: string | null;
+  reviewerId: string;
+  reviewerName: string;
+  createdAt: Date;
+}
+
+/**
+ * Cierre por justificación de una línea "no autorizada" (tabla
+ * `withdrawal_review_resolutions`, append-only). El cierre por devolución no se
+ * guarda: se deriva de las devoluciones (resolveObservations).
+ */
+export interface WithdrawalReviewResolution {
+  id: string;
+  tenantId: string;
+  reviewId: string;
+  note: string;
+  resolvedBy: string;
+  resolvedByName: string;
+  createdAt: Date;
 }
 
 /**
@@ -683,6 +799,11 @@ export interface PurchaseRequest {
   // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
   adcAuthorizedAt?: Date | string | null;
   adcAuthorizedById?: string | null;
+  /** RFC-006 F1: revisión del Jefe de Operaciones (antes del ADC). */
+  opsReviewedAt?: string | null;
+  opsReviewedById?: string | null;
+  opsReviewedByName?: string | null;
+  opsReviewNote?: string | null;
   // Correlaciona ítems enviados juntos desde el mismo carrito. NULL = solicitud suelta.
   batchId?: string | null;
   // Destino de la solicitud: 'supplier' (compra normal, histórico) o 'client'
@@ -879,6 +1000,8 @@ export interface Contract {
   description?: string;
   /** Presupuesto de compras del área/contrato (entidad aparte: cost_centers). */
   costCenterId?: string | null;
+  /** RFC-006: el ADC que firma las propuestas de este contrato. */
+  adcUserId?: string | null;
   createdBy?: string;
   createdAt: Date;
   // Subcontratistas
@@ -1028,6 +1151,10 @@ export interface RentalContract {
   clientContractId?: string | null;
   createdBy?: string;
   createdAt: Date;
+  /** RFC-006 F4: propuesta firmada (valor mensual) que autorizó este arriendo entrante. */
+  approvalProposalId?: string | null;
+  /** RFC-006 F5: respaldo del arriendo ya contratado por fuera (contrato o factura). */
+  directPurchaseId?: string | null;
 }
 
 export interface RentalAsset {
@@ -1106,6 +1233,11 @@ export interface RentalRequest {
   // Gate de autorización del Administrador de Contratos (ADC). NULL = por autorizar.
   adcAuthorizedAt?: Date | string | null;
   adcAuthorizedById?: string | null;
+  /** RFC-006 F1: revisión del Jefe de Operaciones (antes del ADC). */
+  opsReviewedAt?: string | null;
+  opsReviewedById?: string | null;
+  opsReviewedByName?: string | null;
+  opsReviewNote?: string | null;
 }
 
 export interface RentalQuoteItem {
@@ -1574,6 +1706,8 @@ export interface PurchaseOrder {
   // no puede depender de que ese calce salga bien para no tocar el pañol.
   orderType?: 'producto' | 'servicio';
   tenantId: string;
+  /** RFC-006 F2: propuesta firmada que autorizó esta OC. */
+  approvalProposalId?: string | null;
 }
 
 // ── Centros de Costo (F4) ────────────────────────────────────────────────────

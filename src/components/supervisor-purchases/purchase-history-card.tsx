@@ -7,6 +7,8 @@ import { Clock, MapPin, AlertTriangle, Building2, Mail, Truck } from 'lucide-rea
 import type { PurchaseRequest, RentalRequest } from '@/modules/core/lib/data';
 import { resolvePurchaseStage, isClientSupply, isRentalDerived, resolveRentalStage, STAGE_META, CLIENT_STAGE_HINT, PurchaseStage } from './purchase-pipeline';
 import { PurchaseStageBadge } from './purchase-stage-badge';
+import { useAuth } from '@/modules/core/contexts/app-provider';
+import { canOpenPath } from '@/modules/core/lib/module-access';
 import { UrgencyBadge, ExpenseKindBadge, ItemSpec, SuggestedSupplier, UrgencyReason, ServiceBadge } from '@/components/operations/request-meta';
 
 const formatDate = (date: any): string => {
@@ -96,6 +98,8 @@ function stageOf(req: PurchaseRequest, rentalStatusById?: Map<string, RentalRequ
 function SingleCard({ items, onSendToClient, rentalStatusById }: CardProps) {
     const req = items[0];
     const stage = stageOf(req, rentalStatusById);
+    const { user, can } = useAuth();
+    const canOpenRentals = canOpenPath('/dashboard/abastecimiento/arriendos', can, user?.role);
     return (
         <div className={cn(
             'bg-card rounded-[1.5rem] border shadow-sm p-6 space-y-4 transition-all hover:shadow-lg',
@@ -132,7 +136,7 @@ function SingleCard({ items, onSendToClient, rentalStatusById }: CardProps) {
                 </div>
             </div>
 
-            {isRentalDerived(req) && (
+            {isRentalDerived(req) && (canOpenRentals ? (
                 <a
                     href="/dashboard/abastecimiento/arriendos"
                     className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-[11px] font-medium text-foreground hover:bg-primary/10 transition-colors"
@@ -140,6 +144,14 @@ function SingleCard({ items, onSendToClient, rentalStatusById }: CardProps) {
                     <Truck className="h-3.5 w-3.5 shrink-0 text-primary" />
                     <span>Se gestiona en <b>Arriendos</b>: cotización, comparación de ofertas y calendario de pagos.</span>
                 </a>
+            ) : (
+                // Sin acceso al módulo, el aviso se queda como texto: un enlace
+                // a "No tienes acceso" no le sirve al supervisor.
+                <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-[11px] font-medium text-foreground">
+                    <Truck className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span>Lo gestiona <b>Abastecimiento</b> en Arriendos: cotización, comparación de ofertas y calendario de pagos.</span>
+                </div>
+            )
             )}
             <UrgencyReason req={req} />
             <SuggestedSupplier req={req} />

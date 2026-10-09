@@ -92,7 +92,7 @@ export async function addMaterialRequest(
   const preAuthorized = can('material_requests:authorize');
   const now = new Date().toISOString();
 
-  const { error } = await supabase
+  const { data: created, error } = await supabase
     .from('material_requests')
     .insert({
       internal_code: requestId,
@@ -112,12 +112,16 @@ export async function addMaterialRequest(
       beneficiary_id: deliveryMode === 'directed' ? requestData.beneficiaryId : null,
       beneficiary_name: deliveryMode === 'directed' ? (requestData.beneficiaryName || null) : null,
       created_at: now,
-    });
+    })
+    .select('adc_authorized_at')
+    .single();
 
   if (error) throw new Error(`Error al crear solicitud: ${error.message} (code: ${error.code})`);
 
-  // Push al ADC solo si quedó pendiente de autorización.
-  if (!preAuthorized) notifyAuthorizers('material', { tenantId, code: requestId, requesterName: supervisorName });
+  // Push a quien autoriza sólo si quedó pendiente. RFC-006 F5: con la firma por
+  // valor, la base saca la pre-autorización si quien crea no es el firmante que
+  // corresponde — por eso se mira lo que quedó guardado, no lo que se pidió.
+  if (!created?.adc_authorized_at) notifyAuthorizers('material', { tenantId, code: requestId, requesterName: supervisorName });
 }
 
 
@@ -132,11 +136,21 @@ export async function addAndApproveMaterialRequest(
     internalCode?: string;
     /** Pañol desde el que se entrega (scope del panolero). */
     warehouseId?: string | null;
+    /**
+     * Retiro con revisión posterior (empresa en modo 'post'): se entrega en el
+     * acto y queda pendiente de que el supervisor revise línea por línea. La
+     * clase A nunca entra por acá: sigue pidiendo aprobación previa.
+     */
+    requiresReview?: boolean;
   },
   context: Context
 ) {
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+
+  // Defensa en la mutación, no sólo en la pantalla: sin aprobación previa no
+  // sale clase A nunca, ni clase B si el retiro no queda con revisión posterior.
+  const maxDirectClass: 'B' | 'C' = requestData.requiresReview ? 'B' : 'C';
 
   // 1. Fetch materials and build updates
   const updates = [];
@@ -148,7 +162,13 @@ export async function addAndApproveMaterialRequest(
     if (!mat) throw new Error(`Material ${item.materialId} no existe.`);
     if (mat.stock < item.quantity) throw new Error(`Stock insuficiente para ${mat.name}.`);
 
-    const itemClass = (mat.class as 'A' | 'B' | 'C') || 'C';
+    // La columna es `criticality` (el mapper la expone como `class`). Antes se
+    // leía `mat.class` de la fila cruda —siempre undefined— y toda entrega
+    // directa quedaba registrada como clase C.
+    const itemClass = (mat.criticality as 'A' | 'B' | 'C') || 'C';
+    if (classOrder[itemClass] > classOrder[maxDirectClass]) {
+      throw new Error(`${mat.name} es clase ${itemClass}: requiere aprobación antes de entregarse.`);
+    }
     if (classOrder[itemClass] > classOrder[highestClass]) highestClass = itemClass;
 
     const newStock = (mat.stock || 0) - item.quantity;
@@ -192,6 +212,9 @@ export async function addAndApproveMaterialRequest(
     delivery_mode: 'self',
     received_by_user_id: requestData.supervisorId,
     received_by_user_name: supervisorName,
+    // Sólo se envía cuando aplica: así una empresa en modo 'prior' sigue
+    // funcionando aunque la migración 20261007000000 aún no esté aplicada.
+    ...(requestData.requiresReview ? { requires_review: true } : {}),
     created_at: now
   });
   if (reqErr) throw reqErr;
@@ -211,7 +234,7 @@ export async function addAndApproveMaterialRequest(
       new_stock: u.newStock,
       type: 'request-delivery',
       date: now,
-      justification: `Entrega inmediata en Pañol (TX: ${requestId})${fallbackNote ? ` — ${fallbackNote}` : ''}`,
+      justification: `Entrega inmediata en Pañol${requestData.requiresReview ? ' con revisión posterior' : ''} (TX: ${requestId})${fallbackNote ? ` — ${fallbackNote}` : ''}`,
       user_id: requestData.supervisorId,
       user_name: supervisorName,
       related_request_id: requestId,

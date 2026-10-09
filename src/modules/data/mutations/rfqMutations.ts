@@ -3,6 +3,7 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { nanoid } from 'nanoid';
 import type { QuoteItem, QuoteResponse } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
+import { loadSignedProposal } from './approvalMutations';
 
 const RFQ_BUCKET = 'rfq-quotes';
 
@@ -138,9 +139,15 @@ export async function uploadQuoteAttachment(
 // Adjudica la RFQ a una cotización ganadora y GENERA la Orden de Compra
 // (regla de oro: la OC nace de una RFQ adjudicada). Marca las solicitudes
 // incluidas como 'ordered' y deja la RFQ en estado 'awarded'.
-export async function awardQuote(rfqId: string, quoteId: string, { user, tenantId, can }: Context): Promise<string> {
+export async function awardQuote(rfqId: string, quoteId: string, proposalId: string, { user, tenantId, can }: Context): Promise<string> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
     exigir(can, 'finance:manage_purchase_orders', 'adjudicar una cotización');
+
+    // RFC-006 F2: se adjudica la oferta que se firmó, no otra.
+    const proposal = await loadSignedProposal(proposalId, tenantId);
+    if (proposal.sourceType !== 'rfq' || proposal.sourceId !== rfqId || proposal.quoteId !== quoteId) {
+        throw new Error('La propuesta firmada no corresponde a esta oferta.');
+    }
 
     const { data: rfq, error: rfqErr } = await supabase
         .from('quote_requests')
@@ -181,10 +188,11 @@ export async function awardQuote(rfqId: string, quoteId: string, { user, tenantI
             })),
             total_amount: winner.totalPrice,
             tenant_id: tenantId,
+            approval_proposal_id: proposal.id,
         })
         .select()
         .single();
-    if (orderErr) throw orderErr;
+    if (orderErr) throw new Error(orderErr.message);
 
     // Marca las solicitudes incluidas como ordenadas.
     for (const reqId of (rfq.request_ids || [])) {

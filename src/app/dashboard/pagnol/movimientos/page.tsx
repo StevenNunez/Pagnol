@@ -31,6 +31,7 @@ import {
   Settings2,
   Warehouse as WarehouseIcon,
   AlertTriangle,
+  Minus,
 } from 'lucide-react';
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from '@/modules/core/lib/supabase';
@@ -61,6 +62,7 @@ import {
 import type { LivenessRecord } from '@/modules/data/mutations/biometricMutations';
 import { uploadBiometricEvidence, exceptionStatus } from '@/modules/data/mutations/biometricMutations';
 import { BiometricExceptionDialog, type ExceptionTarget } from '@/components/biometric-exception-dialog';
+import { reviewerIdsFor } from '@/modules/data/mutations/withdrawalReviewMath';
 
 type TransactionState =
   | 'CREADA'
@@ -189,6 +191,8 @@ interface DisplayTransaction {
   deliveryMode?: 'self' | 'directed' | 'open';
   beneficiaryId?: string | null;
   beneficiaryName?: string | null;
+  /** materialId → cantidad solicitada (para el contrato PDF de la entrega). */
+  quantities?: Record<string, number>;
 }
 
 type CompatibleMaterialRequest = MaterialRequest & {
@@ -239,6 +243,9 @@ export default function MovimientosPagnolPage() {
   // mismo: sin esto, no hubo identificación previa.
   const [sujetoAVerificarId, setSujetoAVerificarId] = useState<string | null>(null);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  // Cantidad por ítem del retiro (materialId → n). Sin entrada = 1. Antes todo
+  // salía de a 1: un trabajador que pedía 10 discos de corte eran 10 retiros.
+  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
   const [returnConditions, setReturnConditions] = useState<Record<string, ReturnStatus>>({}); // Map assetId -> Condition
   const [site, setSite] = useState('');
   const [showFaenaManager, setShowFaenaManager] = useState(false);
@@ -296,6 +303,14 @@ export default function MovimientosPagnolPage() {
   const evidenceInputRef = useRef<HTMLInputElement>(null);
 
   const canOperate = can('material_requests:create');
+  // Modo de la empresa: con revisión posterior sólo la clase A frena el retiro
+  // en ventanilla; B y C se entregan y el supervisor las revisa después.
+  const postReview = currentTenant?.withdrawalReviewMode === 'post';
+  const needsPriorApproval = useCallback(
+    (m?: Material) => m?.class === 'A' || (!postReview && m?.class === 'B'),
+    [postReview]
+  );
+  const qtyOf = (id: string) => selectedQty[id] ?? 1;
   const usersMap = useMemo(() => new Map((users || []).map(u => [u.id, u])), [users]);
   const materialsMap = useMemo(() => new Map((materials || []).map(m => [m.id, m])), [materials]);
 
@@ -361,6 +376,7 @@ export default function MovimientosPagnolPage() {
         deliveryMode: r.deliveryMode || 'self',
         beneficiaryId: r.beneficiaryId || null,
         beneficiaryName: r.beneficiaryName || null,
+        quantities: Object.fromEntries(items.map(i => [i.materialId, i.quantity || 1])),
       });
     });
 
@@ -429,9 +445,12 @@ export default function MovimientosPagnolPage() {
   const availableAssets = useMemo(() => {
     if (selectedType === 'WITHDRAWAL') {
       return (materials || [])
+        // Hace falta stock para entregar (antes un ítem 'Disponible' con stock 0
+        // aparecía y la entrega fallaba al final), y un ítem con varias
+        // unidades sigue disponible aunque alguna ya esté 'En Uso'.
         .filter(a =>
-          (a.status === 'Disponible' || (a.usageType === 'Consumible' && (a.stock || 0) > 0)) &&
-          !a.archived
+          (a.stock || 0) > 0 && !a.archived &&
+          (a.usageType === 'Consumible' || a.status === 'Disponible' || a.status === 'En Uso')
         )
         .sort((a, b) => (b.inUse || 0) - (a.inUse || 0));
     } else {
@@ -457,6 +476,7 @@ export default function MovimientosPagnolPage() {
   const startTransaction = (type: TransactionType) => {
     setSelectedType(type);
     setSelectedAssetIds([]);
+    setSelectedQty({});
     setReturnConditions({});
     setSelectedEmployee(null);
     setScanDiag(null); // el diagnóstico es del intento anterior, no del que empieza
@@ -556,6 +576,7 @@ export default function MovimientosPagnolPage() {
 
     setSelectedType('WITHDRAWAL');
     setSelectedAssetIds(tx.assetIds);
+    setSelectedQty(tx.quantities ?? {});
     setSelectedEmployee(emp);
     setSujetoAVerificarId(emp.biometricEnrolled ? emp.id : null);
     setPendingDeliveryId(tx.id);
@@ -567,6 +588,29 @@ export default function MovimientosPagnolPage() {
     setFlowStep('CONFIRMATION PAGNOLERO');
     setIsModalOpen(true);
   };
+
+  // ?entregar=<id>: el botón "Entregar" de la bandeja (y "Aprobar y entregar
+  // ahora") llega aquí y abre directo la entrega de esa solicitud, sin que el
+  // pañolero tenga que buscarla en el historial. Se espera a que la solicitud
+  // llegue en la colección y se atiende una sola vez.
+  const deliveryParamHandled = useRef(false);
+  useEffect(() => {
+    if (deliveryParamHandled.current) return;
+    const id = new URLSearchParams(window.location.search).get('entregar');
+    if (!id) { deliveryParamHandled.current = true; return; }
+    const tx = transactions.find(t => t.id === id && t.type === 'WITHDRAWAL');
+    if (!tx) return; // aún cargando
+    deliveryParamHandled.current = true;
+    window.history.replaceState(null, '', window.location.pathname);
+    void Promise.resolve().then(() => {
+      if (tx.status !== 'approved' || tx.deliveryDate) {
+        toast({ variant: 'info', title: 'Nada que entregar', description: `La solicitud ${tx.internalCode || ''} ya fue entregada o no está aprobada.` });
+        return;
+      }
+      return handleContinueDelivery(tx);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions]);
 
   // Entregas aprobadas sin retirar que puede recibir el trabajador identificado:
   // dirigidas a él + las suyas ("para mí") + las de retiro abierto.
@@ -587,6 +631,7 @@ export default function MovimientosPagnolPage() {
   const continueDeliveryAsIdentified = (tx: DisplayTransaction) => {
     setSelectedType('WITHDRAWAL');
     setSelectedAssetIds(tx.assetIds);
+    setSelectedQty(tx.quantities ?? {});
     setPendingDeliveryId(tx.id);
     setPendingDeliveryCode(tx.internalCode || null);
     setIsPagnoleroConfirming(false);
@@ -918,11 +963,8 @@ export default function MovimientosPagnolPage() {
       setReturnConditions(initialConditions);
       setFlowStep('CONDITION CHECK');
     } else {
-      // WITHDRAWAL: Check if any item is Class A or B
-      const hasRestrictedItems = selectedAssetIds.some(id => {
-        const m = materialsMap.get(id);
-        return m?.class === 'A' || m?.class === 'B';
-      });
+      // WITHDRAWAL: ¿algo requiere aprobación previa? (A siempre; B sólo en modo 'prior')
+      const hasRestrictedItems = selectedAssetIds.some(id => needsPriorApproval(materialsMap.get(id)));
 
       if (hasRestrictedItems) {
         try {
@@ -936,7 +978,7 @@ export default function MovimientosPagnolPage() {
           }, 'C');
 
           await addMaterialRequest({
-            items: selectedAssetIds.map(id => ({ materialId: id, quantity: 1 })),
+            items: selectedAssetIds.map(id => ({ materialId: id, quantity: qtyOf(id) })),
             area: site,
             contractId: txContractId,
             contractName: txContractName,
@@ -1208,7 +1250,7 @@ export default function MovimientosPagnolPage() {
         try {
           const itemsForContract = selectedAssetIds.map(id => {
             const m = materialsMap.get(id);
-            return { name: m?.name || 'Item', id: id, internalCode: m?.internalCode, condition: 'OK' };
+            return { name: m?.name || 'Item', id: id, internalCode: m?.internalCode, condition: 'OK', quantity: qtyOf(id) };
           });
 
           // La firma no viaja en la colección `users` (es base64 y pesa; ver
@@ -1272,8 +1314,8 @@ export default function MovimientosPagnolPage() {
         });
 
       } else if (selectedType === 'WITHDRAWAL') {
-        // Here we only reach if it's Class C (auto-approvable)
-        // because Class A/B stops at handleConfirmItems
+        // Sólo llega lo que no requiere aprobación previa (handleConfirmItems
+        // desvía lo demás): clase C, y también B si la empresa usa revisión posterior.
 
         // 0. Pre-generar ID secuencial antes del PDF (RPC atómica, sin race condition)
         const tenantId = getTenantId();
@@ -1291,7 +1333,7 @@ export default function MovimientosPagnolPage() {
         try {
           const itemsForContract = selectedAssetIds.map(id => {
             const m = materialsMap.get(id);
-            return { name: m?.name || 'Item', id: id, internalCode: m?.internalCode, condition: 'OK' };
+            return { name: m?.name || 'Item', id: id, internalCode: m?.internalCode, condition: 'OK', quantity: qtyOf(id) };
           });
 
           // Ver la nota de la entrega con solicitud: la firma se pide por fila.
@@ -1323,7 +1365,7 @@ export default function MovimientosPagnolPage() {
 
         await Promise.race([
           addAndApproveMaterialRequest({
-            items: selectedAssetIds.map(id => ({ materialId: id, quantity: 1 })),
+            items: selectedAssetIds.map(id => ({ materialId: id, quantity: qtyOf(id) })),
             area: site,
             contractId: txContractId,
             contractName: txContractName,
@@ -1331,16 +1373,41 @@ export default function MovimientosPagnolPage() {
             contractUrl: contractUrl,
             internalCode: directTxCode,
             warehouseId: txWarehouseId,
+            requiresReview: postReview,
           }),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Tiempo de espera excedido al registrar la entrega. Verifica tu conexión y reintenta.')), 20000)
           ),
         ]);
+        if (postReview) {
+          // Aviso a quien revisa: supervisores del contrato; si no hay, administración.
+          // Si el push falla la entrega igual quedó: el retiro espera en su bandeja.
+          const reviewers = reviewerIdsFor(txContractId, selectedEmployee.id, users || [], contractWorkers || []);
+          if (reviewers.length > 0) {
+            const n = selectedAssetIds.length;
+            fetch('/api/push/send', {
+              method: 'POST',
+              headers: await authHeaders(),
+              body: JSON.stringify({
+                tenantId: getTenantId(),
+                targetUserIds: reviewers,
+                payload: {
+                  title: 'Retiro por revisar',
+                  body: `${selectedEmployee.name} retiró ${n} ítem${n !== 1 ? 's' : ''} en el pañol${txContractName ? ` (${txContractName})` : ''}.`,
+                  url: '/dashboard/supervisor/revisar-retiros',
+                  tag: `withdrawal-review-${directTxCode}`,
+                },
+              }),
+            }).catch(() => {});
+          }
+        }
         refreshData();
         toast({
           variant: 'success',
           title: "Transacción Cerrada",
-          description: "Material entregado correctamente (Clase C)."
+          description: postReview
+            ? "Material entregado. Queda pendiente de revisión del supervisor."
+            : "Material entregado correctamente (Clase C)."
         });
       } else {
         const items = selectedAssetIds.map(id => ({
@@ -1532,7 +1599,7 @@ export default function MovimientosPagnolPage() {
                           <Button
                             size="sm"
                             onClick={() => handleContinueDelivery(tx)}
-                            className="h-6 text-[8px] bg-primary text-primary-foreground animate-pulse hover:animate-none"
+                            className="h-8 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest bg-primary text-primary-foreground animate-pulse hover:animate-none"
                           >
                             Entregar
                           </Button>
@@ -1924,6 +1991,17 @@ export default function MovimientosPagnolPage() {
                     </div>
                   )}
 
+                  {selectedType === 'WITHDRAWAL' && postReview && (
+                    <div className="p-4 bg-info-subtle rounded-2xl border border-info/20 text-info-subtle-foreground">
+                      <p className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                        <ShieldCheck size={11} /> Retiro con revisión posterior
+                      </p>
+                      <p className="text-[10px] font-bold mt-1">
+                        Se entrega en el acto y el supervisor revisa la lista después. Sólo la clase A pide aprobación antes.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Contrato o área del trabajador: define de qué desglose sale (o a cuál vuelve) el stock.
                       Un área interna (Administración, Finanzas…) se comporta igual que un contrato. */}
                   <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20">
@@ -2042,6 +2120,57 @@ export default function MovimientosPagnolPage() {
                     </div>
                   </div>
 
+                  {/* Lista de retiro: lo elegido, con cantidad. Un trabajador saca 10-15
+                      cosas por día; sin esta lista el pañolero no veía qué llevaba
+                      cargado ni podía decir "3 discos" sin repetir el ítem. */}
+                  {selectedType === 'WITHDRAWAL' && selectedAssetIds.length > 0 && (
+                    <div className="p-4 bg-card rounded-2xl border-2 border-primary/20 space-y-3">
+                      <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5">
+                        <ClipboardList size={11} /> Lista de retiro ({selectedAssetIds.length})
+                      </p>
+                      <div className="space-y-2">
+                        {selectedAssetIds.map(id => {
+                          const m = materialsMap.get(id);
+                          const max = Math.max(1, m?.stock || 1);
+                          const q = qtyOf(id);
+                          const setQ = (n: number) => setSelectedQty(prev => ({ ...prev, [id]: Math.min(max, Math.max(1, n)) }));
+                          return (
+                            <div key={id} className="flex items-center gap-3 p-2.5 rounded-xl border bg-muted/30">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-black text-[11px] uppercase leading-snug break-words">{m?.name || 'Ítem'}</p>
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  {m?.internalCode && <span className="text-[9px] text-muted-foreground font-mono">{m.internalCode}</span>}
+                                  {needsPriorApproval(m)
+                                    ? <Badge className="bg-destructive/10 text-destructive text-[7px]">Requiere aprobación</Badge>
+                                    : postReview && <Badge className="bg-info-subtle text-info-subtle-foreground text-[7px]">Revisión posterior</Badge>}
+                                </div>
+                              </div>
+                              {max > 1 ? (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button type="button" onClick={() => setQ(q - 1)} disabled={q <= 1} aria-label="Menos"
+                                    className="h-8 w-8 rounded-lg border bg-card flex items-center justify-center disabled:opacity-40"><Minus size={12} /></button>
+                                  <input
+                                    type="number" inputMode="numeric" min={1} max={max} value={q}
+                                    onChange={e => setQ(Number(e.target.value) || 1)}
+                                    aria-label={`Cantidad de ${m?.name || 'ítem'}`}
+                                    className="h-8 w-12 rounded-lg border bg-card text-center text-xs font-black outline-none focus:border-primary/40"
+                                  />
+                                  <button type="button" onClick={() => setQ(q + 1)} disabled={q >= max} aria-label="Más"
+                                    className="h-8 w-8 rounded-lg border bg-card flex items-center justify-center disabled:opacity-40"><Plus size={12} /></button>
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase w-10 text-center leading-tight">{m?.unit || 'ud'}<br />de {max}</span>
+                                </div>
+                              ) : (
+                                <span className="text-[9px] font-black text-muted-foreground uppercase shrink-0">1 {m?.unit || 'ud'}</span>
+                              )}
+                              <button type="button" onClick={() => toggleAsset(id)} aria-label="Quitar"
+                                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive flex items-center justify-center shrink-0"><X size={14} /></button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {!searchAsset.trim() && availableAssets.length > ASSET_DISPLAY_LIMIT && (
                     <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest text-center">
                       Mostrando {ASSET_DISPLAY_LIMIT} más utilizados de {availableAssets.length} — busca para filtrar o escanea QR
@@ -2063,7 +2192,7 @@ export default function MovimientosPagnolPage() {
                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                               <Badge variant="outline" className="text-[7px] font-mono uppercase">{a.internalCode || a.id.substring(0, 8)}</Badge>
                               {(a.stock || 0) > 0 && <span className="text-[7px] font-bold text-success">{a.stock} disp.</span>}
-                              {selectedType === 'WITHDRAWAL' && (a.class === 'A' || a.class === 'B') && <Badge className="bg-destructive/10 text-destructive text-[7px]">Restringido</Badge>}
+                              {selectedType === 'WITHDRAWAL' && needsPriorApproval(a) && <Badge className="bg-destructive/10 text-destructive text-[7px]">Requiere aprobación</Badge>}
                             </div>
                           </div>
                         </div>
@@ -2244,6 +2373,9 @@ export default function MovimientosPagnolPage() {
                                   </p>
                                 )}
                               </div>
+                              {selectedType === 'WITHDRAWAL' && (
+                                <span className="text-[10px] font-black shrink-0">× {qtyOf(id)}</span>
+                              )}
                               {asset?.class && (
                                 <Badge className="text-[8px] shrink-0 bg-muted text-muted-foreground">Clase {asset.class}</Badge>
                               )}
@@ -2341,10 +2473,7 @@ export default function MovimientosPagnolPage() {
                 <>
                   <Button variant="ghost" onClick={() => { stopCamera(); setIsModalOpen(false); }} className="text-muted-foreground font-black uppercase text-[10px]">Cancelar</Button>
                   {flowStep === 'ITEMS SELECTION' && (() => {
-                    const hasRestricted = selectedType === 'WITHDRAWAL' && selectedAssetIds.some(id => {
-                      const m = materialsMap.get(id);
-                      return m?.class === 'A' || m?.class === 'B';
-                    });
+                    const hasRestricted = selectedType === 'WITHDRAWAL' && selectedAssetIds.some(id => needsPriorApproval(materialsMap.get(id)));
                     return (
                       <Button
                         disabled={selectedAssetIds.length === 0 || isBiometricPulse}

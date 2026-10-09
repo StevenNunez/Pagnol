@@ -74,3 +74,58 @@ export async function getUserIdsWithPermission(
     .filter((p: any) => roles.includes(p.role) || (p.granted_permissions ?? []).includes(permission))
     .map((p: any) => p.id);
 }
+
+const REQUEST_TABLE = {
+  material: 'material_requests',
+  purchase: 'purchase_requests',
+  rental: 'rental_requests',
+} as const;
+
+/**
+ * RFC-006 F6 — Con la firma por monto encendida, el aviso de "por autorizar" va
+ * sólo a quien le toca: el ADC del contrato del pedido (no a todos los ADC), y en
+ * un retiro del pañol sobre el tope, al Gerente General en vez del ADC. Los demás
+ * autorizadores (administración, director de faena) se mantienen. Sin la
+ * exigencia, o si no se encuentra el pedido, la lista queda como venía.
+ */
+export async function narrowAuthorizers(
+  tenantId: string,
+  type: keyof typeof REQUEST_TABLE,
+  code: string | undefined,
+  userIds: string[],
+): Promise<string[]> {
+  if (!code || userIds.length === 0) return userIds;
+  const { data: tenant } = await admin.from('tenants').select('approval_settings').eq('id', tenantId).single();
+  const settings = (tenant?.approval_settings ?? {}) as { enforced?: boolean; adcMaxGross?: number; vatRate?: number };
+  if (!settings.enforced) return userIds;
+
+  const { data: req } = await admin
+    .from(REQUEST_TABLE[type])
+    .select(type === 'material' ? 'contract_id, items' : 'contract_id')
+    .eq('tenant_id', tenantId)
+    .eq('internal_code', code)
+    .maybeSingle();
+  if (!req) return userIds;
+  const row = req as unknown as { contract_id: string | null; items?: unknown };
+
+  const { data: contract } = row.contract_id
+    ? await admin.from('contracts').select('adc_user_id').eq('id', row.contract_id).maybeSingle()
+    : { data: null };
+  const contractAdc = (contract as { adc_user_id?: string | null } | null)?.adc_user_id ?? null;
+
+  let gerenteTier = false;
+  if (type === 'material') {
+    const { data: net } = await admin.rpc('withdrawal_value_net', { p_items: row.items ?? [], p_tenant: tenantId });
+    const gross = Math.round(Number(net || 0) * (1 + (settings.vatRate ?? 0.19)));
+    gerenteTier = gross > (settings.adcMaxGross ?? 500000);
+  }
+
+  const { data: profiles } = await admin.from('profiles').select('id, role').in('id', userIds);
+  const roleOf = new Map((profiles ?? []).map((p: { id: string; role: string }) => [p.id, p.role]));
+  return userIds.filter((id) => {
+    const role = roleOf.get(id);
+    if (role === 'adc') return !gerenteTier && id === contractAdc;
+    if (role === 'gerente-general') return type !== 'material' || gerenteTier;
+    return true;
+  });
+}

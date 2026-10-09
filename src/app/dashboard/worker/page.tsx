@@ -12,6 +12,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
+import { canOpenPath } from '@/modules/core/lib/module-access';
 import { formatDistanceToNow, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { PageHeader } from '@/components/page-header';
@@ -32,8 +33,11 @@ import { PageHeader } from '@/components/page-header';
 // Regla: el saldo, el cupo y los adelantos se calculan en UN solo lugar.
 
 export default function WorkerDashboard() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { dailyTalks } = useAppState();
+  // "Mi Asistencia" abre el módulo completo de Asistencia (no hay vista personal):
+  // sólo se ofrece a quien puede abrirlo.
+  const canSeeAttendance = canOpenPath('/dashboard/attendance', can, user?.role);
 
   const pendingTalks = useMemo(() => {
     if (!user || !dailyTalks) return [];
@@ -110,8 +114,8 @@ export default function WorkerDashboard() {
       </Card>
 
       {/* --- MENU DE ACCESOS RÁPIDOS --- */}
-      <div className="grid grid-cols-2 gap-4">
-        <Link href="/dashboard/attendance">
+      <div className={canSeeAttendance ? "grid grid-cols-2 gap-4" : "grid grid-cols-1 gap-4"}>
+        {canSeeAttendance && <Link href="/dashboard/attendance">
           <Card className="hover:bg-muted/50 transition-colors h-full">
             <CardContent className="p-4 flex flex-col items-center justify-center text-center gap-2">
               <div className="p-3 rounded-full bg-info-subtle text-info-subtle-foreground">
@@ -120,7 +124,7 @@ export default function WorkerDashboard() {
               <span className="font-semibold text-sm">Mi Asistencia</span>
             </CardContent>
           </Card>
-        </Link>
+        </Link>}
 
         <Link href="/dashboard/wallet">
           <Card className="hover:bg-muted/50 transition-colors h-full">

@@ -23,7 +23,7 @@ import {
   Loader2,
   AlertCircle,
   Mail,
-  Send
+  Send, Receipt
 } from 'lucide-react';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -46,6 +46,11 @@ const orderItemColumns: DataTableColumn<OrderItem>[] = [
     },
 ];
 import { generatePurchaseOrderPDF } from '@/lib/pdf-generator';
+import { ProposalSubmitDialog } from '@/components/approvals/proposal-submit-dialog';
+import { DirectPurchaseDialog } from '@/components/approvals/direct-purchase-dialog';
+import { ProposalStatusPanel } from '@/components/approvals/proposal-status-panel';
+import { proposalsForSource, currentProposal } from '@/components/approvals/proposal-utils';
+import type { PurchaseProposalInput } from '@/modules/data/mutations/approvalMutations';
 import { useLots } from '@/hooks/use-lots';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -69,14 +74,21 @@ interface Lot {
 
 interface GenerateOrderCardProps {
     lot: Lot;
-    onArchive: (lot: Lot) => Promise<void>;
 }
 
-const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive }) => {
-    const { suppliers, materials, generatePurchaseOrder } = useAppState();
+const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot }) => {
+    const { suppliers, materials, generatePurchaseOrder, approvalProposals, approvalSignatures, purchaseOrders } = useAppState();
+    const [draft, setDraft] = useState<(PurchaseProposalInput & { title?: string }) | null>(null);
+    // RFC-006 F2: la propuesta (firma por monto) de este lote.
+    const views = useMemo(
+        () => proposalsForSource(approvalProposals, approvalSignatures, purchaseOrders, p => p.sourceType === 'lot' && p.sourceId === lot.lotId),
+        [approvalProposals, approvalSignatures, purchaseOrders, lot.lotId],
+    );
+    const current = currentProposal(views);
+    const lastRejected = !current && views[0]?.state === 'rejected' ? views[0] : null;
     const [selectedSupplier, setSelectedSupplier] = useState<string>('');
     const [isGenerating, setIsGenerating] = useState(false);
-    const [isArchiving, setIsArchiving] = useState(false);
+    const [directOpen, setDirectOpen] = useState(false);
     // Valorización (F0): toda OC nace con precios reales. Se precargan desde el
     // catálogo (materials.unitCost, calce por nombre) y el usuario los confirma.
     const [pricingOpen, setPricingOpen] = useState(false);
@@ -109,33 +121,41 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
     const totalEstimate = lot.requests.reduce((acc, req) => acc + (parseFloat(prices[req.id]) || 0) * (req.quantity || 0), 0);
     const allPriced = lot.requests.every((req) => (parseFloat(prices[req.id]) || 0) > 0);
 
-    const handleGenerateOrder = async () => {
+    // RFC-006 F2: con los precios confirmados se arma la propuesta y se envía a
+    // firma. La OC se emite después, con los precios firmados.
+    const handleSendToSign = () => {
+        const supplier = suppliers.find((s: Supplier) => s.id === selectedSupplier);
+        setPricingOpen(false);
+        setDraft({
+            title: `Lote ${lot.category}`,
+            sourceType: 'lot',
+            sourceId: lot.lotId,
+            requestIds: lot.requests.map(r => r.id),
+            supplierId: selectedSupplier,
+            supplierName: supplier?.name || null,
+            items: lot.requests.map(r => ({
+                requestId: r.id,
+                name: r.materialName,
+                unit: r.unit,
+                quantity: r.quantity,
+                unitPrice: parseFloat(prices[r.id]) || 0,
+            })),
+            netTotal: totalEstimate,
+        });
+    };
+
+    const handleEmit = async () => {
+        if (!current) return;
         setIsGenerating(true);
         try {
-            const numericPrices: Record<string, number> = {};
-            for (const req of lot.requests) numericPrices[req.id] = parseFloat(prices[req.id]) || 0;
-            await generatePurchaseOrder(lot.requests, selectedSupplier, numericPrices);
-            toast({ title: 'Orden Generada', description: `La cotización valorizada para ${lot.category} ha sido creada exitosamente.` });
+            await generatePurchaseOrder(lot.requests, current.proposal.supplierId || '', {}, current.proposal.id);
+            toast({ title: 'OC emitida', description: `Orden de Compra de ${lot.category} por lo firmado.` });
             setSelectedSupplier('');
-            setPricingOpen(false);
-        } catch (error: any) {
-            // Los errores de Supabase (PostgrestError) son objetos planos, no
-            // instancias de Error: leer .message directo o se pierde el detalle.
-            const errorMessage = error?.message || 'Error desconocido';
-            toast({ variant: 'destructive', title: 'Error', description: errorMessage || 'No se pudo generar la orden.' });
         } finally {
             setIsGenerating(false);
         }
     };
 
-    const handleArchiveWrapper = async () => {
-        setIsArchiving(true);
-        try {
-            await onArchive(lot);
-        } finally {
-            setIsArchiving(false);
-        }
-    };
 
     const totalRequests = lot.requests.length;
     const totalQuantity = lot.requests.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
@@ -156,6 +176,15 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
                 </div>
             </CardHeader>
             <CardContent className="space-y-4 flex-grow flex flex-col justify-end pt-0">
+                {current ? (
+                    <ProposalStatusPanel view={current} onEmit={handleEmit} />
+                ) : (<>
+                {lastRejected && (
+                    <p className="text-xs text-destructive">
+                        {lastRejected.proposal.internalCode} fue rechazada
+                        {lastRejected.signatures.find(s => s.decision === 'rejected')?.note ? `: "${lastRejected.signatures.find(s => s.decision === 'rejected')!.note}"` : ''}.
+                    </p>
+                )}
                 <div className="space-y-2 mt-4">
                     <Select onValueChange={setSelectedSupplier} value={selectedSupplier}>
                         <SelectTrigger>
@@ -180,7 +209,7 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
                         disabled={!selectedSupplier || totalRequests === 0 || isGenerating}
                     >
                         {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileText className="mr-2 h-4 w-4"/>}
-                        Generar
+                        Valorizar y enviar a firma
                     </Button>
 
                     {/* Diálogo de valorización: la OC no puede nacer sin precios */}
@@ -223,42 +252,33 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
                             </div>
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setPricingOpen(false)}>Cancelar</Button>
-                                <Button onClick={handleGenerateOrder} disabled={!allPriced || isGenerating}>
-                                    {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileText className="mr-2 h-4 w-4"/>}
-                                    Generar valorizada
+                                <Button onClick={handleSendToSign} disabled={!allPriced || isGenerating}>
+                                    <FileText className="mr-2 h-4 w-4"/>
+                                    Continuar
                                 </Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
 
-                    <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                             <Button 
-                                variant="outline" 
-                                className="bg-green-600 hover:bg-green-700 text-white border-green-700 w-12 px-0 shrink-0" 
-                                disabled={totalRequests === 0 || isArchiving}
-                                title="Finalizar lote manualmente"
-                            >
-                                {isArchiving ? <Loader2 className="h-4 w-4 animate-spin"/> : <CheckCircle className="h-4 w-4"/>}
-                            </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>¿Finalizar este Lote?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    Esta acción marcará todas las solicitudes de este lote como "ordenadas" sin generar una cotización nueva. 
-                                    Úsalo si ya gestionaste estas solicitudes por otro medio.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction onClick={handleArchiveWrapper} className="bg-green-600 hover:bg-green-700">
-                                    Confirmar Finalización
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
                 </div>
+                {/* RFC-006 F3: compra que ya se hizo por fuera — con su factura o boleta. */}
+                <button
+                    type="button"
+                    onClick={() => setDirectOpen(true)}
+                    disabled={totalRequests === 0}
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 self-start disabled:opacity-50"
+                >
+                    <Receipt className="h-3.5 w-3.5" /> Compra ya realizada (con factura o boleta)
+                </button>
+                <DirectPurchaseDialog
+                    open={directOpen}
+                    onClose={() => setDirectOpen(false)}
+                    lotId={lot.lotId}
+                    title={`Lote ${lot.category}`}
+                    requests={lot.requests}
+                />
+                </>)}
+                <ProposalSubmitDialog draft={draft} onClose={() => setDraft(null)} />
             </CardContent>
         </Card>
     );
@@ -267,7 +287,7 @@ const GenerateOrderCard: React.FC<GenerateOrderCardProps> = ({ lot, onArchive })
 // --- Componente Principal ---
 
 export default function OrdersPage() {
-    const { purchaseOrders, suppliers, users, cancelPurchaseOrder, archiveLot, currentTenant } = useAppState();
+    const { purchaseOrders, suppliers, users, cancelPurchaseOrder, currentTenant } = useAppState();
     const { user } = useAuth();
     const { batchedLots } = useLots();
     const { toast } = useToast();
@@ -393,28 +413,13 @@ export default function OrdersPage() {
         }
     };
 
-    const handleArchiveLot = useCallback(async (lot: Lot) => {
-      if (!lot || lot.requests.length === 0) {
-        toast({ variant: "destructive", title: "Error", description: "El lote está vacío o no es válido." });
-        return;
-      }
-      const requestIds = lot.requests.map(r => r.id);
-      try {
-        await archiveLot(requestIds);
-        toast({ title: 'Lote Archivado', description: 'Solicitudes marcadas como procesadas correctamente.' });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Error desconocido";
-        toast({ variant: "destructive", title: "Error al archivar", description: errorMessage });
-        throw error;
-      }
-    }, [archiveLot, toast]);
 
 
     return (
         <div className="flex flex-col gap-8 fade-in pb-10">
             <PageHeader
-                title="Generador de Cotizaciones"
-                description="Genera, visualiza y gestiona las solicitudes de cotización para los proveedores."
+                title="Órdenes de Compra"
+                description="Valoriza cada lote, envíalo a firma según el monto y emite la OC cuando esté firmada."
             />
 
             <Card className="border-none shadow-none bg-transparent p-0">
@@ -432,7 +437,7 @@ export default function OrdersPage() {
                     {batchedLots.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                             {batchedLots.map(lot => (
-                                <GenerateOrderCard key={lot.lotId} lot={lot} onArchive={handleArchiveLot} />
+                                <GenerateOrderCard key={lot.lotId} lot={lot} />
                             ))}
                         </div>
                     ) : (

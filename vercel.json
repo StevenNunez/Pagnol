@@ -6,6 +6,7 @@
     "crons": [
         { "path": "/api/cron/rental-alerts", "schedule": "0 12 * * *" },
         { "path": "/api/cron/uf-rate", "schedule": "0 10 * * *" },
-        { "path": "/api/cron/labor-cost", "schedule": "0 6 * * *" }
+        { "path": "/api/cron/labor-cost", "schedule": "0 6 * * *" },
+        { "path": "/api/cron/withdrawal-reviews", "schedule": "0 21 * * *" }
     ]
 }

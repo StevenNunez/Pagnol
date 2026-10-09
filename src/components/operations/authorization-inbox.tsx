@@ -16,7 +16,7 @@ import { UrgencyBadge, ExpenseKindBadge, SuggestedSupplier, UrgencyReason, Servi
 // ── Forma normalizada de cualquier solicitud "autorizable" ────────────────────
 // Material / Compra / Arriendo se mapean a esto antes de pasar por el inbox, así
 // el componente es uno solo y no se duplica el flujo aprobar/rechazar por tipo.
-export type ApprovableLine = { label: string; qty?: number; meta?: string };
+export type ApprovableLine = { label: string; qty?: number; meta?: string; /** Lo que pidió terreno si el Jefe de Operaciones lo cambió. */ originalQty?: number | null };
 
 export type ApprovableRequest = {
   id: string;
@@ -30,6 +30,10 @@ export type ApprovableRequest = {
    * Opcionales — las solicitudes de material y arriendo todavía no los tienen,
    * y los requerimientos anteriores a la migración tampoco. */
   meta?: RequestMeta;
+  /** RFC-006 F1: quién lo revisó en Operaciones antes de llegar al ADC. */
+  reviewedBy?: { name: string; note?: string | null } | null;
+  /** RFC-006 F5: valor y quién firma (retiros por valor). */
+  valueNote?: string | null;
 };
 
 interface AuthorizationInboxProps {
@@ -137,6 +141,9 @@ export function AuthorizationInbox({
                     <span className="text-primary shrink-0">{lineIcon ?? <Package className="h-3.5 w-3.5" />}</span>
                     {ln.label}
                     {ln.qty != null && <span className="text-muted-foreground font-normal">×{ln.qty}</span>}
+                    {ln.originalQty != null && ln.originalQty !== ln.qty && (
+                      <span className="text-[10px] font-normal text-warning">(pidió {ln.originalQty})</span>
+                    )}
                     {ln.meta && <span className="text-[10px] font-normal text-muted-foreground">({ln.meta})</span>}
                   </div>
                 ))}
@@ -147,6 +154,15 @@ export function AuthorizationInbox({
                 {req.requesterName && <span><b>Solicita:</b> {req.requesterName}</span>}
               </div>
               {req.justification && <div className="text-xs text-muted-foreground italic">"{req.justification}"</div>}
+              {req.valueNote && (
+                <div className="text-xs font-semibold text-foreground bg-muted/60 rounded-lg px-2.5 py-1.5 w-fit">{req.valueNote}</div>
+              )}
+              {req.reviewedBy && (
+                <div className="flex items-start gap-1.5 text-xs text-success-subtle-foreground bg-success-subtle rounded-lg px-2.5 py-1.5 w-fit">
+                  <Check className="h-3.5 w-3.5 shrink-0 mt-px" />
+                  <span><b>Revisado por {req.reviewedBy.name}</b>{req.reviewedBy.note ? `: ${req.reviewedBy.note}` : ''}</span>
+                </div>
+              )}
               {req.meta && <UrgencyReason req={req.meta} />}
               {req.meta && <SuggestedSupplier req={req.meta} />}
 

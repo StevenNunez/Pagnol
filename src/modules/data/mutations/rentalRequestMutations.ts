@@ -13,6 +13,7 @@ import type {
 } from '@/modules/core/lib/data';
 
 import type { MutationContext as Context } from './context';
+import { loadSignedProposal } from './approvalMutations';
 
 // ── Categorías de Arriendo (gestionables por tenant) ──────────────────────────
 
@@ -87,8 +88,10 @@ export async function addRentalRequest(
 
   const internalCode = data.internalCode || await nextInternalCode(tenantId, 'ARR', 'SOLPED');
 
-  // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
-  const preAuthorized = can('rentals:authorize');
+  // RFC-006 F1: el arriendo pasa primero por el Jefe de Operaciones. Si quien
+  // crea ya revisa, entra revisado; y si además autoriza, salta el gate del ADC.
+  const opsReviewed = can('rentals:review_operations');
+  const preAuthorized = opsReviewed && can('rentals:authorize');
   const now = new Date().toISOString();
 
   const { data: created, error } = await supabase.from('rental_requests').insert({
@@ -110,13 +113,19 @@ export async function addRentalRequest(
     status: 'pending',
     adc_authorized_at: preAuthorized ? now : null,
     adc_authorized_by: preAuthorized ? user.id : null,
+    // Sólo si quedó revisado: así quien no revisa no depende de la columna nueva.
+    ...(opsReviewed ? {
+      ops_reviewed_at: now, ops_reviewed_by: user.id, ops_reviewed_by_name: user.name || 'Usuario',
+      ops_review_note: 'Creado por quien revisa',
+    } : {}),
     created_at: now,
   }).select('id').single();
 
   if (error) throw new Error(`Error al crear solicitud de arriendo: ${error.message}`);
 
-  // Push al ADC solo si quedó pendiente de autorización.
-  if (!preAuthorized) notifyAuthorizers('rental', { tenantId, code: internalCode, requesterName: user.name || 'Usuario' });
+  // Push a quien tiene que mirarlo ahora: el Jefe de Operaciones o el ADC.
+  if (!opsReviewed) notifyAuthorizers('rental_review', { tenantId, code: internalCode, requesterName: user.name || 'Usuario' });
+  else if (!preAuthorized) notifyAuthorizers('rental', { tenantId, code: internalCode, requesterName: user.name || 'Usuario' });
 
   return created.id;
 }
@@ -130,12 +139,22 @@ export async function authorizeRentalRequest(requestId: string, { user, tenantId
   if (!can('rentals:authorize'))
     throw new Error('No tienes permiso para autorizar solicitudes de arriendo.');
 
-  const { error } = await supabase
+  // RFC-006 F1: el ADC no puede saltarse la revisión del Jefe de Operaciones.
+  const { data: row, error: fetchErr } = await supabase
+    .from('rental_requests').select('*').eq('id', requestId).eq('tenant_id', tenantId).single();
+  if (fetchErr || !row) throw new Error('La solicitud de arriendo no existe.');
+  if ('ops_reviewed_at' in row && row.ops_reviewed_at === null) {
+    throw new Error('Esta solicitud todavía no pasa la revisión del Jefe de Operaciones.');
+  }
+
+  const { data: updated, error } = await supabase
     .from('rental_requests')
     .update({ adc_authorized_at: new Date().toISOString(), adc_authorized_by: user.id })
     .eq('id', requestId)
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    .select('id');
   if (error) throw error;
+  if (!updated || updated.length === 0) throw new Error('No se pudo guardar la autorización. Recarga la página.');
 }
 
 export async function updateRentalRequestStatus(
@@ -310,11 +329,18 @@ export async function recordRentalQuoteResponse(
 export async function awardRentalQuote(
   quoteRequestId: string,
   responseId: string,
-  options: { currency?: string; paymentDay?: number | null; periods?: number } = {},
+  options: { currency?: string; paymentDay?: number | null; periods?: number; proposalId?: string } = {},
   context: Context
 ): Promise<{ rentalContractId: string; ocNumber: string }> {
   const { user, tenantId } = context;
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+
+  // RFC-006 F4: se adjudica la oferta que se firmó (por su valor mensual), no otra.
+  if (!options.proposalId) throw new Error('Este arriendo no tiene una propuesta firmada. Envíalo a firma antes de adjudicar.');
+  const proposal = await loadSignedProposal(options.proposalId, tenantId);
+  if (proposal.kind !== 'rental' || proposal.sourceId !== quoteRequestId || proposal.quoteId !== responseId) {
+    throw new Error('La propuesta firmada no corresponde a esta oferta de arriendo.');
+  }
 
   const { data: row, error: fetchErr } = await supabase
     .from('rental_quote_requests')
@@ -369,7 +395,8 @@ export async function awardRentalQuote(
       ocStatus: 'pending',
       paymentTermsDays: 30,
       clientContractId,
-      notes: `Generado al adjudicar RFQ ${quote.internalCode || quote.id} a ${winner.partyName}.`,
+      approvalProposalId: proposal.id,
+      notes: `Generado al adjudicar RFQ ${quote.internalCode || quote.id} a ${winner.partyName} (firma ${proposal.internalCode}).`,
     },
     context
   );

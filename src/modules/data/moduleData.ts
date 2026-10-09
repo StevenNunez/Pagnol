@@ -46,7 +46,7 @@ export const ALL_COLLECTIONS = [
     'users', 'materials', 'requests', 'returnRequests', 'purchaseRequests',
     'suppliers', 'materialCategories', 'units', 'purchaseLots', 'purchaseOrders',
     'quoteRequests', 'goodsReceipts', 'costCenters', 'supplierPayments',
-    'salaryAdvances', 'attendanceLogs', 'assignedChecklists', 'biometricVerifications', 'safetyInspections',
+    'salaryAdvances', 'attendanceLogs', 'assignedChecklists', 'biometricVerifications', 'withdrawalReviews', 'withdrawalReviewResolutions', 'approvalProposals', 'approvalSignatures', 'safetyInspections',
     'checklistTemplates', 'behaviorObservations', 'stockMovements', 'workItems', 'workProjects',
     'progressLogs', 'paymentStates', 'dailyTalks', 'maintenanceOrders',
     'maintenanceLogs', 'eaDocuments', 'protocolTemplates', 'protocols',
@@ -73,6 +73,7 @@ void _exhaustive;
  */
 export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
     'abastecimiento': [
+        'approvalProposals', 'approvalSignatures', 'contracts',
         'costCenters', 'goodsReceipts', 'materialCategories', 'materials',
         'purchaseLots', 'purchaseOrders', 'purchaseRequests', 'quoteRequests',
         'rentalQuoteRequests', 'rentalRequests', 'salaryAdvances',
@@ -83,7 +84,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
         'costCenters', 'shiftSchedules', 'users',
     ],
     'authorizations': [
-        'biometricVerifications',
+        'biometricVerifications', 'approvalProposals', 'approvalSignatures', 'contracts', 'purchaseOrders',
         'materials', 'purchaseRequests', 'rentalRequests', 'requests', 'users',
     ],
     'bodega': [],
@@ -103,7 +104,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
         'attendanceLogs', 'contracts', 'users',
     ],
     'pagnol': [
-        'biometricVerifications',
+        'biometricVerifications', 'withdrawalReviews', 'withdrawalReviewResolutions',
         'clients', 'contractWorkers', 'contracts', 'eaDocuments',
         'maintenanceLogs', 'maintenanceOrders', 'materialCategories',
         'materialStocks', 'materials', 'purchaseRequests', 'rentalRequests',
@@ -120,6 +121,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
         'shiftSchedules', 'users',
     ],
     'purchasing': [
+        'approvalProposals', 'approvalSignatures',
         'clients', 'contractWorkers', 'contracts', 'materialCategories',
         'materials', 'purchaseLots', 'purchaseOrders', 'purchaseRequests',
         'rentalCategories', 'rentalRequests', 'supplierPayments', 'suppliers',
@@ -127,7 +129,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
     ],
     'rentals': [
         'contracts', 'materials', 'rentalAssets', 'rentalContracts',
-        'rentalParties', 'rentalPayments', 'suppliers',
+        'rentalParties', 'rentalPayments', 'suppliers', 'users',
     ],
     'reports': [
         'clients', 'contracts', 'materialCategories', 'materialStocks',
@@ -148,6 +150,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
         'clients', 'contractWorkers', 'contracts', 'materialCategories',
         'materialStocks', 'materials', 'purchaseRequests', 'rentalCategories',
         'rentalRequests', 'requests', 'returnRequests', 'suppliers', 'users',
+        'withdrawalReviews', 'withdrawalReviewResolutions',
     ],
     'users': [
         'attendanceLogs', 'clients', 'contractWorkers', 'contracts',

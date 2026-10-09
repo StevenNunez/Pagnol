@@ -5,10 +5,16 @@ import { PageShell } from '@/components/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { AuthorizationInbox, type ApprovableRequest } from '@/components/operations/authorization-inbox';
+import { OpsReviewInbox, type OpsReviewGroup } from '@/components/operations/ops-review-inbox';
+import { ProposalSignInbox, useProposalsToSign } from '@/components/approvals/proposal-sign-inbox';
+import { UrgentPurchasesReport } from '@/components/approvals/urgent-purchases-report';
+import { isWaitingOps, isWaitingAdc } from '@/components/supervisor-purchases/purchase-pipeline';
+import { resolveSigners, withdrawalValueNet } from '@/modules/data/mutations/approvalMath';
 import { rentalCategoryLabel } from '@/modules/core/lib/data';
 import { exceptionStatus } from '@/modules/data/mutations/biometricMutations';
 import { useAuth } from '@/modules/core/contexts/app-provider';
 import { Package, ShoppingCart, Truck, ScanFace } from 'lucide-react';
+import type { PurchaseRequest } from '@/modules/core/lib/data';
 
 export default function AuthorizationsPage() {
   const {
@@ -16,14 +22,25 @@ export default function AuthorizationsPage() {
     authorizeMaterialRequest, updateMaterialRequestStatus,
     authorizePurchaseRequest, updatePurchaseRequestStatus,
     authorizeRentalRequest, updateRentalRequestStatus,
+    reviewPurchaseRequests, reviewRentalRequest,
     biometricVerifications, resolveBiometricException,
+    contracts, currentTenant,
     can,
   } = useAppState();
   const { user } = useAuth();
 
   const canMaterial = can('material_requests:authorize');
+  // RFC-006 F6: el Gerente firma retiros sobre el tope, pero las entregas sin
+  // biometría son de la operación diaria del pañol (ADC / administración).
+  const canBiometric = canMaterial && user?.role !== 'gerente-general';
   const canPurchase = can('purchase_requests:authorize');
   const canRental = can('rentals:authorize');
+  // RFC-006 F1: el Jefe de Operaciones revisa compras y arriendos antes del ADC.
+  const canReviewPurchase = can('purchase_requests:review_operations');
+  const canReviewRental = can('rentals:review_operations');
+  // RFC-006 F2: firma de compras según el monto (ADC del contrato / Gerente).
+  const canSign = can('approvals:sign_adc') || can('approvals:sign_gerente');
+  const toSign = useProposalsToSign();
 
   // Mapa materialId → nombre, para mostrar las líneas de las solicitudes de material.
   const materialMap = useMemo(() => {
@@ -38,32 +55,64 @@ export default function AuthorizationsPage() {
     return m;
   }, [users]);
 
+  // RFC-006 F5: con la exigencia encendida, el retiro lo firma el ADC de su
+  // contrato (bajo el tope) o el Gerente General (sobre el tope), según su valor.
+  const enforced = !!currentTenant?.approvalSettings?.enforced;
+  const isAdminRole = ['administrador', 'soporte-pagnol', 'super-admin'].includes(user?.role || '');
+  const unitCost = useMemo(() => new Map((materials || []).map((m: any) => [m.id, m.unitCost])), [materials]);
+  const contractById = useMemo(() => new Map((contracts || []).map((c: any) => [c.id, c])), [contracts]);
+
+  // RFC-006 F6: con la exigencia encendida, un ADC ve sólo los pedidos de los
+  // contratos donde él es el ADC asignado (la base no le deja autorizar otros).
+  const onlyMyContracts = enforced && user?.role === 'adc';
+  const isMyContract = (contractId?: string | null) =>
+    !onlyMyContracts || (!!contractId && contractById.get(contractId)?.adcUserId === user?.id);
+
   // Solo pendientes SIN autorizar (gate del ADC abajo).
   const materialItems: ApprovableRequest[] = useMemo(() =>
     (materialRequests || [])
       .filter((r: any) => r.status === 'pending' && !r.adcAuthorizedAt)
-      .map((r: any) => ({
-        id: r.id,
-        code: r.internalCode,
-        requesterName: r.userName || userMap.get(r.supervisorId),
-        contractName: r.contractName,
-        date: r.createdAt,
-        lines: (r.items || []).map((it: any) => ({
-          label: materialMap.get(it.materialId) || 'Material',
-          qty: it.quantity,
-        })),
-      })),
-  [materialRequests, materialMap, userMap]);
+      .map((r: any) => {
+        const c = r.contractId ? contractById.get(r.contractId) : null;
+        const res = resolveSigners({
+          net: withdrawalValueNet(r.items, unitCost),
+          settings: currentTenant?.approvalSettings,
+          contracts: c ? [{ id: c.id, name: c.name, adcUserId: c.adcUserId }] : [],
+        });
+        const signer = res.tier === 'gerente' ? 'Gerente General'
+          : c?.adcUserId ? `${userMap.get(c.adcUserId) || 'ADC'} (ADC ${c.name})`
+          : c ? `ADC de ${c.name} (sin asignar)` : 'administración (sin contrato)';
+        const mine = isAdminRole
+          || (res.tier === 'gerente' && user?.role === 'gerente-general')
+          || (res.tier === 'adc' && !!c?.adcUserId && c.adcUserId === user?.id);
+        return {
+          id: r.id,
+          code: r.internalCode,
+          requesterName: r.userName || userMap.get(r.supervisorId),
+          contractName: r.contractName,
+          date: r.createdAt,
+          valueNote: enforced ? `Valor ${'$' + res.gross.toLocaleString('es-CL')} con IVA · firma: ${signer}` : null,
+          _mine: mine,
+          lines: (r.items || []).map((it: any) => ({
+            label: materialMap.get(it.materialId) || 'Material',
+            qty: it.quantity,
+          })),
+        };
+      })
+      // Cada firmante ve lo suyo (administración, todo).
+      .filter((x: any) => !enforced || x._mine),
+  [materialRequests, materialMap, userMap, contractById, unitCost, currentTenant?.approvalSettings, enforced, isAdminRole, user?.id, user?.role]);
 
   const purchaseItems: ApprovableRequest[] = useMemo(() =>
     (purchaseRequests || [])
       // Un requerimiento de arriendo ya viaja en la pestaña "Arriendo" a través
       // de su solicitud: si apareciera también acá, el ADC vería el mismo
       // pedido dos veces y lo autorizaría dos veces (RFC-004 F3).
-      .filter((r: any) => r.status === 'pending' && !r.adcAuthorizedAt && !r.rentalRequestId)
+      .filter((r: any) => isWaitingAdc(r) && !r.rentalRequestId && isMyContract(r.contractId))
       .map((r: any) => ({
         id: r.id,
         code: r.internalCode || r.id,
+        reviewedBy: r.opsReviewedByName ? { name: r.opsReviewedByName, note: r.opsReviewNote } : null,
         requesterName: r.requesterName || userMap.get(r.supervisorId),
         contractName: r.contractName,
         date: r.createdAt,
@@ -74,6 +123,7 @@ export default function AuthorizationsPage() {
         lines: [{
           label: r.materialName,
           qty: r.quantity,
+          originalQty: r.originalQuantity ?? null,
           // Deja explícito cuando el destino es el CLIENTE del contrato (el
           // cliente proporciona el material) — el ADC autoriza sabiendo qué firma.
           // La partida es la otra mitad del CeCo: sin ella no se sabe de qué
@@ -94,11 +144,13 @@ export default function AuthorizationsPage() {
         const bv = b.meta?.neededBy || '9999-12-31';
         return av.localeCompare(bv);
       }),
-  [purchaseRequests, userMap]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [purchaseRequests, userMap, onlyMyContracts, contractById, user?.id]);
 
   const rentalItems: ApprovableRequest[] = useMemo(() =>
     (rentalRequests || [])
-      .filter((r: any) => r.status === 'pending' && !r.adcAuthorizedAt)
+      // `opsReviewedAt === undefined` = migración sin aplicar: se comporta como antes.
+      .filter((r: any) => r.status === 'pending' && !r.adcAuthorizedAt && r.opsReviewedAt !== null && isMyContract(r.contractId))
       .map((r: any) => ({
         id: r.id,
         code: r.internalCode,
@@ -106,10 +158,64 @@ export default function AuthorizationsPage() {
         contractName: r.contractName,
         date: r.createdAt,
         justification: r.justification,
+        reviewedBy: r.opsReviewedByName ? { name: r.opsReviewedByName, note: r.opsReviewNote } : null,
         lines: (r.items || []).map((it: any) => ({
           label: it.name,
           qty: it.quantity,
+          originalQty: it.originalQuantity ?? null,
           meta: rentalCategoryLabel(it.category),
+        })),
+      })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [rentalRequests, userMap, onlyMyContracts, contractById, user?.id]);
+
+  // ── RFC-006 F1: bandeja del Jefe de Operaciones ────────────────────────────
+  // Un pedido de compra son varias filas con el mismo batch_id: se revisa entero.
+  const opsPurchaseGroups: OpsReviewGroup[] = useMemo(() => {
+    const groups = new Map<string, PurchaseRequest[]>();
+    for (const r of (purchaseRequests || []) as PurchaseRequest[]) {
+      if (!isWaitingOps(r)) continue;
+      const k = r.batchId || r.id;
+      groups.set(k, [...(groups.get(k) ?? []), r]);
+    }
+    return [...groups.entries()].map(([key, unsorted]) => {
+      // En el orden en que se pidieron: la tarjeta muestra el primer código.
+      const rows = [...unsorted].sort((a, b) => (a.internalCode || '').localeCompare(b.internalCode || ''));
+      const first = rows[0];
+      return {
+        key,
+        code: rows.length > 1 ? `${first.internalCode || ''} +${rows.length - 1}` : (first.internalCode || undefined),
+        requesterName: first.requesterName || userMap.get(first.supervisorId),
+        contractName: first.contractName || undefined,
+        date: first.createdAt,
+        justification: first.justification || undefined,
+        meta: first as any,
+        lines: rows.map(r => ({
+          key: r.id,
+          label: r.materialName,
+          meta: [r.itemDescription, r.category].filter(Boolean).join(' · ') || undefined,
+          quantity: Number(r.quantity) || 1,
+          unit: r.unit,
+        })),
+      };
+    }).sort((a, b) => ((a.meta as any)?.neededBy || '9999-12-31').localeCompare((b.meta as any)?.neededBy || '9999-12-31'));
+  }, [purchaseRequests, userMap]);
+
+  const opsRentalGroups: OpsReviewGroup[] = useMemo(() =>
+    (rentalRequests || [])
+      .filter((r: any) => r.status === 'pending' && r.opsReviewedAt === null && !r.adcAuthorizedAt)
+      .map((r: any) => ({
+        key: r.id,
+        code: r.internalCode,
+        requesterName: r.supervisorName || userMap.get(r.supervisorId),
+        contractName: r.contractName,
+        date: r.createdAt,
+        justification: r.justification,
+        lines: (r.items || []).map((it: any, i: number) => ({
+          key: String(i),
+          label: it.name,
+          meta: rentalCategoryLabel(it.category),
+          quantity: Number(it.quantity) || 1,
         })),
       })),
   [rentalRequests, userMap]);
@@ -168,18 +274,78 @@ export default function AuthorizationsPage() {
     });
   };
 
+  // La pestaña sugerida depende de datos que llegan después del primer render
+  // (si se fijara al montar, la ADC abriría en "Material" con algo por firmar).
+  // Se sigue la sugerencia hasta que la persona elige una pestaña.
+  const [tab, setTab] = React.useState<string | null>(null);
+
+  // Abre en la primera pestaña que le toca a quien entra.
+  const defaultTab = canSign && toSign.length > 0 ? 'firmar'
+    : canReviewPurchase ? 'revisar-compra'
+    : canReviewRental ? 'revisar-arriendo'
+    : canMaterial ? 'material'
+    : canPurchase ? 'compra'
+    : canRental ? 'arriendo'
+    : 'material';
+
   return (
     <PageShell
       title="Autorizaciones"
-      description="Autoriza las solicitudes de terreno (material, compra y arriendo) antes de que Abastecimiento las gestione."
+      description="Revisa y autoriza lo que pide terreno (material, compras y arriendos) antes de que Abastecimiento lo gestione."
     >
-      <Tabs defaultValue="material" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="material">Material ({materialItems.length})</TabsTrigger>
-          <TabsTrigger value="compra">Compra ({purchaseItems.length})</TabsTrigger>
-          <TabsTrigger value="arriendo">Arriendo ({rentalItems.length})</TabsTrigger>
-          <TabsTrigger value="biometria">Sin biometría ({excepcionesPendientes.length})</TabsTrigger>
+      <Tabs value={tab ?? defaultTab} onValueChange={setTab} className="space-y-6">
+        <TabsList className="flex-wrap h-auto">
+          {canSign && <TabsTrigger value="firmar">Por firmar ({toSign.length})</TabsTrigger>}
+          {canSign && <TabsTrigger value="urgentes">Compras urgentes</TabsTrigger>}
+          {canReviewPurchase && <TabsTrigger value="revisar-compra">Revisar compras ({opsPurchaseGroups.length})</TabsTrigger>}
+          {canReviewRental && <TabsTrigger value="revisar-arriendo">Revisar arriendos ({opsRentalGroups.length})</TabsTrigger>}
+          {canMaterial && <TabsTrigger value="material">Material ({materialItems.length})</TabsTrigger>}
+          {canPurchase && <TabsTrigger value="compra">Compra ({purchaseItems.length})</TabsTrigger>}
+          {canRental && <TabsTrigger value="arriendo">Arriendo ({rentalItems.length})</TabsTrigger>}
+          {canBiometric && <TabsTrigger value="biometria">Sin biometría ({excepcionesPendientes.length})</TabsTrigger>}
         </TabsList>
+
+        <TabsContent value="firmar">
+          <ProposalSignInbox proposals={toSign} />
+        </TabsContent>
+
+        <TabsContent value="urgentes">
+          <UrgentPurchasesReport />
+        </TabsContent>
+
+        <TabsContent value="revisar-compra">
+          <OpsReviewInbox
+            groups={opsPurchaseGroups}
+            canReview={canReviewPurchase}
+            allowRemoveLines
+            typeLabel="Compra"
+            typeBadgeClass="badge-success"
+            lineIcon={<ShoppingCart className="h-3.5 w-3.5" />}
+            emptyTitle="Sin compras por revisar"
+            emptyDescription="Cuando terreno pida una compra, la revisas aquí antes de que pase al ADC."
+            onApprove={(g, res) => reviewPurchaseRequests({
+              decision: 'approve',
+              note: res.note,
+              lines: g.lines.map(ln => ({ id: ln.key, quantity: res.quantities[ln.key], remove: res.removed.includes(ln.key) })),
+            })}
+            onReject={(g, note) => reviewPurchaseRequests({ decision: 'reject', note, lines: g.lines.map(ln => ({ id: ln.key })) })}
+          />
+        </TabsContent>
+
+        <TabsContent value="revisar-arriendo">
+          <OpsReviewInbox
+            groups={opsRentalGroups}
+            canReview={canReviewRental}
+            allowRemoveLines={false}
+            typeLabel="Arriendo"
+            typeBadgeClass="badge-warning"
+            lineIcon={<Truck className="h-3.5 w-3.5" />}
+            emptyTitle="Sin arriendos por revisar"
+            emptyDescription="Cuando terreno pida un arriendo, lo revisas aquí antes de que pase al ADC."
+            onApprove={(g, res) => reviewRentalRequest({ id: g.key, decision: 'approve', note: res.note, quantities: g.lines.map(ln => res.quantities[ln.key]) })}
+            onReject={(g, note) => reviewRentalRequest({ id: g.key, decision: 'reject', note })}
+          />
+        </TabsContent>
 
         <TabsContent value="material">
           <AuthorizationInbox
@@ -226,7 +392,7 @@ export default function AuthorizationsPage() {
         <TabsContent value="biometria">
           <AuthorizationInbox
             items={excepcionesPendientes}
-            canAuthorize={canMaterial}
+            canAuthorize={canBiometric}
             typeLabel="Excepción"
             typeBadgeClass="badge-warning"
             lineIcon={<ScanFace className="h-3.5 w-3.5" />}

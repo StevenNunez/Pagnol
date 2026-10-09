@@ -82,7 +82,7 @@ interface ContractData {
     employeeRut?: string;
     employeeSignatureUrl?: string | null;
     site: string;
-    items: { name: string; id: string; internalCode?: string; condition?: string }[];
+    items: { name: string; id: string; internalCode?: string; condition?: string; quantity?: number }[];
     deliveryTimestamp: Date;
     pagnoleroName: string;
     pagnoleroSignatureUrl?: string | null;
@@ -159,12 +159,13 @@ export async function generateContractPDF(data: ContractData) {
         i + 1,
         item.name,
         item.internalCode || item.id.substring(0, 8),
+        item.quantity ?? 1,
         item.condition || 'N/A'
     ]);
 
     autoTable(doc, {
         startY: y,
-        head: [['#', 'Nombre del Activo', 'ID Corto', 'Estado']],
+        head: [['#', 'Nombre del Activo', 'ID Corto', 'Cant.', 'Estado']],
         body: tableBody,
         theme: 'grid',
         headStyles: { fillColor: [41, 128, 185], textColor: 255 },

@@ -6,7 +6,7 @@ import { supabase } from './supabase';
  * notificación nunca debe romper la creación de la solicitud.
  */
 export function notifyAuthorizers(
-  type: 'material' | 'purchase' | 'rental',
+  type: 'material' | 'purchase' | 'rental' | 'purchase_review' | 'rental_review' | 'proposal_gerente',
   opts: { tenantId: string; code?: string; requesterName?: string },
 ): void {
   void (async () => {

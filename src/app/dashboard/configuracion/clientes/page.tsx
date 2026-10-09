@@ -50,7 +50,8 @@ const toDateStr = (d: Date | string | null | undefined) => {
 
 export default function ClientesPage() {
   const router = useRouter();
-  const { clients, contracts, contractWorkers, addClient, updateClient, deleteClient, can } = useAppState();
+  const { clients, contracts, contractWorkers, users, addClient, updateClient, deleteClient, can } = useAppState();
+  const userName = useMemo(() => new Map(((users || []) as any[]).map(u => [u.id, u.name as string])), [users]);
   const { toast } = useToast();
   const canManage = can("module_settings:view");
 
@@ -197,6 +198,12 @@ export default function ClientesPage() {
             Desde {toDateStr(c.startDate)}{c.endDate ? ` · hasta ${toDateStr(c.endDate)}` : ""}
             {showClientHint && " · sin cliente asignado"}
           </p>
+          {/* RFC-006: sin ADC no se puede pedir la firma de lo de este contrato. */}
+          {c.status === 'active' && (
+            c.adcUserId
+              ? <p className="text-[10px] text-muted-foreground">ADC: <span className="font-bold text-foreground">{userName.get(c.adcUserId) || 'Usuario'}</span></p>
+              : <p className="text-[10px] font-bold text-warning">Sin ADC asignado — no podrá firmar compras</p>
+          )}
         </div>
         <span className="hidden sm:flex items-center gap-1 text-[10px] font-bold text-muted-foreground shrink-0">
           <Users size={12} /> {dotacion}

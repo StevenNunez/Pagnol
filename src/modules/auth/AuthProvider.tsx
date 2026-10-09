@@ -43,6 +43,9 @@ interface AuthContextType {
   ) => Promise<void>;
   can: (permission: Permission) => boolean;
   setDynamicRoles: React.Dispatch<React.SetStateAction<Record<string, { permissions?: Permission[] }>>>;
+  /** true cuando ya llegaron los roles de la empresa: antes, can() sólo conoce los de fábrica. */
+  permissionsReady: boolean;
+  setPermissionsReady: React.Dispatch<React.SetStateAction<boolean>>;
   setCurrentTenantId: (tenantId: string | null) => void;
   getTenantId: () => string | null;
   pageHeader: { title: string; description?: string };
@@ -62,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Permisos por-tenant cargados desde la tabla `roles` (los inyecta DataProvider).
   // Si un rol no tiene fila guardada, can() cae a ROLES_DEFAULT (base en código).
   const [dynamicRoles, setDynamicRoles] = useState<Record<string, { permissions?: Permission[] }>>({});
+  const [permissionsReady, setPermissionsReady] = useState(false);
   const router = useRouter();
 
   const can = useCallback(
@@ -312,6 +316,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             codePrefixes: t.code_prefixes ?? {},
             codeTypes: t.code_types ?? {},
             laborCostFactor: t.labor_cost_factor != null ? Number(t.labor_cost_factor) : undefined,
+            withdrawalReviewMode: t.withdrawal_review_mode === 'post' ? 'post' as const : 'prior' as const,
+            approvalSettings: t.approval_settings ?? null,
           })) as Tenant[]);
 
           const saved = localStorage.getItem("selectedTenantId");
@@ -519,6 +525,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sendPasswordReset,
     can,
     setDynamicRoles,
+    permissionsReady,
+    setPermissionsReady,
     getTenantId,
     reauthenticateAndChangeEmail,
     reauthenticateAndChangePassword,

@@ -4,7 +4,8 @@ import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageShell } from '@/components/page-shell';
 import { DataTable, type DataTableColumn } from '@/components/data-table';
-import { useAppState } from '@/modules/core/contexts/app-provider';
+import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
+import { isValidRut, formatRut } from '@/lib/rut';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +28,8 @@ type FormState = {
   status: RentalContractStatus; startDate: string; endDate: string;
   billingCycle: RentalBillingCycle; amount: string; currency: string; paymentDay: string; notes: string;
   clientContractId: string;
+  // RFC-006 F5: respaldo de un arriendo ya contratado (sólo al crear uno entrante).
+  docType: 'contrato' | 'factura'; docNumber: string; lessorRut: string; contractedById: string;
 };
 
 const EMPTY: FormState = {
@@ -34,11 +37,13 @@ const EMPTY: FormState = {
   startDate: new Date().toISOString().slice(0, 10), endDate: '',
   billingCycle: 'monthly', amount: '', currency: 'CLP', paymentDay: '', notes: '',
   clientContractId: '',
+  docType: 'contrato', docNumber: '', lessorRut: '', contractedById: '',
 };
 
 export default function RentalContractsPage() {
   const router = useRouter();
-  const { rentalContracts, rentalParties, suppliers, contracts, addRentalContract, updateRentalContract, can, notify } = useAppState();
+  const { rentalContracts, rentalParties, suppliers, contracts, users, addRentalContract, registerDirectRental, updateRentalContract, can, notify } = useAppState();
+  const { user } = useAuth();
   const canManage = can('rentals:manage_contracts');
 
   const [dirFilter, setDirFilter] = useState<'all' | RentalDirection>('all');
@@ -69,7 +74,10 @@ export default function RentalContractsPage() {
     [suppliers, rentalParties, form.direction],
   );
 
-  const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ ...EMPTY, contractedById: user?.id || '' }); setOpen(true); };
+  // Un arriendo entrante nuevo se registra con su respaldo (RFC-006 F5).
+  const needsDoc = !editing && form.direction === 'incoming';
+  const people = useMemo(() => ((users || []) as any[]).sort((a, b) => String(a.name).localeCompare(String(b.name))), [users]);
   const openEdit = (c: RentalContract) => {
     setEditing(c);
     setForm({
@@ -78,6 +86,7 @@ export default function RentalContractsPage() {
       billingCycle: c.billingCycle, amount: String(c.amount ?? ''), currency: c.currency || 'CLP',
       paymentDay: c.paymentDay != null ? String(c.paymentDay) : '', notes: c.notes ?? '',
       clientContractId: c.clientContractId ?? '',
+      docType: 'contrato', docNumber: '', lessorRut: '', contractedById: '',
     });
     setOpen(true);
   };
@@ -85,6 +94,11 @@ export default function RentalContractsPage() {
   const save = async () => {
     if (!form.title.trim()) { notify('El título es obligatorio.', 'destructive'); return; }
     if (!form.partyId) { notify('Selecciona una contraparte.', 'destructive'); return; }
+    if (needsDoc) {
+      if (!form.docNumber.trim()) { notify('Falta el número del contrato o la factura del arrendador.', 'destructive'); return; }
+      if (!isValidRut(form.lessorRut)) { notify('El RUT del arrendador no es válido.', 'destructive'); return; }
+      if (!form.contractedById) { notify('Indica quién contrató el arriendo.', 'destructive'); return; }
+    }
     setSaving(true);
     const payload = {
       code: form.code || undefined,
@@ -107,7 +121,16 @@ export default function RentalContractsPage() {
         await updateRentalContract(editing.id, payload);
         notify('Contrato actualizado.', 'success');
       } else {
-        const created = await addRentalContract(payload);
+        const created = needsDoc
+          ? await registerDirectRental(payload as any, {
+              docType: form.docType,
+              docNumber: form.docNumber,
+              lessorName: partyName(form.partyId),
+              lessorRut: form.lessorRut,
+              contractedById: form.contractedById,
+              contractedByName: people.find(p => p.id === form.contractedById)?.name || '',
+            })
+          : await addRentalContract(payload);
         notify('Contrato creado. Agrega activos y genera el calendario de pagos.', 'success');
         setOpen(false);
         router.push(`/dashboard/rentals/contracts/${created.id}`);
@@ -211,7 +234,7 @@ export default function RentalContractsPage() {
               </Select>
             </Field>
             <Field label={form.direction === 'incoming' ? 'Arrendador *' : 'Cliente *'}>
-              <Select value={form.partyId} onValueChange={(v) => setForm({ ...form, partyId: v })}>
+              <Select value={form.partyId} onValueChange={(v) => setForm({ ...form, partyId: v, lessorRut: form.direction === 'incoming' ? ((suppliers || []).find(s => s.id === v)?.rut || form.lessorRut) : form.lessorRut })}>
                 <SelectTrigger className="rounded-xl"><SelectValue placeholder={partyOptions.length ? 'Selecciona…' : 'Crea una contraparte primero'} /></SelectTrigger>
                 <SelectContent>
                   {partyOptions.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
@@ -257,6 +280,41 @@ export default function RentalContractsPage() {
                 </SelectContent>
               </Select>
             </Field>
+            {needsDoc && (
+              <div className="sm:col-span-2 rounded-xl border p-3 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold">Respaldo del arriendo ya contratado</p>
+                  <p className="text-xs text-muted-foreground">
+                    Aquí se registra un arriendo que ya se contrató. Si es algo nuevo por arrendar, cotízalo en
+                    Abastecimiento → Arriendos: pasa por la firma que corresponde.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Select value={form.docType} onValueChange={(v) => setForm({ ...form, docType: v as any })}>
+                    <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="contrato">Contrato</SelectItem>
+                      <SelectItem value="factura">Factura</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input placeholder="N° de documento" value={form.docNumber} onChange={(e) => setForm({ ...form, docNumber: e.target.value })} className="rounded-xl" aria-label="Número del documento" />
+                  <Input
+                    placeholder="RUT del arrendador"
+                    value={form.lessorRut}
+                    onChange={(e) => setForm({ ...form, lessorRut: e.target.value })}
+                    onBlur={() => isValidRut(form.lessorRut) && setForm({ ...form, lessorRut: formatRut(form.lessorRut) })}
+                    className={`rounded-xl ${form.lessorRut && !isValidRut(form.lessorRut) ? 'border-destructive' : ''}`}
+                    aria-label="RUT del arrendador"
+                  />
+                </div>
+                <Select value={form.contractedById} onValueChange={(v) => setForm({ ...form, contractedById: v })}>
+                  <SelectTrigger className="rounded-xl" aria-label="Quién lo contrató"><SelectValue placeholder="Quién lo contrató" /></SelectTrigger>
+                  <SelectContent>
+                    {people.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {form.direction === 'incoming' && (
               <Field label="Imputar a contrato (Finanzas)" full>
                 <Select

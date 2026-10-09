@@ -1,18 +1,20 @@
 "use client";
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageShell } from '@/components/page-shell';
+import { LoadingState } from '@/components/loading-state';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
-    ArrowUpRight, ArrowDownLeft, Clock, ShieldQuestion,
+    ArrowUpRight, ArrowDownLeft, HandHelping, ShieldQuestion,
 } from 'lucide-react';
 import type { MaterialRequest, ReturnRequest } from '@/modules/core/lib/data';
-import { WithdrawalsInbox } from '@/components/pagnol-requests/withdrawals-inbox';
+import { WithdrawalsInbox, type WithdrawalStep } from '@/components/pagnol-requests/withdrawals-inbox';
 import { ReturnsInbox } from '@/components/pagnol-requests/returns-inbox';
 import { daysSince } from '@/components/pagnol-requests/request-shared';
+import { withdrawalQueues } from '@/components/pagnol-requests/withdrawal-queues';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Bandeja del pañol: Retiros (material_requests) + Devoluciones (return_requests)
@@ -21,40 +23,69 @@ import { daysSince } from '@/components/pagnol-requests/request-shared';
 
 type Section = 'retiros' | 'devoluciones';
 
+const TITLE = 'Entregas y Devoluciones';
+
+// ?paso=por-entregar abre directo ese paso (lo usan el panel principal y los avisos).
+const STEP_FROM_PARAM: Record<string, WithdrawalStep> = {
+    'por-aprobar': 'toApprove',
+    'por-entregar': 'toDeliver',
+    'entregadas': 'delivered',
+    'rechazadas': 'rejected',
+};
+
 export default function PanolInboxPage() {
+    return (
+        <Suspense fallback={<PageShell title={TITLE}><LoadingState /></PageShell>}>
+            <PanolInbox />
+        </Suspense>
+    );
+}
+
+function PanolInbox() {
     const { requests, returnRequests } = useAppState();
     const router = useRouter();
-    const [section, setSection] = useState<Section>('retiros');
+    const params = useSearchParams();
+    const initialStep = STEP_FROM_PARAM[params.get('paso') || ''];
+    const [section, setSection] = useState<Section>(params.get('seccion') === 'devoluciones' ? 'devoluciones' : 'retiros');
+    const [step, setStep] = useState<WithdrawalStep>(initialStep ?? 'toApprove');
 
     const kpis = useMemo(() => {
-        const reqs = (requests || []) as MaterialRequest[];
+        const q = withdrawalQueues((requests || []) as MaterialRequest[]);
         const rets = (returnRequests || []) as ReturnRequest[];
-        const pendingReady = reqs.filter(r => r.status === 'pending' && r.adcAuthorizedAt).length;
-        const waitingAdc = reqs.filter(r => r.status === 'pending' && !r.adcAuthorizedAt).length;
-        const pendingReturns = rets.filter(r => r.status === 'pending').length;
-        // Aprobadas hace 3+ días que nadie retiró (stock que salió y no volvió a moverse).
-        const notPickedUp = reqs.filter(r => r.status === 'approved' && !r.deliveryDate && daysSince(r.approvalDate) >= 3).length;
-        return { pendingReady, waitingAdc, pendingReturns, notPickedUp };
+        return {
+            toApprove: q.toApprove.length,
+            toDeliver: q.toDeliver.length,
+            // Aprobadas hace 3+ días que nadie retiró (el stock ya salió del inventario).
+            stale: q.toDeliver.filter(r => daysSince(r.approvalDate) >= 3).length,
+            waitingAdc: q.waitingAdc.length,
+            pendingReturns: rets.filter(r => r.status === 'pending').length,
+        };
     }, [requests, returnRequests]);
 
     const goAuthorizations = () => router.push('/dashboard/authorizations');
+    const openStep = (s: WithdrawalStep) => { setSection('retiros'); setStep(s); };
 
     const KPIS = [
-        { label: 'Retiros por aprobar', value: kpis.pendingReady, icon: ArrowUpRight, iconCls: 'bg-primary/10 text-primary', onClick: () => setSection('retiros') },
+        { label: 'Por aprobar', value: kpis.toApprove, icon: ArrowUpRight, iconCls: kpis.toApprove > 0 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground', onClick: () => openStep('toApprove') },
+        {
+            label: 'Por entregar', value: kpis.toDeliver, icon: HandHelping,
+            iconCls: kpis.stale > 0 ? 'bg-destructive/10 text-destructive' : kpis.toDeliver > 0 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+            hint: kpis.stale > 0 ? `${kpis.stale} hace más de 3 días` : undefined,
+            onClick: () => openStep('toDeliver'),
+        },
         { label: 'Devoluciones por revisar', value: kpis.pendingReturns, icon: ArrowDownLeft, iconCls: 'bg-info-subtle text-info', onClick: () => setSection('devoluciones') },
-        { label: 'Sin retirar (+3 días)', value: kpis.notPickedUp, icon: Clock, iconCls: kpis.notPickedUp > 0 ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground', onClick: () => setSection('retiros') },
         { label: 'Esperando al ADC', value: kpis.waitingAdc, icon: ShieldQuestion, iconCls: kpis.waitingAdc > 0 ? 'bg-warning-subtle text-warning' : 'bg-muted text-muted-foreground', onClick: goAuthorizations },
     ];
 
     const SEGMENTS: { key: Section; label: string; icon: any; count: number }[] = [
-        { key: 'retiros', label: 'Retiros', icon: ArrowUpRight, count: kpis.pendingReady },
+        { key: 'retiros', label: 'Retiros', icon: ArrowUpRight, count: kpis.toApprove + kpis.toDeliver },
         { key: 'devoluciones', label: 'Devoluciones', icon: ArrowDownLeft, count: kpis.pendingReturns },
     ];
 
     return (
         <PageShell
-            title="Solicitudes y Devoluciones"
-            description="Bandeja del pañol: aprueba retiros de material y gestiona las devoluciones desde faena."
+            title={TITLE}
+            description="Aprueba los retiros autorizados, entrégalos al trabajador y recibe las devoluciones desde faena."
         >
             {/* KPIs */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
@@ -68,6 +99,7 @@ export default function PanolInboxPage() {
                             </div>
                             <p className="text-3xl font-black font-outfit text-foreground">{k.value}</p>
                             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1">{k.label}</p>
+                            {k.hint && <p className="text-[10px] font-bold text-destructive mt-1">{k.hint}</p>}
                         </Card>
                     </button>
                 ))}
@@ -93,7 +125,7 @@ export default function PanolInboxPage() {
             </div>
 
             {section === 'retiros'
-                ? <WithdrawalsInbox onNavigateAuthorizations={goAuthorizations} />
+                ? <WithdrawalsInbox step={step} onStepChange={setStep} onNavigateAuthorizations={goAuthorizations} />
                 : <ReturnsInbox />
             }
         </PageShell>

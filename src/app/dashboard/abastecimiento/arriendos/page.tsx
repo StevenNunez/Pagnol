@@ -1,6 +1,11 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { ProposalSubmitDialog } from "@/components/approvals/proposal-submit-dialog";
+import { ProposalStatusPanel } from "@/components/approvals/proposal-status-panel";
+import { proposalsForSource, currentProposal, clp } from "@/components/approvals/proposal-utils";
+import { rentalMonthlyNet } from "@/modules/data/mutations/approvalMath";
+import type { PurchaseProposalInput } from "@/modules/data/mutations/approvalMutations";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -21,7 +26,7 @@ import {
 import { useToast } from "@/modules/core/hooks/use-toast";
 import {
   KeyRound, Check, X, Search, Send, Trophy, Loader2, Plus, FileText, Trash2,
-  Clock, Building2, Truck, AlertCircle, Download, Mail, Sparkles, UploadCloud,
+  Clock, Building2, Truck, AlertCircle, Download, Mail, Sparkles, UploadCloud, Signature,
 } from "lucide-react";
 import type {
   RentalRequest, RentalQuoteRequest, Supplier,
@@ -357,22 +362,32 @@ function EmptyBox({ icon: Icon, text }: { icon: any; text: string }) {
 
 // ── Matriz comparativa por ítem (equipo × arrendador) ─────────────────────────
 function ItemMatrix({ rfq, responses }: { rfq: RentalQuoteRequest; responses: RentalQuoteResponse[] }) {
-  const linePrice = (resp: RentalQuoteResponse, itemId: string) =>
-    resp.lines?.find((l) => l.itemId === itemId)?.pricePerPeriod;
+  const lineOf = (resp: RentalQuoteResponse, itemId: string) => resp.lines?.find((l) => l.itemId === itemId);
+  // RFC-006 F4: cada arrendador puede cobrar por día, semana o mes. Comparar el
+  // precio "por período" a secas premiaba al diario ($18.000/día "ganaba" a
+  // $380.000/mes aunque al mes costara $540.000). Se compara el valor MENSUAL.
+  const monthlyOf = (resp: RentalQuoteResponse, itemId: string) => {
+    const l = lineOf(resp, itemId);
+    if (!l || !(l.pricePerPeriod > 0)) return null;
+    return rentalMonthlyNet(l.pricePerPeriod * (l.quantity || 1), resp.billingCycle, l.total);
+  };
 
-  // Mejor (menor) precio por ítem, para resaltar la celda ganadora.
   const bestByItem = useMemo(() => {
     const m: Record<string, number> = {};
     for (const it of rfq.items) {
-      const prices = responses.map((r) => linePrice(r, it.id)).filter((p): p is number => p != null && p > 0);
-      if (prices.length) m[it.id] = Math.min(...prices);
+      const vals = responses.map((r) => monthlyOf(r, it.id)).filter((p): p is number => p != null && p > 0);
+      if (vals.length) m[it.id] = Math.min(...vals);
     }
     return m;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rfq.items, responses]);
+
+  const monthlyTotals = responses.map((r) => rentalMonthlyNet(r.pricePerPeriod || 0, r.billingCycle, r.totalEstimate));
+  const minMonthly = Math.min(...monthlyTotals.filter((n) => n > 0));
 
   return (
     <div className="space-y-2">
-      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Comparador por ítem · mejor precio resaltado</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Comparador por ítem · mejor valor mensual resaltado</p>
       <div className="overflow-x-auto rounded-xl border">
         <table className="w-full text-sm border-collapse">
           <thead>
@@ -388,24 +403,28 @@ function ItemMatrix({ rfq, responses }: { rfq: RentalQuoteRequest; responses: Re
               <tr key={it.id} className="border-t">
                 <td className="px-3 py-2 sticky left-0 bg-card whitespace-nowrap">{it.name} <span className="text-muted-foreground">×{it.quantity}</span></td>
                 {responses.map((r) => {
-                  const p = linePrice(r, it.id);
-                  const isBest = p != null && p > 0 && p === bestByItem[it.id];
+                  const l = lineOf(r, it.id);
+                  const monthly = monthlyOf(r, it.id);
+                  const isBest = monthly != null && monthly === bestByItem[it.id];
                   return (
-                    <td key={r.id} className={`px-3 py-2 text-right tabular-nums ${isBest ? "bg-success-subtle font-bold text-success-subtle-foreground" : "text-muted-foreground"}`}>
-                      {p != null && p > 0 ? money(p) : "—"}
+                    <td key={r.id} className={`px-3 py-2 text-right tabular-nums ${isBest ? "bg-success-subtle text-success-subtle-foreground" : "text-muted-foreground"}`}>
+                      {l && l.pricePerPeriod > 0 ? (
+                        <>
+                          <div className={isBest ? "font-bold" : ""}>{money(l.pricePerPeriod)} <span className="text-[10px] font-normal">/ {CYCLE_LABELS[r.billingCycle]?.toLowerCase()}</span></div>
+                          {r.billingCycle !== "monthly" && monthly != null && <div className="text-[10px]">≈ {money(monthly)} al mes</div>}
+                        </>
+                      ) : "—"}
                     </td>
                   );
                 })}
               </tr>
             ))}
             <tr className="border-t bg-muted/30">
-              <td className="px-3 py-2 sticky left-0 bg-muted/30 font-semibold">Total / período</td>
-              {responses.map((r) => {
-                const totals = responses.map((x) => x.pricePerPeriod || 0).filter((n) => n > 0);
-                const minTotal = totals.length ? Math.min(...totals) : 0;
-                const isBest = (r.pricePerPeriod || 0) > 0 && r.pricePerPeriod === minTotal;
+              <td className="px-3 py-2 sticky left-0 bg-muted/30 font-semibold">Total al mes (neto)</td>
+              {responses.map((r, i) => {
+                const isBest = monthlyTotals[i] > 0 && monthlyTotals[i] === minMonthly;
                 return (
-                  <td key={r.id} className={`px-3 py-2 text-right tabular-nums font-semibold ${isBest ? "text-success-subtle-foreground" : ""}`}>{money(r.pricePerPeriod || 0)}</td>
+                  <td key={r.id} className={`px-3 py-2 text-right tabular-nums font-semibold ${isBest ? "text-success-subtle-foreground" : ""}`}>{money(monthlyTotals[i])}</td>
                 );
               })}
             </tr>
@@ -428,13 +447,42 @@ function RfqCard({
   requestedByName: string;
   sender: { name: string; email: string; phone?: string; role?: string };
   onRecordResponse: (id: string, r: Omit<RentalQuoteResponse, "id" | "createdAt"> & { id?: string }) => Promise<void>;
-  onAward: (id: string, responseId: string, opts?: { currency?: string; paymentDay?: number | null; periods?: number }) => Promise<{ rentalContractId: string; ocNumber: string }>;
+  onAward: (id: string, responseId: string, opts?: { currency?: string; paymentDay?: number | null; periods?: number; proposalId?: string }) => Promise<{ rentalContractId: string; ocNumber: string }>;
   onSend: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
   const { toast } = useToast();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // RFC-006 F4: la firma (por valor mensual) va antes de adjudicar.
+  const { approvalProposals, approvalSignatures, purchaseOrders } = useAppState();
+  const [draft, setDraft] = useState<(PurchaseProposalInput & { title?: string }) | null>(null);
+  const views = useMemo(
+    () => proposalsForSource(approvalProposals, approvalSignatures, purchaseOrders, p => p.sourceType === 'rental_rfq' && p.sourceId === rfq.id),
+    [approvalProposals, approvalSignatures, purchaseOrders, rfq.id],
+  );
+  const current = currentProposal(views);
+  const lastRejected = !current && views[0]?.state === 'rejected' ? views[0] : null;
+  const proposeFor = (r: RentalQuoteResponse) => setDraft({
+    kind: 'rental',
+    title: `${rfq.internalCode || ''} — ${rfq.title}`,
+    sourceType: 'rental_rfq',
+    sourceId: rfq.id,
+    quoteId: r.id,
+    requestIds: rfq.requestIds,
+    supplierId: r.partyId,
+    supplierName: r.partyName,
+    items: rfq.items.map(it => {
+      const line = r.lines?.find(l => l.itemId === it.id);
+      return { requestId: undefined, name: it.name, unit: CYCLE_LABELS[r.billingCycle], quantity: line?.quantity ?? it.quantity ?? 1, unitPrice: line?.pricePerPeriod ?? null };
+    }),
+    netTotal: rentalMonthlyNet(r.pricePerPeriod, r.billingCycle, r.totalEstimate),
+    comparison: rfq.responses.map(x => ({
+      supplierName: x.partyName,
+      totalPrice: rentalMonthlyNet(x.pricePerPeriod, x.billingCycle, x.totalEstimate),
+      chosen: x.id === r.id,
+    })),
+  });
   const [respOpen, setRespOpen] = useState(false);
 
   const invited = useMemo(() => rfq.partyIds.map((id) => partyMap.get(id)).filter(Boolean) as Supplier[], [rfq.partyIds, partyMap]);
@@ -639,10 +687,10 @@ function RfqCard({
     } finally { setBusy(false); }
   };
 
-  const handleAward = async (responseId: string, periodsForAward?: number) => {
+  const handleAward = async (responseId: string, periodsForAward?: number, proposalId?: string) => {
     setBusy(true);
     try {
-      const res = await onAward(rfq.id, responseId, { periods: periodsForAward });
+      const res = await onAward(rfq.id, responseId, { periods: periodsForAward, proposalId });
       toast({ title: "¡Arriendo adjudicado!", description: `Orden de Compra ${res.ocNumber} lista para emitir. Pulsa "Emitir OC →" para generarla y confirmarla.` });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Error al adjudicar", description: e?.message || "No se pudo generar el contrato." });
@@ -792,6 +840,14 @@ function RfqCard({
           <ItemMatrix rfq={rfq} responses={rfq.responses} />
         )}
 
+        {lastRejected && !awarded && (
+          <p className="text-xs rounded-lg bg-destructive/5 border border-destructive/30 px-3 py-2">
+            <b className="text-destructive">{lastRejected.proposal.internalCode} fue rechazada</b>
+            {lastRejected.signatures.find(s => s.decision === 'rejected')?.note ? `: "${lastRejected.signatures.find(s => s.decision === 'rejected')!.note}"` : ''}.
+            {' '}Puedes enviar otra oferta a firma.
+          </p>
+        )}
+
         {/* Comparador */}
         {rfq.responses.length === 0 ? (
           <p className="text-sm text-muted-foreground">Sin cotizaciones aún.</p>
@@ -826,11 +882,26 @@ function RfqCard({
                         );
                       })()}
                       {r.conditions && <div className="text-[11px] text-muted-foreground italic">{r.conditions}</div>}
+                      <div className="text-[11px] text-muted-foreground">
+                        Valor mensual para la firma: <b className="text-foreground">{clp(rentalMonthlyNet(r.pricePerPeriod, r.billingCycle, r.totalEstimate) * (1 + IVA_RATE))}</b> con IVA
+                      </div>
+                      {/* RFC-006 F4: estado de la firma de esta oferta. */}
+                      {!awarded && current?.proposal.quoteId === r.id && (
+                        <ProposalStatusPanel
+                          view={current}
+                          className="mt-2 bg-background"
+                          emitLabel="Adjudicar arriendo"
+                          onEmit={() => handleAward(r.id, r.periods, current.proposal.id)}
+                        />
+                      )}
                     </div>
-                    {!awarded && (
-                      <Button size="sm" disabled={!canManage || busy} onClick={() => handleAward(r.id, r.periods)}>
-                        <Trophy className="h-3.5 w-3.5 mr-1" /> Adjudicar
+                    {!awarded && !current && (
+                      <Button size="sm" disabled={!canManage || busy} onClick={() => proposeFor(r)}>
+                        <Signature className="h-3.5 w-3.5 mr-1" /> Enviar a firma
                       </Button>
+                    )}
+                    {!awarded && current && current.proposal.quoteId !== r.id && (
+                      <span className="text-[11px] text-muted-foreground shrink-0">Otra oferta en firma</span>
                     )}
                   </div>
                 );
@@ -838,6 +909,8 @@ function RfqCard({
           </div>
         )}
       </CardContent>
+
+      <ProposalSubmitDialog draft={draft} onClose={() => setDraft(null)} />
 
       {/* Dialog enviar solicitud de cotización por correo */}
       <Dialog open={emailOpen} onOpenChange={setEmailOpen}>

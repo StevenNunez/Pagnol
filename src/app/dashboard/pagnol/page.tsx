@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import {
   PlusCircle,
+  HandHelping,
   ShieldAlert,
   TrendingUp,
   Box,
@@ -23,7 +24,9 @@ import {
 } from 'lucide-react';
 import { LoadingState } from '@/components/loading-state';
 import { PageHeader } from '@/components/page-header';
-import type { MaterialRequest } from '@/modules/core/lib/data';
+import type { MaterialRequest, User } from '@/modules/core/lib/data';
+import { withdrawalQueues, deliveryHref } from '@/components/pagnol-requests/withdrawal-queues';
+import { canApproveClass, daysSince, requestItems } from '@/components/pagnol-requests/request-shared';
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +34,7 @@ import { useReportData } from '@/components/pagnol-reports/use-report-data';
 import { STAGE_META, criticalThreshold, formatCompactCLP, isReturnable } from '@/components/pagnol-reports/report-utils';
 
 export default function PagnolMainPage() {
-  const { requests, updateMaterialRequestStatus, notify } = useAppState();
+  const { requests, users, updateMaterialRequestStatus, notify } = useAppState();
   const { user: currentUser, can } = useAuth();
   const router = useRouter();
 
@@ -58,17 +61,25 @@ export default function PagnolMainPage() {
   // directamente desde la colección (con cantidades, notas y contrato).
   const actionableRequests = useMemo(() => {
     if (!currentUser) return [];
-    return ((requests || []) as MaterialRequest[]).filter(r => {
-      if (r.status !== 'pending') return false;
-      // Gate ADC: solo las ya autorizadas por el Administrador de Contrato
-      // llegan al pañol para aprobación (mismo criterio que la bandeja).
-      if (!r.adcAuthorizedAt) return false;
-      const cls = r.highestClass || 'C';
-      if (cls === 'A') return can('material_requests:approve_class_a');
-      if (cls === 'B') return can('material_requests:approve_class_b');
-      return can('material_requests:approve_class_c');
-    }).sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
+    // Gate ADC: solo las ya autorizadas por el Administrador de Contrato
+    // llegan al pañol (mismo criterio y misma jerarquía de clases que la bandeja).
+    return withdrawalQueues((requests || []) as MaterialRequest[]).toApprove
+      .filter(r => canApproveClass(can, (r.highestClass || 'C') as 'A' | 'B' | 'C'))
+      .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
   }, [requests, can, currentUser]);
+
+  // Despachos aprobados que el trabajador todavía no retira: lo primero que el
+  // pañolero tiene que ver al entrar. La más antigua primero.
+  const toDeliver = useMemo(
+    () => withdrawalQueues((requests || []) as MaterialRequest[]).toDeliver
+      .sort((a, b) => new Date((a.approvalDate ?? a.createdAt) as any).getTime() - new Date((b.approvalDate ?? b.createdAt) as any).getTime()),
+    [requests],
+  );
+  const userNames = useMemo(() => new Map(((users || []) as User[]).map(u => [u.id, u.name])), [users]);
+  // Quién viene a retirar: el beneficiario (entrega dirigida) o el solicitante.
+  const receiverName = (r: MaterialRequest) =>
+    r.deliveryMode === 'open' ? 'Retiro abierto'
+      : (r.deliveryMode === 'directed' && r.beneficiaryName) || userNames.get(r.supervisorId) || r.userName || 'Solicitante';
 
   const stats = useMemo(() => {
     const available = activeMaterials.filter(a => (a.stock ?? 0) > 0).length;
@@ -115,7 +126,7 @@ export default function PagnolMainPage() {
     setProcessingIds(prev => new Set(prev).add(requestId));
     try {
       await updateMaterialRequestStatus(requestId, status);
-      notify(status === 'approved' ? 'Solicitud autorizada exitosamente.' : 'Solicitud rechazada.', 'success');
+      notify(status === 'approved' ? 'Despacho aprobado. Quedó en "Para entregar".' : 'Solicitud rechazada.', 'success');
     } catch (e: any) {
       console.error(e);
       notify(e.message || 'Error al resolver la solicitud.', 'destructive');
@@ -164,6 +175,80 @@ export default function PagnolMainPage() {
           </button>
         )}
       </div>
+
+      {/* PARA ENTREGAR — lo primero que hace el pañolero */}
+      {(toDeliver.length > 0 || actionableRequests.length > 0) && (
+        <div className="rounded-[2.5rem] bg-card border-2 border-primary/20 shadow-sm p-6 sm:p-8 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                <HandHelping size={22} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black tracking-tight text-foreground leading-none">Para entregar</h3>
+                <p className="text-xs font-medium text-muted-foreground mt-1">
+                  {toDeliver.length > 0
+                    ? `${toDeliver.length} despacho${toDeliver.length > 1 ? 's' : ''} aprobado${toDeliver.length > 1 ? 's' : ''} esperando que el trabajador lo retire.`
+                    : 'No hay nada esperando retiro.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {actionableRequests.length > 0 && (
+                <button
+                  onClick={() => document.getElementById('critical-alerts')?.scrollIntoView({ behavior: 'smooth' })}
+                  className="px-4 py-2.5 rounded-xl bg-warning-subtle text-warning-subtle-foreground text-[10px] font-black uppercase tracking-widest hover:opacity-80 transition-opacity"
+                >
+                  {actionableRequests.length} por aprobar
+                </button>
+              )}
+              <button
+                onClick={() => router.push('/dashboard/pagnol/solicitudes?paso=por-entregar')}
+                className="px-4 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-1.5"
+              >
+                Ver todas <ArrowRight size={12} />
+              </button>
+            </div>
+          </div>
+
+          {toDeliver.length > 0 && (
+            <div className="divide-y divide-border rounded-2xl border overflow-hidden">
+              {toDeliver.slice(0, 5).map(r => {
+                const items = requestItems(r);
+                const days = daysSince(r.approvalDate);
+                return (
+                  <div key={r.id} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 p-4 bg-card hover:bg-muted/40 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black uppercase tracking-tight text-foreground truncate">{receiverName(r)}</p>
+                      <p className="text-[11px] text-muted-foreground font-medium truncate">
+                        <span className="font-mono font-bold text-primary">{r.internalCode || r.id.slice(0, 8).toUpperCase()}</span>
+                        {' · '}
+                        {items.map(it => `${it.quantity} × ${materialsMap.get(it.materialId)?.name || 'Material'}`).join(', ')}
+                      </p>
+                    </div>
+                    {days >= 1 && (
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg w-fit ${days >= 3 ? 'bg-destructive/10 text-destructive' : 'bg-warning-subtle text-warning'}`}>
+                        Hace {days} día{days > 1 ? 's' : ''}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => router.push(deliveryHref(r.id))}
+                      className="shrink-0 px-5 py-3 rounded-xl bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/10 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      <HandHelping size={14} /> Entregar
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {toDeliver.length > 5 && (
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center">
+              y {toDeliver.length - 5} más en &quot;Ver todas&quot;
+            </p>
+          )}
+        </div>
+      )}
 
       {/* MONITOR ESTRATÉGICO */}
       <div className={`rounded-[2.5rem] p-8 sm:p-12 text-white relative overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] flex flex-col lg:flex-row items-center justify-between transition-all duration-700 ${stats.alertCount > 0 ? 'bg-pagnol-dark border border-red-900/30' : 'bg-pagnol-dark'}`}>
@@ -329,9 +414,9 @@ export default function PagnolMainPage() {
                 <div className="p-2 bg-destructive text-destructive-foreground rounded-xl shadow-lg shadow-red-500/20">
                   <ShieldAlert size={24} />
                 </div>
-                Autorizaciones Pendientes
+                Despachos por aprobar
               </h3>
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-12">Solicitudes que requieren tu aprobación según su clase</p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-12">Ya autorizados por el ADC. Al aprobar se descuenta el stock y pasan a &quot;Para entregar&quot;</p>
             </div>
             <Badge className="bg-destructive text-destructive-foreground text-[10px] font-black px-6 py-3 rounded-2xl animate-pulse uppercase tracking-widest shadow-xl shadow-red-500/30">Acción Requerida</Badge>
           </div>
@@ -414,7 +499,7 @@ export default function PagnolMainPage() {
                     >
                       {isProcessing
                         ? <><Loader2 size={18} className="animate-spin" /> Procesando...</>
-                        : <>Autorizar Despacho <ArrowRight size={18} /></>
+                        : <>Aprobar despacho <ArrowRight size={18} /></>
                       }
                     </button>
                   </div>

@@ -25,6 +25,11 @@ export interface DashboardBadges {
     pendingCotizaciones: number;
     pendingReceptions: number;
     overBudgetCostCenters: number;
+    /** RFC-006 F1: bandeja del Jefe de Operaciones. */
+    pendingOpsPurchase: number;
+    pendingOpsRental: number;
+    /** RFC-006 F2: compras que le toca firmar a ESTA persona (lo calcula la base). */
+    myPendingSignatures: number;
 }
 
 const ZERO: DashboardBadges = {
@@ -38,6 +43,9 @@ const ZERO: DashboardBadges = {
     pendingCotizaciones: 0,
     pendingReceptions: 0,
     overBudgetCostCenters: 0,
+    pendingOpsPurchase: 0,
+    pendingOpsRental: 0,
+    myPendingSignatures: 0,
 };
 
 const REFRESH_MS = 45_000;
@@ -52,9 +60,12 @@ export function useDashboardBadges(tenantId: string | null | undefined) {
     const fetchBadges = useCallback(async () => {
         if (!tenantId) return;
         const scope = tenantId;
-        const { data, error } = await supabase.rpc("dashboard_badges", {
-            p_tenant_id: tenantId,
-        });
+        const [{ data, error }, sigRes] = await Promise.all([
+            supabase.rpc("dashboard_badges", { p_tenant_id: tenantId }),
+            // RFC-006 F2. Si la migración aún no está, responde error y queda en 0.
+            supabase.rpc("my_pending_signatures", { p_tenant_id: tenantId }),
+        ]);
+        const myPendingSignatures = sigRes.error ? 0 : Number(sigRes.data) || 0;
         if (scopeRef.current !== scope) return; // cambió de empresa mientras respondía
         if (error) {
             console.error("[dashboard_badges]", error.message, error.code, error.details);
@@ -77,6 +88,9 @@ export function useDashboardBadges(tenantId: string | null | undefined) {
                 pendingCotizaciones: row.pending_cotizaciones ?? 0,
                 pendingReceptions: row.pending_receptions ?? 0,
                 overBudgetCostCenters: row.over_budget_cost_centers ?? 0,
+                pendingOpsPurchase: row.pending_ops_purchase ?? 0,
+                pendingOpsRental: row.pending_ops_rental ?? 0,
+                myPendingSignatures,
             });
         }
         setHasLoaded(true);

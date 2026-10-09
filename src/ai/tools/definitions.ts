@@ -71,7 +71,7 @@ const buscarMateriales: ToolDef = {
             limite: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
         },
     },
-    requiredPermissions: ['module_pagnol:view'],
+    requiredPermissions: ['module_pagnol:view', 'materials:view_all'],
     handler: async (input, ctx) => {
         let q = ctx.admin.from('materials').select('*').eq('tenant_id', ctx.tenantId).eq('archived', false);
         if (input.query) q = q.ilike('name', `%${input.query}%`);
@@ -99,7 +99,7 @@ const stockPorContrato: ToolDef = {
     description: 'Muestra en qué contratos y pañoles está distribuido el stock de un material (el ledger por contrato/pañol), no solo el total.',
     zodInput: z.object({ materialQuery: z.string().describe('Nombre o parte del nombre del material') }),
     jsonSchema: { type: 'object', properties: { materialQuery: { type: 'string' } }, required: ['materialQuery'] },
-    requiredPermissions: ['module_pagnol:view'],
+    requiredPermissions: ['module_pagnol:view', 'materials:view_all'],
     handler: async (input, ctx) => {
         const { data: mats, error: matErr } = await ctx.admin
             .from('materials').select('id, name, stock, unit').eq('tenant_id', ctx.tenantId)

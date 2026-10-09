@@ -7,6 +7,9 @@ import { DataProvider } from '@/modules/data/DataProvider';
 import { useAuth } from '@/modules/auth/useAuth';
 import { useAppState } from '@/modules/data/useData';
 import { Sidebar } from '@/components/sidebar';
+import { EmptyState } from '@/components/empty-state';
+import { LoadingState } from '@/components/loading-state';
+import { canOpenPath } from '@/modules/core/lib/module-access';
 import { Menu, Loader2, Bell, Volume2, VolumeX, AlertCircle, ShoppingCart, ClipboardList, Users, LogOut, FileText, Truck, Target, ShieldCheck, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -38,12 +41,12 @@ import { OnboardingWizard } from '@/components/onboarding-wizard';
 import { OnboardingBanner } from '@/components/onboarding-banner';
 import { EnrollmentQualityBanner } from '@/components/enrollment-quality-banner';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
-import { BellRing, Send } from 'lucide-react';
+import { BellRing, Send, ShieldX } from 'lucide-react';
 import { toast } from '@/modules/core/hooks/use-toast';
 import { supabase } from '@/modules/core/lib/supabase';
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
-  const { user, authLoading, logout, tenants, currentTenantId, setCurrentTenantId, pageHeader, getTenantId } = useAuth();
+  const { user, authLoading, logout, tenants, currentTenantId, setCurrentTenantId, pageHeader, getTenantId, permissionsReady } = useAuth();
   // RFC-005 F1: el layout ya no trae las 8 colecciones que alimentaban los
   // badges. Sólo necesita `can()` para decidir qué avisos le tocan a este rol.
   const { can } = useAppState();
@@ -159,7 +162,18 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     pendingCotizaciones,
     pendingReceptions,
     overBudgetCostCenters,
+    pendingOpsPurchase,
+    pendingOpsRental,
+    myPendingSignatures,
   } = badges;
+
+  // RFC-006 F1: bandeja del Jefe de Operaciones (antes del ADC).
+  const pendingOpsTotal = React.useMemo(() => {
+    let c = 0;
+    if (can('purchase_requests:review_operations')) c += pendingOpsPurchase;
+    if (can('rentals:review_operations')) c += pendingOpsRental;
+    return c;
+  }, [can, pendingOpsPurchase, pendingOpsRental]);
 
   // Bandeja del ADC: se suma sólo lo que este usuario puede autorizar.
   const pendingAuthTotal = React.useMemo(() => {
@@ -173,6 +187,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const totalNotifications = React.useMemo(() => {
     let count = 0;
     count += pendingAuthTotal; // ya viene gateado por los permisos *:authorize
+    count += pendingOpsTotal;  // ídem, por los permisos *:review_operations
+    count += myPendingSignatures; // ya viene calculado para esta persona
     if (can('material_requests:approve_class_c')) count += pendingMaterialRequests;
     if (can('purchase_requests:approve')) count += pendingPurchaseRequests;
     if (can('payments:view')) {
@@ -185,7 +201,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     if (can('stock:receive_order')) count += pendingReceptions;
     if (can('cost_centers:manage')) count += overBudgetCostCenters;
     return count;
-  }, [can, pendingAuthTotal, pendingMaterialRequests, pendingPurchaseRequests, overduePayments, dueSoonPayments, pendingCotizaciones, pendingReceptions, overBudgetCostCenters]);
+  }, [can, pendingAuthTotal, pendingOpsTotal, myPendingSignatures, pendingMaterialRequests, pendingPurchaseRequests, overduePayments, dueSoonPayments, pendingCotizaciones, pendingReceptions, overBudgetCostCenters]);
 
   const prevNotificationsRef = React.useRef<number | null>(null);
 
@@ -351,6 +367,22 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                     </div>
                   ) : (
                     <div className="py-2 space-y-1">
+                      {myPendingSignatures > 0 && (
+                        <Link href="/dashboard/authorizations">
+                          <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-orange-50/50 dark:hover:bg-orange-950/40">
+                            <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg mr-3"><ShieldCheck className="h-4 w-4 text-pagnol-orange" /></div>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{myPendingSignatures} Compra(s) por Firmar</span>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
+                      {pendingOpsTotal > 0 && (
+                        <Link href="/dashboard/authorizations">
+                          <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-orange-50/50 dark:hover:bg-orange-950/40">
+                            <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg mr-3"><ClipboardList className="h-4 w-4 text-pagnol-orange" /></div>
+                            <span className="text-[11px] font-bold uppercase tracking-tight">{pendingOpsTotal} Pedido(s) por Revisar</span>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
                       {pendingAuthTotal > 0 && (
                         <Link href="/dashboard/authorizations">
                           <DropdownMenuItem className="rounded-xl px-4 py-3 cursor-pointer hover:bg-orange-50/50 dark:hover:bg-orange-950/40">
@@ -468,7 +500,21 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           <EnrollmentQualityBanner />
           <StorageWarning />
           <div className="p-4 sm:p-6 lg:p-10 max-w-[1600px] mx-auto animate-in fade-in duration-500">
-            {children}
+            {/* Protección por dirección: misma regla que las tarjetas del Panel Central. */}
+            {canOpenPath(pathname, can, user?.role)
+              ? children
+              : permissionsReady
+                ? (
+                  <EmptyState
+                    ignoreAppLoading
+                    className="mt-10"
+                    icon={<ShieldX size={24} className="text-muted-foreground" />}
+                    title="No tienes acceso a esta sección"
+                    description="Tu rol no incluye este módulo. Si lo necesitas para tu trabajo, pídele acceso al administrador."
+                    action={<Button asChild className="rounded-xl"><Link href="/dashboard">Volver al inicio</Link></Button>}
+                  />
+                )
+                : <LoadingState />}
           </div>
           <InventoryAssistant />
           <FeedbackButton />

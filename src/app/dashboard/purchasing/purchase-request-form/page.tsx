@@ -198,7 +198,7 @@ export default function PurchaseRequestFormPage() {
     myRequests.forEach(r => {
       const stage = resolvePurchaseStage(r);
       // 'to_send' (suministro autorizado, por enviar al cliente) cuenta como en trámite.
-      if (stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send') acc.inProgress++;
+      if (stage === 'waiting_ops' || stage === 'waiting_adc' || stage === 'in_review' || stage === 'to_send') acc.inProgress++;
       else acc[stage]++;
     });
     return acc;

@@ -15,6 +15,8 @@ import { supabase } from "@/modules/core/lib/supabase";
 import { getInitials } from "@/modules/core/lib/sequence-utils";
 import { generateApiToken, type GeneratedApiToken } from "@/modules/core/lib/api-tokens-client";
 import { ApiKeysCard } from "./api-keys-card";
+import { WithdrawalModeCard } from "./withdrawal-mode-card";
+import { ApprovalSettingsCard } from "./approval-settings-card";
 import {
   Building2, Hash, ImageIcon, Loader2, Save, Trash2, UploadCloud, Lock, Plus, X,
   KeyRound, Copy, Check, AlertTriangle, Bot,
@@ -453,6 +455,24 @@ export default function ConfiguracionPage() {
           </Card>
         </div>
       </div>
+
+      {currentTenant && (
+        <WithdrawalModeCard
+          tenant={currentTenant}
+          disabled={!canManage}
+          onSave={(mode) => updateTenant(currentTenant.id, { withdrawalReviewMode: mode })}
+        />
+      )}
+
+      {currentTenant && (
+        <ApprovalSettingsCard
+          key={currentTenant.id}
+          tenant={currentTenant}
+          disabled={!canManage}
+          // Se mezcla con lo guardado: así ninguna clave que no edita esta tarjeta se pierde.
+          onSave={(settings) => updateTenant(currentTenant.id, { approvalSettings: { ...(currentTenant.approvalSettings || {}), ...settings } })}
+        />
+      )}
 
       {/* ── Integraciones: tokens MCP para Pagnol AI ─────────────────────── */}
       <Card className="rounded-[1.5rem]">

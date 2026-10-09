@@ -98,6 +98,8 @@ export async function addContract(
       end_date: data.endDate || null,
       description: data.description || null,
       cost_center_id: data.costCenterId || null,
+      // RFC-006: sólo si viene, para no exigir la columna a quien no la usa.
+      ...(data.adcUserId ? { adc_user_id: data.adcUserId } : {}),
       is_subcontractor: data.isSubcontractor ?? false,
       parent_contract_id: data.parentContractId || null,
       subcontractor_company: data.subcontractorCompany || null,
@@ -130,6 +132,7 @@ export async function updateContract(
   if (data.endDate !== undefined) payload.end_date = data.endDate;
   if (data.description !== undefined) payload.description = data.description;
   if (data.costCenterId !== undefined) payload.cost_center_id = data.costCenterId || null;
+  if (data.adcUserId !== undefined) payload.adc_user_id = data.adcUserId || null;
   if (data.isSubcontractor !== undefined) payload.is_subcontractor = data.isSubcontractor;
   if (data.parentContractId !== undefined) payload.parent_contract_id = data.parentContractId || null;
   if (data.subcontractorCompany !== undefined) payload.subcontractor_company = data.subcontractorCompany || null;

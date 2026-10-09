@@ -32,6 +32,10 @@ import {
   AttendanceLog,
   AssignedSafetyTask,
   BiometricVerification,
+  WithdrawalReview,
+  WithdrawalReviewResolution,
+  ApprovalProposal,
+  ApprovalSignature,
   SafetyInspection,
   ChecklistTemplate,
   BehaviorObservation,
@@ -115,6 +119,11 @@ export interface AppDataState {
   attendanceLogs: AttendanceLog[];
   assignedChecklists: AssignedSafetyTask[];
   biometricVerifications: BiometricVerification[];
+  withdrawalReviews: WithdrawalReview[];
+  withdrawalReviewResolutions: WithdrawalReviewResolution[];
+  // RFC-006 F2: propuestas de compra y sus firmas.
+  approvalProposals: ApprovalProposal[];
+  approvalSignatures: ApprovalSignature[];
   safetyInspections: SafetyInspection[];
   checklistTemplates: ChecklistTemplate[];
   behaviorObservations: BehaviorObservation[];
@@ -169,14 +178,17 @@ export interface AppStateContextType extends AppDataState {
   markClientRequestsSent: (requestIds: string[], sentToEmail: string) => Promise<void>;
   deletePurchaseRequest: (requestId: string) => Promise<void>;
   cancelPurchaseOrder: (orderId: string) => Promise<void>;
-  archiveLot: (requestIds: string[]) => Promise<void>;
-  generatePurchaseOrder: (requests: PurchaseRequest[], supplierId: string, prices: Record<string, number>) => Promise<string>;
-  createPurchaseOrder: (data: { lotId: string; ocNumber: string; items: { requestId: string; price: number; quantity: number; name: string; unit: string; }[]; totalAmount: number; }) => Promise<string>;
+  // RFC-006 F3: compra ya realizada (factura/boleta) — reemplaza a archiveLot.
+  registerDirectPurchase: (input: import('./mutations/purchaseRequestMutations').DirectPurchaseInput) => Promise<string>;
+  // RFC-006 F5: arriendo ya contratado (contrato o factura).
+  registerDirectRental: (contract: Omit<import('@/modules/core/lib/data').RentalContract, 'id' | 'tenantId' | 'createdBy' | 'createdAt'>, doc: { docType: 'contrato' | 'factura'; docNumber: string; lessorName: string; lessorRut: string; contractedById?: string | null; contractedByName: string }) => Promise<import('@/modules/core/lib/data').RentalContract>;
+  generatePurchaseOrder: (requests: PurchaseRequest[], supplierId: string, prices: Record<string, number>, proposalId: string) => Promise<string>;
+  createPurchaseOrder: (data: { lotId: string; ocNumber: string; items: { requestId: string; price: number; quantity: number; name: string; unit: string; }[]; totalAmount: number; proposalId: string; }) => Promise<string>;
   returnToPool: (requestIds: string[]) => Promise<void>;
 
   // Material Requests
   addMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; supervisorName?: string; highestClass?: 'A' | 'B' | 'C'; tenantPrefix?: string; deliveryMode?: 'self' | 'directed' | 'open'; beneficiaryId?: string | null; beneficiaryName?: string | null; }) => Promise<void>;
-  addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; warehouseId?: string | null; }) => Promise<void>;
+  addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; warehouseId?: string | null; requiresReview?: boolean; }) => Promise<void>;
   authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
   deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null, verification: { mode: 'biometric' | 'exception'; exceptionGroupId?: string | null } | null) => Promise<void>;
@@ -219,7 +231,7 @@ export interface AppStateContextType extends AppDataState {
   updateQuoteResponse: (rfqId: string, responseId: string, data: Partial<QuoteResponse>) => Promise<void>;
   deleteQuoteResponse: (rfqId: string, responseId: string) => Promise<void>;
   uploadQuoteAttachment: (rfqId: string, file: File) => Promise<{ url: string; path: string; name: string }>;
-  awardQuote: (rfqId: string, quoteId: string) => Promise<string>;
+  awardQuote: (rfqId: string, quoteId: string, proposalId: string) => Promise<string>;
   uploadReceptionPhoto: (purchaseOrderId: string, file: File) => Promise<ReceiptPhoto>;
   receiveGoodsReceipt: (data: { purchaseOrderId: string; items: ReceiptItem[]; photos: ReceiptPhoto[]; notes?: string }) => Promise<void>;
   deleteGoodsReceipt: (id: string) => Promise<void>;
@@ -305,6 +317,8 @@ export interface AppStateContextType extends AppDataState {
   recordBiometricVerification: (params: Parameters<typeof import('./mutations/biometricMutations').recordBiometricVerification>[0]) => Promise<string | null>;
   requestBiometricException: (params: Parameters<typeof import('./mutations/biometricMutations').requestBiometricException>[0]) => Promise<string>;
   resolveBiometricException: (params: Parameters<typeof import('./mutations/biometricMutations').resolveBiometricException>[0]) => Promise<void>;
+  reviewWithdrawal: (params: Parameters<typeof import('./mutations/withdrawalReviewMutations').reviewWithdrawal>[0]) => Promise<void>;
+  justifyWithdrawalObservation: (params: Parameters<typeof import('./mutations/withdrawalReviewMutations').justifyWithdrawalObservation>[0]) => Promise<void>;
 
   // Safety
   addChecklistTemplate: (template: Pick<ChecklistTemplate, 'title' | 'items'>) => Promise<void>;
@@ -389,12 +403,19 @@ export interface AppStateContextType extends AppDataState {
   }) => Promise<{ code: string; rentalRequestId: string }>;
   updateRentalRequestStatus: (requestId: string, status: 'approved' | 'rejected' | 'quoting', reason?: string) => Promise<void>;
   authorizeRentalRequest: (requestId: string) => Promise<void>;
+  // RFC-006 F1: revisión del Jefe de Operaciones.
+  reviewPurchaseRequests: (input: { lines: import('./mutations/opsReviewMutations').PurchaseReviewLine[]; decision: 'approve' | 'reject'; note?: string }) => Promise<{ approved: number; rejected: number }>;
+  reviewRentalRequest: (input: { id: string; decision: 'approve' | 'reject'; quantities?: number[]; note?: string }) => Promise<void>;
+  // RFC-006 F2: propuesta de compra y firma por monto.
+  createPurchaseProposal: (input: import('./mutations/approvalMutations').PurchaseProposalInput) => Promise<import('@/modules/core/lib/data').ApprovalProposal>;
+  signProposal: (input: { proposalId: string; slot: import('@/modules/core/lib/data').ApprovalSlot; decision: 'approved' | 'rejected'; note?: string }) => Promise<void>;
+  withdrawProposal: (proposalId: string, reason: string) => Promise<void>;
   deleteRentalRequest: (requestId: string) => Promise<void>;
   addRentalQuoteRequest: (data: { title: string; requestIds: string[]; items: RentalQuoteItem[]; partyIds: string[]; deadline?: string; notes?: string }) => Promise<RentalQuoteRequest>;
   updateRentalQuoteRequest: (id: string, data: Partial<RentalQuoteRequest>) => Promise<void>;
   sendRentalQuoteRequest: (id: string) => Promise<void>;
   recordRentalQuoteResponse: (quoteRequestId: string, response: Omit<RentalQuoteResponse, 'id' | 'createdAt'> & { id?: string }) => Promise<void>;
-  awardRentalQuote: (quoteRequestId: string, responseId: string, options?: { currency?: string; paymentDay?: number | null; periods?: number }) => Promise<{ rentalContractId: string; ocNumber: string }>;
+  awardRentalQuote: (quoteRequestId: string, responseId: string, options?: { currency?: string; paymentDay?: number | null; periods?: number; proposalId?: string }) => Promise<{ rentalContractId: string; ocNumber: string }>;
   deleteRentalQuoteRequest: (id: string) => Promise<void>;
 
   // Reportes de Trabajo / Informes de Terreno

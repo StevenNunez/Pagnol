@@ -76,6 +76,10 @@ import {
 } from 'lucide-react';
 
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
+import type { MaterialRequest, ReturnRequest } from '@/modules/core/lib/data';
+import { withdrawalQueues } from '@/components/pagnol-requests/withdrawal-queues';
+import { canApproveClass } from '@/components/pagnol-requests/request-shared';
+import { canOpenPath } from '@/modules/core/lib/module-access';
 import { cn } from '@/lib/utils';
 import { UserRole } from '@/modules/core/lib/data';
 import type { Permission } from '@/modules/core/lib/permissions';
@@ -85,8 +89,11 @@ import { Button } from '@/components/ui/button';
 const getPanolNavItems = (can: (p: Permission) => boolean) => [
   { href: '/dashboard/pagnol', icon: LayoutDashboard, label: 'Panel Principal' },
   { href: '/dashboard/pagnol/activos', icon: Package, label: 'Gestión de Activos' },
-  { href: '/dashboard/pagnol/solicitudes', icon: ClipboardList, label: 'Solicitudes y Devoluciones' },
+  { href: '/dashboard/pagnol/solicitudes', icon: ClipboardList, label: 'Entregas y Devoluciones' },
   { href: '/dashboard/pagnol/movimientos', icon: ArrowLeftRight, label: 'Transacciones' },
+  ...(can('material_requests:review_withdrawals')
+    ? [{ href: '/dashboard/pagnol/revisar-retiros', icon: ClipboardCheck, label: 'Revisar Retiros' }]
+    : []),
   { href: '/dashboard/pagnol/mantenimiento', icon: Wrench, label: 'Mantenimiento (OT)' },
   { href: '/dashboard/pagnol/ingreso-stock', icon: PackagePlus, label: 'Ingreso Manual' },
   { href: '/dashboard/pagnol/panoles', icon: Warehouse, label: 'Pañoles' },
@@ -212,6 +219,7 @@ const getAbastecimientoNavItems = () => [
   { href: '/dashboard/abastecimiento/rfq', icon: Search, label: 'Cotizaciones (RFQ)' },
   { href: '/dashboard/abastecimiento/comparador', icon: ListChecks, label: 'Comparador' },
   { href: '/dashboard/abastecimiento/ordenes', icon: FileText, label: 'Órdenes de Compra' },
+  { href: '/dashboard/abastecimiento/urgencias', icon: Zap, label: 'Compras Urgentes' },
   { href: '/dashboard/abastecimiento/recepcion', icon: Truck, label: 'Recepción' },
   { href: '/dashboard/abastecimiento/proveedores', icon: Building2, label: 'Proveedores' },
   { href: '/dashboard/abastecimiento/costos', icon: Target, label: 'Control de Costos' },
@@ -270,8 +278,11 @@ const getWalletNavItems = () => [
   { href: '/dashboard/wallet/advances', icon: HandCoins, label: 'Solicitar Adelanto' },
 ];
 
-const getSupervisorNavItems = () => [
+const getSupervisorNavItems = (can: (p: Permission) => boolean) => [
   { href: '/dashboard/supervisor', icon: LayoutDashboard, label: 'Panel Supervisor' },
+  ...(can('material_requests:review_withdrawals')
+    ? [{ href: '/dashboard/supervisor/revisar-retiros', icon: ClipboardCheck, label: 'Revisar Retiros' }]
+    : []),
   { href: '/dashboard/supervisor/request', icon: PlusCircle, label: 'Solicitud Material' },
   { href: '/dashboard/supervisor/return-request', icon: RotateCcw, label: 'Devolución Material' },
   { href: '/dashboard/supervisor/purchase-request-form', icon: ShoppingCart, label: 'Solicitud Compra' },
@@ -302,6 +313,28 @@ interface SidebarProps {
   onLinkClick?: () => void;
 }
 
+// Trabajo pendiente del pañol (por aprobar + por entregar + devoluciones por
+// revisar), para que se vea desde el menú sin entrar a la bandeja. Componente
+// aparte: sólo él lee esas colecciones, así el resto del menú no se re-renderiza.
+function PanolPendingBadge({ isActive }: { isActive: boolean }) {
+  const { requests, returnRequests, can } = useAppState();
+  const count = React.useMemo(() => {
+    const q = withdrawalQueues((requests || []) as MaterialRequest[]);
+    const toApprove = q.toApprove.filter(r => canApproveClass(can, (r.highestClass || 'C') as 'A' | 'B' | 'C')).length;
+    const returns = ((returnRequests || []) as ReturnRequest[]).filter(r => r.status === 'pending').length;
+    return toApprove + q.toDeliver.length + returns;
+  }, [requests, returnRequests, can]);
+  if (count === 0) return null;
+  return (
+    <span className={cn(
+      'absolute -top-2 -right-2.5 min-w-4 h-4 px-1 rounded-full text-[9px] font-black leading-none flex items-center justify-center shadow',
+      isActive ? 'bg-white text-pagnol-orange' : 'bg-pagnol-orange text-white',
+    )}>
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
 export function Sidebar({ onLinkClick }: SidebarProps) {
   const pathname = usePathname();
   const { user, can, logout } = useAuth();
@@ -314,6 +347,8 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
 
   const { navItems, moduleTitle, moduleIcon: ModuleIcon } = React.useMemo(() => {
     if (!user) return { navItems: [], moduleTitle: '', moduleIcon: LayoutDashboard };
+    // Sin acceso al módulo (la página muestra "No tienes acceso"): tampoco su menú.
+    if (!canOpenPath(pathname, can, user.role)) return { navItems: [], moduleTitle: '', moduleIcon: LayoutDashboard };
 
     if (pathname.startsWith('/dashboard/authorizations')) {
       return {
@@ -334,6 +369,11 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       return { navItems: getConstructionNavItems(can), moduleTitle: 'Control de Obras', moduleIcon: Construction };
     }
     if (pathname.startsWith('/dashboard/purchasing')) {
+      // El formulario de compras/arriendos de terreno vive acá, pero quien no
+      // tiene el módulo de Compras (el supervisor) ve su propio menú.
+      if (!canOpenPath('/dashboard/purchasing', can, user.role)) {
+        return { navItems: getSupervisorNavItems(can), moduleTitle: 'Supervisor', moduleIcon: Construction };
+      }
       return { navItems: getPurchasingNavItems(), moduleTitle: 'Compras', moduleIcon: ShoppingCart };
     }
     if (pathname.startsWith('/dashboard/safety')) {
@@ -398,7 +438,7 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       return { navItems: getWalletNavItems(), moduleTitle: 'Billetera', moduleIcon: Wallet };
     }
     if (pathname.startsWith('/dashboard/supervisor')) {
-      return { navItems: getSupervisorNavItems(), moduleTitle: 'Supervisor', moduleIcon: Construction };
+      return { navItems: getSupervisorNavItems(can), moduleTitle: 'Supervisor', moduleIcon: Construction };
     }
     if (pathname.startsWith('/dashboard/cphs')) {
       return { navItems: getCommitteeNavItems(), moduleTitle: 'Comité', moduleIcon: ShieldAlert };
@@ -446,7 +486,7 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       </div>
 
       {/* Current Module Indicator */}
-      {moduleTitle !== 'PAGNOL' && (
+      {moduleTitle && moduleTitle !== 'PAGNOL' && (
         <div className="px-6 py-2">
           <div className="flex items-center gap-3 text-pagnol-orange/60 mb-4">
             <ModuleIcon size={14} />
@@ -475,11 +515,14 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
                 {isActive && (
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-white rounded-r-full" />
                 )}
-                <item.icon className={cn(
-                  "h-5 w-5 transition-transform duration-300 group-hover:scale-110",
-                  isActive ? "text-white" : "text-slate-500 group-hover:text-white"
-                )} />
-                <span className="flex-1 uppercase tracking-widest text-[10px] whitespace-nowrap">{item.label}</span>
+                <span className="relative shrink-0">
+                  <item.icon className={cn(
+                    "h-5 w-5 transition-transform duration-300 group-hover:scale-110",
+                    isActive ? "text-white" : "text-slate-500 group-hover:text-white"
+                  )} />
+                  {item.href === '/dashboard/pagnol/solicitudes' && <PanolPendingBadge isActive={isActive} />}
+                </span>
+                <span className="flex-1 min-w-0 truncate uppercase tracking-widest text-[10px] whitespace-nowrap">{item.label}</span>
                 {isActive && (
                   <div className="w-1.5 h-1.5 rounded-full bg-white opacity-40 animate-pulse" />
                 )}

@@ -5,6 +5,9 @@ import { PurchaseRequest, Material, PurchaseLot, PurchaseOrder, URGENCY_LEAD_DAY
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { addRentalRequest } from './rentalRequestMutations';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
+import { needsOpsReview } from '@/modules/core/lib/ops-review';
+import { loadSignedProposal } from './approvalMutations';
+import { isValidRut, formatRut } from '@/lib/rut';
 import { addToLedger } from './stockLedger';
 import { emitFinanceEntries, reverseEntriesForSource, type FinanceEntryInput } from './financeLedger';
 
@@ -91,8 +94,13 @@ export async function addPurchaseRequest(
     throw new Error(`Si lo necesitas para mañana, explica por qué (mínimo ${URGENCY_REASON_MIN} caracteres).`);
   }
 
-  // Si quien crea ya puede autorizar (ADC o superior), salta el gate del ADC.
-  const preAuthorized = can('purchase_requests:authorize');
+  // RFC-006 F1: una compra a proveedor pasa primero por el Jefe de Operaciones.
+  // Si quien crea ya revisa (el propio JO, administración), entra revisada; y si
+  // además autoriza como ADC, salta también ese gate. Un ADC que crea un pedido
+  // ya no lo pre-autoriza: igual tiene que pasar por la revisión de operaciones.
+  const reviewNeeded = needsOpsReview({ requestTarget: data.requestTarget, rentalRequestId: null });
+  const opsReviewed = !reviewNeeded || can('purchase_requests:review_operations');
+  const preAuthorized = opsReviewed && can('purchase_requests:authorize');
   const now = new Date().toISOString();
 
   // `id` lo genera Postgres (uuid) — requestId es el código legible que va en
@@ -114,6 +122,12 @@ export async function addPurchaseRequest(
     requester_name: user.name,
     adc_authorized_at: preAuthorized ? now : null,
     adc_authorized_by: preAuthorized ? user.id : null,
+    // RFC-006 F1 (migración 20261009000000). Si la columna aún no existe, el
+    // insert la descarta y todo sigue como antes.
+    ...(reviewNeeded && opsReviewed ? {
+      ops_reviewed_at: now, ops_reviewed_by: user.id, ops_reviewed_by_name: user.name,
+      ops_review_note: 'Creado por quien revisa',
+    } : {}),
     ...(data.batchId ? { batch_id: data.batchId } : {}),
     ...(isClientSupply ? {
       request_target: 'client',
@@ -138,8 +152,9 @@ export async function addPurchaseRequest(
     ...(data.requestType === 'servicio' ? ['request_type'] : []),
   ]);
 
-  // Push al ADC solo si quedó pendiente de autorización.
-  if (!preAuthorized) notifyAuthorizers('purchase', { tenantId, code: requestId, requesterName: user.name });
+  // Push a quien tiene que mirarlo ahora: el Jefe de Operaciones o el ADC.
+  if (!opsReviewed) notifyAuthorizers('purchase_review', { tenantId, code: requestId, requesterName: user.name });
+  else if (!preAuthorized) notifyAuthorizers('purchase', { tenantId, code: requestId, requesterName: user.name });
 }
 
 /**
@@ -180,12 +195,23 @@ export async function authorizePurchaseRequest(requestId: string, context: Conte
   if (!can('purchase_requests:authorize'))
     throw new Error('No tienes permiso para autorizar requerimientos.');
 
-  const { error } = await supabase
+  // RFC-006 F1: el ADC no puede saltarse la revisión del Jefe de Operaciones.
+  const { data: row, error: fetchErr } = await supabase
+    .from('purchase_requests').select('*').eq('id', requestId).eq('tenant_id', tenantId).single();
+  if (fetchErr || !row) throw new Error('El requerimiento no existe.');
+  if ('ops_reviewed_at' in row && row.ops_reviewed_at === null
+      && needsOpsReview({ requestTarget: row.request_target, rentalRequestId: row.rental_request_id })) {
+    throw new Error('Este requerimiento todavía no pasa la revisión del Jefe de Operaciones.');
+  }
+
+  const { data: updated, error } = await supabase
     .from('purchase_requests')
     .update({ adc_authorized_at: new Date().toISOString(), adc_authorized_by: user.id })
     .eq('id', requestId)
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    .select('id');
   if (error) throw error;
+  if (!updated || updated.length === 0) throw new Error('No se pudo guardar la autorización. Recarga la página.');
 }
 
 export async function updatePurchaseRequestStatus(
@@ -567,13 +593,22 @@ export async function deletePurchaseRequest(requestId: string, { tenantId }: Con
  * real y retroalimenta el catálogo.
  */
 export async function generatePurchaseOrder(
-  requests: PurchaseRequest[],
+  allRequests: PurchaseRequest[],
   supplierId: string,
-  prices: Record<string, number>,
+  _prices: Record<string, number>,
+  /** RFC-006 F2: la propuesta firmada que autoriza esta OC. */
+  proposalId: string,
   { user, tenantId, can }: Context,
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
-  if (requests.length === 0) throw new Error("No hay solicitudes para procesar.");
+  // RFC-006 F2: la OC sale de una propuesta firmada, con SUS precios y SUS
+  // pedidos — no con lo que haya en la pantalla. La base lo vuelve a exigir.
+  const proposal = await loadSignedProposal(proposalId, tenantId);
+  if (proposal.supplierId !== supplierId) throw new Error('El proveedor no es el de la propuesta firmada.');
+  const priceByRequest = new Map(proposal.items.filter(i => i.requestId).map(i => [i.requestId!, Number(i.unitPrice)]));
+  const requests = allRequests.filter(r => proposal.requestIds.includes(r.id));
+  const prices: Record<string, number> = Object.fromEntries(requests.map(r => [r.id, priceByRequest.get(r.id) ?? 0]));
+  if (requests.length === 0) throw new Error("No hay solicitudes para procesar."); 
   const missing = requests.filter((r) => !(Number(prices[r.id]) > 0));
   if (missing.length > 0) {
     throw new Error(`Falta el precio unitario de: ${missing.map((r) => r.materialName).join(', ')}.`);
@@ -620,9 +655,10 @@ export async function generatePurchaseOrder(
     tenant_id: tenantId,
     lot_id: lotId,
     order_type: orderType,
+    approval_proposal_id: proposal.id,
   });
 
-  if (orderErr) throw orderErr;
+  if (orderErr) throw new Error(orderErr.message);
 
   // Recién con la OC persistida se marcan las solicitudes: si el insert falla,
   // ninguna queda en estado 'ordered' fantasma.
@@ -658,10 +694,19 @@ export async function generatePurchaseOrder(
 }
 
 export async function createPurchaseOrder(
-  { lotId, ocNumber, items, totalAmount }: { lotId: string; ocNumber: string; items: any[], totalAmount: number },
+  { lotId, ocNumber, items, totalAmount, proposalId }: { lotId: string; ocNumber: string; items: any[], totalAmount: number; proposalId: string },
   { user, tenantId, can }: Context
 ): Promise<string> {
   if (!user || !tenantId) throw new Error("Autenticación requerida");
+
+  // RFC-006 F2: sin propuesta firmada no hay OC; y no se puede pasar lo firmado.
+  const proposal = await loadSignedProposal(proposalId, tenantId);
+  if (items.some((i) => i.requestId && !proposal.requestIds.includes(i.requestId))) {
+    throw new Error('Hay líneas que no estaban en la propuesta firmada.');
+  }
+  if (Math.round(totalAmount) > proposal.netTotal) {
+    throw new Error(`El total ($${Math.round(totalAmount).toLocaleString('es-CL')}) supera lo firmado ($${proposal.netTotal.toLocaleString('es-CL')} neto).`);
+  }
 
   const { data: lot } = await supabase.from('purchase_lots').select('*').eq('id', lotId).single();
   if (!lot) throw new Error("El lote no existe.");
@@ -699,9 +744,10 @@ export async function createPurchaseOrder(
     })),
     total_amount: totalAmount,
     tenant_id: tenantId,
+    approval_proposal_id: proposal.id,
   }).select().single();
 
-  if (orderErr) throw orderErr;
+  if (orderErr) throw new Error(orderErr.message);
 
   await supabase.from('purchase_lots').update({ status: 'ordered' }).eq('id', lotId);
 
@@ -791,12 +837,73 @@ export async function cancelPurchaseOrder(orderId: string, { user, tenantId, can
   await reverseEntriesForSource('purchase_order', orderId, `OC anulada por ${user.name}`, { user, tenantId, can });
 }
 
-export async function archiveLot(requestIds: string[], { user, tenantId, can }: Context) {
+export interface DirectPurchaseInput {
+  lotId?: string | null;
+  requestIds: string[];
+  docType: 'factura' | 'boleta';
+  docNumber: string;
+  supplierName: string;
+  supplierRut: string;
+  buyerId?: string | null;
+  buyerName: string;
+}
+
+/**
+ * RFC-006 F3 — Compra YA REALIZADA por fuera del flujo (reemplaza al antiguo
+ * "Finalizar lote manualmente", que marcaba los pedidos como comprados sin OC,
+ * sin firma y sin rastro). Ahora exige el respaldo: factura o boleta, empresa
+ * con RUT válido y quién compró. Queda como hecho inmutable y la misma factura
+ * no se registra dos veces (lo garantiza la base). Los pedidos quedan
+ * "ordenados" para que el pañol los reciba e ingrese al inventario.
+ */
+export async function registerDirectPurchase(input: DirectPurchaseInput, { user, tenantId, can }: Context): Promise<string> {
   if (!user || !tenantId) throw new Error("Autenticación requerida");
-  for (const id of requestIds) {
-    await supabase.from('purchase_requests').update({
-      status: 'ordered',
-      notes: 'Archivado manualmente desde gestión de lotes.'
-    }).eq('id', id);
+  if (!can('finance:manage_purchase_orders')) throw new Error('No tienes permiso para registrar compras.');
+  if (input.requestIds.length === 0) throw new Error('No hay pedidos que registrar.');
+  if (!input.docNumber.trim()) throw new Error('Falta el número de la factura o boleta.');
+  if (input.supplierName.trim().length < 2) throw new Error('Falta el nombre de la empresa.');
+  if (!isValidRut(input.supplierRut)) throw new Error('El RUT de la empresa no es válido (revisa el dígito verificador).');
+  if (input.buyerName.trim().length < 2) throw new Error('Indica quién hizo la compra.');
+
+  const { data: dp, error } = await supabase
+    .from('direct_purchases')
+    .insert({
+      tenant_id: tenantId,
+      lot_id: input.lotId || null,
+      request_ids: input.requestIds,
+      doc_type: input.docType,
+      doc_number: input.docNumber.trim(),
+      supplier_name: input.supplierName.trim(),
+      supplier_rut: formatRut(input.supplierRut),
+      buyer_id: input.buyerId || null,
+      buyer_name: input.buyerName.trim(),
+      created_by: user.id,
+      created_by_name: user.name,
+    })
+    .select('id')
+    .single();
+  if (error) {
+    if (error.code === '23505') throw new Error(`Esa ${input.docType} de ${input.supplierName} ya está registrada.`);
+    throw new Error(error.message);
   }
+
+  const docLabel = `${input.docType === 'factura' ? 'Factura' : 'Boleta'} N° ${input.docNumber.trim()}`;
+  const now = new Date().toISOString();
+  const { data: updated, error: updErr } = await supabase
+    .from('purchase_requests')
+    .update({
+      status: 'ordered',
+      ordered_at: now,
+      direct_purchase_id: dp.id,
+      notes: `Compra ya realizada: ${docLabel} — ${input.supplierName.trim()} (${formatRut(input.supplierRut)}). Compró: ${input.buyerName.trim()}.`,
+    })
+    .in('id', input.requestIds)
+    .eq('tenant_id', tenantId)
+    .select('id');
+  if (updErr) throw updErr;
+  if (!updated || updated.length !== input.requestIds.length) {
+    throw new Error('Se registró el documento, pero algún pedido no se pudo marcar. Recarga la página.');
+  }
+  if (input.lotId) await supabase.from('purchase_lots').update({ status: 'ordered' }).eq('id', input.lotId).eq('tenant_id', tenantId);
+  return dp.id;
 }

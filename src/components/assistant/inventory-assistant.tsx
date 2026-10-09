@@ -90,6 +90,9 @@ export function InventoryAssistant() {
         variant="default"
         className={cn(
           'fixed bottom-6 right-6 h-16 w-16 rounded-full shadow-2xl z-[100] flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95',
+          // z-[100] queda por encima de todo diálogo (z-50): en el celular tapaba
+          // el botón de confirmar. Mientras un diálogo bloquea el scroll, se oculta.
+          '[body[data-scroll-locked]_&]:hidden',
           isOpen ? 'bg-foreground text-background rotate-90' : 'bg-pagnol-orange text-white'
         )}
       >

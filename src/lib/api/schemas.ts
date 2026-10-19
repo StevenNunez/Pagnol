@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { WEBHOOK_EVENTS } from './webhooks/events';
+import { webhookUrlProblem } from './webhooks/url-guard';
 
 // DTOs públicos de la API v1. Son el contrato con los sistemas integrados:
 // dentro de v1 sólo se AGREGAN campos; quitar o renombrar exige v2.
@@ -150,7 +152,65 @@ export const CreateMovimientoBodySchema = z
     ])
     .openapi('CreateMovimiento');
 
+// ── Webhooks ────────────────────────────────────────────────────────────────
+export const WebhookEventTypeSchema = z.enum(WEBHOOK_EVENTS);
+
+export const CreateWebhookBodySchema = z
+    .object({
+        url: z.string().trim().superRefine((u, ctx) => {
+            const problem = webhookUrlProblem(u);
+            if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+        }).openapi({
+            description: 'Dónde recibir los eventos: https público, puerto 443. Se usa tal cual, con su barra final si la lleva.',
+            example: 'https://plataforma.grupovalar.cl/api/webhooks/pagnol/',
+        }),
+        events: z.array(WebhookEventTypeSchema).min(1).max(WEBHOOK_EVENTS.length)
+            .refine(list => new Set(list).size === list.length, { message: 'Hay eventos repetidos.' })
+            .openapi({ description: 'Eventos a recibir.' }),
+        descripcion: z.string().trim().min(1).max(200).nullable().optional(),
+    })
+    .strict()
+    .openapi('CreateWebhook');
+
+const webhookFields = {
+    id: uuid,
+    url: z.string(),
+    events: z.array(WebhookEventTypeSchema),
+    descripcion: z.string().nullable(),
+    activo: z.boolean(),
+    organization_id: uuid.openapi({ description: 'La empresa dueña de la API key. Es el `organization_id` que traen todos los eventos.' }),
+    created_at: isoDateTime,
+};
+
+export const WebhookSchema = z.object(webhookFields).openapi('Webhook');
+
+export const WebhookCreatedSchema = z
+    .object({
+        ...webhookFields,
+        secret: z.string().openapi({
+            description: 'Secreto de firma (`whsec_…`). Se entrega SOLO al crear el webhook (y en una repetición idempotente dentro de 24 h); ' +
+                'guárdalo en el servidor (p. ej. `PAGNOL_WEBHOOK_SECRET`). Si se pierde, se elimina el webhook y se crea otro.',
+        }),
+    })
+    .openapi('WebhookCreated');
+
+/** Sobre de todo evento: `data` es el mismo DTO que devuelve la API para ese recurso. */
+export const WebhookEventSchema = z
+    .object({
+        id: z.string().openapi({ description: 'Id del evento (`evt_…`). Es el mismo valor del header `webhook-id`: úsalo para deduplicar.', example: 'evt_0b7d0e1c9f7a4a3c9e3c1d2f4a5b6c7d' }),
+        type: WebhookEventTypeSchema,
+        created_at: isoDateTime,
+        organization_id: uuid,
+        data: z.record(z.unknown()).openapi({
+            description: '`material.*` → Material · `proveedor.*` → Proveedor · `activo.*` → Activo · ' +
+                '`stock.bajo_minimo` → Material con `stock_actual`/`stock_minimo` del instante en que cruzó el mínimo, más `existencias` (stock por pañol y contrato).',
+        }),
+    })
+    .openapi('WebhookEvent');
+
 export type MaterialDTO = z.infer<typeof MaterialSchema>;
+export type WebhookDTO = z.infer<typeof WebhookSchema>;
+export type WebhookCreatedDTO = z.infer<typeof WebhookCreatedSchema>;
 export type ProveedorDTO = z.infer<typeof ProveedorSchema>;
 export type ActivoDTO = z.infer<typeof ActivoSchema>;
 export type PanolDTO = z.infer<typeof PanolSchema>;

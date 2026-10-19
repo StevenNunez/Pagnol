@@ -4,6 +4,7 @@ import {
     ActivoSchema, ActivosQuerySchema, CreateActivoBodySchema, CreateMovimientoBodySchema, ErrorSchema, ExistenciasSchema,
     IdParamSchema, MaterialSchema, MaterialesQuerySchema, MovimientoSchema, PanolSchema, PatchActivoBodySchema,
     ProveedorSchema, ProveedoresQuerySchema, listSchema,
+    CreateWebhookBodySchema, WebhookCreatedSchema, WebhookEventSchema, WebhookSchema,
 } from './schemas';
 import type { ApiScope } from './scopes';
 import type { z } from 'zod';
@@ -164,6 +165,41 @@ function buildDocument() {
         security: [{ apiKey: [] }],
         request: { headers: IdempotencyHeader, body: { content: { 'application/json': { schema: CreateMovimientoBodySchema } } } },
         responses: { 201: json(MovimientoSchema, 'Movimiento registrado.'), 200: json(MovimientoSchema, 'Ya existía con esa `external_ref`.'), ...writeErrors },
+    });
+
+    // ── Webhooks: Pagnol avisa cuando algo cambia ───────────────────────────
+    registry.register('WebhookEvent', WebhookEventSchema);
+    registry.registerPath({
+        method: 'get', path: '/webhooks', operationId: 'listWebhooks', tags: ['Webhooks'],
+        summary: 'Webhooks registrados por la empresa.',
+        description: 'Requiere `webhooks:manage`. Una sola página. El secreto de firma no se vuelve a mostrar.',
+        security: [{ apiKey: [] }],
+        responses: { 200: json(listSchema(WebhookSchema, 'WebhookList'), 'Webhooks.'), ...commonErrors },
+    });
+    registry.registerPath({
+        method: 'post', path: '/webhooks', operationId: 'createWebhook', tags: ['Webhooks'],
+        summary: 'Registra una URL para recibir eventos.',
+        description: 'Requiere `webhooks:manage`. Devuelve el `secret` de firma UNA vez. Cada evento llega como `POST` con el sobre `WebhookEvent`, ' +
+            'firmado según Standard Webhooks (headers `webhook-id`, `webhook-timestamp`, `webhook-signature`; verifica con la librería `standardwebhooks` y este `secret`). ' +
+            'Responde `2xx` en menos de 10 s; ante cualquier otra respuesta (las redirecciones no se siguen), error o silencio Pagnol reintenta ' +
+            'a ≈ 1 min, 5 min, 30 min, 2 h, 6 h y 24 h, y luego cada 24 h hasta cumplir 7 días. Es posible recibir un evento más de una vez: deduplica por `webhook-id`. ' +
+            'Varios cambios seguidos al mismo recurso pueden llegar como un solo evento con su estado más reciente. ' +
+            'Una URL por empresa; máximo 10 webhooks.',
+        security: [{ apiKey: [] }],
+        request: { headers: IdempotencyHeader, body: { content: { 'application/json': { schema: CreateWebhookBodySchema } } } },
+        responses: {
+            201: json(WebhookCreatedSchema, 'Webhook registrado, con su `secret`.'),
+            ...commonErrors,
+            409: errorResponse('`idempotency_conflict`, o `conflict` si la URL ya está registrada o se alcanzó el máximo.'),
+        },
+    });
+    registry.registerPath({
+        method: 'delete', path: '/webhooks/{id}', operationId: 'deleteWebhook', tags: ['Webhooks'],
+        summary: 'Elimina un webhook.',
+        description: 'Requiere `webhooks:manage`. Deja de enviarse a esa URL de inmediato, incluidos los reintentos pendientes.',
+        security: [{ apiKey: [] }],
+        request: { params: IdParamSchema },
+        responses: { 204: { description: 'Eliminado.' }, 404: errorResponse('No existe en la empresa (`not_found`).'), ...commonErrors },
     });
 
     return new OpenApiGeneratorV31(registry.definitions).generateDocument({

@@ -121,13 +121,18 @@ describe('openapi', () => {
         expect(paths).toEqual([
             '/activos', '/activos/{id}', '/materiales', '/materiales/{id}', '/materiales/{id}/existencias',
             '/movimientos', '/panoles', '/productos', '/productos/{id}', '/proveedores', '/proveedores/{id}',
+            '/webhooks', '/webhooks/{id}',
         ]);
         for (const p of paths) for (const op of Object.values(doc.paths[p]) as any[]) expect(op.security).toEqual([{ apiKey: [] }]);
         // Toda escritura documenta el Idempotency-Key obligatorio.
-        for (const op of [doc.paths['/activos'].post, doc.paths['/activos/{id}'].patch, doc.paths['/movimientos'].post]) {
+        for (const op of [doc.paths['/activos'].post, doc.paths['/activos/{id}'].patch, doc.paths['/movimientos'].post, doc.paths['/webhooks'].post]) {
             expect(op.parameters).toContainEqual(expect.objectContaining({ in: 'header', name: 'Idempotency-Key', required: true }));
         }
         expect(doc.components.securitySchemes.apiKey).toMatchObject({ type: 'http', scheme: 'bearer' });
-        expect(Object.keys(doc.components.schemas)).toEqual(expect.arrayContaining(['Material', 'Proveedor', 'Activo', 'Panol', 'Existencias', 'Movimiento', 'Error']));
+        expect(Object.keys(doc.components.schemas)).toEqual(expect.arrayContaining([
+            'Material', 'Proveedor', 'Activo', 'Panol', 'Existencias', 'Movimiento', 'Error', 'Webhook', 'WebhookCreated', 'WebhookEvent',
+        ]));
+        expect(Object.keys(doc.paths['/webhooks'])).toEqual(expect.arrayContaining(['get', 'post']));
+        expect(doc.paths['/webhooks/{id}'].delete.responses['204']).toBeDefined();
     });
 });

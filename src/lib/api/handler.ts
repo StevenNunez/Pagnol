@@ -70,6 +70,23 @@ export function detailRoute(
     };
 }
 
+/** DELETE `/{id}`: auth con scope → valida el uuid → 204 sin cuerpo. Borrar lo ya borrado es 404. */
+export function deleteRoute(
+    scope: Scope,
+    run: (call: ApiCall<{ id: string }>) => Promise<void>,
+) {
+    return async function DELETE(req: Request, ctx: RouteCtx): Promise<NextResponse> {
+        try {
+            const key = await authenticate(req, scope);
+            const params = parseOrThrow(IdParamSchema, await ctx.params);
+            await run({ req, key, db: getSupabaseAdmin(), params });
+            return new NextResponse(null, { status: 204 });
+        } catch (e) {
+            return toErrorResponse(e);
+        }
+    };
+}
+
 export interface WriteCall<B> extends ApiCall<{ id?: string }> {
     body: B;
 }

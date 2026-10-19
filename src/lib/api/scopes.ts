@@ -33,6 +33,7 @@ export const API_SCOPES_AVAILABLE: readonly ApiScope[] = [
     'activos:read',
     'activos:write',
     'stock:write',
+    'webhooks:manage',
 ];
 
 /** Los de escritura se marcan a propósito al crear la llave; por defecto sólo lectura. */

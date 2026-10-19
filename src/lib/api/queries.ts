@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ApiError, type ApiErrorCode } from './errors';
+import { generateWebhookSecret } from './webhooks/sign';
 import { afterCursorFilter, decodeCursor, paginate } from './pagination';
 import {
     ACTIVO_USAGE_TYPES, MATERIAL_API_COLUMNS, PRODUCTO_USAGE_TYPES, SIN_LUGAR, SUPPLIER_API_COLUMNS,
@@ -8,6 +10,7 @@ import {
 } from './mappers';
 import type {
     ActivoDTO, ActivoEstado, ExistenciasDTO, MaterialDTO, MovimientoDTO, PanolDTO, ProveedorDTO, RefDTO,
+    WebhookCreatedDTO, WebhookDTO,
 } from './schemas';
 
 // Acceso a datos de la API pública. Corre con el cliente service role (sin
@@ -370,4 +373,113 @@ export async function listProveedores(
 
 export async function getProveedor(db: SupabaseClient, tenantId: string, id: string): Promise<ProveedorDTO> {
     return toProveedorDTO(await runOne<SupplierRow>(scoped(db, 'suppliers', SUPPLIER_API_COLUMNS, tenantId).eq('id', id), 'Proveedor'));
+}
+
+// ── Lecturas por lote (las usa el despachador de webhooks para armar eventos) ─
+
+const BY_IDS_CHUNK = 100;
+
+async function rowsByIds<R>(
+    db: SupabaseClient, tenantId: string, table: string, columns: string, ids: string[],
+    narrow: (q: Query) => Query = q => q,
+): Promise<R[]> {
+    const out: R[] = [];
+    for (let i = 0; i < ids.length; i += BY_IDS_CHUNK) {
+        const { data, error } = await narrow(scoped(db, table, columns, tenantId)).in('id', ids.slice(i, i + BY_IDS_CHUNK));
+        if (error) throw error;
+        out.push(...((data ?? []) as unknown as R[]));
+    }
+    return out;
+}
+
+/** Los que no existen en la empresa (o no pertenecen al recurso) simplemente no vienen. */
+export async function materialesByIds(db: SupabaseClient, tenantId: string, kind: 'materiales' | 'productos', ids: string[]): Promise<MaterialDTO[]> {
+    const rows = await rowsByIds<MaterialRow>(db, tenantId, 'materials', MATERIAL_API_COLUMNS, ids, q => applyKind(q, kind));
+    return rows.map(toMaterialDTO);
+}
+
+export async function activosByIds(db: SupabaseClient, tenantId: string, ids: string[]): Promise<ActivoDTO[]> {
+    const rows = await rowsByIds<MaterialRow>(db, tenantId, 'materials', MATERIAL_API_COLUMNS, ids, q => applyKind(q, 'activos'));
+    return toActivos(db, tenantId, rows);
+}
+
+export async function proveedoresByIds(db: SupabaseClient, tenantId: string, ids: string[]): Promise<ProveedorDTO[]> {
+    return (await rowsByIds<SupplierRow>(db, tenantId, 'suppliers', SUPPLIER_API_COLUMNS, ids)).map(toProveedorDTO);
+}
+
+// ── Webhooks (suscripciones) ────────────────────────────────────────────────
+
+export const MAX_WEBHOOKS_PER_TENANT = 10;
+
+interface WebhookRow {
+    id: string; tenant_id: string; url: string; events: string[]; description: string | null;
+    active: boolean; created_at: string;
+}
+const WEBHOOK_COLUMNS = 'id, tenant_id, url, events, description, active, created_at';
+
+function toWebhookDTO(r: WebhookRow): WebhookDTO {
+    return {
+        id: r.id,
+        url: r.url,
+        events: r.events as WebhookDTO['events'],
+        descripcion: r.description,
+        activo: r.active,
+        organization_id: r.tenant_id,
+        created_at: new Date(r.created_at).toISOString(),
+    };
+}
+
+/** Las suscripciones de una empresa son pocas: una sola página. El secreto nunca sale en un listado. */
+export async function listWebhooks(db: SupabaseClient, tenantId: string): Promise<Page<WebhookDTO>> {
+    const { data, error } = await scoped(db, 'webhook_subscriptions', WEBHOOK_COLUMNS, tenantId).order('created_at', { ascending: true });
+    if (error) throw error;
+    return { data: ((data ?? []) as unknown as WebhookRow[]).map(toWebhookDTO), next_cursor: null };
+}
+
+/** Registra un webhook y devuelve su secreto, que no vuelve a mostrarse. */
+export async function createWebhook(
+    db: SupabaseClient, tenantId: string, apiKeyId: string,
+    body: { url: string; events: WebhookDTO['events']; descripcion?: string | null },
+): Promise<WebhookCreatedDTO> {
+    const { data: existing, error: listErr } = await scoped(db, 'webhook_subscriptions', 'id, url', tenantId);
+    if (listErr) throw listErr;
+    const rows = (existing ?? []) as unknown as { id: string; url: string }[];
+    const dup = rows.find(r => r.url === body.url);
+    if (dup) throw new ApiError('conflict', 'Ya hay un webhook registrado con esa URL.', { webhook_id: dup.id });
+    if (rows.length >= MAX_WEBHOOKS_PER_TENANT) {
+        throw new ApiError('conflict', `Se alcanzó el máximo de ${MAX_WEBHOOKS_PER_TENANT} webhooks. Elimina alguno con DELETE /webhooks/{id}.`);
+    }
+
+    const row: WebhookRow & { secret: string; api_key_id: string } = {
+        id: randomUUID(),
+        tenant_id: tenantId,
+        api_key_id: apiKeyId,
+        url: body.url,
+        secret: generateWebhookSecret(),
+        events: body.events,
+        description: body.descripcion ?? null,
+        active: true,
+        created_at: new Date().toISOString(),
+    };
+    const { error } = await db.from('webhook_subscriptions').insert(row);
+    if (error) {
+        // Otra petición registró la misma URL entre la lectura y la escritura.
+        if ((error as { code?: string }).code === '23505') throw new ApiError('conflict', 'Ya hay un webhook registrado con esa URL.');
+        throw error;
+    }
+    return { ...toWebhookDTO(row), secret: row.secret };
+}
+
+/** A quién se le puede entregar hoy (suscripciones activas) y qué eventos escucha cada una. */
+export async function activeWebhookTargets(db: SupabaseClient, tenantId: string): Promise<{ id: string; events: string[] }[]> {
+    const { data, error } = await scoped(db, 'webhook_subscriptions', 'id, events', tenantId).eq('active', true);
+    if (error) throw error;
+    return (data ?? []) as unknown as { id: string; events: string[] }[];
+}
+
+export async function deleteWebhook(db: SupabaseClient, tenantId: string, id: string): Promise<void> {
+    const { data, error } = await db.from('webhook_subscriptions').delete()
+        .eq('tenant_id', tenantId).eq('id', id).select('id');
+    if (error) throw error;
+    if (!data?.length) throw new ApiError('not_found', 'Webhook no encontrado.');
 }

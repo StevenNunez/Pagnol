@@ -130,7 +130,7 @@ const KEY = {
     A_REVOCADA: 'pk_test_' + 'd'.repeat(64),
 };
 const READ = ['materiales:read', 'productos:read', 'proveedores:read', 'activos:read'];
-const ALL = [...READ, 'activos:write', 'stock:write'];
+const ALL = [...READ, 'activos:write', 'stock:write', 'webhooks:manage'];
 
 beforeEach(() => {
     dataQueries.length = 0;
@@ -145,6 +145,7 @@ beforeEach(() => {
     tables.holders = [];
     tables.stock_movements = [];
     tables.idempotency_keys = [];
+    tables.webhook_subscriptions = [];
     tables.api_keys = [
         { id: 'k-a', tenant_id: A, name: 'A', key_hash: sha(KEY.A), scopes: ALL, revoked_at: null, last_used_at: null },
         { id: 'k-b', tenant_id: B, name: 'B', key_hash: sha(KEY.B), scopes: ALL, revoked_at: null, last_used_at: null },
@@ -369,5 +370,110 @@ describe('scopes', () => {
     it('limit fuera de rango responde 400', async () => {
         const res = await (await ENDPOINTS[0].list())(req('materiales?limit=500', KEY.A));
         expect(res.status).toBe(400);
+    });
+});
+
+describe('webhooks — aislamiento y contrato', () => {
+    const URL_A = 'https://plataforma.grupovalar.cl/api/webhooks/pagnol/';
+    const EVENTS = ['material.actualizado', 'stock.bajo_minimo'];
+    const crear = (key: string, body: Row, idem?: string | null) =>
+        import('@/app/api/v1/webhooks/route').then(m => m.POST(req('webhooks', key, { method: 'POST', body, idem }) as any, noParams as any));
+    const listar = (key: string) =>
+        import('@/app/api/v1/webhooks/route').then(m => m.GET(req('webhooks', key) as any));
+    const borrar = (key: string, id: string) =>
+        import('@/app/api/v1/webhooks/[id]/route').then(m => m.DELETE(req('webhooks/x', key, { method: 'DELETE', idem: null }) as any, params(id)));
+
+    it('registra el webhook en la empresa de la llave, con la URL tal cual (barra final incluida) y el secreto una sola vez', async () => {
+        const res = await crear(KEY.A, { url: URL_A, events: EVENTS, descripcion: 'Valar' });
+        expect(res.status).toBe(201);
+        const hook = await res.json();
+        expect(hook).toMatchObject({ url: URL_A, events: EVENTS, descripcion: 'Valar', activo: true, organization_id: A });
+        expect(hook.secret).toMatch(/^whsec_/);
+        expect(tables.webhook_subscriptions).toHaveLength(1);
+        expect(tables.webhook_subscriptions[0]).toMatchObject({ tenant_id: A, api_key_id: 'k-a', url: URL_A, secret: hook.secret });
+        expectAllScopedTo(A);
+
+        const lista = await (await listar(KEY.A)).json();
+        expect(lista.data).toHaveLength(1);
+        expect(lista.data[0].id).toBe(hook.id);
+        expect(JSON.stringify(lista)).not.toContain('whsec_');
+        expect(lista.data[0].organization_id).toBe(A);
+    });
+
+    it('el listado y el borrado no cruzan empresas', async () => {
+        const mio = await (await crear(KEY.A, { url: URL_A, events: EVENTS })).json();
+        const deB = await (await crear(KEY.B, { url: URL_A, events: EVENTS })).json(); // misma URL en otra empresa: permitido
+
+        expect((await (await listar(KEY.A)).json()).data.map((h: Row) => h.id)).toEqual([mio.id]);
+        expect((await (await listar(KEY.B)).json()).data.map((h: Row) => h.id)).toEqual([deB.id]);
+
+        const intento = await borrar(KEY.A, deB.id);
+        expect(intento.status).toBe(404);
+        expect(tables.webhook_subscriptions.map(h => h.id)).toContain(deB.id);
+
+        const propio = await borrar(KEY.A, mio.id);
+        expect(propio.status).toBe(204);
+        expect(await propio.text()).toBe('');
+        expect(tables.webhook_subscriptions.map(h => h.id)).toEqual([deB.id]);
+        expect((await borrar(KEY.A, mio.id)).status).toBe(404);
+    });
+
+    it('exige el scope webhooks:manage', async () => {
+        tables.api_keys[0].scopes = READ;
+        expect((await crear(KEY.A, { url: URL_A, events: EVENTS })).status).toBe(403);
+        expect((await listar(KEY.A)).status).toBe(403);
+        expect((await borrar(KEY.A, uid(A, 1))).status).toBe(403);
+        expect(tables.webhook_subscriptions).toHaveLength(0);
+    });
+
+    it('la misma URL dos veces responde 409; el máximo por empresa también', async () => {
+        await crear(KEY.A, { url: URL_A, events: EVENTS });
+        const dup = await crear(KEY.A, { url: URL_A, events: ['activo.creado'] });
+        expect(dup.status).toBe(409);
+        expect((await dup.json()).error.code).toBe('conflict');
+
+        for (let i = 1; i < 10; i++) expect((await crear(KEY.A, { url: `https://hooks.example.com/${i}`, events: EVENTS })).status).toBe(201);
+        const extra = await crear(KEY.A, { url: 'https://hooks.example.com/extra', events: EVENTS });
+        expect(extra.status).toBe(409);
+        expect((await extra.json()).error.message).toMatch(/máximo/);
+    });
+
+    it('rechaza URLs internas, eventos desconocidos y cuerpos mal formados con el detalle por campo', async () => {
+        for (const url of ['http://plataforma.grupovalar.cl/x', 'https://localhost/x', 'https://169.254.169.254/x']) {
+            const res = await crear(KEY.A, { url, events: EVENTS });
+            expect(res.status, url).toBe(400);
+            expect(Object.keys((await res.json()).error.details.fields)).toContain('url');
+        }
+        const res = await crear(KEY.A, { url: URL_A, events: ['material.explotado'] });
+        expect(res.status).toBe(400);
+        expect(Object.keys((await res.json()).error.details.fields)).toContain('events');
+        expect((await crear(KEY.A, { url: URL_A, events: [] })).status).toBe(400);
+        expect((await crear(KEY.A, { url: URL_A, events: EVENTS, secret: 'mio' })).status).toBe(400); // el secreto lo pone Pagnol
+        expect((await crear(KEY.A, { url: URL_A, events: EVENTS }, null)).status).toBe(400);          // sin Idempotency-Key
+        expect(tables.webhook_subscriptions).toHaveLength(0);
+    });
+
+    it('repetir la Idempotency-Key devuelve el mismo secreto y no registra otro', async () => {
+        const idem = randomUUID();
+        const first = await (await crear(KEY.A, { url: URL_A, events: EVENTS }, idem)).json();
+        const again = await crear(KEY.A, { url: URL_A, events: EVENTS }, idem);
+        expect(again.headers.get('Idempotent-Replayed')).toBe('true');
+        expect((await again.json()).secret).toBe(first.secret);
+        expect(tables.webhook_subscriptions).toHaveLength(1);
+    });
+});
+
+describe('lecturas por lote del despachador — aislamiento', () => {
+    it('sólo devuelven filas de la empresa pedida, aunque se pidan ids de otra', async () => {
+        const q = await import('@/lib/api/queries');
+        expect(await q.materialesByIds(fakeDb as any, A, 'materiales', [uid(B, 1), uid(B, 3)])).toEqual([]);
+        expect(await q.activosByIds(fakeDb as any, A, [uid(B, 3)])).toEqual([]);
+        expect(await q.proveedoresByIds(fakeDb as any, A, [uid(B, 101)])).toEqual([]);
+        expectAllScopedTo(A);
+
+        const propios = await q.materialesByIds(fakeDb as any, A, 'materiales', [uid(A, 1), uid(B, 1)]);
+        expect(propios.map(m => m.id)).toEqual([uid(A, 1)]);
+        expect((await q.activosByIds(fakeDb as any, A, [uid(A, 3)])).map(a => a.id)).toEqual([uid(A, 3)]);
+        expect((await q.proveedoresByIds(fakeDb as any, A, [uid(A, 101)])).map(p => p.id)).toEqual([uid(A, 101)]);
     });
 });

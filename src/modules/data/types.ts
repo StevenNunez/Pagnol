@@ -357,7 +357,7 @@ export interface AppStateContextType extends AppDataState {
   addWarehouse: (data: { name: string; location?: string | null; managerId?: string | null; managerName?: string | null; notes?: string | null; contractIds?: string[] }) => Promise<Warehouse>;
   updateWarehouse: (id: string, data: Partial<Warehouse> & { contractIds?: string[] }) => Promise<void>;
   deleteWarehouse: (id: string) => Promise<void>;
-  transferMaterialStock: (params: { materialId: string; qty: number; fromContractId: string | null; toContractId: string | null; warehouseId?: string | null; justification?: string }) => Promise<void>;
+  transferMaterialStock: (params: { materialId: string; qty: number; fromContractId: string | null; toContractId: string | null; fromWarehouseId?: string | null; warehouseId?: string | null; justification?: string }) => Promise<void>;
 
   // Turnos
   addShiftSchedule: (data: Omit<ShiftSchedule, 'id' | 'tenantId' | 'createdAt'>) => Promise<ShiftSchedule>;

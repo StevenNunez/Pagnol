@@ -1,16 +1,18 @@
 "use client";
 
 /**
- * Desglose de existencias de un material por contrato (tabla material_stocks)
- * + acción de transferencia entre contratos (permiso stock:transfer).
+ * Desglose de existencias de un material por contrato × pañol (tabla
+ * material_stocks) + acción de transferencia (permiso stock:transfer).
  *
  * La ficha del material es única; este bloque muestra dónde están sus unidades:
- * contrato Torres, contrato Miscelánios, pool central (sin contrato), etc.
+ * contrato Torres en el pañol X, pool central (sin contrato) en la Bodega
+ * Central, etc. Transferir sirve para asignarlas a un contrato, devolverlas al
+ * pool o simplemente cambiarlas de pañol.
  */
 
 import React, { useMemo, useState } from 'react';
 import { useAppState } from '@/modules/core/contexts/app-provider';
-import type { Contract, Material, MaterialStock } from '@/modules/core/lib/data';
+import type { Contract, Material, MaterialStock, Warehouse } from '@/modules/core/lib/data';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,15 +20,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ArrowLeftRight, Building2, Loader2, AlertTriangle } from 'lucide-react';
+import { isRastreable } from '@/lib/api/mappers';
 
 const POOL = '__pool__'; // valor del select para "pool central" (contract_id NULL)
+const NO_WH = '__none__'; // valor del select para "sin pañol" (warehouse_id NULL)
+const keyOf = (contractId: string | null, warehouseId: string | null) => `${contractId ?? POOL}|${warehouseId ?? NO_WH}`;
 
 export function ContractStockBreakdown({ material }: { material: Material }) {
-    const { materialStocks, contracts, can, transferMaterialStock, notify } = useAppState();
+    const { materialStocks, contracts, warehouses, can, transferMaterialStock, notify } = useAppState();
 
     const [transferOpen, setTransferOpen] = useState(false);
-    const [fromKey, setFromKey] = useState<string>(POOL);
+    const [fromKey, setFromKey] = useState<string>(keyOf(null, null));
     const [toKey, setToKey] = useState<string>('');
+    const [toWh, setToWh] = useState<string>(NO_WH);
     const [qty, setQty] = useState<string>('');
     const [justification, setJustification] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -42,34 +48,54 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
         [contracts]
     );
 
-    // Filas del material agregadas por contrato (los pañoles se suman entre sí).
+    const whMap = useMemo(
+        () => new Map(((warehouses || []) as Warehouse[]).map((w) => [w.id, w.name])),
+        [warehouses]
+    );
+    const activeWarehouses = useMemo(
+        () => ((warehouses || []) as Warehouse[])
+            .filter((w) => w.status === 'active')
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        [warehouses]
+    );
+
+    // Filas del material por contrato × pañol.
     const rows = useMemo(() => {
-        const acc = new Map<string, number>();
+        const acc = new Map<string, { contractId: string | null; warehouseId: string | null; qty: number }>();
         ((materialStocks || []) as MaterialStock[])
             .filter((s) => s.materialId === material.id)
             .forEach((s) => {
-                const key = s.contractId ?? POOL;
-                acc.set(key, (acc.get(key) || 0) + s.qty);
+                const key = keyOf(s.contractId, s.warehouseId);
+                const prev = acc.get(key);
+                if (prev) prev.qty += s.qty;
+                else acc.set(key, { contractId: s.contractId, warehouseId: s.warehouseId, qty: s.qty });
             });
         return Array.from(acc.entries())
-            .map(([key, total]) => ({
+            .map(([key, r]) => ({
                 key,
-                contractId: key === POOL ? null : key,
-                name: key === POOL ? 'Pool central' : contractMap.get(key)?.name || 'Contrato',
-                qty: total,
+                ...r,
+                name: r.contractId === null ? 'Pool central' : contractMap.get(r.contractId)?.name || 'Contrato',
+                panol: r.warehouseId ? whMap.get(r.warehouseId) || 'Pañol' : 'Sin pañol',
             }))
             .sort((a, b) => (a.contractId === null ? -1 : b.contractId === null ? 1 : b.qty - a.qty));
-    }, [materialStocks, material.id, contractMap]);
+    }, [materialStocks, material.id, contractMap, whMap]);
 
     const ledgerTotal = rows.reduce((acc, r) => acc + r.qty, 0);
     const hasDrift = ledgerTotal !== (material.stock || 0);
+    // Un activo (cada unidad con su QR) llega a un contrato SOLO por una solicitud de
+    // material: queda la autorización, quién lo recibió y la fecha. Aquí sólo se puede
+    // cambiar de pañol o devolverlo al pool central.
+    const isAsset = isRastreable(material.usageType);
     const labelOf = (key: string) => (key === POOL ? 'Pool central' : contractMap.get(key)?.name || 'Contrato');
+    const [fromContract, fromWh] = fromKey.split('|');
 
     const openTransfer = () => {
         const firstWithStock = rows.find((r) => r.qty > 0);
-        setFromKey(firstWithStock?.key ?? POOL);
-        setToKey('');
-        setQty('');
+        setFromKey(firstWithStock?.key ?? keyOf(null, null));
+        setToKey(isAsset ? POOL : '');
+        setToWh(NO_WH);
+        // Una unidad con identidad propia (activo) se mueve de a una.
+        setQty(Number(material.stock) === 1 ? '1' : '');
         setJustification('');
         setTransferOpen(true);
     };
@@ -80,16 +106,22 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
             notify('Indica destino y una cantidad válida.', 'destructive');
             return;
         }
+        if (toKey === fromContract && toWh === fromWh) {
+            notify('El destino es el mismo lugar de origen: cambia el contrato o el pañol.', 'destructive');
+            return;
+        }
         setIsSubmitting(true);
         try {
             await transferMaterialStock({
                 materialId: material.id,
                 qty: amount,
-                fromContractId: fromKey === POOL ? null : fromKey,
+                fromContractId: fromContract === POOL ? null : fromContract,
+                fromWarehouseId: fromWh === NO_WH ? null : fromWh,
                 toContractId: toKey === POOL ? null : toKey,
+                warehouseId: toWh === NO_WH ? null : toWh,
                 justification: justification || undefined,
             });
-            notify(`${amount} ${material.unit} transferidas a ${labelOf(toKey)}.`, 'success');
+            notify(`${amount} ${material.unit} transferidas a ${labelOf(toKey)}${toWh === NO_WH ? '' : ' · ' + (whMap.get(toWh) || 'pañol')}.`, 'success');
             setTransferOpen(false);
         } catch (err: any) {
             notify(err.message || 'No se pudo transferir.', 'destructive');
@@ -102,7 +134,7 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                    <Building2 size={14} className="text-primary" /> Existencias por Contrato
+                    <Building2 size={14} className="text-primary" /> Existencias por Contrato y Pañol
                 </p>
                 {can('stock:transfer') && rows.some((r) => r.qty > 0) && (
                     <Button
@@ -130,7 +162,7 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
                             }`}
                         >
                             <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                                {r.name}
+                                {r.name} · {r.panol}
                             </span>
                             <span className={`text-sm font-black ${r.contractId === null ? 'text-foreground' : 'text-primary'}`}>
                                 {r.qty} <span className="text-[9px] font-bold uppercase">{material.unit}</span>
@@ -165,23 +197,38 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
                                 <SelectContent>
                                     {rows.filter((r) => r.qty > 0).map((r) => (
                                         <SelectItem key={r.key} value={r.key}>
-                                            {r.name} — {r.qty} {material.unit}
+                                            {r.name} · {r.panol} — {r.qty} {material.unit}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
                         <div className="space-y-1.5">
-                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Hacia</Label>
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Contrato de destino</Label>
                             <Select value={toKey} onValueChange={setToKey}>
                                 <SelectTrigger className="rounded-xl"><SelectValue placeholder="Selecciona destino…" /></SelectTrigger>
                                 <SelectContent>
-                                    {fromKey !== POOL && <SelectItem value={POOL}>Pool central (sin contrato)</SelectItem>}
-                                    {activeContracts
-                                        .filter((c) => c.id !== fromKey)
-                                        .map((c) => (
-                                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                        ))}
+                                    <SelectItem value={POOL}>Pool central (sin contrato)</SelectItem>
+                                    {!isAsset && activeContracts.map((c) => (
+                                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            {isAsset && (
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                    Para entregarlo a un contrato o faena usa una solicitud de material.
+                                </p>
+                            )}
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Pañol de destino</Label>
+                            <Select value={toWh} onValueChange={setToWh}>
+                                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value={NO_WH}>Sin pañol</SelectItem>
+                                    {activeWarehouses.map((w) => (
+                                        <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>

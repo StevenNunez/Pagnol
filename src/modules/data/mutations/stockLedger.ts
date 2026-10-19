@@ -150,11 +150,20 @@ export async function transferInLedger(params: {
     qty: number;
     fromContractId: string | null;
     toContractId: string | null;
+    /** Pañol de origen: `undefined` = de cualquiera, `null` = de lo que no tiene pañol, id = de ese pañol. */
+    fromWarehouseId?: string | null;
+    /** Pañol de destino (`null` = sin pañol). */
     warehouseId?: string | null;
 }): Promise<void> {
-    const { tenantId, materialId, qty, fromContractId, toContractId } = params;
+    const { tenantId, materialId, qty, fromContractId, toContractId, fromWarehouseId } = params;
     if (qty <= 0) throw new Error('La cantidad a transferir debe ser mayor que 0.');
-    if (fromContractId === toContractId) throw new Error('El contrato de origen y destino son el mismo.');
+    // Mismo contrato sólo vale si cambia de pañol: es un traslado entre pañoles.
+    const sameContract = fromContractId === toContractId;
+    if (sameContract && (fromWarehouseId === undefined || fromWarehouseId === (params.warehouseId ?? null))) {
+        throw new Error(fromWarehouseId === undefined
+            ? 'El contrato de origen y destino son el mismo.'
+            : 'El origen y el destino son el mismo contrato y el mismo pañol.');
+    }
 
     let query = supabase
         .from('material_stocks')
@@ -163,6 +172,8 @@ export async function transferInLedger(params: {
         .eq('material_id', materialId)
         .gt('qty', 0);
     query = fromContractId === null ? query.is('contract_id', null) : query.eq('contract_id', fromContractId);
+    if (fromWarehouseId === null) query = query.is('warehouse_id', null);
+    else if (fromWarehouseId !== undefined) query = query.eq('warehouse_id', fromWarehouseId);
     const { data, error } = await query;
     if (error) throw error;
 

@@ -168,16 +168,22 @@ async function lugares(db: SupabaseClient, tenantId: string, ids: string[]): Pro
 
     const byMaterial = new Map<string, StockRow[]>();
     for (const s of stocks) byMaterial.set(s.material_id, [...(byMaterial.get(s.material_id) ?? []), s]);
-    const holderBy = new Map<string, string>();
-    for (const h of (holders.data ?? []) as { material_id: string; holder_name: string }[]) holderBy.set(h.material_id, h.holder_name);
+    // Mientras está entregado, el desglose por contrato queda en cero: el contrato es el de la solicitud vigente.
+    const holderBy = new Map<string, { name: string; contrato: RefDTO | null }>();
+    for (const h of (holders.data ?? []) as { material_id: string; holder_name: string; contract_id?: string | null; contract_name?: string | null }[]) {
+        holderBy.set(h.material_id, {
+            name: h.holder_name,
+            contrato: h.contract_id && h.contract_name ? { id: h.contract_id, nombre: h.contract_name } : null,
+        });
+    }
 
     for (const id of ids) {
         const rows = byMaterial.get(id) ?? [];
         const single = rows.length === 1 ? rows[0] : null;
         out.set(id, {
             panol: single?.warehouse_id ? panoles.get(single.warehouse_id) ?? null : null,
-            contrato: single?.contract_id ? contratos.get(single.contract_id) ?? null : null,
-            responsable: holderBy.get(id) ?? null,
+            contrato: (single?.contract_id ? contratos.get(single.contract_id) ?? null : null) ?? holderBy.get(id)?.contrato ?? null,
+            responsable: holderBy.get(id)?.name ?? null,
         });
     }
     return out;

@@ -62,7 +62,9 @@ export const ActivoSchema = z
         panol: RefSchema.nullable().openapi({
             description: 'Pañol donde está. `null` si está prestado, sin pañol asignado, o repartido en varios lugares (ver `/materiales/{id}/existencias`).',
         }),
-        contrato: RefSchema.nullable().openapi({ description: 'Contrato al que está asignado. `null` = stock central de la empresa.' }),
+        contrato: RefSchema.nullable().openapi({
+            description: 'Contrato al que está asignado. Mientras el activo está entregado, el contrato de la solicitud que lo entregó. `null` = en poder de la empresa (stock central).',
+        }),
         responsable: z.string().nullable().openapi({ description: 'Quién lo tiene en su poder (última entrega sin devolución). `null` si está en el pañol.' }),
         valor_compra: z.number().nullable(),
         fecha_compra: z.string().nullable().openapi({ description: 'Fecha (YYYY-MM-DD).' }),

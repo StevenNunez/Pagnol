@@ -37,6 +37,7 @@ interface WarehouseFormValues {
     notes: string;
     status: "active" | "inactive";
     contractIds: string[];
+    isCentral: boolean;
 }
 
 const emptyForm: WarehouseFormValues = {
@@ -46,6 +47,7 @@ const emptyForm: WarehouseFormValues = {
     notes: "",
     status: "active",
     contractIds: [],
+    isCentral: false,
 };
 
 export default function WarehousesPage() {
@@ -124,6 +126,7 @@ export default function WarehousesPage() {
             notes: w.notes || "",
             status: w.status,
             contractIds: contractsByWarehouse.get(w.id) || [],
+            isCentral: !!w.isCentral,
         });
         setDialogOpen(true);
     };
@@ -155,6 +158,8 @@ export default function WarehousesPage() {
                 managerName,
                 notes: form.notes.trim() || null,
                 contractIds: form.contractIds,
+                // Sólo si cambia (o al crear uno central): no se manda la columna si no hace falta.
+                ...((editing ? !!editing.isCentral !== form.isCentral : form.isCentral) ? { isCentral: form.isCentral } : {}),
             };
             if (editing) {
                 await updateWarehouse(editing.id, { ...payload, status: form.status });
@@ -198,6 +203,7 @@ export default function WarehousesPage() {
                 <div>
                     <p className="font-semibold">{w.name}</p>
                     {w.location && <p className="text-xs text-muted-foreground">{w.location}</p>}
+                    {w.isCentral && <Badge variant="outline" className="mt-1 rounded-xl text-[10px] font-bold">Oficina central</Badge>}
                 </div>
             ),
         },
@@ -392,6 +398,20 @@ export default function WarehousesPage() {
                                 </ScrollArea>
                             )}
                         </div>
+
+                        <label className="flex items-start gap-2.5 cursor-pointer rounded-xl border p-3">
+                            <Checkbox
+                                checked={form.isCentral}
+                                onCheckedChange={(v) => setForm((f) => ({ ...f, isCentral: v === true }))}
+                                className="mt-0.5"
+                            />
+                            <span className="text-sm">
+                                Es la oficina central
+                                <span className="block text-xs text-muted-foreground">
+                                    Los activos que se devuelven vuelven a este pañol. Solo puede haber uno.
+                                </span>
+                            </span>
+                        </label>
 
                         {editing && (
                             <div className="space-y-1.5">

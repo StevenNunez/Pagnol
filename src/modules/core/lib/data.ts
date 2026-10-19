@@ -1042,6 +1042,8 @@ export interface Warehouse {
   managerName?: string | null;
   status: 'active' | 'inactive';
   notes?: string | null;
+  /** Oficina central: a donde vuelven los activos al devolverse. A lo más uno por empresa. */
+  isCentral?: boolean;
   createdAt: Date;
 }
 

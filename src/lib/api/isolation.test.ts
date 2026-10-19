@@ -241,6 +241,21 @@ describe('dónde está — aislamiento', () => {
         expectAllScopedTo(A);
     });
 
+    it('un activo entregado trae el contrato de su solicitud vigente, sin cruzar empresas', async () => {
+        tables.material_stocks = []; // entregado: el desglose quedó en cero
+        tables.contracts = [{ id: uid(A, 70), tenant_id: A, name: 'Torres' }];
+        tables.holders = [
+            { tenant_id: A, material_id: uid(A, 2), holder_name: 'Juan', contract_id: uid(A, 70), contract_name: 'Torres' },
+            { tenant_id: B, material_id: uid(A, 3), holder_name: 'Intruso', contract_id: uid(B, 70), contract_name: 'Ajeno' },
+        ];
+        const { GET } = await import('@/app/api/v1/activos/[id]/route');
+        const entregado = await (await GET(req('activos/x', KEY.A) as any, params(uid(A, 2)))).json();
+        expect(entregado).toMatchObject({ responsable: 'Juan', panol: null, contrato: { id: uid(A, 70), nombre: 'Torres' } });
+        const otro = await (await GET(req('activos/x', KEY.A) as any, params(uid(A, 3)))).json();
+        expect(otro).toMatchObject({ responsable: null, contrato: null });
+        expectAllScopedTo(A);
+    });
+
     it('/panoles sólo lista los de la empresa', async () => {
         const { GET } = await import('@/app/api/v1/panoles/route');
         const body = await (await GET(req('panoles', KEY.A) as any)).json();

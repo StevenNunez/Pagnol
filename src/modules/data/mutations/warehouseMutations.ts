@@ -2,6 +2,7 @@ import { supabase } from '@/modules/core/lib/supabase';
 import type { Warehouse } from '@/modules/core/lib/data';
 import { mappers } from '../mappers';
 import { transferInLedger } from './stockLedger';
+import { isRastreable } from '@/lib/api/mappers';
 import { emitFinanceEntries } from './financeLedger';
 import { consumptionTransfers } from './financeMath';
 
@@ -17,11 +18,15 @@ export async function addWarehouse(
         managerName?: string | null;
         notes?: string | null;
         contractIds?: string[];
+        /** Sólo se envía al marcarlo: así crear pañoles sigue funcionando antes de aplicar la migración 20261020000000. */
+        isCentral?: boolean;
     },
     { user, tenantId, can }: Context,
 ): Promise<Warehouse> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
     if (!can('warehouses:manage')) throw new Error('No tienes permiso para gestionar pañoles.');
+
+    if (data.isCentral) await clearCentralWarehouse(tenantId);
 
     const { data: inserted, error } = await supabase
         .from('warehouses')
@@ -34,6 +39,7 @@ export async function addWarehouse(
             notes: data.notes || null,
             status: 'active',
             created_by: user.id,
+            ...(data.isCentral ? { is_central: true } : {}),
         })
         .select()
         .single();
@@ -58,6 +64,10 @@ export async function updateWarehouse(
     if (data.managerName !== undefined) payload.manager_name = data.managerName;
     if (data.status !== undefined) payload.status = data.status;
     if (data.notes !== undefined) payload.notes = data.notes;
+    if (data.isCentral !== undefined) {
+        if (data.isCentral) await clearCentralWarehouse(tenantId, id);
+        payload.is_central = data.isCentral;
+    }
 
     if (Object.keys(payload).length) {
         const { data: rows, error } = await supabase
@@ -71,6 +81,14 @@ export async function updateWarehouse(
     }
 
     if (data.contractIds) await syncWarehouseContracts(id, data.contractIds, tenantId);
+}
+
+/** Sólo un pañol central por empresa: al marcar uno, se desmarca el anterior. */
+async function clearCentralWarehouse(tenantId: string, exceptId?: string) {
+    let q = supabase.from('warehouses').update({ is_central: false }).eq('tenant_id', tenantId).eq('is_central', true);
+    if (exceptId) q = q.neq('id', exceptId);
+    const { error } = await q;
+    if (error) throw new Error(`No se pudo definir el pañol central (¿falta aplicar la migración 20261020000000?): ${error.message}`);
 }
 
 export async function deleteWarehouse(id: string, { user, tenantId, can }: Context): Promise<void> {
@@ -127,6 +145,9 @@ export async function transferMaterialStock(
         qty: number;
         fromContractId: string | null;
         toContractId: string | null;
+        /** Pañol de origen (undefined = de cualquiera, null = sin pañol). */
+        fromWarehouseId?: string | null;
+        /** Pañol de destino (null = sin pañol). */
         warehouseId?: string | null;
         justification?: string;
     },
@@ -142,6 +163,9 @@ export async function transferMaterialStock(
         .eq('tenant_id', tenantId)
         .single();
     if (matErr || !mat) throw new Error('Material no encontrado.');
+    if (isRastreable(mat.usage_type) && params.toContractId !== null) {
+        throw new Error('Un activo se entrega a un contrato con una solicitud de material, no con una transferencia. Aquí sólo puedes cambiarlo de pañol o devolverlo al pool central.');
+    }
 
     // Nombres de contrato para el kardex (null = pool central).
     const ids = [params.fromContractId, params.toContractId].filter(Boolean) as string[];
@@ -152,12 +176,25 @@ export async function transferMaterialStock(
     }
     const labelOf = (cid: string | null) => (cid === null ? 'Pool central' : names.get(cid) || 'Contrato');
 
+    // Nombres de pañol para el kardex.
+    const whIds = [params.fromWarehouseId, params.warehouseId].filter(Boolean) as string[];
+    const whNames = new Map<string, string>();
+    if (whIds.length) {
+        const { data: whs } = await supabase.from('warehouses').select('id, name').eq('tenant_id', tenantId).in('id', whIds);
+        for (const w of whs || []) whNames.set(w.id, w.name);
+    }
+    const whLabel = (wid: string | null | undefined) => (wid ? whNames.get(wid) || 'Pañol' : 'sin pañol');
+    const place = (cid: string | null, wid: string | null | undefined) => `${labelOf(cid)} · ${whLabel(wid)}`;
+    const fromPlace = place(params.fromContractId, params.fromWarehouseId);
+    const toPlace = place(params.toContractId, params.warehouseId);
+
     await transferInLedger({
         tenantId,
         materialId: params.materialId,
         qty: params.qty,
         fromContractId: params.fromContractId,
         toContractId: params.toContractId,
+        fromWarehouseId: params.fromWarehouseId,
         warehouseId: params.warehouseId ?? null,
     });
 
@@ -178,15 +215,16 @@ export async function transferMaterialStock(
         {
             ...base,
             quantity_change: -params.qty,
-            justification: `Transferencia a ${labelOf(params.toContractId)}${reason}`,
+            justification: `Transferencia a ${toPlace}${reason}`,
             contract_id: params.fromContractId,
             contract_name: params.fromContractId ? labelOf(params.fromContractId) : null,
-            // El origen puede venir de varios pañoles (cascada) — sin pañol único.
+            // Sin pañol de origen elegido, puede venir de varios (cascada): no se atribuye a uno solo.
+            warehouse_id: params.fromWarehouseId ?? null,
         },
         {
             ...base,
             quantity_change: params.qty,
-            justification: `Transferencia desde ${labelOf(params.fromContractId)}${reason}`,
+            justification: `Transferencia desde ${fromPlace}${reason}`,
             contract_id: params.toContractId,
             contract_name: params.toContractId ? labelOf(params.toContractId) : null,
             warehouse_id: params.warehouseId ?? null,
@@ -197,7 +235,8 @@ export async function transferMaterialStock(
     // Emisor F2 (ADR-004 §8): una transferencia de CONSUMIBLES mueve el costo
     // devengado entre dimensiones (negativo origen / positivo destino).
     // Herramientas/activos solo cambian de ubicación: no emiten.
-    if (mat.usage_type === 'Consumible') {
+    // Un traslado entre pañoles del mismo contrato no mueve costo.
+    if (mat.usage_type === 'Consumible' && params.fromContractId !== params.toContractId) {
         const moves = consumptionTransfers(
             [{ contractId: params.fromContractId, qty: params.qty }],
             params.toContractId,

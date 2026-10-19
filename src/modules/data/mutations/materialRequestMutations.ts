@@ -7,6 +7,8 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 import { addToLedger, consumeFromLedger, describeConsumeSources, type ConsumeSource } from './stockLedger';
 import { emitFinanceEntries } from './financeLedger';
+import { findCentralWarehouseId, placeForReturn } from './returnPlace';
+import { isRastreable } from '@/lib/api/mappers';
 import { consumptionTransfers } from './financeMath';
 
 import type { MutationContext as Context } from './context';
@@ -587,12 +589,19 @@ export async function addAndCompleteReturnRequest(
       }
       await supabase.from('materials').update({ stock: newStock, in_use: newInUse, status: newStatus }).eq('id', mat.id);
 
-      // Reingresa al desglose del contrato indicado (o pool central), en el pañol que recibe.
+      // Reingresa al desglose: un consumible en el contrato y pañol indicados; un activo
+      // al pool central y a la oficina central (ver returnPlace.ts).
+      const place = placeForReturn({
+        isAsset: isRastreable(mat.usage_type),
+        centralWarehouseId: isRastreable(mat.usage_type) ? await findCentralWarehouseId(tenantId) : null,
+        contractId: data.contractId ?? null,
+        warehouseId: data.warehouseId ?? null,
+      });
       await addToLedger({
         tenantId,
         materialId: item.materialId,
-        contractId: data.contractId ?? null,
-        warehouseId: data.warehouseId ?? null,
+        contractId: place.contractId,
+        warehouseId: place.warehouseId,
         qty: item.quantity,
       });
 
@@ -609,7 +618,7 @@ export async function addAndCompleteReturnRequest(
         related_request_id: requestId,
         contract_id: data.contractId || null,
         contract_name: data.contractName || null,
-        warehouse_id: data.warehouseId ?? null,
+        warehouse_id: place.warehouseId,
         tenant_id: tenantId,
       });
     }
@@ -642,8 +651,15 @@ export async function updateReturnRequestStatus(
       }
       await supabase.from('materials').update({ stock: newStock, in_use: newInUse, status: newStatus }).eq('id', mat.id);
 
-      // Reingresa al desglose del contrato registrado en la devolución (o pool central).
-      await addToLedger({ tenantId, materialId: returnReq.material_id, contractId: returnReq.contract_id ?? null, qty: returnReq.quantity });
+      // Reingresa al desglose: un consumible en el contrato de la devolución; un activo al
+      // pool central y a la oficina central (ver returnPlace.ts).
+      const place = placeForReturn({
+        isAsset: isRastreable(mat.usage_type),
+        centralWarehouseId: isRastreable(mat.usage_type) ? await findCentralWarehouseId(tenantId) : null,
+        contractId: returnReq.contract_id ?? null,
+        warehouseId: null,
+      });
+      await addToLedger({ tenantId, materialId: returnReq.material_id, contractId: place.contractId, warehouseId: place.warehouseId, qty: returnReq.quantity });
 
       await supabase.from('stock_movements').insert({
         material_id: returnReq.material_id,
@@ -658,6 +674,7 @@ export async function updateReturnRequestStatus(
         related_request_id: requestId,
         contract_id: returnReq.contract_id || null,
         contract_name: returnReq.contract_name || null,
+        warehouse_id: place.warehouseId,
         tenant_id: tenantId,
       });
     }

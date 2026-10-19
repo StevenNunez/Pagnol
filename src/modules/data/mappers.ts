@@ -197,6 +197,7 @@ export const mappers = {
         managerName: item.manager_name || null,
         status: item.status || 'active',
         notes: item.notes || null,
+        isCentral: !!item.is_central,
         createdAt: item.created_at ? new Date(item.created_at) : new Date(),
     }),
     warehouse_contracts: (item: any): WarehouseContract => ({

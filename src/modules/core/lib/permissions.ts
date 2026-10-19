@@ -51,7 +51,7 @@ export const ALL_PERMISSIONS = {
     'materials:archive': { label: 'Archivar Materiales', group: 'Materiales y Stock' },
     'stock:add_manual': { label: 'Ingresar Stock Manualmente', group: 'Materiales y Stock' },
     'stock:receive_order': { label: 'Recibir Material de Compra', group: 'Materiales y Stock' },
-    'stock:transfer': { label: 'Transferir Stock entre Contratos', group: 'Materiales y Stock' },
+    'stock:transfer': { label: 'Transferir Stock entre Contratos y Pañoles', group: 'Materiales y Stock' },
     'warehouses:manage': { label: 'Gestionar Pañoles', group: 'Materiales y Stock' },
 
     'material_requests:create': { label: 'Crear Solicitudes de Material', group: 'Solicitudes Internas' },

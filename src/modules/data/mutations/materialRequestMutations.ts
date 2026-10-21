@@ -321,6 +321,33 @@ async function openOrdersForFailedReturns(
   }
 }
 
+// ── Funciones atómicas de la base (migración 20261030000000) ─────────────────
+// Aprobar, anular, devolver y entregar en ventanilla corren como UNA transacción en la base, con las filas
+// bloqueadas: o queda todo o no queda nada, y dos personas a la vez no se pisan. Mientras esa migración no
+// esté aplicada (`PGRST202`: la función no existe), la aplicación sigue con el camino de la Fase 1 de más
+// abajo —descontar con compare-and-set y deshacer a mano—, que es seguro pero no atómico. Cuando la
+// migración esté aplicada en todas las bases, ese respaldo se puede retirar.
+
+interface RpcItem { material_id: string; name: string; usage_type: string | null; unit_cost: number | null; class: string; qty: number; sources: { contract_id: string | null; qty: number }[] }
+
+const isMissingFunction = (e: { code?: string; message?: string } | null) =>
+  !!e && (e.code === 'PGRST202' || e.code === '42883' || /could not find the function|no function matches/i.test(e.message || ''));
+
+/** Llama a una función de la base. null = no existe aún (migración sin aplicar): usar el respaldo. */
+async function viaRpc<T>(fn: string, args: Record<string, unknown>): Promise<T | null> {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) {
+    if (isMissingFunction(error)) return null;
+    throw new Error(error.message);
+  }
+  return data as T;
+}
+
+const toApplied = (items: RpcItem[]) => items.map(i => ({
+  mat: { id: i.material_id, name: i.name, usage_type: i.usage_type, unit_cost: i.unit_cost },
+  sources: (i.sources || []).map(x => ({ contractId: x.contract_id, qty: Number(x.qty) })),
+}));
+
 /** Clase real de lo pedido, calculada de los materiales (la guardada puede venir mal de antes). */
 async function realClassOf(items: Item[], tenantId: string): Promise<RequestClass> {
   const mats = await loadMaterials(tenantId, items.map(i => i.materialId));
@@ -432,9 +459,24 @@ export async function addAndApproveMaterialRequest(
   const maxDirectClass: 'B' | 'C' = requestData.requiresReview ? 'B' : 'C';
   const classOrder = { A: 3, B: 2, C: 1 };
 
-  // 1. Leer, validar y calcular (no escribe nada).
   const items = mergeItems(requestData.items);
   if (!items.length) throw new Error('Debes indicar al menos un material.');
+  const requestId = requestData.internalCode || await nextInternalCode(tenantId, 'TX');
+
+  // Camino atómico: el retiro entregado, el descuento, el desglose y el kardex en UNA transacción (la clase y el
+  // stock se validan adentro: o se entrega todo o no queda nada).
+  const rpcDelivered = await viaRpc<{ items: RpcItem[] }>('deliver_directly', {
+    p_code: requestId, p_items: items, p_area: requestData.area, p_contract_id: requestData.contractId ?? null,
+    p_contract_name: requestData.contractName || null, p_supervisor: requestData.supervisorId, p_warehouse: requestData.warehouseId ?? null,
+    p_contract_url: requestData.contractUrl || null, p_requires_review: !!requestData.requiresReview, p_max_class: maxDirectClass,
+  });
+  if (rpcDelivered) {
+    await emitConsumption(toApplied(rpcDelivered.items),
+      { contractId: requestData.contractId ?? null, contractName: requestData.contractName || null, requestCode: requestId }, context);
+    return;
+  }
+
+  // Respaldo (migración sin aplicar). 1. Leer, validar y calcular (no escribe nada).
   const plan = await planDeduction(items, tenantId, (mat) => {
     // La columna es `criticality` (el mapper la expone como `class`). Antes se
     // leía `mat.class` de la fila cruda —siempre undefined— y toda entrega
@@ -446,8 +488,7 @@ export async function addAndApproveMaterialRequest(
   });
   const highestClass = highestClassOf(plan.map(u => u.mat.criticality));
 
-  // 2. IDs and Names
-  const requestId = requestData.internalCode || await nextInternalCode(tenantId, 'TX');
+  // 2. Nombres
   const { data: s } = await supabase.from('profiles').select('name').eq('id', requestData.supervisorId).maybeSingle();
   const supervisorName = s?.name || 'Usuario';
   const now = new Date().toISOString();
@@ -597,7 +638,17 @@ async function processRequest(
     // con permisos propios de su empresa veía el botón y recibía un rechazo.
     if (!canApproveClass(can, realClass)) throw new Error(`No tienes permiso para aprobar solicitudes de Clase ${realClass}.`);
 
-    // 1. Leer, validar y calcular (no escribe nada).
+    // Camino atómico: el retiro, la ficha, el desglose y el kardex quedan en UNA transacción.
+    const rpcApproved = await viaRpc<{ code: string | null; contract_id: string | null; contract_name: string | null; items: RpcItem[] }>(
+      'approve_material_request', { p_request: requestId });
+    if (rpcApproved) {
+      notifyWithdrawal('approved', requestId);
+      await emitConsumption(toApplied(rpcApproved.items),
+        { contractId: rpcApproved.contract_id, contractName: rpcApproved.contract_name, requestCode: rpcApproved.code || request.internal_code || requestId }, context);
+      return;
+    }
+
+    // Respaldo (migración sin aplicar). 1. Leer, validar y calcular (no escribe nada).
     const plan = await planDeduction(items, tenantId);
 
     // 2. Reservar el retiro: sólo UNA persona puede pasarlo de pendiente a aprobado.
@@ -672,7 +723,21 @@ export async function cancelApprovedMaterialRequest(requestId: string, reason: s
     throw new Error('No tienes permiso para anular este despacho.');
   }
 
-  // Reservar la anulación: sólo UNA persona la hace, y sólo mientras siga sin entregarse.
+  // Camino atómico: la devolución del stock y el retorno del retiro a «por aprobar», en UNA transacción.
+  const rpcCancelled = await viaRpc<{ code: string | null }>('cancel_approved_material_request', { p_request: requestId, p_reason: why });
+  if (rpcCancelled) {
+    const code = rpcCancelled.code || request.internal_code || requestId;
+    notifyWithdrawal('cancelled', requestId);
+    try {
+      await reverseEntriesForSource('material_request', code, `Anulación de despacho: ${why}`, context);
+    } catch (e: any) {
+      console.error('[retiros] no se pudo reversar el costo de un despacho anulado', code, e);
+      throw new Error(`El despacho se anuló y el stock volvió, pero no se pudo reversar su costo en finanzas (${e?.message || 'error'}). Avisa a soporte.`);
+    }
+    return;
+  }
+
+  // Respaldo (migración sin aplicar). Reservar la anulación: sólo UNA persona la hace, y sólo mientras siga sin entregarse.
   const before = {
     status: request.status, approval_date: request.approval_date, approver_id: request.approver_id, approver_name: request.approver_name,
   };
@@ -881,6 +946,23 @@ export async function addAndCompleteReturnRequest(
   for (const item of data.items) {
     const requestId = await nextInternalCode(tenantId, 'RET');
 
+    // Camino atómico: la devolución y el reingreso en UNA transacción (antes, si el reingreso fallaba, había que
+    // borrar a mano la devolución ya «completada»).
+    const rpcDirect = await viaRpc<{ restocked: { material_id: string; name: string; usage_type: string | null } }>('return_directly', {
+      p_code: requestId, p_material: item.materialId, p_quantity: item.quantity, p_material_name: item.materialName, p_unit: item.unit,
+      p_condition: item.condition, p_notes: item.notes || data.notes || '', p_evidence: item.evidenceUrl || data.evidenceUrl || null,
+      p_worker: data.workerId, p_worker_name: data.workerName, p_contract_id: data.contractId ?? null, p_contract_name: data.contractName || null,
+      p_warehouse: data.warehouseId ?? null,
+    });
+    if (rpcDirect) {
+      const r = rpcDirect.restocked;
+      await openOrdersForFailedReturns(
+        [{ mat: { id: r.material_id, name: r.name, usage_type: r.usage_type }, line: { materialId: item.materialId, quantity: item.quantity, condition: item.condition } }],
+        { tenantId, code: requestId, notes: item.notes || data.notes, reportedBy: handler.name });
+      continue;
+    }
+
+    // Respaldo (migración sin aplicar).
     const { data: inserted, error: insertError } = await supabase.from('return_requests').insert({
       internal_code: requestId,
       supervisor_id: data.workerId,
@@ -940,6 +1022,21 @@ export async function updateReturnRequestStatus(
     throw new Error(`Esta devolución ya fue ${returnReq.status === 'completed' ? 'completada' : 'rechazada'}.`);
   }
 
+  // Camino atómico: el estado de la devolución y el reingreso (ficha, desglose, kardex) en UNA transacción.
+  const rpcReturn = await viaRpc<{ code: string | null; notes: string | null; restocked: { material_id: string; name: string; usage_type: string | null; condition: string | null } | null }>(
+    'complete_return_request',
+    { p_return: requestId, p_status: status, p_condition: additionalData?.condition ?? null, p_evidence: additionalData?.evidenceUrl ?? null });
+  if (rpcReturn) {
+    if (status === 'completed' && rpcReturn.restocked) {
+      const r = rpcReturn.restocked;
+      await openOrdersForFailedReturns(
+        [{ mat: { id: r.material_id, name: r.name, usage_type: r.usage_type }, line: { materialId: r.material_id, quantity: returnReq.quantity, condition: (additionalData?.condition) as RestockLine['condition'] } }],
+        { tenantId, code: rpcReturn.code || returnReq.internal_code || requestId, notes: rpcReturn.notes ?? returnReq.notes, reportedBy: user.name });
+    }
+    return;
+  }
+
+  // Respaldo (migración sin aplicar).
   const now = new Date().toISOString();
 
   // Reservar: sólo UNA persona pasa la devolución de pendiente a resuelta.

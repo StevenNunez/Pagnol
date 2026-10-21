@@ -65,12 +65,20 @@ class Q {
 }
 
 let codeSeq = 0;
-vi.mock('@/modules/core/lib/supabase', () => ({ supabase: { from: (t: string) => new Q(t), auth: { getSession: async () => ({ data: { session: null } }) } } }));
+const NO_RPC = async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.x in the schema cache' } });
+let rpcHandler: (fn: string, args: any) => Promise<{ data: any; error: any }> = NO_RPC;
+const rpcCalls: { fn: string; args: any }[] = [];
+vi.mock('@/modules/core/lib/supabase', () => ({ supabase: {
+    from: (t: string) => new Q(t),
+    rpc: (fn: string, args: any) => { rpcCalls.push({ fn, args }); return rpcHandler(fn, args); },
+    auth: { getSession: async () => ({ data: { session: null } }) },
+} }));
 vi.mock('@/modules/core/lib/sequence-utils', () => ({ nextInternalCode: async (_t: string, type: string) => `${type}-${String(++codeSeq).padStart(4, '0')}` }));
 const notifyWithdrawal = vi.fn();
 vi.mock('@/modules/core/lib/notify-authorizers', () => ({ notifyAuthorizers: vi.fn(), notifyWithdrawal: (...a: unknown[]) => notifyWithdrawal(...a) }));
 const reverseEntriesForSource = vi.fn(async () => 1);
-vi.mock('./financeLedger', () => ({ emitFinanceEntries: vi.fn(async () => {}), reverseEntriesForSource: (...a: unknown[]) => (reverseEntriesForSource as any)(...a) }));
+const emitFinanceEntries = vi.fn(async (..._a: unknown[]) => {});
+vi.mock('./financeLedger', () => ({ emitFinanceEntries: (...a: unknown[]) => (emitFinanceEntries as any)(...a), reverseEntriesForSource: (...a: unknown[]) => (reverseEntriesForSource as any)(...a) }));
 
 import { ROLES } from '@/modules/core/lib/permissions';
 import {
@@ -93,7 +101,8 @@ const req = (id: string) => db.material_requests.find(r => r.id === id)!;
 function seed() {
     for (const k of Object.keys(db)) delete db[k];
     hooks = []; failures = []; seq = 0; codeSeq = 0;
-    notifyWithdrawal.mockClear(); reverseEntriesForSource.mockClear();
+    rpcHandler = NO_RPC; rpcCalls.length = 0;
+    notifyWithdrawal.mockClear(); reverseEntriesForSource.mockClear(); emitFinanceEntries.mockClear();
     db.materials = [
         { id: 'cons', tenant_id: T, name: 'Polera', usage_type: 'Consumible', stock: 10, in_use: 0, status: 'Disponible', criticality: 'C', unit_cost: 100 },
         { id: 'tool', tenant_id: T, name: 'Taladro', usage_type: 'Herramienta Menor', stock: 3, in_use: 0, status: 'Disponible', criticality: 'B', unit_cost: 5000 },
@@ -466,5 +475,157 @@ describe('devolución con falla → OT correctiva (antes el equipo quedaba «En 
         await updateReturnRequestStatus('rt-x', 'completed', { condition: 'CON FALLA' }, ctxPanolero);
         expect(db.maintenance_orders).toHaveLength(1);
         expect(db.maintenance_orders[0].description).toMatch(/RET-X.*se cayó/);
+    });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Camino atómico (migración 20261030000000): la base hace aprobar/anular/devolver/entregar en UNA
+// transacción. Aquí se prueba lo que sigue siendo de la aplicación: que los permisos se validen
+// ANTES de llamar, que se llame con lo correcto, que el error de la base llegue tal cual a la
+// persona, y los efectos de después (avisos, costo en finanzas, OT). La lógica de la base se probó
+// aparte contra un Postgres real.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+const rpcOk = (data: any) => { rpcHandler = async () => ({ data, error: null }); };
+const rpcFail = (message: string, code = 'P0001') => { rpcHandler = async () => ({ data: null, error: { code, message } }); };
+const polera = (qty: number, sources: any[]) => ({ material_id: 'cons', name: 'Polera', usage_type: 'Consumible', unit_cost: 100, class: 'C', qty, sources });
+const legacyUntouched = () => { expect(stockOf('cons').stock).toBe(10); expect(kardexOf('cons')).toHaveLength(0); };
+
+describe('camino atómico — aprobar', () => {
+    it('llama a la función con el id del retiro, avisa al solicitante y registra el costo; no toca nada por su cuenta', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 2 }], { contract_id: 'c1', contract_name: 'Contrato 1' });
+        rpcOk({ code: 'TX-1', contract_id: 'c1', contract_name: 'Contrato 1', class: 'C', items: [polera(2, [{ contract_id: null, qty: 2 }])] });
+        await updateMaterialRequestStatus(id, 'approved', ctxPanolero);
+        expect(rpcCalls).toEqual([{ fn: 'approve_material_request', args: { p_request: id } }]);
+        legacyUntouched();
+        expect(req(id).status).toBe('pending'); // la base lo cambia; aquí la base es un doble
+        expect(notifyWithdrawal).toHaveBeenCalledWith('approved', id);
+        expect(emitFinanceEntries).toHaveBeenCalled(); // el costo de un consumible del pool hacia el contrato
+    });
+    it('los permisos se validan ANTES: un pañolero no llega a la función con material clase A', async () => {
+        const id = pendingRequest([{ materialId: 'critA', quantity: 1 }]);
+        rpcOk({});
+        await expect(updateMaterialRequestStatus(id, 'approved', ctxPanolero)).rejects.toThrow(/clase A/i);
+        expect(rpcCalls).toHaveLength(0);
+    });
+    it('el error de la base llega tal cual (ya fue aprobada, sin stock…) y no se cae al respaldo', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 2 }]);
+        rpcFail('Esta solicitud ya fue aprobada.');
+        await expect(updateMaterialRequestStatus(id, 'approved', ctxPanolero)).rejects.toThrow('Esta solicitud ya fue aprobada.');
+        legacyUntouched();
+        expect(rpcCalls).toHaveLength(1);
+    });
+    it('si el costo no se puede registrar, lo dice (el despacho ya quedó firme en la base)', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 2 }], { contract_id: 'c1', contract_name: 'Contrato 1' });
+        rpcOk({ code: 'TX-1', contract_id: 'c1', contract_name: 'Contrato 1', items: [polera(2, [{ contract_id: null, qty: 2 }])] });
+        emitFinanceEntries.mockRejectedValueOnce(new Error('sin permiso en finanzas'));
+        await expect(updateMaterialRequestStatus(id, 'approved', ctxPanolero)).rejects.toThrow(/quedó aprobado.*finanzas/i);
+    });
+    it('sin la migración (la función no existe) sigue el respaldo de la Fase 1', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 2 }]);
+        await updateMaterialRequestStatus(id, 'approved', ctxPanolero);
+        expect(rpcCalls.map(c => c.fn)).toEqual(['approve_material_request']);
+        expect(stockOf('cons').stock).toBe(8);
+        expect(req(id).status).toBe('approved');
+    });
+});
+
+describe('camino atómico — anular', () => {
+    it('llama a la función con el motivo, avisa y reversa el costo', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 2 }]);
+        db.material_requests.find(r => r.id === id)!.status = 'approved';
+        rpcOk({ code: 'TX-9', items: [] });
+        await cancelApprovedMaterialRequest(id, '  El trabajador no vino  ', ctxPanolero);
+        expect(rpcCalls).toEqual([{ fn: 'cancel_approved_material_request', args: { p_request: id, p_reason: 'El trabajador no vino' } }]);
+        expect(notifyWithdrawal).toHaveBeenCalledWith('cancelled', id);
+        expect(reverseEntriesForSource).toHaveBeenCalledWith('material_request', 'TX-9', expect.stringContaining('El trabajador no vino'), expect.anything());
+    });
+    it('sin permiso no llega a la función', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 2 }]);
+        db.material_requests.find(r => r.id === id)!.status = 'approved';
+        rpcOk({});
+        await expect(cancelApprovedMaterialRequest(id, 'x', ctxNadie)).rejects.toThrow(/permiso/i);
+        expect(rpcCalls).toHaveLength(0);
+    });
+    it('el error de la base llega tal cual', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 2 }]);
+        db.material_requests.find(r => r.id === id)!.status = 'approved';
+        rpcFail('Este despacho ya fue entregado: no se puede anular.');
+        await expect(cancelApprovedMaterialRequest(id, 'x', ctxPanolero)).rejects.toThrow(/ya fue entregado/);
+        expect(reverseEntriesForSource).not.toHaveBeenCalled();
+    });
+});
+
+describe('camino atómico — devoluciones', () => {
+    const pendingRet = (extra: Row = {}) => {
+        const row = { id: `rt-${++seq}`, tenant_id: T, internal_code: `RET-${seq}`, material_id: 'tool', material_name: 'Taladro', quantity: 1, status: 'pending', supervisor_id: 'w1', supervisor_name: 'W', contract_id: null, notes: 'se cayó', ...extra };
+        db.return_requests.push(row);
+        return row.id;
+    };
+    it('completar con falla: llama a la función y abre la OT con el detalle que devuelve la base', async () => {
+        const id = pendingRet();
+        rpcOk({ code: 'RET-X', notes: 'se cayó', restocked: { material_id: 'tool', name: 'Taladro', usage_type: 'Herramienta Menor', condition: 'CON FALLA' } });
+        await updateReturnRequestStatus(id, 'completed', { condition: 'CON FALLA', evidenceUrl: 'u.jpg' }, ctxPanolero);
+        expect(rpcCalls[0]).toEqual({ fn: 'complete_return_request', args: { p_return: id, p_status: 'completed', p_condition: 'CON FALLA', p_evidence: 'u.jpg' } });
+        expect(db.maintenance_orders).toHaveLength(1);
+        expect(db.maintenance_orders[0].description).toMatch(/RET-X.*se cayó/);
+    });
+    it('en buen estado no abre OT; rechazar tampoco', async () => {
+        const a = pendingRet();
+        rpcOk({ code: 'RET-A', restocked: { material_id: 'tool', name: 'Taladro', usage_type: 'Herramienta Menor', condition: 'OK' } });
+        await updateReturnRequestStatus(a, 'completed', { condition: 'OK' }, ctxPanolero);
+        const b = pendingRet();
+        rpcOk({ code: 'RET-B', restocked: null });
+        await updateReturnRequestStatus(b, 'rejected', undefined, ctxPanolero);
+        expect(db.maintenance_orders ?? []).toHaveLength(0);
+    });
+    it('sin permiso no llega a la función', async () => {
+        const id = pendingRet();
+        rpcOk({});
+        await expect(updateReturnRequestStatus(id, 'completed', { condition: 'OK' }, ctxNadie)).rejects.toThrow(/permiso/i);
+        expect(rpcCalls).toHaveLength(0);
+    });
+    it('devolución directa: una llamada por ítem, con su código, y abre la OT si vino con falla', async () => {
+        rpcOk({ restocked: { material_id: 'tool', name: 'Taladro', usage_type: 'Herramienta Menor' } });
+        await addAndCompleteReturnRequest({ items: [{ materialId: 'tool', quantity: 1, materialName: 'Taladro', unit: 'u', condition: 'ROTO', notes: 'partido' }], notes: '', workerId: 'w1', workerName: 'W', contractId: 'c1', warehouseId: 'wh1' }, ctxPanolero);
+        expect(rpcCalls).toHaveLength(1);
+        expect(rpcCalls[0].fn).toBe('return_directly');
+        expect(rpcCalls[0].args).toMatchObject({ p_material: 'tool', p_quantity: 1, p_condition: 'ROTO', p_worker: 'w1', p_contract_id: 'c1', p_warehouse: 'wh1', p_notes: 'partido' });
+        expect(rpcCalls[0].args.p_code).toMatch(/^RET-/);
+        expect(db.return_requests ?? []).toHaveLength(0); // la base inserta; aquí es un doble
+        expect(db.maintenance_orders[0].priority).toBe('HIGH');
+    });
+    it('el error de la base en la devolución directa llega tal cual y no deja nada a medias', async () => {
+        rpcFail('Uno de los materiales ya no existe: no se puede reingresar.');
+        await expect(addAndCompleteReturnRequest({ items: [{ materialId: 'tool', quantity: 1, materialName: 'Taladro', unit: 'u', condition: 'OK' }], notes: '', workerId: 'w1', workerName: 'W' }, ctxPanolero)).rejects.toThrow(/ya no existe/);
+        expect(db.return_requests ?? []).toHaveLength(0);
+    });
+});
+
+describe('camino atómico — entrega directa', () => {
+    it('llama a la función con los ítems juntados y el tope de clase según la revisión posterior', async () => {
+        rpcOk({ request_id: 'r1', code: 'TX-0001', class: 'C', items: [polera(5, [{ contract_id: null, qty: 5 }])] });
+        await addAndApproveMaterialRequest({ items: [{ materialId: 'cons', quantity: 2 }, { materialId: 'cons', quantity: 3 }], area: 'Faena', supervisorId: 'w1', contractId: 'c1', contractName: 'Contrato 1', warehouseId: 'wh1' }, ctxPanolero);
+        expect(rpcCalls).toHaveLength(1);
+        expect(rpcCalls[0].fn).toBe('deliver_directly');
+        expect(rpcCalls[0].args).toMatchObject({ p_items: [{ materialId: 'cons', quantity: 5 }], p_supervisor: 'w1', p_contract_id: 'c1', p_warehouse: 'wh1', p_requires_review: false, p_max_class: 'C' });
+        expect(db.material_requests).toHaveLength(0); // la base inserta el retiro; aquí es un doble
+        expect(emitFinanceEntries).toHaveBeenCalled();
+    });
+    it('con revisión posterior el tope sube a B', async () => {
+        rpcOk({ items: [] });
+        await addAndApproveMaterialRequest({ items: [{ materialId: 'tool', quantity: 1 }], area: 'x', supervisorId: 'w1', requiresReview: true }, ctxPanolero);
+        expect(rpcCalls[0].args).toMatchObject({ p_requires_review: true, p_max_class: 'B' });
+    });
+    it('el error de la base (clase, stock) llega tal cual y no se cae al respaldo', async () => {
+        rpcFail('Generador es clase A: requiere aprobación antes de entregarse.');
+        await expect(addAndApproveMaterialRequest({ items: [{ materialId: 'critA', quantity: 1 }], area: 'x', supervisorId: 'w1' }, ctxPanolero)).rejects.toThrow(/es clase A/);
+        expect(db.material_requests).toHaveLength(0);
+        expect(rpcCalls).toHaveLength(1);
+    });
+    it('sin la migración sigue el respaldo y entrega igual', async () => {
+        await addAndApproveMaterialRequest({ items: [{ materialId: 'cons', quantity: 3 }], area: 'x', supervisorId: 'w1' }, ctxPanolero);
+        expect(db.material_requests).toHaveLength(1);
+        expect(stockOf('cons').stock).toBe(7);
     });
 });

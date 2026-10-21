@@ -205,26 +205,3 @@ export async function transferInLedger(params: {
         qty,
     });
 }
-
-/**
- * Texto para la justificación del kardex cuando hubo fallback de origen
- * (p.ej. "Incluye 3 de pool central, 2 de Contrato Torres"). Devuelve null si
- * todo salió del contrato solicitado.
- */
-export async function describeConsumeSources(
-    sources: ConsumeSource[],
-    requestedContractId: string | null,
-): Promise<string | null> {
-    const fallback = sources.filter((s) => s.contractId !== requestedContractId);
-    if (!fallback.length) return null;
-
-    const ids = fallback.map((s) => s.contractId).filter(Boolean) as string[];
-    const names = new Map<string, string>();
-    if (ids.length) {
-        const { data } = await supabase.from('contracts').select('id, name').in('id', ids);
-        for (const c of data || []) names.set(c.id, c.name);
-    }
-    const label = (cid: string | null) =>
-        cid === null ? 'pool central' : names.get(cid) || 'otro contrato';
-    return `Incluye ${fallback.map((s) => `${s.qty} de ${label(s.contractId)}`).join(', ')}`;
-}

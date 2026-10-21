@@ -3,12 +3,10 @@
 import { supabase } from '@/modules/core/lib/supabase';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { notifyAuthorizers, notifyWithdrawal } from '@/modules/core/lib/notify-authorizers';
-import { addToLedger, consumeFromLedger, describeConsumeSources, type ConsumeSource } from './stockLedger';
+import type { ConsumeSource } from './stockLedger';
 import { emitFinanceEntries, reverseEntriesForSource } from './financeLedger';
-import { findCentralWarehouseId, placeForReturn } from './returnPlace';
-import { isRastreable } from '@/lib/api/mappers';
 import { consumptionTransfers } from './financeMath';
-import { asClass, highestClassOf, canApproveClass, type RequestClass } from './requestClassMath';
+import { highestClassOf, canApproveClass, type RequestClass } from './requestClassMath';
 import { openCorrectiveOrderForReturn } from './maintenanceMutations';
 
 import type { MutationContext as Context } from './context';
@@ -61,19 +59,12 @@ async function emitConsumptionForDelivery(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Descuento y reingreso de existencias — UN solo camino para los retiros y otro para los
-// reingresos (antes eran cuatro copias de la misma cuenta, y las cuatro leían el stock, lo
-// calculaban en el navegador y lo escribían sin comprobar nada).
-//
-// Reglas:
-//  · el `UPDATE` de la ficha lleva el stock y `in_use` que se LEYERON como condición
-//    (compare-and-set): si otra persona los cambió en el medio, no se pisa — falla;
-//  · todo `UPDATE` pide `.select()` y se verifica que tocó una fila: la RLS que deja 0 filas no
-//    lanza error y antes se daba por hecho;
-//  · si algo falla a mitad de camino se DESHACE lo ya aplicado (ficha, desglose y kardex),
-//    en vez de dejar medio retiro descontado.
-// Sigue sin ser una transacción de base de datos (eso es la Fase 2: funciones atómicas); esto
-// cierra los casos que se vieron, no la carrera entre dos máquinas en el mismo milisegundo.
+// Aprobar, anular, devolver y entregar en ventanilla corren como UNA transacción en la base (migración
+// 20261030000000: funciones `approve_material_request`, `cancel_approved_material_request`,
+// `complete_return_request`, `deliver_directly` y `return_directly`), con las filas bloqueadas: o queda todo o
+// no queda nada, y dos personas a la vez no se pisan. Lo que sigue siendo de la aplicación está aquí: validar
+// los permisos ANTES (`can()` respeta los roles propios de cada empresa y no existe en SQL), los avisos, el costo
+// en finanzas y la OT de un equipo con falla.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Item = { materialId: string; quantity: number };
@@ -98,106 +89,6 @@ async function loadMaterials(tenantId: string, ids: string[]): Promise<Map<strin
 
 const isAssetRow = (mat: any) => mat.usage_type !== 'Consumible';
 
-/** El `UPDATE` sólo vale si la ficha sigue como se la leyó. */
-function sameAsRead(q: any, mat: any) {
-  const withStock = q.eq('stock', mat.stock);
-  return mat.in_use == null ? withStock.is('in_use', null) : withStock.eq('in_use', mat.in_use);
-}
-
-async function casUpdateMaterial(tenantId: string, mat: any, patch: Record<string, unknown>): Promise<void> {
-  const { data, error } = await sameAsRead(
-    supabase.from('materials').update(patch).eq('id', mat.id).eq('tenant_id', tenantId),
-    mat,
-  ).select('id');
-  if (error) throw error;
-  if (!data?.length) throw new Error(`El stock de ${mat.name} cambió mientras se procesaba. Vuelve a intentar.`);
-}
-
-interface DeductPlan { item: Item; mat: any; newStock: number; newInUse: number; newStatus: string }
-
-/** Lee, valida y calcula; no escribe nada. `precheck` deja a quien llama sumar sus reglas (p. ej. la clase). */
-async function planDeduction(items: Item[], tenantId: string, precheck?: (mat: any) => void): Promise<DeductPlan[]> {
-  const mats = await loadMaterials(tenantId, items.map(i => i.materialId));
-  return items.map((item) => {
-    const mat = mats.get(item.materialId);
-    if (!mat) throw new Error(`Material ${item.materialId} no existe.`);
-    if (Number(mat.stock) < item.quantity) throw new Error(`Stock insuficiente para ${mat.name}.`);
-    precheck?.(mat);
-    const newStock = (mat.stock || 0) - item.quantity;
-    const newInUse = (mat.in_use || 0) + (isAssetRow(mat) ? item.quantity : 0);
-    let newStatus = mat.status;
-    if (isAssetRow(mat)) {
-      if (newInUse > 0) newStatus = 'En Uso';
-      else if (newStock > 0) newStatus = 'Disponible';
-    }
-    return { item, mat, newStock, newInUse, newStatus };
-  });
-}
-
-interface Applied { mat: any; sources: ConsumeSource[] | null; kardexId: string | null }
-
-async function rollbackDeduction(applied: Applied[], tenantId: string, warehouseId: string | null) {
-  for (const a of [...applied].reverse()) {
-    try {
-      await supabase.from('materials')
-        .update({ stock: a.mat.stock, in_use: a.mat.in_use, status: a.mat.status })
-        .eq('id', a.mat.id).eq('tenant_id', tenantId);
-      // El desglose se repone en el contrato de donde salió; el pañol exacto no se registra, así
-      // que vuelve al pañol que se prefirió al descontar (la suma por material queda igual).
-      for (const s of a.sources || []) {
-        await addToLedger({ tenantId, materialId: a.mat.id, contractId: s.contractId, warehouseId, qty: s.qty });
-      }
-      if (a.kardexId) await supabase.from('stock_movements').delete().eq('id', a.kardexId);
-    } catch (e) {
-      console.error('[retiros] no se pudo deshacer un descuento a medio camino', a.mat.id, e);
-    }
-  }
-}
-
-/** Aplica el plan: ficha (con compare-and-set), desglose y kardex. Si algo falla, deshace todo. */
-async function applyDeduction(
-  plan: DeductPlan[],
-  p: {
-    tenantId: string; contractId: string | null; contractName: string | null; warehouseId: string | null;
-    relatedRequestId: string; justification: (fallbackNote: string | null) => string; userId: string; userName: string;
-  },
-): Promise<{ mat: any; sources: ConsumeSource[] }[]> {
-  const applied: Applied[] = [];
-  try {
-    for (const u of plan) {
-      await casUpdateMaterial(p.tenantId, u.mat, { stock: u.newStock, in_use: u.newInUse, status: u.newStatus });
-      const a: Applied = { mat: u.mat, sources: null, kardexId: null };
-      applied.push(a);
-      // Descuenta del desglose del contrato (cascada a pool central si no alcanza),
-      // prefiriendo las existencias del pañol que entrega.
-      a.sources = await consumeFromLedger({ tenantId: p.tenantId, materialId: u.mat.id, contractId: p.contractId, warehouseId: p.warehouseId, qty: u.item.quantity });
-      const fallbackNote = await describeConsumeSources(a.sources, p.contractId);
-      const { data: k, error: kErr } = await supabase.from('stock_movements').insert({
-        material_id: u.mat.id,
-        material_name: u.mat.name,
-        quantity_change: -u.item.quantity,
-        new_stock: u.newStock,
-        type: 'request-delivery',
-        date: new Date().toISOString(),
-        justification: p.justification(fallbackNote),
-        user_id: p.userId,
-        user_name: p.userName,
-        related_request_id: p.relatedRequestId,
-        contract_id: p.contractId,
-        contract_name: p.contractName,
-        warehouse_id: p.warehouseId,
-        tenant_id: p.tenantId,
-      }).select('id').single();
-      if (kErr) throw kErr;
-      a.kardexId = k?.id ?? null;
-    }
-    return applied.map(a => ({ mat: a.mat, sources: a.sources! }));
-  } catch (e) {
-    await rollbackDeduction(applied, p.tenantId, p.warehouseId);
-    throw e;
-  }
-}
-
 /** El costo de lo consumido pasa a finanzas DESPUÉS de que el despacho quedó firme. */
 async function emitConsumption(
   applied: { mat: any; sources: ConsumeSource[] }[],
@@ -215,84 +106,6 @@ async function emitConsumption(
 }
 
 interface RestockLine { materialId: string; quantity: number; condition?: 'OK' | 'CON FALLA' | 'ROTO' }
-
-/**
- * Devuelve existencias: suma el stock, baja `in_use`, reingresa al desglose y deja el kardex. Lo
- * usan las devoluciones y la anulación de un despacho. Con compare-and-set y deshaciendo si falla.
- * `statusFor` decide el estado del activo (una devolución con falla lo manda a mantenimiento).
- */
-async function restockLines(
-  lines: RestockLine[],
-  p: {
-    tenantId: string; contractId: string | null; contractName: string | null; warehouseId: string | null;
-    relatedRequestId: string; justification: string; userId: string; userName: string;
-    statusFor: (mat: any, newInUse: number, condition: RestockLine['condition']) => string;
-  },
-): Promise<{ mat: any; line: RestockLine }[]> {
-  const mats = await loadMaterials(p.tenantId, lines.map(l => l.materialId));
-  const done: { mat: any; qty: number; place: { contractId: string | null; warehouseId: string | null }; kardexId: string | null }[] = [];
-  try {
-    for (const line of lines) {
-      const mat = mats.get(line.materialId);
-      if (!mat) throw new Error('Uno de los materiales ya no existe: no se puede reingresar.');
-      const newStock = (mat.stock || 0) + line.quantity;
-      const newInUse = Math.max(0, (mat.in_use || 0) - line.quantity);
-      const newStatus = isAssetRow(mat) ? p.statusFor(mat, newInUse, line.condition) : mat.status;
-      await casUpdateMaterial(p.tenantId, mat, { stock: newStock, in_use: newInUse, status: newStatus });
-
-      // Un consumible vuelve donde se recibió y al contrato indicado; un activo, al pool central y a
-      // la oficina central (ver returnPlace.ts).
-      const asset = isRastreable(mat.usage_type);
-      const place = placeForReturn({
-        isAsset: asset,
-        centralWarehouseId: asset ? await findCentralWarehouseId(p.tenantId) : null,
-        contractId: p.contractId,
-        warehouseId: p.warehouseId,
-      });
-      const entry = { mat, qty: line.quantity, place, kardexId: null as string | null };
-      done.push(entry);
-      await addToLedger({ tenantId: p.tenantId, materialId: mat.id, contractId: place.contractId, warehouseId: place.warehouseId, qty: line.quantity });
-      const { data: k, error: kErr } = await supabase.from('stock_movements').insert({
-        material_id: mat.id,
-        material_name: mat.name,
-        quantity_change: line.quantity,
-        new_stock: newStock,
-        type: 'return-reentry',
-        date: new Date().toISOString(),
-        justification: p.justification,
-        user_id: p.userId,
-        user_name: p.userName,
-        related_request_id: p.relatedRequestId,
-        contract_id: p.contractId,
-        contract_name: p.contractName,
-        warehouse_id: place.warehouseId,
-        tenant_id: p.tenantId,
-      }).select('id').single();
-      if (kErr) throw kErr;
-      entry.kardexId = k?.id ?? null;
-    }
-    return lines.map(line => ({ mat: mats.get(line.materialId)!, line }));
-  } catch (e) {
-    for (const d of [...done].reverse()) {
-      try {
-        await supabase.from('materials').update({ stock: d.mat.stock, in_use: d.mat.in_use, status: d.mat.status }).eq('id', d.mat.id).eq('tenant_id', p.tenantId);
-        await consumeFromLedger({ tenantId: p.tenantId, materialId: d.mat.id, contractId: d.place.contractId, warehouseId: d.place.warehouseId, qty: d.qty });
-        if (d.kardexId) await supabase.from('stock_movements').delete().eq('id', d.kardexId);
-      } catch (re) {
-        console.error('[retiros] no se pudo deshacer un reingreso a medio camino', d.mat.id, re);
-      }
-    }
-    throw e;
-  }
-}
-
-/** Estado de un activo al volver: con falla va a mantenimiento; si no, en uso mientras quede alguna unidad afuera. */
-const statusAfterReturn = (_mat: any, newInUse: number, condition: RestockLine['condition']) =>
-  condition !== 'OK' ? 'En Mantenimiento' : newInUse > 0 ? 'En Uso' : 'Disponible';
-
-/** Estado de un activo cuando se ANULA un despacho: nunca fue a terreno, así que no hay «falla» posible. */
-const statusAfterCancel = (mat: any, newInUse: number) =>
-  newInUse > 0 ? 'En Uso' : mat.status === 'En Uso' ? 'Disponible' : mat.status;
 
 /**
  * Un equipo que vuelve con falla queda «En Mantenimiento»: ahora además se abre su OT correctiva, para que
@@ -321,23 +134,24 @@ async function openOrdersForFailedReturns(
   }
 }
 
-// ── Funciones atómicas de la base (migración 20261030000000) ─────────────────
-// Aprobar, anular, devolver y entregar en ventanilla corren como UNA transacción en la base, con las filas
-// bloqueadas: o queda todo o no queda nada, y dos personas a la vez no se pisan. Mientras esa migración no
-// esté aplicada (`PGRST202`: la función no existe), la aplicación sigue con el camino de la Fase 1 de más
-// abajo —descontar con compare-and-set y deshacer a mano—, que es seguro pero no atómico. Cuando la
-// migración esté aplicada en todas las bases, ese respaldo se puede retirar.
+// ── Llamada a las funciones atómicas de la base ──────────────────────────────
 
 interface RpcItem { material_id: string; name: string; usage_type: string | null; unit_cost: number | null; class: string; qty: number; sources: { contract_id: string | null; qty: number }[] }
 
 const isMissingFunction = (e: { code?: string; message?: string } | null) =>
   !!e && (e.code === 'PGRST202' || e.code === '42883' || /could not find the function|no function matches/i.test(e.message || ''));
 
-/** Llama a una función de la base. null = no existe aún (migración sin aplicar): usar el respaldo. */
-async function viaRpc<T>(fn: string, args: Record<string, unknown>): Promise<T | null> {
+/**
+ * Llama a una función de la base. El error de negocio llega tal cual (está escrito en español para la
+ * persona). Si la función no existe es que falta aplicar la migración: se dice claro, en vez de seguir por un
+ * camino no atómico a escondidas.
+ */
+async function viaRpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(fn, args);
   if (error) {
-    if (isMissingFunction(error)) return null;
+    if (isMissingFunction(error)) {
+      throw new Error('Falta aplicar la migración 20261030000000_atomic_withdrawals en la base: sin ella no se puede aprobar, anular, devolver ni entregar.');
+    }
     throw new Error(error.message);
   }
   return data as T;
@@ -457,100 +271,20 @@ export async function addAndApproveMaterialRequest(
   // Defensa en la mutación, no sólo en la pantalla: sin aprobación previa no
   // sale clase A nunca, ni clase B si el retiro no queda con revisión posterior.
   const maxDirectClass: 'B' | 'C' = requestData.requiresReview ? 'B' : 'C';
-  const classOrder = { A: 3, B: 2, C: 1 };
 
   const items = mergeItems(requestData.items);
   if (!items.length) throw new Error('Debes indicar al menos un material.');
   const requestId = requestData.internalCode || await nextInternalCode(tenantId, 'TX');
 
-  // Camino atómico: el retiro entregado, el descuento, el desglose y el kardex en UNA transacción (la clase y el
-  // stock se validan adentro: o se entrega todo o no queda nada).
-  const rpcDelivered = await viaRpc<{ items: RpcItem[] }>('deliver_directly', {
+  // El retiro entregado, el descuento, el desglose y el kardex quedan en UNA transacción (la clase y el stock se
+  // validan adentro: o se entrega todo o no queda nada).
+  const delivered = await viaRpc<{ items: RpcItem[] }>('deliver_directly', {
     p_code: requestId, p_items: items, p_area: requestData.area, p_contract_id: requestData.contractId ?? null,
     p_contract_name: requestData.contractName || null, p_supervisor: requestData.supervisorId, p_warehouse: requestData.warehouseId ?? null,
     p_contract_url: requestData.contractUrl || null, p_requires_review: !!requestData.requiresReview, p_max_class: maxDirectClass,
   });
-  if (rpcDelivered) {
-    await emitConsumption(toApplied(rpcDelivered.items),
-      { contractId: requestData.contractId ?? null, contractName: requestData.contractName || null, requestCode: requestId }, context);
-    return;
-  }
-
-  // Respaldo (migración sin aplicar). 1. Leer, validar y calcular (no escribe nada).
-  const plan = await planDeduction(items, tenantId, (mat) => {
-    // La columna es `criticality` (el mapper la expone como `class`). Antes se
-    // leía `mat.class` de la fila cruda —siempre undefined— y toda entrega
-    // directa quedaba registrada como clase C.
-    const itemClass = asClass(mat.criticality);
-    if (classOrder[itemClass] > classOrder[maxDirectClass]) {
-      throw new Error(`${mat.name} es clase ${itemClass}: requiere aprobación antes de entregarse.`);
-    }
-  });
-  const highestClass = highestClassOf(plan.map(u => u.mat.criticality));
-
-  // 2. Nombres
-  const { data: s } = await supabase.from('profiles').select('name').eq('id', requestData.supervisorId).maybeSingle();
-  const supervisorName = s?.name || 'Usuario';
-  const now = new Date().toISOString();
-
-  // Con revisión posterior, el supervisor responsable del trabajador queda COPIADO
-  // en el retiro: si después cambia de supervisor, este retiro sigue con quien
-  // le correspondía. Sin responsable asignado rige el respaldo por contrato.
-  let reviewerSupervisorId: string | null = null;
-  if (requestData.requiresReview) {
-    const { data: resp } = await supabase
-      .from('profiles').select('responsible_supervisor_id').eq('id', requestData.supervisorId).maybeSingle();
-    reviewerSupervisorId = resp?.responsible_supervisor_id ?? null;
-  }
-
-  // 3. El retiro entra como entregado y se descuenta; si el descuento falla, el retiro se retira
-  //    también (antes quedaba «entregado» con el stock intacto).
-  const { data: inserted, error: reqErr } = await supabase.from('material_requests').insert({
-    internal_code: requestId,
-    items,
-    area: requestData.area,
-    contract_id: requestData.contractId || null,
-    contract_name: requestData.contractName || null,
-    supervisor_id: requestData.supervisorId,
-    supervisor_name: supervisorName,
-    highest_class: highestClass,
-    status: 'approved',
-    tenant_id: tenantId,
-    approval_date: now,
-    delivery_date: now,
-    approver_id: user.id,
-    approver_name: user.name,
-    // Aprobación directa de oficina ⇒ ya pasó la autorización ADC.
-    adc_authorized_at: now,
-    adc_authorized_by: user.id,
-    contract_url: requestData.contractUrl || null,
-    // Entrega inmediata: el trabajador identificado retira en el acto.
-    delivery_mode: 'self',
-    received_by_user_id: requestData.supervisorId,
-    received_by_user_name: supervisorName,
-    // Sólo se envía cuando aplica: así una empresa en modo 'prior' sigue
-    // funcionando aunque la migración 20261007000000 aún no esté aplicada.
-    ...(requestData.requiresReview ? { requires_review: true } : {}),
-    ...(reviewerSupervisorId ? { reviewer_supervisor_id: reviewerSupervisorId } : {}),
-    created_at: now
-  }).select('id').single();
-  if (reqErr) throw reqErr;
-
-  const contractId = requestData.contractId ?? null;
-  const warehouseId = requestData.warehouseId ?? null;
-  let applied: { mat: any; sources: ConsumeSource[] }[];
-  try {
-    applied = await applyDeduction(plan, {
-      tenantId, contractId, contractName: requestData.contractName || null, warehouseId,
-      relatedRequestId: requestId,
-      justification: (note) => `Entrega inmediata en Pañol${requestData.requiresReview ? ' con revisión posterior' : ''} (TX: ${requestId})${note ? ` — ${note}` : ''}`,
-      userId: requestData.supervisorId, userName: supervisorName,
-    });
-  } catch (e) {
-    if (inserted?.id) await supabase.from('material_requests').delete().eq('id', inserted.id).eq('tenant_id', tenantId);
-    throw e;
-  }
-  await emitConsumption(applied, { contractId, contractName: requestData.contractName || null, requestCode: requestId }, context);
+  await emitConsumption(toApplied(delivered.items),
+    { contractId: requestData.contractId ?? null, contractName: requestData.contractName || null, requestCode: requestId }, context);
 }
 
 /**
@@ -638,50 +372,13 @@ async function processRequest(
     // con permisos propios de su empresa veía el botón y recibía un rechazo.
     if (!canApproveClass(can, realClass)) throw new Error(`No tienes permiso para aprobar solicitudes de Clase ${realClass}.`);
 
-    // Camino atómico: el retiro, la ficha, el desglose y el kardex quedan en UNA transacción.
-    const rpcApproved = await viaRpc<{ code: string | null; contract_id: string | null; contract_name: string | null; items: RpcItem[] }>(
+    // El retiro, la ficha, el desglose y el kardex quedan en UNA transacción en la base.
+    const approved = await viaRpc<{ code: string | null; contract_id: string | null; contract_name: string | null; items: RpcItem[] }>(
       'approve_material_request', { p_request: requestId });
-    if (rpcApproved) {
-      notifyWithdrawal('approved', requestId);
-      await emitConsumption(toApplied(rpcApproved.items),
-        { contractId: rpcApproved.contract_id, contractName: rpcApproved.contract_name, requestCode: rpcApproved.code || request.internal_code || requestId }, context);
-      return;
-    }
-
-    // Respaldo (migración sin aplicar). 1. Leer, validar y calcular (no escribe nada).
-    const plan = await planDeduction(items, tenantId);
-
-    // 2. Reservar el retiro: sólo UNA persona puede pasarlo de pendiente a aprobado.
-    const { data: claimed, error: claimErr } = await supabase.from('material_requests').update({
-      status: 'approved',
-      approval_date: now,
-      approver_id: user.id,
-      approver_name: user.name,
-      highest_class: realClass,
-    }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'pending').select('id');
-    if (claimErr) throw claimErr;
-    if (!claimed?.length) throw new Error('Esta solicitud ya fue procesada por otra persona.');
-
-    // 3. Descontar. Si falla, el retiro vuelve a pendiente y lo descontado se deshace.
-    const contractId = request.contract_id ?? null;
-    let applied: { mat: any; sources: ConsumeSource[] }[];
-    try {
-      applied = await applyDeduction(plan, {
-        tenantId, contractId, contractName: request.contract_name || null, warehouseId: null,
-        relatedRequestId: requestId,
-        justification: (note) => `Entrega para solicitud ${request.internal_code}${note ? ` — ${note}` : ''}`,
-        userId: request.supervisor_id, userName: request.supervisor_name,
-      });
-    } catch (e) {
-      await supabase.from('material_requests').update({
-        status: 'pending', approval_date: null, approver_id: null, approver_name: null,
-      }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'approved');
-      throw e;
-    }
-
     // El solicitante ya puede ir a retirarlo.
     notifyWithdrawal('approved', requestId);
-    await emitConsumption(applied, { contractId, contractName: request.contract_name || null, requestCode: request.internal_code || requestId }, context);
+    await emitConsumption(toApplied(approved.items),
+      { contractId: approved.contract_id, contractName: approved.contract_name, requestCode: approved.code || request.internal_code || requestId }, context);
   } else {
     // Quien puede aprobar la clase puede rechazarla; el ADC también (rechaza lo que no autoriza).
     if (!canApproveClass(can, realClass) && !can('material_requests:authorize')) {
@@ -723,44 +420,9 @@ export async function cancelApprovedMaterialRequest(requestId: string, reason: s
     throw new Error('No tienes permiso para anular este despacho.');
   }
 
-  // Camino atómico: la devolución del stock y el retorno del retiro a «por aprobar», en UNA transacción.
-  const rpcCancelled = await viaRpc<{ code: string | null }>('cancel_approved_material_request', { p_request: requestId, p_reason: why });
-  if (rpcCancelled) {
-    const code = rpcCancelled.code || request.internal_code || requestId;
-    notifyWithdrawal('cancelled', requestId);
-    try {
-      await reverseEntriesForSource('material_request', code, `Anulación de despacho: ${why}`, context);
-    } catch (e: any) {
-      console.error('[retiros] no se pudo reversar el costo de un despacho anulado', code, e);
-      throw new Error(`El despacho se anuló y el stock volvió, pero no se pudo reversar su costo en finanzas (${e?.message || 'error'}). Avisa a soporte.`);
-    }
-    return;
-  }
-
-  // Respaldo (migración sin aplicar). Reservar la anulación: sólo UNA persona la hace, y sólo mientras siga sin entregarse.
-  const before = {
-    status: request.status, approval_date: request.approval_date, approver_id: request.approver_id, approver_name: request.approver_name,
-  };
-  const { data: claimed, error: claimErr } = await supabase.from('material_requests').update({
-    status: 'pending', approval_date: null, approver_id: null, approver_name: null,
-  }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'approved').is('delivery_date', null).select('id');
-  if (claimErr) throw claimErr;
-  if (!claimed?.length) throw new Error('Este despacho ya fue anulado o entregado por otra persona.');
-
-  const code = request.internal_code || requestId;
-  try {
-    await restockLines(items, {
-      tenantId, contractId: request.contract_id ?? null, contractName: request.contract_name || null, warehouseId: null,
-      relatedRequestId: requestId,
-      justification: `Anulación de despacho aprobado (${code}): ${why}`,
-      userId: user.id, userName: user.name,
-      statusFor: statusAfterCancel,
-    });
-  } catch (e) {
-    await supabase.from('material_requests').update(before).eq('id', requestId).eq('tenant_id', tenantId);
-    throw e;
-  }
-
+  // La devolución del stock y el retorno del retiro a «por aprobar», en UNA transacción en la base.
+  const cancelled = await viaRpc<{ code: string | null }>('cancel_approved_material_request', { p_request: requestId, p_reason: why });
+  const code = cancelled.code || request.internal_code || requestId;
   notifyWithdrawal('cancelled', requestId);
   try {
     // El consumo del costo se había emitido al aprobar: la anulación lo reversa (hechos inmutables).
@@ -941,67 +603,21 @@ export async function addAndCompleteReturnRequest(
 ) {
   if (!handler || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
-  const now = new Date().toISOString();
-
   for (const item of data.items) {
     const requestId = await nextInternalCode(tenantId, 'RET');
 
-    // Camino atómico: la devolución y el reingreso en UNA transacción (antes, si el reingreso fallaba, había que
-    // borrar a mano la devolución ya «completada»).
-    const rpcDirect = await viaRpc<{ restocked: { material_id: string; name: string; usage_type: string | null } }>('return_directly', {
+    // La devolución y el reingreso (ficha, desglose, kardex) en UNA transacción en la base: si el reingreso falla,
+    // no queda una devolución «completada» que no sumó nada.
+    const direct = await viaRpc<{ restocked: { material_id: string; name: string; usage_type: string | null } }>('return_directly', {
       p_code: requestId, p_material: item.materialId, p_quantity: item.quantity, p_material_name: item.materialName, p_unit: item.unit,
       p_condition: item.condition, p_notes: item.notes || data.notes || '', p_evidence: item.evidenceUrl || data.evidenceUrl || null,
       p_worker: data.workerId, p_worker_name: data.workerName, p_contract_id: data.contractId ?? null, p_contract_name: data.contractName || null,
       p_warehouse: data.warehouseId ?? null,
     });
-    if (rpcDirect) {
-      const r = rpcDirect.restocked;
-      await openOrdersForFailedReturns(
-        [{ mat: { id: r.material_id, name: r.name, usage_type: r.usage_type }, line: { materialId: item.materialId, quantity: item.quantity, condition: item.condition } }],
-        { tenantId, code: requestId, notes: item.notes || data.notes, reportedBy: handler.name });
-      continue;
-    }
-
-    // Respaldo (migración sin aplicar).
-    const { data: inserted, error: insertError } = await supabase.from('return_requests').insert({
-      internal_code: requestId,
-      supervisor_id: data.workerId,
-      supervisor_name: data.workerName,
-      material_id: item.materialId,
-      material_name: item.materialName,
-      quantity: item.quantity,
-      unit: item.unit,
-      status: 'completed',
-      completion_date: now,
-      notes: item.notes || data.notes || '',
-      tenant_id: tenantId,
-      handler_id: handler.id,
-      handler_name: handler.name,
-      return_condition: item.condition,
-      evidence_url: item.evidenceUrl || data.evidenceUrl || null,
-      contract_id: data.contractId || null,
-      contract_name: data.contractName || null,
-      created_at: now,
-      items: [{ materialId: item.materialId, quantity: item.quantity, condition: item.condition }],
-    }).select('id').single();
-
-    if (insertError) throw new Error(`Error al registrar devolución: ${insertError.message}`);
-
-    let restocked: { mat: any; line: RestockLine }[];
-    try {
-      restocked = await restockLines([{ materialId: item.materialId, quantity: item.quantity, condition: item.condition }], {
-        tenantId, contractId: data.contractId ?? null, contractName: data.contractName || null, warehouseId: data.warehouseId ?? null,
-        relatedRequestId: requestId,
-        justification: `Devolución inmediata en Pañol (TX: ${requestId})`,
-        userId: data.workerId, userName: data.workerName,
-        statusFor: statusAfterReturn,
-      });
-    } catch (e) {
-      // Sin el reingreso no hay devolución: no puede quedar «completada» una que no sumó nada.
-      if (inserted?.id) await supabase.from('return_requests').delete().eq('id', inserted.id).eq('tenant_id', tenantId);
-      throw e;
-    }
-    await openOrdersForFailedReturns(restocked, { tenantId, code: requestId, notes: item.notes || data.notes, reportedBy: handler.name });
+    const r = direct.restocked;
+    await openOrdersForFailedReturns(
+      [{ mat: { id: r.material_id, name: r.name, usage_type: r.usage_type }, line: { materialId: item.materialId, quantity: item.quantity, condition: item.condition } }],
+      { tenantId, code: requestId, notes: item.notes || data.notes, reportedBy: handler.name });
   }
 }
 
@@ -1022,53 +638,15 @@ export async function updateReturnRequestStatus(
     throw new Error(`Esta devolución ya fue ${returnReq.status === 'completed' ? 'completada' : 'rechazada'}.`);
   }
 
-  // Camino atómico: el estado de la devolución y el reingreso (ficha, desglose, kardex) en UNA transacción.
-  const rpcReturn = await viaRpc<{ code: string | null; notes: string | null; restocked: { material_id: string; name: string; usage_type: string | null; condition: string | null } | null }>(
+  // El estado de la devolución y el reingreso (ficha, desglose, kardex) en UNA transacción en la base.
+  const resolved = await viaRpc<{ code: string | null; notes: string | null; restocked: { material_id: string; name: string; usage_type: string | null; condition: string | null } | null }>(
     'complete_return_request',
     { p_return: requestId, p_status: status, p_condition: additionalData?.condition ?? null, p_evidence: additionalData?.evidenceUrl ?? null });
-  if (rpcReturn) {
-    if (status === 'completed' && rpcReturn.restocked) {
-      const r = rpcReturn.restocked;
-      await openOrdersForFailedReturns(
-        [{ mat: { id: r.material_id, name: r.name, usage_type: r.usage_type }, line: { materialId: r.material_id, quantity: returnReq.quantity, condition: (additionalData?.condition) as RestockLine['condition'] } }],
-        { tenantId, code: rpcReturn.code || returnReq.internal_code || requestId, notes: rpcReturn.notes ?? returnReq.notes, reportedBy: user.name });
-    }
-    return;
-  }
-
-  // Respaldo (migración sin aplicar).
-  const now = new Date().toISOString();
-
-  // Reservar: sólo UNA persona pasa la devolución de pendiente a resuelta.
-  const { data: claimed, error: claimErr } = await supabase.from('return_requests').update({
-    status: status,
-    completion_date: now,
-    handler_id: user.id,
-    handler_name: user.name,
-    return_condition: additionalData?.condition,
-    evidence_url: additionalData?.evidenceUrl || null
-  }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'pending').select('id');
-  if (claimErr) throw claimErr;
-  if (!claimed?.length) throw new Error('Esta devolución ya fue procesada por otra persona.');
-
-  if (status === 'completed') {
-    let restocked: { mat: any; line: RestockLine }[];
-    try {
-      restocked = await restockLines([{ materialId: returnReq.material_id, quantity: returnReq.quantity, condition: additionalData?.condition }], {
-        tenantId, contractId: returnReq.contract_id ?? null, contractName: returnReq.contract_name || null, warehouseId: null,
-        relatedRequestId: requestId,
-        justification: `Devolución de solicitud ${returnReq.internal_code}`,
-        userId: returnReq.supervisor_id, userName: returnReq.supervisor_name,
-        statusFor: statusAfterReturn,
-      });
-    } catch (e) {
-      // El reingreso no se hizo: la devolución vuelve a pendiente para que se pueda reintentar.
-      await supabase.from('return_requests').update({
-        status: 'pending', completion_date: null, handler_id: null, handler_name: null, return_condition: null, evidence_url: null,
-      }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'completed');
-      throw e;
-    }
-    await openOrdersForFailedReturns(restocked, { tenantId, code: returnReq.internal_code || requestId, notes: returnReq.notes, reportedBy: user.name });
+  if (status === 'completed' && resolved.restocked) {
+    const r = resolved.restocked;
+    await openOrdersForFailedReturns(
+      [{ mat: { id: r.material_id, name: r.name, usage_type: r.usage_type }, line: { materialId: r.material_id, quantity: returnReq.quantity, condition: additionalData?.condition as RestockLine['condition'] } }],
+      { tenantId, code: resolved.code || returnReq.internal_code || requestId, notes: resolved.notes ?? returnReq.notes, reportedBy: user.name });
   }
 }
 

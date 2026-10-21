@@ -1,6 +1,7 @@
 
 
 "use client";
+import { LoadingValue } from '@/components/loading-value';
 
 import React, { useState, useMemo, useCallback } from "react";
 import dynamic from 'next/dynamic';
@@ -551,18 +552,18 @@ export default function AttendanceReportPage() {
             <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">Horas Trabajadas</p>
-                <p className="text-3xl font-bold">{weeklyTotals.totalHours}</p>
+                <p className="text-3xl font-bold"><LoadingValue className="h-8 w-16">{weeklyTotals.totalHours}</LoadingValue></p>
               </div>
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">Minutos de Atraso</p>
                 <p className="text-3xl font-bold text-amber-500">
-                  {weeklyTotals.totalDelays}
+                  <LoadingValue className="h-8 w-16">{weeklyTotals.totalDelays}</LoadingValue>
                 </p>
               </div>
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">Horas Extras</p>
                 <p className="text-3xl font-bold text-green-500">
-                  {weeklyTotals.overtimeHours}
+                  <LoadingValue className="h-8 w-16">{weeklyTotals.overtimeHours}</LoadingValue>
                 </p>
               </div>
             </CardContent>

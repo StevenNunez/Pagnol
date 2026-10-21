@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { ArrowLeft, Save, User, Calendar, Camera, Trash2 } from "lucide-react";
 import { LoadingState } from "@/components/loading-state";
 import { format } from "date-fns";
@@ -109,6 +110,7 @@ export default function CompleteInspectionPage() {
         setInspectionData({ ...inspectionData, completionPhotos: newPhotos });
     };
 
+    const { run: runSave, pending: saving } = usePendingAction();
     const handleSave = async () => {
         if (!inspectionData) return;
 
@@ -126,14 +128,16 @@ export default function CompleteInspectionPage() {
         }
 
         try {
-            await completeSafetyInspection(inspectionData.id, {
-                completionNotes: inspectionData.completionNotes,
-                completionSignature: inspectionData.completionSignature,
-                completionExecutor: authUser?.name || 'Desconocido',
-                completionPhotos: inspectionData.completionPhotos
-            });
-            toast({ title: "Inspección Completada", description: "El formulario ha sido guardado y la tarea cerrada." });
-            router.push('/dashboard/safety/assigned-inspections');
+            await runSave(async () => {
+                await completeSafetyInspection(inspectionData.id, {
+                    completionNotes: inspectionData.completionNotes,
+                    completionSignature: inspectionData.completionSignature,
+                    completionExecutor: authUser?.name || 'Desconocido',
+                    completionPhotos: inspectionData.completionPhotos
+                });
+                toast({ title: "Inspección Completada", description: "El formulario ha sido guardado y la tarea cerrada." });
+                router.push('/dashboard/safety/assigned-inspections');
+            }, { holdMs: 5000 });
         } catch (error: any) {
             toast({ variant: "destructive", title: "Error al Guardar", description: error.message || "No se pudo guardar el formulario." });
         }
@@ -296,7 +300,7 @@ export default function CompleteInspectionPage() {
                     {!isCompleted && (
                         <div className="flex justify-end gap-4">
                             <Button variant="outline" onClick={() => router.back()}>Cancelar</Button>
-                            <Button onClick={handleSave}><Save className="mr-2" /> Guardar y Completar Tarea</Button>
+                            <Button onClick={handleSave} loading={saving}><Save className="mr-2" /> Guardar y Completar Tarea</Button>
                         </div>
                     )}
                 </div>

@@ -1,4 +1,5 @@
 'use client';
+import { LoadingValue } from '@/components/loading-value';
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
@@ -377,11 +378,11 @@ export default function PagnolMainPage() {
                 <div className={`p-4 rounded-2xl ${m.iconCls} shadow-sm`}>
                   <m.icon size={20} />
                 </div>
-                <Badge variant="outline" className={`border-none ${m.iconCls} text-[8px] font-black px-2 py-1`}>{m.trend}</Badge>
+                <Badge variant="outline" className={`border-none ${m.iconCls} text-[8px] font-black px-2 py-1`}><LoadingValue className="h-2 w-16">{m.trend}</LoadingValue></Badge>
               </div>
               <div>
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{m.label}</p>
-                <p className="text-4xl font-black text-foreground mt-1 font-outfit">{m.value}</p>
+                <p className="text-4xl font-black text-foreground mt-1 font-outfit"><LoadingValue className="h-10 w-24">{m.value}</LoadingValue></p>
               </div>
             </div>
           </Card>

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { ArrowLeft, Save, CircleUserRound, CalendarDays, Calendar as CalendarIcon, Camera, Trash2 } from "lucide-react";
 import { LoadingState } from "@/components/loading-state";
 import { format } from "date-fns";
@@ -149,6 +150,7 @@ export default function AssignedChecklistPage() {
         setChecklistData({ ...checklistData, evidencePhotos: newPhotos });
     };
 
+    const { run: runSave, pending: saving } = usePendingAction();
     const handleSave = async () => {
         if (!checklistData) return;
 
@@ -167,9 +169,11 @@ export default function AssignedChecklistPage() {
         }
 
         try {
-            await completeAssignedChecklist(checklistData);
-            toast({ title: "Checklist Enviado", description: "El formulario ha sido guardado y enviado para su revisión." });
-            router.push('/dashboard/safety/assigned-checklists');
+            await runSave(async () => {
+                await completeAssignedChecklist(checklistData);
+                toast({ title: "Checklist Enviado", description: "El formulario ha sido guardado y enviado para su revisión." });
+                router.push('/dashboard/safety/assigned-checklists');
+            }, { holdMs: 5000 });
         } catch (error: any) {
             toast({ variant: "destructive", title: "Error al Guardar", description: error.message || "No se pudo guardar el formulario." });
         }
@@ -347,7 +351,7 @@ export default function AssignedChecklistPage() {
 
             <div className="flex justify-end gap-4">
                 <Button variant="outline" onClick={() => router.back()}>Cancelar</Button>
-                <Button onClick={handleSave}><Save className="mr-2" /> Guardar y Enviar</Button>
+                <Button onClick={handleSave} loading={saving}><Save className="mr-2" /> Guardar y Enviar</Button>
             </div>
 
         </div>

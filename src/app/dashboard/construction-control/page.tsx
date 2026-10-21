@@ -1,5 +1,6 @@
 'use client';
 
+import { LoadingValue } from '@/components/loading-value';
 import React, { useMemo } from 'react';
 import { PageShell } from '@/components/page-shell';
 import { EmptyState } from '@/components/empty-state';
@@ -132,7 +133,7 @@ export default function ConstructionControlHubPage() {
         <Card className="col-span-2 lg:col-span-1 rounded-[1.5rem] border-none shadow-lg bg-card">
           <CardContent className="p-6">
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Avance General</p>
-            <p className="text-4xl font-black text-primary">{stats.overallProgress.toFixed(1)}%</p>
+            <p className="text-4xl font-black text-primary"><LoadingValue className="h-10 w-24">{stats.overallProgress.toFixed(1)}%</LoadingValue></p>
             <Progress value={stats.overallProgress} className="h-2 mt-3" />
           </CardContent>
         </Card>

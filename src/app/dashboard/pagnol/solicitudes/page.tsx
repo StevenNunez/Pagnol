@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingValue } from '@/components/loading-value';
 import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageShell } from '@/components/page-shell';
@@ -97,7 +98,7 @@ function PanolInbox() {
                                     <k.icon size={18} />
                                 </div>
                             </div>
-                            <p className="text-3xl font-black font-outfit text-foreground">{k.value}</p>
+                            <p className="text-3xl font-black font-outfit text-foreground"><LoadingValue className="h-8 w-12">{k.value}</LoadingValue></p>
                             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1">{k.label}</p>
                             {k.hint && <p className="text-[10px] font-bold text-destructive mt-1">{k.hint}</p>}
                         </Card>

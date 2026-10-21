@@ -1,4 +1,5 @@
 'use client';
+import { LoadingValue } from '@/components/loading-value';
 
 import React, { useMemo } from 'react';
 import Link from 'next/link';
@@ -149,7 +150,7 @@ function KpiCard({ icon, label, value, href, tone }: {
           <div className="p-2 rounded-xl bg-primary/10 text-primary">{icon}</div>
           {href && <ArrowRight className="h-4 w-4 text-muted-foreground" />}
         </div>
-        <div className={`text-2xl font-black tabular-nums ${toneClass}`}>{value}</div>
+        <div className={`text-2xl font-black tabular-nums ${toneClass}`}><LoadingValue className="h-7 w-12">{value}</LoadingValue></div>
         <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</div>
       </CardContent>
     </Card>

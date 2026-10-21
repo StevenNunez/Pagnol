@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { usePendingAction } from '@/hooks/use-pending-action';
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import {
   AlertCircle, CheckCircle2, XCircle, Clock, Save, Send, ArrowLeft,
@@ -170,6 +171,7 @@ export default function ProtocolDetailPage() {
     }
   };
 
+  const { run: runApprove, pending: approving } = usePendingAction();
   const handleApprove = async () => {
     const canvas = qmSigRef.current?.getCanvas?.();
     if (!canvas) return;
@@ -179,16 +181,18 @@ export default function ProtocolDetailPage() {
       return;
     }
     try {
-      await approveProtocol(protocol!.id, {
-        userId: user!.id,
-        name: user!.name,
-        role: user!.role,
-        signature: sigData,
-        date: new Date().toISOString(),
-      });
-      setShowQMSig(false);
-      toast({ title: 'Protocolo aprobado', className: 'border-success' });
-      router.push('/dashboard/construction-control/protocolos');
+      await runApprove(async () => {
+        await approveProtocol(protocol!.id, {
+          userId: user!.id,
+          name: user!.name,
+          role: user!.role,
+          signature: sigData,
+          date: new Date().toISOString(),
+        });
+        setShowQMSig(false);
+        toast({ title: 'Protocolo aprobado', className: 'border-success' });
+        router.push('/dashboard/construction-control/protocolos');
+      }, { holdMs: 5000 });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Error', description: e.message });
     }
@@ -570,7 +574,7 @@ export default function ProtocolDetailPage() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" className="rounded-xl" onClick={() => setShowQMSig(false)}>Cancelar</Button>
-            <Button className="rounded-xl bg-success hover:bg-success/90 text-success-foreground" onClick={handleApprove}>
+            <Button className="rounded-xl bg-success hover:bg-success/90 text-success-foreground" onClick={handleApprove} loading={approving}>
               <CheckCircle2 size={14} className="mr-1" /> Aprobar Protocolo
             </Button>
           </DialogFooter>

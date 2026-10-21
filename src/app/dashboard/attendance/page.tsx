@@ -1,4 +1,5 @@
 "use client";
+import { LoadingValue } from '@/components/loading-value';
 
 import React, { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -218,7 +219,7 @@ export default function AttendancePage() {
             <div className={`${color} shrink-0`}><Icon size={22} /></div>
             <div>
               <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">{label}</p>
-              <p className={`text-3xl font-black tracking-tighter ${color}`}>{value}</p>
+              <p className={`text-3xl font-black tracking-tighter ${color}`}><LoadingValue className="h-8 w-14">{value}</LoadingValue></p>
             </div>
           </div>
         ))}

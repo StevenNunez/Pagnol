@@ -1,5 +1,6 @@
 ﻿
 "use client";
+import { LoadingValue } from '@/components/loading-value';
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useAppState, useAuth } from '@/modules/core/contexts/app-provider';
@@ -1631,7 +1632,7 @@ export default function MovimientosPagnolPage() {
           { label: 'Actas Firmadas', value: statsWithContracts, color: 'text-info', bg: 'bg-info-subtle border-info/20' },
         ].map(s => (
           <div key={s.label} className={`p-5 rounded-[1.5rem] border ${s.bg} flex flex-col gap-1`}>
-            <span className={`text-3xl font-black ${s.color}`}>{s.value}</span>
+            <span className={`text-3xl font-black ${s.color}`}><LoadingValue className="h-8 w-10">{s.value}</LoadingValue></span>
             <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">{s.label}</span>
           </div>
         ))}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { BarChart3, CheckCircle2, ClipboardList, Clock, FileText, Plus, Trash2, Users, Wrench } from 'lucide-react';
+import { usePendingAction } from '@/hooks/use-pending-action';
 import { PageShell } from '@/components/page-shell';
 import { DataTable, type DataTableColumn } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
@@ -93,11 +94,15 @@ export default function ReportesDiariosPage() {
     });
   }, [reports, query, period]);
 
+  const { run: runNew, pending: creating } = usePendingAction();
+  // Doble clic = dos informes en blanco: el candado vive en `usePendingAction`.
   const handleNew = async () => {
     try {
-      const report = await createWorkReport({});
-      sessionStorage.setItem(`wr_new_${report.id}`, JSON.stringify(report));
-      router.push(`/dashboard/work-reports/${report.id}`);
+      await runNew(async () => {
+        const report = await createWorkReport({});
+        sessionStorage.setItem(`wr_new_${report.id}`, JSON.stringify(report));
+        router.push(`/dashboard/work-reports/${report.id}`);
+      }, { holdMs: 5000 });
     } catch (error: any) {
       notify(error?.message || 'No se pudo crear el reporte de trabajo.', 'destructive');
     }
@@ -178,7 +183,7 @@ export default function ReportesDiariosPage() {
             </SelectContent>
           </Select>
           {can('work_reports:create') && (
-            <Button onClick={handleNew} className="rounded-[1.5rem] shadow-lg shadow-primary/10">
+            <Button onClick={handleNew} loading={creating} className="rounded-[1.5rem] shadow-lg shadow-primary/10">
               <Plus className="h-4 w-4 mr-2" />
               Nuevo Reporte Diario
             </Button>

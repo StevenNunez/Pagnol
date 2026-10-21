@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { LoadingValue } from '@/components/loading-value';
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import Image from 'next/image';
 import { useForm, Controller, SubmitHandler } from 'react-hook-form';
@@ -947,14 +948,14 @@ export default function ActivosPage() {
                 className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${segment === key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {label}
-                <span className={`px-1.5 py-0.5 rounded-md text-[8px] ${segment === key ? 'bg-primary-foreground/20' : 'bg-muted-foreground/10'}`}>{count}</span>
+                <span className={`px-1.5 py-0.5 rounded-md text-[8px] ${segment === key ? 'bg-primary-foreground/20' : 'bg-muted-foreground/10'}`}><LoadingValue className="h-2 w-4">{count}</LoadingValue></span>
               </button>
             ))}
           </div>
           <div className="bg-pagnol-dark text-white px-4 py-2 rounded-xl flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
             <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">
-              {filteredAssets.length} {segment === 'consumables' ? 'Consumibles' : segment === 'assets' ? 'Activos' : 'Ítems'}
+              <LoadingValue className="h-2 w-5 bg-white/20">{filteredAssets.length}</LoadingValue> {segment === 'consumables' ? 'Consumibles' : segment === 'assets' ? 'Activos' : 'Ítems'}
             </span>
           </div>
         </div>

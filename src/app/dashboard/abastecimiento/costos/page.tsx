@@ -1,4 +1,5 @@
 "use client";
+import { LoadingValue } from '@/components/loading-value';
 
 import React, { useMemo, useState } from "react";
 import { PageShell } from "@/components/page-shell";
@@ -125,7 +126,7 @@ function KpiCard({ icon: Icon, tone, label, value, hint }: {
                     <Icon className="h-5 w-5" />
                 </div>
                 <div>
-                    <p className="text-xl font-black tracking-tight text-foreground">{value}</p>
+                    <p className="text-xl font-black tracking-tight text-foreground"><LoadingValue className="h-6 w-24">{value}</LoadingValue></p>
                     <MicroLabel>{label}</MicroLabel>
                     {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
                 </div>

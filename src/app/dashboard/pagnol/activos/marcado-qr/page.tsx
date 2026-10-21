@@ -1,4 +1,5 @@
 "use client";
+import { LoadingValue } from '@/components/loading-value';
 
 // Prepara el lote de archivos para la pistola marcadora: un BMP por herramienta,
 // numerados IMG001.bmp en adelante, más la hoja índice que dice qué archivo es
@@ -324,19 +325,19 @@ export default function MarcadoQrPage() {
         <Card className="rounded-[1.5rem]">
           <CardContent className="p-6">
             <p className={MICRO_LABEL}>Herramientas marcables</p>
-            <p className="text-3xl font-black text-foreground mt-1">{listos.length}</p>
+            <p className="text-3xl font-black text-foreground mt-1"><LoadingValue className="h-8 w-10">{listos.length}</LoadingValue></p>
           </CardContent>
         </Card>
         <Card className="rounded-[1.5rem]">
           <CardContent className="p-6">
             <p className={MICRO_LABEL}>En este lote</p>
-            <p className="text-3xl font-black text-primary mt-1">{seleccionadas.length}</p>
+            <p className="text-3xl font-black text-primary mt-1"><LoadingValue className="h-8 w-10">{seleccionadas.length}</LoadingValue></p>
           </CardContent>
         </Card>
         <Card className="rounded-[1.5rem]">
           <CardContent className="p-6">
             <p className={MICRO_LABEL}>No se marcan</p>
-            <p className="text-3xl font-black text-muted-foreground mt-1">{totalFuera}</p>
+            <p className="text-3xl font-black text-muted-foreground mt-1"><LoadingValue className="h-8 w-10">{totalFuera}</LoadingValue></p>
             <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
               {fuera.consumibles} se {fuera.consumibles === 1 ? "consume" : "consumen"} · {fuera.epp}{" "}
               {fuera.epp === 1 ? "es EPP" : "son EPP"} · {fuera.ajenos}{" "}

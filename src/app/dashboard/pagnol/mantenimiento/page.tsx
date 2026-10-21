@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { LoadingValue } from '@/components/loading-value';
 import React, { useState, useMemo } from 'react';
 import { useAppState } from '@/modules/core/contexts/app-provider';
 import { PageHeader } from '@/components/page-header';
@@ -201,7 +202,7 @@ export default function MantenimientoPage() {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Disponibilidad Física</p>
-                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.availability}%</h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter"><LoadingValue className="h-8 w-20">{kpis.availability}%</LoadingValue></h3>
                 </div>
                 <div className="p-3 rounded-2xl bg-success-subtle text-success">
                   <Activity size={24} />
@@ -215,7 +216,7 @@ export default function MantenimientoPage() {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">MTBF (Confiabilidad)</p>
-                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.avgMtbf} <span className="text-sm text-muted-foreground">días</span></h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter"><LoadingValue className="h-8 w-24">{kpis.avgMtbf} <span className="text-sm text-muted-foreground">días</span></LoadingValue></h3>
                 </div>
                 <div className="p-3 rounded-2xl bg-info-subtle text-info">
                   <ShieldCheck size={24} />
@@ -229,7 +230,7 @@ export default function MantenimientoPage() {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">MTTR (Mantenibilidad)</p>
-                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.avgMttr} <span className="text-sm text-muted-foreground">hrs</span></h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter"><LoadingValue className="h-8 w-24">{kpis.avgMttr} <span className="text-sm text-muted-foreground">hrs</span></LoadingValue></h3>
                 </div>
                 <div className="p-3 rounded-2xl bg-pagnol-orange/10 text-pagnol-orange">
                   <Clock size={24} />
@@ -243,7 +244,7 @@ export default function MantenimientoPage() {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Órdenes Abiertas</p>
-                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter">{kpis.openOrders}</h3>
+                  <h3 className="text-3xl font-black text-foreground mt-2 tracking-tighter"><LoadingValue className="h-8 w-12">{kpis.openOrders}</LoadingValue></h3>
                 </div>
                 <div className="p-3 rounded-2xl bg-destructive/10 text-destructive">
                   <AlertTriangle size={24} />

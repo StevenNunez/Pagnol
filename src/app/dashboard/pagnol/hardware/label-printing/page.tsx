@@ -1,4 +1,5 @@
 ﻿"use client";
+import { LoadingValue } from '@/components/loading-value';
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { useAppState } from "@/modules/core/contexts/app-provider";
@@ -221,7 +222,7 @@ const LabelPrintingPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase text-muted-foreground tracking-widest mb-2">Activos Totales</p>
-                <p className="text-4xl font-black text-info-subtle-foreground">{filteredAssets.length}</p>
+                <p className="text-4xl font-black text-info-subtle-foreground"><LoadingValue className="h-10 w-14">{filteredAssets.length}</LoadingValue></p>
               </div>
               <Package className="h-12 w-12 text-info opacity-30" />
             </div>

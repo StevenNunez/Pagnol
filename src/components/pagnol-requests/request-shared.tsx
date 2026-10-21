@@ -31,11 +31,7 @@ export function requestItems(req: CompatibleMaterialRequest): { materialId: stri
  * botones exactamente cuando la mutación va a aceptar la acción (sin falsos
  * positivos con el permiso genérico `material_requests:approve`).
  */
-export function canApproveClass(can: (p: any) => boolean, cls: 'A' | 'B' | 'C'): boolean {
-    if (cls === 'A') return can('material_requests:approve_class_a');
-    if (cls === 'B') return can('material_requests:approve_class_b') || can('material_requests:approve_class_a');
-    return can('material_requests:approve_class_c') || can('material_requests:approve_class_b') || can('material_requests:approve_class_a');
-}
+export { canApproveClass } from '@/modules/data/mutations/requestClassMath';
 
 // ── Formato ─────────────────────────────────────────────────────────────────
 

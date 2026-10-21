@@ -27,6 +27,7 @@ import { PageHeader } from '@/components/page-header';
 import type { MaterialRequest, User } from '@/modules/core/lib/data';
 import { withdrawalQueues, deliveryHref } from '@/components/pagnol-requests/withdrawal-queues';
 import { canApproveClass, daysSince, requestItems } from '@/components/pagnol-requests/request-shared';
+import { highestClassOf } from '@/modules/data/mutations/requestClassMath';
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +45,11 @@ export default function PagnolMainPage() {
   const { activeMaterials, materialsMap, transactions, holderMap, criticalStock, totalValue, operabilityPct, maintenance } = data;
 
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+
+  // La clase REAL de un retiro sale de los materiales que pide. La guardada en el retiro puede venir mal
+  // de cuando todo nacía clase A (ver requestClassMath.ts).
+  const realClassOf = (r: MaterialRequest) =>
+    highestClassOf(requestItems(r as any).map(i => materialsMap.get(i.materialId)?.class));
 
   const formatRelativeTime = (timestamp: Date) => {
     const diffInSeconds = Math.floor((Date.now() - timestamp.getTime()) / 1000);
@@ -64,9 +70,19 @@ export default function PagnolMainPage() {
     // Gate ADC: solo las ya autorizadas por el Administrador de Contrato
     // llegan al pañol (mismo criterio y misma jerarquía de clases que la bandeja).
     return withdrawalQueues((requests || []) as MaterialRequest[]).toApprove
-      .filter(r => canApproveClass(can, (r.highestClass || 'C') as 'A' | 'B' | 'C'))
+      .filter(r => canApproveClass(can, realClassOf(r)))
       .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
-  }, [requests, can, currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests, can, currentUser, materialsMap]);
+
+  // Autorizados por el ADC que ESTE usuario no puede aprobar (clase que su rol no cubre): no son suyos
+  // para resolver, pero tampoco pueden quedar fuera de vista — por eso se cuentan y se avisan.
+  const waitingOthers = useMemo(
+    () => withdrawalQueues((requests || []) as MaterialRequest[]).toApprove
+      .filter(r => !canApproveClass(can, realClassOf(r))).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [requests, can, materialsMap],
+  );
 
   // Despachos aprobados que el trabajador todavía no retira: lo primero que el
   // pañolero tiene que ver al entrar. La más antigua primero.
@@ -175,6 +191,25 @@ export default function PagnolMainPage() {
           </button>
         )}
       </div>
+
+      {/* Retiros autorizados que este rol no puede aprobar: visibles, con a quién le tocan */}
+      {waitingOthers > 0 && (
+        <button
+          onClick={() => router.push('/dashboard/pagnol/solicitudes?paso=por-aprobar')}
+          className="w-full flex items-center gap-4 p-5 rounded-[1.5rem] bg-warning-subtle border border-warning/20 text-left hover:opacity-90 transition-opacity"
+        >
+          <ShieldAlert size={20} className="text-warning shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-black uppercase tracking-tight text-warning-subtle-foreground">
+              {waitingOthers} retiro{waitingOthers > 1 ? 's' : ''} esperando a quien aprueba su clase
+            </p>
+            <p className="text-[11px] text-muted-foreground font-medium">
+              Ya los autorizó el ADC, pero tu rol no puede aprobarlos: los aprueba administración o el ADC. Míralos para avisarles.
+            </p>
+          </div>
+          <ArrowRight size={16} className="text-warning shrink-0" />
+        </button>
+      )}
 
       {/* PARA ENTREGAR — lo primero que hace el pañolero */}
       {(toDeliver.length > 0 || actionableRequests.length > 0) && (
@@ -423,7 +458,7 @@ export default function PagnolMainPage() {
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             {actionableRequests.map((req) => {
-              const cls = req.highestClass || 'C';
+              const cls = realClassOf(req);
               const isProcessing = processingIds.has(req.id);
               return (
                 <div key={req.id} className="bg-muted/30 border border-border rounded-[3rem] shadow-sm flex flex-col group hover:bg-card hover:shadow-2xl transition-all duration-500 overflow-hidden border-b-8 border-b-destructive">

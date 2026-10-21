@@ -15,13 +15,14 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import {
-    Check, X, Loader2, Search, Clock, ShieldQuestion, ArrowRight, PackageCheck, ChevronDown, HandHelping,
+    Check, X, Loader2, Search, Clock, ShieldQuestion, ArrowRight, PackageCheck, ChevronDown, HandHelping, Undo2,
 } from 'lucide-react';
 import type { Material, User } from '@/modules/core/lib/data';
 import {
     CompatibleMaterialRequest, RequestItemsList, RequestStatusBadge,
     canApproveClass, formatDateTime, daysSince, toDate, requestItems,
 } from './request-shared';
+import { highestClassOf, WHO_APPROVES, type RequestClass } from '@/modules/data/mutations/requestClassMath';
 import { withdrawalQueues, deliveryHref } from './withdrawal-queues';
 
 /** Los pasos del retiro en el pañol, en el orden en que se hacen. */
@@ -48,7 +49,7 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
     onStepChange: (step: WithdrawalStep) => void;
     onNavigateAuthorizations: () => void;
 }) {
-    const { requests, updateMaterialRequestStatus, users, materials, isLoading, can } = useAppState();
+    const { requests, updateMaterialRequestStatus, cancelApprovedMaterialRequest, users, materials, isLoading, can } = useAppState();
     const { toast } = useToast();
     const router = useRouter();
 
@@ -58,6 +59,11 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
 
     const materialMap = useMemo(() => new Map((materials || []).map((m: Material) => [m.id, m])), [materials]);
     const userMap = useMemo(() => new Map((users || []).map((u: User) => [u.id, u.name])), [users]);
+    // La clase REAL sale de los materiales pedidos. La que trae el retiro puede venir mal de cuando
+    // todo nacía clase A, y con ella se mostraba «tiene ítems clase A» sobre una polera clase C.
+    const classOf = (req: CompatibleMaterialRequest): RequestClass =>
+        highestClassOf(requestItems(req).map(it => materialMap.get(it.materialId)?.class));
+    const canCancel = (req: CompatibleMaterialRequest) => canApproveClass(can, classOf(req)) || can('material_requests:authorize');
 
     const all = useMemo(() => {
         return [...((requests || []) as CompatibleMaterialRequest[])].sort(
@@ -118,6 +124,19 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
             // Realtime refresca la colección sola — sin refetch masivo.
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'No se pudo procesar', description: e.message || 'Error inesperado.' });
+        } finally {
+            setProcessingIds(prev => { const s = new Set(prev); s.delete(requestId); return s; });
+        }
+    };
+
+    // Deshacer un despacho aprobado que nadie retiró: el stock vuelve y el retiro a «por aprobar».
+    const handleCancel = async (requestId: string, reason: string) => {
+        setProcessingIds(prev => new Set(prev).add(requestId));
+        try {
+            await cancelApprovedMaterialRequest(requestId, reason);
+            toast({ title: 'Despacho anulado', description: 'El stock volvió al inventario y el retiro quedó otra vez en "Por aprobar".' });
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'No se pudo anular', description: e.message || 'Error inesperado.' });
         } finally {
             setProcessingIds(prev => { const s = new Set(prev); s.delete(requestId); return s; });
         }
@@ -198,8 +217,11 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
                                 materialMap={materialMap}
                                 supervisorName={userMap.get(req.supervisorId)}
                                 isProcessing={processingIds.has(req.id)}
-                                canAct={step === 'toApprove' && canApproveClass(can, (req.highestClass || 'C') as 'A' | 'B' | 'C')}
+                                cls={classOf(req)}
+                                canAct={step === 'toApprove' && canApproveClass(can, classOf(req))}
                                 canDeliver={step === 'toDeliver'}
+                                canCancel={step === 'toDeliver' && canCancel(req)}
+                                onCancel={(reason) => handleCancel(req.id, reason)}
                                 onApprove={(deliverNow) => handleUpdate(req.id, 'approved', deliverNow)}
                                 onReject={() => handleUpdate(req.id, 'rejected')}
                                 onDeliver={() => router.push(deliveryHref(req.id))}
@@ -219,18 +241,21 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
     );
 }
 
-function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, canAct, canDeliver, onApprove, onReject, onDeliver }: {
+function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, cls, canAct, canDeliver, canCancel, onCancel, onApprove, onReject, onDeliver }: {
     req: CompatibleMaterialRequest;
     materialMap: Map<string, Material>;
     supervisorName?: string;
     isProcessing: boolean;
+    cls: RequestClass;
     canAct: boolean;
     canDeliver: boolean;
+    canCancel: boolean;
+    onCancel: (reason: string) => void;
     onApprove: (deliverNow: boolean) => void;
     onReject: () => void;
     onDeliver: () => void;
 }) {
-    const cls = (req.highestClass || 'C') as 'A' | 'B' | 'C';
+    const [cancelReason, setCancelReason] = useState('');
     // Aprobada sin retirar: el stock ya salió pero nadie fue a buscarlo.
     const notPickedUp = req.status === 'approved' && !req.deliveryDate;
     const pickupDays = notPickedUp ? daysSince(req.approvalDate) : 0;
@@ -351,20 +376,56 @@ function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, canAct
                     <div className="flex items-start gap-3 p-4 rounded-2xl bg-warning-subtle text-warning-subtle-foreground">
                         <ShieldQuestion size={16} className="shrink-0 mt-0.5" />
                         <p className="text-xs font-medium">
-                            {cls === 'A'
-                                ? <>Tiene ítems <strong>clase A</strong>: la aprueba un Administrador o el Director de Faena. Cuando la aprueben, aparece en &quot;Por entregar&quot;.</>
-                                : <>No tienes permiso para aprobar clase {cls}. Cuando la aprueben, aparece en &quot;Por entregar&quot;.</>}
+                            Es un retiro de <strong>clase {cls}</strong> (la clase más exigente de lo que pide) y tu rol no puede aprobarla:
+                            la aprueba {WHO_APPROVES[cls]}. Cuando la aprueben, aparece en &quot;Por entregar&quot;.
                         </p>
                     </div>
                 )}
 
                 {canDeliver && (
-                    <Button
-                        onClick={onDeliver}
-                        className="w-full rounded-xl h-12 text-[11px] font-black uppercase tracking-widest gap-2 shadow-lg shadow-primary/10"
-                    >
-                        <HandHelping size={16} /> Entregar
-                    </Button>
+                    <div className="flex gap-3">
+                        {canCancel && (
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="outline" className="rounded-xl h-12 px-5 text-[10px] font-black uppercase tracking-widest border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5">
+                                        <Undo2 size={14} /> Anular despacho
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent className="rounded-[1.5rem]">
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Anular despacho aprobado</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Los materiales vuelven al inventario y el retiro queda otra vez en &quot;Por aprobar&quot;. Úsalo cuando
+                                            el trabajador no vino a retirarlo o se aprobó por error. Queda registrado en el kardex con el motivo.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <Input
+                                        value={cancelReason}
+                                        onChange={e => setCancelReason(e.target.value)}
+                                        placeholder="Motivo (obligatorio): ej. el trabajador no vino"
+                                        className="h-11 rounded-xl"
+                                        aria-label="Motivo de la anulación"
+                                    />
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Volver</AlertDialogCancel>
+                                        <AlertDialogAction
+                                            disabled={!cancelReason.trim()}
+                                            onClick={() => { onCancel(cancelReason.trim()); setCancelReason(''); }}
+                                            className="bg-destructive hover:bg-destructive/90"
+                                        >
+                                            Anular despacho
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        )}
+                        <Button
+                            onClick={onDeliver}
+                            className="flex-1 rounded-xl h-12 text-[11px] font-black uppercase tracking-widest gap-2 shadow-lg shadow-primary/10"
+                        >
+                            <HandHelping size={16} /> Entregar
+                        </Button>
+                    </div>
                 )}
             </div>
         </div>

@@ -26,6 +26,8 @@ export default defineConfig({
       'src/modules/data/mutations/approvalMath.test.ts',
       'src/modules/data/mutations/stockLedger.test.ts',
       'src/modules/data/mutations/returnPlace.test.ts',
+      'src/modules/data/mutations/requestClassMath.test.ts',
+      'src/modules/data/mutations/materialRequestMutations.test.ts',
       'src/lib/construction-forecast.test.ts',
       'src/lib/construction-scurve.test.ts',
       'src/lib/enrollment-quality.test.ts',

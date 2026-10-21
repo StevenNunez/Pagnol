@@ -1,15 +1,14 @@
 
 
 import { supabase } from '@/modules/core/lib/supabase';
-import { MaterialRequest, Material, ReturnRequest, UserRole } from '@/modules/core/lib/data';
-import { ROLES, Permission, userCan } from '@/modules/core/lib/permissions';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
-import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
+import { notifyAuthorizers, notifyWithdrawal } from '@/modules/core/lib/notify-authorizers';
 import { addToLedger, consumeFromLedger, describeConsumeSources, type ConsumeSource } from './stockLedger';
-import { emitFinanceEntries } from './financeLedger';
+import { emitFinanceEntries, reverseEntriesForSource } from './financeLedger';
 import { findCentralWarehouseId, placeForReturn } from './returnPlace';
 import { isRastreable } from '@/lib/api/mappers';
 import { consumptionTransfers } from './financeMath';
+import { asClass, highestClassOf, canApproveClass, type RequestClass } from './requestClassMath';
 
 import type { MutationContext as Context } from './context';
 
@@ -60,6 +59,245 @@ async function emitConsumptionForDelivery(
   })), context);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Descuento y reingreso de existencias — UN solo camino para los retiros y otro para los
+// reingresos (antes eran cuatro copias de la misma cuenta, y las cuatro leían el stock, lo
+// calculaban en el navegador y lo escribían sin comprobar nada).
+//
+// Reglas:
+//  · el `UPDATE` de la ficha lleva el stock y `in_use` que se LEYERON como condición
+//    (compare-and-set): si otra persona los cambió en el medio, no se pisa — falla;
+//  · todo `UPDATE` pide `.select()` y se verifica que tocó una fila: la RLS que deja 0 filas no
+//    lanza error y antes se daba por hecho;
+//  · si algo falla a mitad de camino se DESHACE lo ya aplicado (ficha, desglose y kardex),
+//    en vez de dejar medio retiro descontado.
+// Sigue sin ser una transacción de base de datos (eso es la Fase 2: funciones atómicas); esto
+// cierra los casos que se vieron, no la carrera entre dos máquinas en el mismo milisegundo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type Item = { materialId: string; quantity: number };
+
+/** Junta las líneas repetidas de un mismo material (antes la segunda pisaba a la primera). */
+function mergeItems(items: Item[] | null | undefined): Item[] {
+  const totals = new Map<string, number>();
+  for (const it of items || []) {
+    const q = Number(it.quantity);
+    if (!(q > 0)) throw new Error('Las cantidades deben ser mayores que cero.');
+    totals.set(it.materialId, (totals.get(it.materialId) || 0) + q);
+  }
+  return [...totals].map(([materialId, quantity]) => ({ materialId, quantity }));
+}
+
+async function loadMaterials(tenantId: string, ids: string[]): Promise<Map<string, any>> {
+  if (!ids.length) return new Map();
+  const { data, error } = await supabase.from('materials').select('*').eq('tenant_id', tenantId).in('id', ids);
+  if (error) throw error;
+  return new Map((data || []).map((m: any) => [m.id, m]));
+}
+
+const isAssetRow = (mat: any) => mat.usage_type !== 'Consumible';
+
+/** El `UPDATE` sólo vale si la ficha sigue como se la leyó. */
+function sameAsRead(q: any, mat: any) {
+  const withStock = q.eq('stock', mat.stock);
+  return mat.in_use == null ? withStock.is('in_use', null) : withStock.eq('in_use', mat.in_use);
+}
+
+async function casUpdateMaterial(tenantId: string, mat: any, patch: Record<string, unknown>): Promise<void> {
+  const { data, error } = await sameAsRead(
+    supabase.from('materials').update(patch).eq('id', mat.id).eq('tenant_id', tenantId),
+    mat,
+  ).select('id');
+  if (error) throw error;
+  if (!data?.length) throw new Error(`El stock de ${mat.name} cambió mientras se procesaba. Vuelve a intentar.`);
+}
+
+interface DeductPlan { item: Item; mat: any; newStock: number; newInUse: number; newStatus: string }
+
+/** Lee, valida y calcula; no escribe nada. `precheck` deja a quien llama sumar sus reglas (p. ej. la clase). */
+async function planDeduction(items: Item[], tenantId: string, precheck?: (mat: any) => void): Promise<DeductPlan[]> {
+  const mats = await loadMaterials(tenantId, items.map(i => i.materialId));
+  return items.map((item) => {
+    const mat = mats.get(item.materialId);
+    if (!mat) throw new Error(`Material ${item.materialId} no existe.`);
+    if (Number(mat.stock) < item.quantity) throw new Error(`Stock insuficiente para ${mat.name}.`);
+    precheck?.(mat);
+    const newStock = (mat.stock || 0) - item.quantity;
+    const newInUse = (mat.in_use || 0) + (isAssetRow(mat) ? item.quantity : 0);
+    let newStatus = mat.status;
+    if (isAssetRow(mat)) {
+      if (newInUse > 0) newStatus = 'En Uso';
+      else if (newStock > 0) newStatus = 'Disponible';
+    }
+    return { item, mat, newStock, newInUse, newStatus };
+  });
+}
+
+interface Applied { mat: any; sources: ConsumeSource[] | null; kardexId: string | null }
+
+async function rollbackDeduction(applied: Applied[], tenantId: string, warehouseId: string | null) {
+  for (const a of [...applied].reverse()) {
+    try {
+      await supabase.from('materials')
+        .update({ stock: a.mat.stock, in_use: a.mat.in_use, status: a.mat.status })
+        .eq('id', a.mat.id).eq('tenant_id', tenantId);
+      // El desglose se repone en el contrato de donde salió; el pañol exacto no se registra, así
+      // que vuelve al pañol que se prefirió al descontar (la suma por material queda igual).
+      for (const s of a.sources || []) {
+        await addToLedger({ tenantId, materialId: a.mat.id, contractId: s.contractId, warehouseId, qty: s.qty });
+      }
+      if (a.kardexId) await supabase.from('stock_movements').delete().eq('id', a.kardexId);
+    } catch (e) {
+      console.error('[retiros] no se pudo deshacer un descuento a medio camino', a.mat.id, e);
+    }
+  }
+}
+
+/** Aplica el plan: ficha (con compare-and-set), desglose y kardex. Si algo falla, deshace todo. */
+async function applyDeduction(
+  plan: DeductPlan[],
+  p: {
+    tenantId: string; contractId: string | null; contractName: string | null; warehouseId: string | null;
+    relatedRequestId: string; justification: (fallbackNote: string | null) => string; userId: string; userName: string;
+  },
+): Promise<{ mat: any; sources: ConsumeSource[] }[]> {
+  const applied: Applied[] = [];
+  try {
+    for (const u of plan) {
+      await casUpdateMaterial(p.tenantId, u.mat, { stock: u.newStock, in_use: u.newInUse, status: u.newStatus });
+      const a: Applied = { mat: u.mat, sources: null, kardexId: null };
+      applied.push(a);
+      // Descuenta del desglose del contrato (cascada a pool central si no alcanza),
+      // prefiriendo las existencias del pañol que entrega.
+      a.sources = await consumeFromLedger({ tenantId: p.tenantId, materialId: u.mat.id, contractId: p.contractId, warehouseId: p.warehouseId, qty: u.item.quantity });
+      const fallbackNote = await describeConsumeSources(a.sources, p.contractId);
+      const { data: k, error: kErr } = await supabase.from('stock_movements').insert({
+        material_id: u.mat.id,
+        material_name: u.mat.name,
+        quantity_change: -u.item.quantity,
+        new_stock: u.newStock,
+        type: 'request-delivery',
+        date: new Date().toISOString(),
+        justification: p.justification(fallbackNote),
+        user_id: p.userId,
+        user_name: p.userName,
+        related_request_id: p.relatedRequestId,
+        contract_id: p.contractId,
+        contract_name: p.contractName,
+        warehouse_id: p.warehouseId,
+        tenant_id: p.tenantId,
+      }).select('id').single();
+      if (kErr) throw kErr;
+      a.kardexId = k?.id ?? null;
+    }
+    return applied.map(a => ({ mat: a.mat, sources: a.sources! }));
+  } catch (e) {
+    await rollbackDeduction(applied, p.tenantId, p.warehouseId);
+    throw e;
+  }
+}
+
+/** El costo de lo consumido pasa a finanzas DESPUÉS de que el despacho quedó firme. */
+async function emitConsumption(
+  applied: { mat: any; sources: ConsumeSource[] }[],
+  p: { contractId: string | null; contractName: string | null; requestCode: string },
+  context: Context,
+) {
+  try {
+    for (const a of applied) {
+      await emitConsumptionForDelivery({ mat: a.mat, sources: a.sources, contractId: p.contractId, contractName: p.contractName, requestCode: p.requestCode }, context);
+    }
+  } catch (e: any) {
+    console.error('[retiros] no se pudo registrar el costo en finanzas', p.requestCode, e);
+    throw new Error(`El despacho quedó aprobado, pero no se pudo registrar su costo en finanzas (${e?.message || 'error'}). Avisa a soporte.`);
+  }
+}
+
+interface RestockLine { materialId: string; quantity: number; condition?: 'OK' | 'CON FALLA' | 'ROTO' }
+
+/**
+ * Devuelve existencias: suma el stock, baja `in_use`, reingresa al desglose y deja el kardex. Lo
+ * usan las devoluciones y la anulación de un despacho. Con compare-and-set y deshaciendo si falla.
+ * `statusFor` decide el estado del activo (una devolución con falla lo manda a mantenimiento).
+ */
+async function restockLines(
+  lines: RestockLine[],
+  p: {
+    tenantId: string; contractId: string | null; contractName: string | null; warehouseId: string | null;
+    relatedRequestId: string; justification: string; userId: string; userName: string;
+    statusFor: (mat: any, newInUse: number, condition: RestockLine['condition']) => string;
+  },
+): Promise<void> {
+  const mats = await loadMaterials(p.tenantId, lines.map(l => l.materialId));
+  const done: { mat: any; qty: number; place: { contractId: string | null; warehouseId: string | null }; kardexId: string | null }[] = [];
+  try {
+    for (const line of lines) {
+      const mat = mats.get(line.materialId);
+      if (!mat) throw new Error('Uno de los materiales ya no existe: no se puede reingresar.');
+      const newStock = (mat.stock || 0) + line.quantity;
+      const newInUse = Math.max(0, (mat.in_use || 0) - line.quantity);
+      const newStatus = isAssetRow(mat) ? p.statusFor(mat, newInUse, line.condition) : mat.status;
+      await casUpdateMaterial(p.tenantId, mat, { stock: newStock, in_use: newInUse, status: newStatus });
+
+      // Un consumible vuelve donde se recibió y al contrato indicado; un activo, al pool central y a
+      // la oficina central (ver returnPlace.ts).
+      const asset = isRastreable(mat.usage_type);
+      const place = placeForReturn({
+        isAsset: asset,
+        centralWarehouseId: asset ? await findCentralWarehouseId(p.tenantId) : null,
+        contractId: p.contractId,
+        warehouseId: p.warehouseId,
+      });
+      const entry = { mat, qty: line.quantity, place, kardexId: null as string | null };
+      done.push(entry);
+      await addToLedger({ tenantId: p.tenantId, materialId: mat.id, contractId: place.contractId, warehouseId: place.warehouseId, qty: line.quantity });
+      const { data: k, error: kErr } = await supabase.from('stock_movements').insert({
+        material_id: mat.id,
+        material_name: mat.name,
+        quantity_change: line.quantity,
+        new_stock: newStock,
+        type: 'return-reentry',
+        date: new Date().toISOString(),
+        justification: p.justification,
+        user_id: p.userId,
+        user_name: p.userName,
+        related_request_id: p.relatedRequestId,
+        contract_id: p.contractId,
+        contract_name: p.contractName,
+        warehouse_id: place.warehouseId,
+        tenant_id: p.tenantId,
+      }).select('id').single();
+      if (kErr) throw kErr;
+      entry.kardexId = k?.id ?? null;
+    }
+  } catch (e) {
+    for (const d of [...done].reverse()) {
+      try {
+        await supabase.from('materials').update({ stock: d.mat.stock, in_use: d.mat.in_use, status: d.mat.status }).eq('id', d.mat.id).eq('tenant_id', p.tenantId);
+        await consumeFromLedger({ tenantId: p.tenantId, materialId: d.mat.id, contractId: d.place.contractId, warehouseId: d.place.warehouseId, qty: d.qty });
+        if (d.kardexId) await supabase.from('stock_movements').delete().eq('id', d.kardexId);
+      } catch (re) {
+        console.error('[retiros] no se pudo deshacer un reingreso a medio camino', d.mat.id, re);
+      }
+    }
+    throw e;
+  }
+}
+
+/** Estado de un activo al volver: con falla va a mantenimiento; si no, en uso mientras quede alguna unidad afuera. */
+const statusAfterReturn = (_mat: any, newInUse: number, condition: RestockLine['condition']) =>
+  condition !== 'OK' ? 'En Mantenimiento' : newInUse > 0 ? 'En Uso' : 'Disponible';
+
+/** Estado de un activo cuando se ANULA un despacho: nunca fue a terreno, así que no hay «falla» posible. */
+const statusAfterCancel = (mat: any, newInUse: number) =>
+  newInUse > 0 ? 'En Uso' : mat.status === 'En Uso' ? 'Disponible' : mat.status;
+
+/** Clase real de lo pedido, calculada de los materiales (la guardada puede venir mal de antes). */
+async function realClassOf(items: Item[], tenantId: string): Promise<RequestClass> {
+  const mats = await loadMaterials(tenantId, items.map(i => i.materialId));
+  return highestClassOf(items.map(i => mats.get(i.materialId)?.criticality));
+}
+
 export async function addMaterialRequest(
   requestData: {
     items: { materialId: string; quantity: number }[];
@@ -68,6 +306,7 @@ export async function addMaterialRequest(
     contractName?: string | null;
     supervisorId: string;
     supervisorName?: string;
+    /** @deprecated Se ignora: la clase se calcula de los materiales pedidos. */
     highestClass?: 'A' | 'B' | 'C';
     tenantPrefix?: string;
     /** Quién retira: 'self' (default) | 'directed' (beneficiary*) | 'open'. */
@@ -81,11 +320,18 @@ export async function addMaterialRequest(
   if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
   const supervisorName = requestData.supervisorName || user.name || 'Usuario';
-  const highestClass = requestData.highestClass || 'A';
 
   const deliveryMode = requestData.deliveryMode || 'self';
   if (deliveryMode === 'directed' && !requestData.beneficiaryId)
     throw new Error('Una solicitud dirigida requiere un trabajador destinatario.');
+
+  const items = mergeItems(requestData.items);
+  if (!items.length) throw new Error('Debes pedir al menos un material.');
+  // La clase es un hecho de los materiales pedidos. Antes valía lo que mandara la pantalla y, si
+  // no mandaba nada, 'A': todo retiro de faena nacía clase A y el pañolero no podía aprobarlo.
+  const mats = await loadMaterials(tenantId, items.map(i => i.materialId));
+  for (const it of items) if (!mats.has(it.materialId)) throw new Error(`Material ${it.materialId} no existe.`);
+  const highestClass = highestClassOf(items.map(i => mats.get(i.materialId)?.criticality));
 
   const requestId = await nextInternalCode(tenantId, 'TX');
 
@@ -98,7 +344,7 @@ export async function addMaterialRequest(
     .from('material_requests')
     .insert({
       internal_code: requestId,
-      items: requestData.items,
+      items,
       area: requestData.area,
       contract_id: requestData.contractId || null,
       contract_name: requestData.contractName || null,
@@ -115,7 +361,7 @@ export async function addMaterialRequest(
       beneficiary_name: deliveryMode === 'directed' ? (requestData.beneficiaryName || null) : null,
       created_at: now,
     })
-    .select('adc_authorized_at')
+    .select('id, adc_authorized_at')
     .single();
 
   if (error) throw new Error(`Error al crear solicitud: ${error.message} (code: ${error.code})`);
@@ -124,6 +370,8 @@ export async function addMaterialRequest(
   // valor, la base saca la pre-autorización si quien crea no es el firmante que
   // corresponde — por eso se mira lo que quedó guardado, no lo que se pidió.
   if (!created?.adc_authorized_at) notifyAuthorizers('material', { tenantId, code: requestId, requesterName: supervisorName });
+  // Si entró pre-autorizada, se salta al ADC: el aviso va directo al pañol.
+  else if (created?.id) notifyWithdrawal('authorized', created.id);
 }
 
 
@@ -153,40 +401,25 @@ export async function addAndApproveMaterialRequest(
   // Defensa en la mutación, no sólo en la pantalla: sin aprobación previa no
   // sale clase A nunca, ni clase B si el retiro no queda con revisión posterior.
   const maxDirectClass: 'B' | 'C' = requestData.requiresReview ? 'B' : 'C';
+  const classOrder = { A: 3, B: 2, C: 1 };
 
-  // 1. Fetch materials and build updates
-  const updates = [];
-  let highestClass: 'A' | 'B' | 'C' = 'C';
-  const classOrder = { 'A': 3, 'B': 2, 'C': 1 };
-
-  for (const item of requestData.items) {
-    const { data: mat } = await supabase.from('materials').select('*').eq('id', item.materialId).single();
-    if (!mat) throw new Error(`Material ${item.materialId} no existe.`);
-    if (mat.stock < item.quantity) throw new Error(`Stock insuficiente para ${mat.name}.`);
-
+  // 1. Leer, validar y calcular (no escribe nada).
+  const items = mergeItems(requestData.items);
+  if (!items.length) throw new Error('Debes indicar al menos un material.');
+  const plan = await planDeduction(items, tenantId, (mat) => {
     // La columna es `criticality` (el mapper la expone como `class`). Antes se
     // leía `mat.class` de la fila cruda —siempre undefined— y toda entrega
     // directa quedaba registrada como clase C.
-    const itemClass = (mat.criticality as 'A' | 'B' | 'C') || 'C';
+    const itemClass = asClass(mat.criticality);
     if (classOrder[itemClass] > classOrder[maxDirectClass]) {
       throw new Error(`${mat.name} es clase ${itemClass}: requiere aprobación antes de entregarse.`);
     }
-    if (classOrder[itemClass] > classOrder[highestClass]) highestClass = itemClass;
-
-    const newStock = (mat.stock || 0) - item.quantity;
-    const newInUse = (mat.in_use || 0) + (mat.usage_type !== 'Consumible' ? item.quantity : 0);
-    let newStatus = mat.status;
-    if (mat.usage_type !== 'Consumible') {
-      if (newInUse > 0) newStatus = 'En Uso';
-      else if (newStock > 0) newStatus = 'Disponible';
-    }
-
-    updates.push({ item, mat, newStock, newInUse, newStatus });
-  }
+  });
+  const highestClass = highestClassOf(plan.map(u => u.mat.criticality));
 
   // 2. IDs and Names
   const requestId = requestData.internalCode || await nextInternalCode(tenantId, 'TX');
-  const { data: s } = await supabase.from('profiles').select('name').eq('id', requestData.supervisorId).single();
+  const { data: s } = await supabase.from('profiles').select('name').eq('id', requestData.supervisorId).maybeSingle();
   const supervisorName = s?.name || 'Usuario';
   const now = new Date().toISOString();
 
@@ -196,14 +429,15 @@ export async function addAndApproveMaterialRequest(
   let reviewerSupervisorId: string | null = null;
   if (requestData.requiresReview) {
     const { data: resp } = await supabase
-      .from('profiles').select('responsible_supervisor_id').eq('id', requestData.supervisorId).single();
+      .from('profiles').select('responsible_supervisor_id').eq('id', requestData.supervisorId).maybeSingle();
     reviewerSupervisorId = resp?.responsible_supervisor_id ?? null;
   }
 
-  // 3. Perform Insert and Updates
-  const { error: reqErr } = await supabase.from('material_requests').insert({
+  // 3. El retiro entra como entregado y se descuenta; si el descuento falla, el retiro se retira
+  //    también (antes quedaba «entregado» con el stock intacto).
+  const { data: inserted, error: reqErr } = await supabase.from('material_requests').insert({
     internal_code: requestId,
-    items: requestData.items,
+    items,
     area: requestData.area,
     contract_id: requestData.contractId || null,
     contract_name: requestData.contractName || null,
@@ -229,41 +463,24 @@ export async function addAndApproveMaterialRequest(
     ...(requestData.requiresReview ? { requires_review: true } : {}),
     ...(reviewerSupervisorId ? { reviewer_supervisor_id: reviewerSupervisorId } : {}),
     created_at: now
-  });
+  }).select('id').single();
   if (reqErr) throw reqErr;
 
   const contractId = requestData.contractId ?? null;
   const warehouseId = requestData.warehouseId ?? null;
-  for (const u of updates) {
-    await supabase.from('materials').update({ stock: u.newStock, in_use: u.newInUse, status: u.newStatus }).eq('id', u.mat.id);
-    // Descuenta del desglose del contrato (cascada a pool central si no alcanza),
-    // prefiriendo las existencias del pañol que entrega.
-    const sources = await consumeFromLedger({ tenantId, materialId: u.mat.id, contractId, warehouseId, qty: u.item.quantity });
-    const fallbackNote = await describeConsumeSources(sources, contractId);
-    await supabase.from('stock_movements').insert({
-      material_id: u.mat.id,
-      material_name: u.mat.name,
-      quantity_change: -u.item.quantity,
-      new_stock: u.newStock,
-      type: 'request-delivery',
-      date: now,
-      justification: `Entrega inmediata en Pañol${requestData.requiresReview ? ' con revisión posterior' : ''} (TX: ${requestId})${fallbackNote ? ` — ${fallbackNote}` : ''}`,
-      user_id: requestData.supervisorId,
-      user_name: supervisorName,
-      related_request_id: requestId,
-      contract_id: contractId,
-      contract_name: requestData.contractName || null,
-      warehouse_id: warehouseId,
-      tenant_id: tenantId,
+  let applied: { mat: any; sources: ConsumeSource[] }[];
+  try {
+    applied = await applyDeduction(plan, {
+      tenantId, contractId, contractName: requestData.contractName || null, warehouseId,
+      relatedRequestId: requestId,
+      justification: (note) => `Entrega inmediata en Pañol${requestData.requiresReview ? ' con revisión posterior' : ''} (TX: ${requestId})${note ? ` — ${note}` : ''}`,
+      userId: requestData.supervisorId, userName: supervisorName,
     });
-    await emitConsumptionForDelivery({
-      mat: u.mat,
-      sources,
-      contractId,
-      contractName: requestData.contractName || null,
-      requestCode: requestId,
-    }, context);
+  } catch (e) {
+    if (inserted?.id) await supabase.from('material_requests').delete().eq('id', inserted.id).eq('tenant_id', tenantId);
+    throw e;
   }
+  await emitConsumption(applied, { contractId, contractName: requestData.contractName || null, requestCode: requestId }, context);
 }
 
 /**
@@ -277,12 +494,21 @@ export async function authorizeMaterialRequest(requestId: string, context: Conte
   if (!can('material_requests:authorize'))
     throw new Error('No tienes permiso para autorizar solicitudes de material.');
 
-  const { error } = await supabase
+  // `.select()`: un UPDATE que la RLS o un filtro dejan en 0 filas no lanza error, y antes
+  // «autorizado» se mostraba igual sin que nada hubiera cambiado.
+  const { data, error } = await supabase
     .from('material_requests')
     .update({ adc_authorized_at: new Date().toISOString(), adc_authorized_by: user.id })
     .eq('id', requestId)
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    .eq('status', 'pending')
+    .is('adc_authorized_at', null)
+    .select('id');
   if (error) throw error;
+  if (!data?.length) throw new Error('Esta solicitud ya fue autorizada, o ya no está pendiente.');
+
+  // Ahora le toca al pañol: sin este aviso nadie sabía que había un retiro esperando.
+  notifyWithdrawal('authorized', requestId);
 }
 
 export async function updateMaterialRequestStatus(
@@ -290,18 +516,26 @@ export async function updateMaterialRequestStatus(
   status: 'approved' | 'rejected',
   context: Context
 ) {
-  const { user, tenantId } = context;
+  const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
   const { data: request, error: fetchErr } = await supabase
     .from('material_requests')
     .select('*')
     .eq('id', requestId)
-    .single();
+    .maybeSingle();
 
   if (fetchErr || !request) throw new Error("La solicitud no existe.");
   if (request.tenant_id !== tenantId) throw new Error("No tienes permiso para modificar esta solicitud.");
+  // Sin esta guarda, aprobar dos veces (dos pañoleros, un doble clic, una lista vieja) descontaba
+  // el stock dos veces.
+  if (request.status !== 'pending') {
+    throw new Error(`Esta solicitud ya fue ${request.status === 'approved' ? 'aprobada' : 'rechazada'}.`);
+  }
 
+  const items = mergeItems(request.items);
+  // La clase REAL sale de los materiales: la guardada puede venir mal de cuando todo nacía clase A.
+  const realClass = await realClassOf(items, tenantId);
   const now = new Date().toISOString();
 
   if (status === 'approved') {
@@ -311,86 +545,115 @@ export async function updateMaterialRequestStatus(
     if (!request.adc_authorized_at) {
       throw new Error('Esta solicitud aún no ha sido autorizada por el ADC. No puede aprobarse en el pañol.');
     }
+    // Mismos permisos que ve la pantalla (`can()`): antes se miraba la tabla fija de roles y un rol
+    // con permisos propios de su empresa veía el botón y recibía un rechazo.
+    if (!canApproveClass(can, realClass)) throw new Error(`No tienes permiso para aprobar solicitudes de Clase ${realClass}.`);
 
-    const userRole = user.role as UserRole;
-    const requiredPermissionsForRole = ROLES[userRole]?.permissions || [];
-    const highestClass = request.highest_class || 'C';
+    // 1. Leer, validar y calcular (no escribe nada).
+    const plan = await planDeduction(items, tenantId);
 
-    const canApproveA = requiredPermissionsForRole.includes('material_requests:approve_class_a');
-    const canApproveB = requiredPermissionsForRole.includes('material_requests:approve_class_b');
-    const canApproveC = requiredPermissionsForRole.includes('material_requests:approve_class_c');
-
-    let hasPermission = false;
-    switch (highestClass) {
-      case 'A': hasPermission = canApproveA; break;
-      case 'B': hasPermission = canApproveB || canApproveA; break;
-      case 'C': hasPermission = canApproveC || canApproveB || canApproveA; break;
-    }
-
-    if (!hasPermission) throw new Error(`No tienes permiso para aprobar solicitudes de Clase ${highestClass}.`);
-
-    // Check stock
-    const updates = [];
-    for (const item of request.items) {
-      const { data: mat } = await supabase.from('materials').select('*').eq('id', item.materialId).single();
-      if (!mat) throw new Error(`Material ${item.materialId} no existe.`);
-      if (mat.stock < item.quantity) throw new Error(`Stock insuficiente para ${mat.name}.`);
-
-      const newStock = (mat.stock || 0) - item.quantity;
-      const newInUse = (mat.in_use || 0) + (mat.usage_type !== 'Consumible' ? item.quantity : 0);
-      let newStatus = mat.status;
-      if (mat.usage_type !== 'Consumible') {
-        if (newInUse > 0) newStatus = 'En Uso';
-        else if (newStock > 0) newStatus = 'Disponible';
-      }
-      updates.push({ item, mat, newStock, newInUse, newStatus });
-    }
-
-    // Apply updates
-    const contractId = request.contract_id ?? null;
-    for (const u of updates) {
-      await supabase.from('materials').update({ stock: u.newStock, in_use: u.newInUse, status: u.newStatus }).eq('id', u.mat.id);
-      // Descuenta del desglose del contrato de la solicitud (cascada a pool central).
-      const sources = await consumeFromLedger({ tenantId, materialId: u.mat.id, contractId, qty: u.item.quantity });
-      const fallbackNote = await describeConsumeSources(sources, contractId);
-      await supabase.from('stock_movements').insert({
-        material_id: u.mat.id,
-        material_name: u.mat.name,
-        quantity_change: -u.item.quantity,
-        new_stock: u.newStock,
-        type: 'request-delivery',
-        date: now,
-        justification: `Entrega para solicitud ${request.internal_code}${fallbackNote ? ` — ${fallbackNote}` : ''}`,
-        user_id: request.supervisor_id,
-        user_name: request.supervisor_name,
-        related_request_id: requestId,
-        contract_id: contractId,
-        contract_name: request.contract_name || null,
-        tenant_id: tenantId,
-      });
-      await emitConsumptionForDelivery({
-        mat: u.mat,
-        sources,
-        contractId,
-        contractName: request.contract_name || null,
-        requestCode: request.internal_code || requestId,
-      }, context);
-    }
-
-    await supabase.from('material_requests').update({
+    // 2. Reservar el retiro: sólo UNA persona puede pasarlo de pendiente a aprobado.
+    const { data: claimed, error: claimErr } = await supabase.from('material_requests').update({
       status: 'approved',
       approval_date: now,
       approver_id: user.id,
       approver_name: user.name,
-    }).eq('id', requestId);
+      highest_class: realClass,
+    }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'pending').select('id');
+    if (claimErr) throw claimErr;
+    if (!claimed?.length) throw new Error('Esta solicitud ya fue procesada por otra persona.');
 
+    // 3. Descontar. Si falla, el retiro vuelve a pendiente y lo descontado se deshace.
+    const contractId = request.contract_id ?? null;
+    let applied: { mat: any; sources: ConsumeSource[] }[];
+    try {
+      applied = await applyDeduction(plan, {
+        tenantId, contractId, contractName: request.contract_name || null, warehouseId: null,
+        relatedRequestId: requestId,
+        justification: (note) => `Entrega para solicitud ${request.internal_code}${note ? ` — ${note}` : ''}`,
+        userId: request.supervisor_id, userName: request.supervisor_name,
+      });
+    } catch (e) {
+      await supabase.from('material_requests').update({
+        status: 'pending', approval_date: null, approver_id: null, approver_name: null,
+      }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'approved');
+      throw e;
+    }
+
+    // El solicitante ya puede ir a retirarlo.
+    notifyWithdrawal('approved', requestId);
+    await emitConsumption(applied, { contractId, contractName: request.contract_name || null, requestCode: request.internal_code || requestId }, context);
   } else {
-    await supabase.from('material_requests').update({
+    // Quien puede aprobar la clase puede rechazarla; el ADC también (rechaza lo que no autoriza).
+    if (!canApproveClass(can, realClass) && !can('material_requests:authorize')) {
+      throw new Error('No tienes permiso para rechazar esta solicitud.');
+    }
+    const { data: claimed, error } = await supabase.from('material_requests').update({
       status: 'rejected',
       rejection_date: now,
       approver_id: user.id,
       approver_name: user.name,
-    }).eq('id', requestId);
+    }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'pending').select('id');
+    if (error) throw error;
+    if (!claimed?.length) throw new Error('Esta solicitud ya fue procesada por otra persona.');
+  }
+}
+
+/**
+ * Deshace un despacho APROBADO que todavía nadie retiró: devuelve el stock, `in_use`, el desglose y
+ * el costo, y el retiro vuelve a «por aprobar» (sigue autorizado por el ADC). Antes no había forma:
+ * aprobar saca el stock del inventario y, si el trabajador no venía, el activo quedaba perdido
+ * —sin estar en el pañol ni en manos de nadie— hasta que alguien lo arreglara en la base.
+ */
+export async function cancelApprovedMaterialRequest(requestId: string, reason: string, context: Context) {
+  const { user, tenantId, can } = context;
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  const why = (reason || '').trim();
+  if (!why) throw new Error('Indica el motivo de la anulación.');
+
+  const { data: request, error: fetchErr } = await supabase.from('material_requests').select('*').eq('id', requestId).maybeSingle();
+  if (fetchErr || !request) throw new Error('La solicitud no existe.');
+  if (request.tenant_id !== tenantId) throw new Error('No tienes permiso para modificar esta solicitud.');
+  if (request.delivery_date) throw new Error('Este despacho ya fue entregado: no se puede anular. Si el trabajador lo devuelve, regístralo como devolución.');
+  if (request.status !== 'approved') throw new Error('Sólo se puede anular un despacho que está aprobado.');
+
+  const items = mergeItems(request.items);
+  const realClass = await realClassOf(items, tenantId);
+  if (!canApproveClass(can, realClass) && !can('material_requests:authorize')) {
+    throw new Error('No tienes permiso para anular este despacho.');
+  }
+
+  // Reservar la anulación: sólo UNA persona la hace, y sólo mientras siga sin entregarse.
+  const before = {
+    status: request.status, approval_date: request.approval_date, approver_id: request.approver_id, approver_name: request.approver_name,
+  };
+  const { data: claimed, error: claimErr } = await supabase.from('material_requests').update({
+    status: 'pending', approval_date: null, approver_id: null, approver_name: null,
+  }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'approved').is('delivery_date', null).select('id');
+  if (claimErr) throw claimErr;
+  if (!claimed?.length) throw new Error('Este despacho ya fue anulado o entregado por otra persona.');
+
+  const code = request.internal_code || requestId;
+  try {
+    await restockLines(items, {
+      tenantId, contractId: request.contract_id ?? null, contractName: request.contract_name || null, warehouseId: null,
+      relatedRequestId: requestId,
+      justification: `Anulación de despacho aprobado (${code}): ${why}`,
+      userId: user.id, userName: user.name,
+      statusFor: statusAfterCancel,
+    });
+  } catch (e) {
+    await supabase.from('material_requests').update(before).eq('id', requestId).eq('tenant_id', tenantId);
+    throw e;
+  }
+
+  notifyWithdrawal('cancelled', requestId);
+  try {
+    // El consumo del costo se había emitido al aprobar: la anulación lo reversa (hechos inmutables).
+    await reverseEntriesForSource('material_request', code, `Anulación de despacho: ${why}`, context);
+  } catch (e: any) {
+    console.error('[retiros] no se pudo reversar el costo de un despacho anulado', code, e);
+    throw new Error(`El despacho se anuló y el stock volvió, pero no se pudo reversar su costo en finanzas (${e?.message || 'error'}). Avisa a soporte.`);
   }
 }
 
@@ -414,7 +677,9 @@ export async function deliverApprovedMaterialRequest(
   const { user } = context;
   if (!user) throw new Error("No autenticado.");
 
-  const { error } = await supabase
+  // `.is('delivery_date', null)` + `.select()`: una segunda entrega ya no pisa a la primera (quién
+  // recibió, con qué verificación), y un retiro que no está aprobado deja de «entregarse» en vacío.
+  const { data, error } = await supabase
     .from('material_requests')
     .update({
       delivery_date: new Date().toISOString(),
@@ -427,9 +692,12 @@ export async function deliverApprovedMaterialRequest(
       delivery_exception_id: verification?.exceptionGroupId ?? null,
     })
     .eq('id', requestId)
-    .eq('status', 'approved');
+    .eq('status', 'approved')
+    .is('delivery_date', null)
+    .select('id');
 
   if (error) throw error;
+  if (!data?.length) throw new Error('Este retiro no está aprobado o ya fue entregado.');
 }
 
 // Custodio real de una solicitud aprobada: quien recibió (biometría/QR) >
@@ -564,7 +832,7 @@ export async function addAndCompleteReturnRequest(
   for (const item of data.items) {
     const requestId = await nextInternalCode(tenantId, 'RET');
 
-    const { error: insertError } = await supabase.from('return_requests').insert({
+    const { data: inserted, error: insertError } = await supabase.from('return_requests').insert({
       internal_code: requestId,
       supervisor_id: data.workerId,
       supervisor_name: data.workerName,
@@ -584,54 +852,22 @@ export async function addAndCompleteReturnRequest(
       contract_name: data.contractName || null,
       created_at: now,
       items: [{ materialId: item.materialId, quantity: item.quantity, condition: item.condition }],
-    });
+    }).select('id').single();
 
     if (insertError) throw new Error(`Error al registrar devolución: ${insertError.message}`);
 
-    const { data: mat } = await supabase.from('materials').select('*').eq('id', item.materialId).single();
-    if (mat) {
-      const newStock = (mat.stock || 0) + item.quantity;
-      const newInUse = Math.max(0, (mat.in_use || 0) - item.quantity);
-      let newStatus = mat.status;
-      if (mat.usage_type !== 'Consumible') {
-        if (item.condition !== 'OK') newStatus = 'En Mantenimiento';
-        else if (newInUse > 0) newStatus = 'En Uso';
-        else newStatus = 'Disponible';
-      }
-      await supabase.from('materials').update({ stock: newStock, in_use: newInUse, status: newStatus }).eq('id', mat.id);
-
-      // Reingresa al desglose: un consumible en el contrato y pañol indicados; un activo
-      // al pool central y a la oficina central (ver returnPlace.ts).
-      const place = placeForReturn({
-        isAsset: isRastreable(mat.usage_type),
-        centralWarehouseId: isRastreable(mat.usage_type) ? await findCentralWarehouseId(tenantId) : null,
-        contractId: data.contractId ?? null,
-        warehouseId: data.warehouseId ?? null,
-      });
-      await addToLedger({
-        tenantId,
-        materialId: item.materialId,
-        contractId: place.contractId,
-        warehouseId: place.warehouseId,
-        qty: item.quantity,
-      });
-
-      await supabase.from('stock_movements').insert({
-        material_id: item.materialId,
-        material_name: item.materialName,
-        quantity_change: item.quantity,
-        new_stock: newStock,
-        type: 'return-reentry',
-        date: now,
+    try {
+      await restockLines([{ materialId: item.materialId, quantity: item.quantity, condition: item.condition }], {
+        tenantId, contractId: data.contractId ?? null, contractName: data.contractName || null, warehouseId: data.warehouseId ?? null,
+        relatedRequestId: requestId,
         justification: `Devolución inmediata en Pañol (TX: ${requestId})`,
-        user_id: data.workerId,
-        user_name: data.workerName,
-        related_request_id: requestId,
-        contract_id: data.contractId || null,
-        contract_name: data.contractName || null,
-        warehouse_id: place.warehouseId,
-        tenant_id: tenantId,
+        userId: data.workerId, userName: data.workerName,
+        statusFor: statusAfterReturn,
       });
+    } catch (e) {
+      // Sin el reingreso no hay devolución: no puede quedar «completada» una que no sumó nada.
+      if (inserted?.id) await supabase.from('return_requests').delete().eq('id', inserted.id).eq('tenant_id', tenantId);
+      throw e;
     }
   }
 }
@@ -644,69 +880,64 @@ export async function updateReturnRequestStatus(
 ) {
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
-  const { data: returnReq, error: fetchErr } = await supabase.from('return_requests').select('*').eq('id', requestId).single();
+  const { data: returnReq, error: fetchErr } = await supabase.from('return_requests').select('*').eq('id', requestId).maybeSingle();
   if (fetchErr || !returnReq) throw new Error("La solicitud de devolución no existe.");
+  // Antes no se miraba la empresa ni el estado: completar dos veces sumaba el stock dos veces.
+  if (returnReq.tenant_id !== tenantId) throw new Error("No tienes permiso para modificar esta devolución.");
+  if (!can('return_requests:approve')) throw new Error('No tienes permiso para resolver devoluciones.');
+  if (returnReq.status !== 'pending') {
+    throw new Error(`Esta devolución ya fue ${returnReq.status === 'completed' ? 'completada' : 'rechazada'}.`);
+  }
 
   const now = new Date().toISOString();
 
-  if (status === 'completed') {
-    const { data: mat } = await supabase.from('materials').select('*').eq('id', returnReq.material_id).single();
-    if (mat) {
-      const newStock = (mat.stock || 0) + returnReq.quantity;
-      const newInUse = Math.max(0, (mat.in_use || 0) - returnReq.quantity);
-      let newStatus = mat.status;
-      if (mat.usage_type !== 'Consumible') {
-        if (additionalData?.condition !== 'OK') newStatus = 'En Mantenimiento';
-        else if (newInUse > 0) newStatus = 'En Uso';
-        else newStatus = 'Disponible';
-      }
-      await supabase.from('materials').update({ stock: newStock, in_use: newInUse, status: newStatus }).eq('id', mat.id);
-
-      // Reingresa al desglose: un consumible en el contrato de la devolución; un activo al
-      // pool central y a la oficina central (ver returnPlace.ts).
-      const place = placeForReturn({
-        isAsset: isRastreable(mat.usage_type),
-        centralWarehouseId: isRastreable(mat.usage_type) ? await findCentralWarehouseId(tenantId) : null,
-        contractId: returnReq.contract_id ?? null,
-        warehouseId: null,
-      });
-      await addToLedger({ tenantId, materialId: returnReq.material_id, contractId: place.contractId, warehouseId: place.warehouseId, qty: returnReq.quantity });
-
-      await supabase.from('stock_movements').insert({
-        material_id: returnReq.material_id,
-        material_name: returnReq.material_name,
-        quantity_change: returnReq.quantity,
-        new_stock: newStock,
-        type: 'return-reentry',
-        date: now,
-        justification: `Devolución de solicitud ${returnReq.internal_code}`,
-        user_id: returnReq.supervisor_id,
-        user_name: returnReq.supervisor_name,
-        related_request_id: requestId,
-        contract_id: returnReq.contract_id || null,
-        contract_name: returnReq.contract_name || null,
-        warehouse_id: place.warehouseId,
-        tenant_id: tenantId,
-      });
-    }
-  }
-
-  await supabase.from('return_requests').update({
+  // Reservar: sólo UNA persona pasa la devolución de pendiente a resuelta.
+  const { data: claimed, error: claimErr } = await supabase.from('return_requests').update({
     status: status,
     completion_date: now,
     handler_id: user.id,
     handler_name: user.name,
     return_condition: additionalData?.condition,
     evidence_url: additionalData?.evidenceUrl || null
-  }).eq('id', requestId);
+  }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'pending').select('id');
+  if (claimErr) throw claimErr;
+  if (!claimed?.length) throw new Error('Esta devolución ya fue procesada por otra persona.');
+
+  if (status === 'completed') {
+    try {
+      await restockLines([{ materialId: returnReq.material_id, quantity: returnReq.quantity, condition: additionalData?.condition }], {
+        tenantId, contractId: returnReq.contract_id ?? null, contractName: returnReq.contract_name || null, warehouseId: null,
+        relatedRequestId: requestId,
+        justification: `Devolución de solicitud ${returnReq.internal_code}`,
+        userId: returnReq.supervisor_id, userName: returnReq.supervisor_name,
+        statusFor: statusAfterReturn,
+      });
+    } catch (e) {
+      // El reingreso no se hizo: la devolución vuelve a pendiente para que se pueda reintentar.
+      await supabase.from('return_requests').update({
+        status: 'pending', completion_date: null, handler_id: null, handler_name: null, return_condition: null, evidence_url: null,
+      }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'completed');
+      throw e;
+    }
+  }
 }
 
-export async function deleteMaterialRequest(requestId: string, { user, tenantId, can }: Context) {
-  const { error } = await supabase.from('material_requests').delete().eq('id', requestId);
+// Borrado de solicitudes: sólo super-admin, y no mientras el stock de un despacho aprobado siga
+// afuera (borrar la fila lo dejaría descontado para siempre, sin nadie que lo tenga).
+export async function deleteMaterialRequest(requestId: string, { user, tenantId }: Context) {
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  if (user.role !== 'super-admin') throw new Error('Sólo un super-admin puede eliminar solicitudes.');
+  const { data: r } = await supabase.from('material_requests').select('status, delivery_date').eq('id', requestId).eq('tenant_id', tenantId).maybeSingle();
+  if (r?.status === 'approved' && !r.delivery_date) {
+    throw new Error('Este despacho está aprobado y su stock ya salió del inventario: anúlalo primero.');
+  }
+  const { error } = await supabase.from('material_requests').delete().eq('id', requestId).eq('tenant_id', tenantId);
   if (error) throw error;
 }
 
-export async function deleteReturnRequest(requestId: string, { user, tenantId, can }: Context) {
-  const { error } = await supabase.from('return_requests').delete().eq('id', requestId);
+export async function deleteReturnRequest(requestId: string, { user, tenantId }: Context) {
+  if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+  if (user.role !== 'super-admin') throw new Error('Sólo un super-admin puede eliminar devoluciones.');
+  const { error } = await supabase.from('return_requests').delete().eq('id', requestId).eq('tenant_id', tenantId);
   if (error) throw error;
 }

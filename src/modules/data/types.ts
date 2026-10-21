@@ -193,6 +193,8 @@ export interface AppStateContextType extends AppDataState {
   addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; warehouseId?: string | null; requiresReview?: boolean; }) => Promise<void>;
   authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
+  /** Deshace un despacho aprobado que nadie retiró: devuelve el stock y el retiro vuelve a «por aprobar». */
+  cancelApprovedMaterialRequest: (requestId: string, reason: string) => Promise<void>;
   deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null, verification: { mode: 'biometric' | 'exception' | 'rut'; exceptionGroupId?: string | null } | null) => Promise<void>;
   // Cada ítem lleva su propio contrato de reingreso (un mismo material puede
   // tener saldo pendiente en más de un contrato a la vez).

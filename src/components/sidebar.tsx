@@ -79,7 +79,6 @@ import {
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
 import type { MaterialRequest, ReturnRequest } from '@/modules/core/lib/data';
 import { withdrawalQueues } from '@/components/pagnol-requests/withdrawal-queues';
-import { canApproveClass } from '@/components/pagnol-requests/request-shared';
 import { canOpenPath } from '@/modules/core/lib/module-access';
 import { cn } from '@/lib/utils';
 import { UserRole } from '@/modules/core/lib/data';
@@ -331,13 +330,14 @@ interface SidebarProps {
 // revisar), para que se vea desde el menú sin entrar a la bandeja. Componente
 // aparte: sólo él lee esas colecciones, así el resto del menú no se re-renderiza.
 function PanolPendingBadge({ isActive }: { isActive: boolean }) {
-  const { requests, returnRequests, can } = useAppState();
+  const { requests, returnRequests } = useAppState();
   const count = React.useMemo(() => {
     const q = withdrawalQueues((requests || []) as MaterialRequest[]);
-    const toApprove = q.toApprove.filter(r => canApproveClass(can, (r.highestClass || 'C') as 'A' | 'B' | 'C')).length;
+    // Todo lo que espera al pañol, también lo que este rol no puede aprobar: contar sólo lo aprobable
+    // hacía que un retiro esperando a administración «no existiera» para el pañolero.
     const returns = ((returnRequests || []) as ReturnRequest[]).filter(r => r.status === 'pending').length;
-    return toApprove + q.toDeliver.length + returns;
-  }, [requests, returnRequests, can]);
+    return q.toApprove.length + q.toDeliver.length + returns;
+  }, [requests, returnRequests]);
   if (count === 0) return null;
   return (
     <span className={cn(

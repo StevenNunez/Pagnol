@@ -19,7 +19,7 @@ import type { PurchaseRequest } from '@/modules/core/lib/data';
 export default function AuthorizationsPage() {
   const {
     requests: materialRequests, purchaseRequests, rentalRequests, materials, users,
-    authorizeMaterialRequest, updateMaterialRequestStatus,
+    authorizeMaterialRequest, rejectMaterialRequest,
     authorizePurchaseRequest, updatePurchaseRequestStatus,
     authorizeRentalRequest, updateRentalRequestStatus,
     reviewPurchaseRequests, reviewRentalRequest,
@@ -357,7 +357,7 @@ export default function AuthorizationsPage() {
             emptyTitle="Sin solicitudes de material por autorizar"
             emptyDescription="Cuando terreno pida materiales, aparecerán aquí para tu visto bueno."
             onApprove={(id) => authorizeMaterialRequest(id)}
-            onReject={(id) => updateMaterialRequestStatus(id, 'rejected')}
+            onReject={(id, reason) => rejectMaterialRequest(id, reason ?? '')}
           />
         </TabsContent>
 

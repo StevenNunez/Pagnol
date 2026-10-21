@@ -76,6 +76,7 @@ import { ROLES } from '@/modules/core/lib/permissions';
 import {
     addMaterialRequest, authorizeMaterialRequest, updateMaterialRequestStatus, deliverApprovedMaterialRequest,
     cancelApprovedMaterialRequest, addAndApproveMaterialRequest, updateReturnRequestStatus, addAndCompleteReturnRequest,
+    rejectMaterialRequest,
 } from './materialRequestMutations';
 
 const T = 't1';
@@ -397,5 +398,73 @@ describe('devoluciones', () => {
         const id = pendingReturn();
         await updateReturnRequestStatus(id, 'completed', { condition: 'CON FALLA' }, ctxPanolero);
         expect(stockOf('tool').status).toBe('En Mantenimiento');
+    });
+});
+
+describe('rejectMaterialRequest — el rechazo deja su motivo para quien lo pidió', () => {
+    it('guarda el motivo en las notas, sin borrar lo que el solicitante escribió', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 1 }], { notes: 'urgente para mañana' });
+        await rejectMaterialRequest(id, 'No hay stock en este pañol', ctxPanolero);
+        expect(req(id).status).toBe('rejected');
+        expect(req(id).notes).toBe('urgente para mañana · Motivo del rechazo: No hay stock en este pañol');
+        expect(stockOf('cons').stock).toBe(10);
+    });
+    it('sin notas previas, queda sólo el motivo', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 1 }]);
+        await rejectMaterialRequest(id, '  Pedido duplicado  ', ctxAdmin);
+        expect(req(id).notes).toBe('Motivo del rechazo: Pedido duplicado');
+    });
+    it('sin motivo igual rechaza (el ADC puede no escribirlo) y no toca las notas', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 1 }], { notes: 'hola' });
+        await rejectMaterialRequest(id, '', ctxAdmin);
+        expect(req(id).status).toBe('rejected');
+        expect(req(id).notes).toBe('hola');
+    });
+    it('tiene las mismas guardas: permiso, y una sola vez', async () => {
+        const id = pendingRequest([{ materialId: 'cons', quantity: 1 }]);
+        await expect(rejectMaterialRequest(id, 'x', ctxNadie)).rejects.toThrow(/permiso/i);
+        await rejectMaterialRequest(id, 'x', ctxPanolero);
+        await expect(rejectMaterialRequest(id, 'otra vez', ctxPanolero)).rejects.toThrow(/ya fue/i);
+        expect(req(id).notes).toBe('Motivo del rechazo: x');
+    });
+});
+
+describe('devolución con falla → OT correctiva (antes el equipo quedaba «En Mantenimiento» sin nadie a cargo)', () => {
+    const returnWith = async (condition: 'OK' | 'CON FALLA' | 'ROTO') => {
+        stockOf('tool').stock = 1; stockOf('tool').in_use = 2; stockOf('tool').status = 'En Uso';
+        db.material_stocks.find(l => l.material_id === 'tool')!.qty = 1;
+        await addAndCompleteReturnRequest({ items: [{ materialId: 'tool', quantity: 1, materialName: 'Taladro', unit: 'u', condition, notes: 'no enciende' }], notes: '', workerId: 'w1', workerName: 'W' }, ctxPanolero);
+    };
+    it('con falla: queda en mantenimiento y se abre su OT correctiva con el detalle', async () => {
+        await returnWith('CON FALLA');
+        expect(stockOf('tool').status).toBe('En Mantenimiento');
+        expect(db.maintenance_orders).toHaveLength(1);
+        expect(db.maintenance_orders[0]).toMatchObject({ material_id: 'tool', type: 'CORRECTIVE', status: 'OPEN', priority: 'MEDIUM' });
+        expect(db.maintenance_orders[0].description).toMatch(/con falla.*no enciende/);
+    });
+    it('un equipo roto abre la OT con prioridad alta', async () => {
+        await returnWith('ROTO');
+        expect(db.maintenance_orders[0].priority).toBe('HIGH');
+    });
+    it('devuelto en buen estado: no hay OT', async () => {
+        await returnWith('OK');
+        expect(db.maintenance_orders ?? []).toHaveLength(0);
+        expect(stockOf('tool').status).toBe('En Uso');
+    });
+    it('un consumible con falla no abre OT (no es un equipo)', async () => {
+        await addAndCompleteReturnRequest({ items: [{ materialId: 'cons', quantity: 1, materialName: 'Polera', unit: 'u', condition: 'CON FALLA' }], notes: '', workerId: 'w1', workerName: 'W' }, ctxPanolero);
+        expect(db.maintenance_orders ?? []).toHaveLength(0);
+    });
+    it('si ya hay una correctiva abierta de ese equipo no abre otra (una falla, una OT)', async () => {
+        await returnWith('CON FALLA');
+        await returnWith('CON FALLA');
+        expect(db.maintenance_orders).toHaveLength(1);
+    });
+    it('por la revisión del pañol también abre la OT', async () => {
+        stockOf('tool').stock = 1; stockOf('tool').in_use = 2; db.material_stocks.find(l => l.material_id === 'tool')!.qty = 1;
+        db.return_requests.push({ id: 'rt-x', tenant_id: T, internal_code: 'RET-X', material_id: 'tool', material_name: 'Taladro', quantity: 1, status: 'pending', supervisor_id: 'w1', supervisor_name: 'W', contract_id: null, notes: 'se cayó' });
+        await updateReturnRequestStatus('rt-x', 'completed', { condition: 'CON FALLA' }, ctxPanolero);
+        expect(db.maintenance_orders).toHaveLength(1);
+        expect(db.maintenance_orders[0].description).toMatch(/RET-X.*se cayó/);
     });
 });

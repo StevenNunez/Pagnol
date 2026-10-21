@@ -9,6 +9,7 @@ import { findCentralWarehouseId, placeForReturn } from './returnPlace';
 import { isRastreable } from '@/lib/api/mappers';
 import { consumptionTransfers } from './financeMath';
 import { asClass, highestClassOf, canApproveClass, type RequestClass } from './requestClassMath';
+import { openCorrectiveOrderForReturn } from './maintenanceMutations';
 
 import type { MutationContext as Context } from './context';
 
@@ -227,7 +228,7 @@ async function restockLines(
     relatedRequestId: string; justification: string; userId: string; userName: string;
     statusFor: (mat: any, newInUse: number, condition: RestockLine['condition']) => string;
   },
-): Promise<void> {
+): Promise<{ mat: any; line: RestockLine }[]> {
   const mats = await loadMaterials(p.tenantId, lines.map(l => l.materialId));
   const done: { mat: any; qty: number; place: { contractId: string | null; warehouseId: string | null }; kardexId: string | null }[] = [];
   try {
@@ -270,6 +271,7 @@ async function restockLines(
       if (kErr) throw kErr;
       entry.kardexId = k?.id ?? null;
     }
+    return lines.map(line => ({ mat: mats.get(line.materialId)!, line }));
   } catch (e) {
     for (const d of [...done].reverse()) {
       try {
@@ -291,6 +293,33 @@ const statusAfterReturn = (_mat: any, newInUse: number, condition: RestockLine['
 /** Estado de un activo cuando se ANULA un despacho: nunca fue a terreno, así que no hay «falla» posible. */
 const statusAfterCancel = (mat: any, newInUse: number) =>
   newInUse > 0 ? 'En Uso' : mat.status === 'En Uso' ? 'Disponible' : mat.status;
+
+/**
+ * Un equipo que vuelve con falla queda «En Mantenimiento»: ahora además se abre su OT correctiva, para que
+ * alguien tenga la tarea de arreglarlo (antes el equipo quedaba en ese estado sin OT y sin salida). Si la
+ * OT no se puede crear, la devolución igual quedó hecha: se deja constancia y el equipo sigue en
+ * mantenimiento como antes.
+ */
+async function openOrdersForFailedReturns(
+  restocked: { mat: any; line: RestockLine }[],
+  p: { tenantId: string; code: string; notes?: string | null; reportedBy: string },
+): Promise<void> {
+  for (const { mat, line } of restocked) {
+    if (!isAssetRow(mat) || line.condition === 'OK') continue;
+    try {
+      await openCorrectiveOrderForReturn({
+        tenantId: p.tenantId,
+        materialId: mat.id,
+        materialName: mat.name,
+        description: `Devolución ${p.code} ${line.condition === 'ROTO' ? 'con el equipo roto' : 'con falla'}${p.notes ? `: ${p.notes}` : ''}`,
+        priority: line.condition === 'ROTO' ? 'HIGH' : 'MEDIUM',
+        reportedBy: p.reportedBy,
+      });
+    } catch (e) {
+      console.error('[devoluciones] no se pudo abrir la OT de un equipo con falla', mat.id, e);
+    }
+  }
+}
 
 /** Clase real de lo pedido, calculada de los materiales (la guardada puede venir mal de antes). */
 async function realClassOf(items: Item[], tenantId: string): Promise<RequestClass> {
@@ -516,6 +545,25 @@ export async function updateMaterialRequestStatus(
   status: 'approved' | 'rejected',
   context: Context
 ) {
+  return processRequest(requestId, status, null, context);
+}
+
+/**
+ * Rechaza un retiro dejando el MOTIVO donde lo ve quien lo pidió (en `notes`, que la tarjeta del
+ * solicitante muestra). Antes se rechazaba en silencio: el solicitante veía «Rechazada» sin saber por qué.
+ * `reason` va siempre (puede ser ''): `bindContext` agrega el contexto al final, así que un parámetro
+ * opcional antes del contexto lo recibiría el contexto.
+ */
+export async function rejectMaterialRequest(requestId: string, reason: string, context: Context) {
+  return processRequest(requestId, 'rejected', (reason || '').trim() || null, context);
+}
+
+async function processRequest(
+  requestId: string,
+  status: 'approved' | 'rejected',
+  reason: string | null,
+  context: Context
+) {
   const { user, tenantId, can } = context;
   if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
 
@@ -593,6 +641,7 @@ export async function updateMaterialRequestStatus(
       rejection_date: now,
       approver_id: user.id,
       approver_name: user.name,
+      ...(reason ? { notes: [request.notes, `Motivo del rechazo: ${reason}`].filter(Boolean).join(' · ') } : {}),
     }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'pending').select('id');
     if (error) throw error;
     if (!claimed?.length) throw new Error('Esta solicitud ya fue procesada por otra persona.');
@@ -856,8 +905,9 @@ export async function addAndCompleteReturnRequest(
 
     if (insertError) throw new Error(`Error al registrar devolución: ${insertError.message}`);
 
+    let restocked: { mat: any; line: RestockLine }[];
     try {
-      await restockLines([{ materialId: item.materialId, quantity: item.quantity, condition: item.condition }], {
+      restocked = await restockLines([{ materialId: item.materialId, quantity: item.quantity, condition: item.condition }], {
         tenantId, contractId: data.contractId ?? null, contractName: data.contractName || null, warehouseId: data.warehouseId ?? null,
         relatedRequestId: requestId,
         justification: `Devolución inmediata en Pañol (TX: ${requestId})`,
@@ -869,6 +919,7 @@ export async function addAndCompleteReturnRequest(
       if (inserted?.id) await supabase.from('return_requests').delete().eq('id', inserted.id).eq('tenant_id', tenantId);
       throw e;
     }
+    await openOrdersForFailedReturns(restocked, { tenantId, code: requestId, notes: item.notes || data.notes, reportedBy: handler.name });
   }
 }
 
@@ -904,8 +955,9 @@ export async function updateReturnRequestStatus(
   if (!claimed?.length) throw new Error('Esta devolución ya fue procesada por otra persona.');
 
   if (status === 'completed') {
+    let restocked: { mat: any; line: RestockLine }[];
     try {
-      await restockLines([{ materialId: returnReq.material_id, quantity: returnReq.quantity, condition: additionalData?.condition }], {
+      restocked = await restockLines([{ materialId: returnReq.material_id, quantity: returnReq.quantity, condition: additionalData?.condition }], {
         tenantId, contractId: returnReq.contract_id ?? null, contractName: returnReq.contract_name || null, warehouseId: null,
         relatedRequestId: requestId,
         justification: `Devolución de solicitud ${returnReq.internal_code}`,
@@ -919,6 +971,7 @@ export async function updateReturnRequestStatus(
       }).eq('id', requestId).eq('tenant_id', tenantId).eq('status', 'completed');
       throw e;
     }
+    await openOrdersForFailedReturns(restocked, { tenantId, code: returnReq.internal_code || requestId, notes: returnReq.notes, reportedBy: user.name });
   }
 }
 

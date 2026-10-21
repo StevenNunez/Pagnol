@@ -20,12 +20,26 @@ export interface WithdrawalQueues<T extends MaterialRequest = MaterialRequest> {
     rejected: T[];
 }
 
+export type WithdrawalStage = keyof WithdrawalQueues;
+
+/**
+ * EL cálculo del estado de un retiro. La bandeja del pañol, el panel, el menú, la vista del
+ * solicitante (`resolveSupervisorStage`) y los reportes lo derivan de aquí: antes cada uno tenía su
+ * propia copia con reglas apenas distintas, y «dónde está mi retiro» podía responderse distinto según
+ * la pantalla. Un estado desconocido da null (nunca se asume «aprobado»).
+ */
+export function withdrawalStage(r: Pick<MaterialRequest, 'status' | 'adcAuthorizedAt' | 'deliveryDate'>): WithdrawalStage | null {
+    if (r.status === 'pending') return r.adcAuthorizedAt ? 'toApprove' : 'waitingAdc';
+    if (r.status === 'approved') return r.deliveryDate ? 'delivered' : 'toDeliver';
+    if (r.status === 'rejected') return 'rejected';
+    return null;
+}
+
 export function withdrawalQueues<T extends MaterialRequest>(requests: readonly T[] | null | undefined): WithdrawalQueues<T> {
     const q: WithdrawalQueues<T> = { waitingAdc: [], toApprove: [], toDeliver: [], delivered: [], rejected: [] };
     for (const r of requests || []) {
-        if (r.status === 'pending') (r.adcAuthorizedAt ? q.toApprove : q.waitingAdc).push(r);
-        else if (r.status === 'approved') (r.deliveryDate ? q.delivered : q.toDeliver).push(r);
-        else if (r.status === 'rejected') q.rejected.push(r);
+        const stage = withdrawalStage(r);
+        if (stage) q[stage].push(r);
     }
     return q;
 }

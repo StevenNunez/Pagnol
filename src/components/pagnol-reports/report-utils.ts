@@ -1,4 +1,5 @@
 import { Material, MaterialRequest, ReturnRequest, User } from '@/modules/core/lib/data';
+import { withdrawalStage } from '@/components/pagnol-requests/withdrawal-queues';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -105,9 +106,12 @@ export function buildTransactions(
             || 'Desconocido';
         const requesterName = usersMap.get(r.supervisorId)?.name || r.userName;
 
-        const stage: TxStage = r.status === 'rejected' ? 'rejected'
-            : r.deliveryDate ? 'delivered'
-                : r.status === 'approved' ? 'approved'
+        // Mismo estado que la bandeja y el solicitante (`withdrawalStage`): sin autorizar o por aprobar =
+        // pendiente; aprobado sin retirar = aprobado.
+        const ws = withdrawalStage(r);
+        const stage: TxStage = ws === 'rejected' ? 'rejected'
+            : ws === 'delivered' ? 'delivered'
+                : ws === 'toDeliver' ? 'approved'
                     : 'pending';
 
         list.push({

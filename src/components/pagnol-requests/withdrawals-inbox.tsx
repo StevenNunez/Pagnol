@@ -49,7 +49,7 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
     onStepChange: (step: WithdrawalStep) => void;
     onNavigateAuthorizations: () => void;
 }) {
-    const { requests, updateMaterialRequestStatus, cancelApprovedMaterialRequest, users, materials, isLoading, can } = useAppState();
+    const { requests, updateMaterialRequestStatus, rejectMaterialRequest, cancelApprovedMaterialRequest, users, materials, isLoading, can } = useAppState();
     const { toast } = useToast();
     const router = useRouter();
 
@@ -100,7 +100,7 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
 
     const setStepReset = (s: WithdrawalStep) => { onStepChange(s); setVisible(PAGE_SIZE); };
 
-    const handleUpdate = async (requestId: string, next: 'approved' | 'rejected', deliverNow = false) => {
+    const handleUpdate = async (requestId: string, next: 'approved' | 'rejected', deliverNow = false, reason = '') => {
         setProcessingIds(prev => new Set(prev).add(requestId));
         try {
             if (next === 'approved') {
@@ -111,7 +111,8 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
                 });
                 if (insufficient.length > 0) throw new Error(`Stock insuficiente para ${insufficient.length} ítem(s). Revisa el inventario.`);
             }
-            await updateMaterialRequestStatus(requestId, next);
+            if (next === 'rejected') await rejectMaterialRequest(requestId, reason);
+            else await updateMaterialRequestStatus(requestId, next);
             if (next === 'approved' && deliverNow) {
                 router.push(deliveryHref(requestId));
                 return;
@@ -223,7 +224,7 @@ export function WithdrawalsInbox({ step, onStepChange, onNavigateAuthorizations 
                                 canCancel={step === 'toDeliver' && canCancel(req)}
                                 onCancel={(reason) => handleCancel(req.id, reason)}
                                 onApprove={(deliverNow) => handleUpdate(req.id, 'approved', deliverNow)}
-                                onReject={() => handleUpdate(req.id, 'rejected')}
+                                onReject={(reason) => handleUpdate(req.id, 'rejected', false, reason)}
                                 onDeliver={() => router.push(deliveryHref(req.id))}
                             />
                         ))}
@@ -252,10 +253,11 @@ function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, cls, c
     canCancel: boolean;
     onCancel: (reason: string) => void;
     onApprove: (deliverNow: boolean) => void;
-    onReject: () => void;
+    onReject: (reason: string) => void;
     onDeliver: () => void;
 }) {
     const [cancelReason, setCancelReason] = useState('');
+    const [rejectReason, setRejectReason] = useState('');
     // Aprobada sin retirar: el stock ya salió pero nadie fue a buscarlo.
     const notPickedUp = req.status === 'approved' && !req.deliveryDate;
     const pickupDays = notPickedUp ? daysSince(req.approvalDate) : 0;
@@ -336,11 +338,24 @@ function WithdrawalCard({ req, materialMap, supervisorName, isProcessing, cls, c
                             <AlertDialogContent className="rounded-[1.5rem]">
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>Rechazar solicitud</AlertDialogTitle>
-                                    <AlertDialogDescription>Se marcará como rechazada y no se modificará el inventario. Esta acción es irreversible.</AlertDialogDescription>
+                                    <AlertDialogDescription>Se marcará como rechazada y no se modificará el inventario. Esta acción es irreversible. Quien lo pidió verá el motivo.</AlertDialogDescription>
                                 </AlertDialogHeader>
+                                <Input
+                                    value={rejectReason}
+                                    onChange={e => setRejectReason(e.target.value)}
+                                    placeholder="Motivo (obligatorio): ej. no hay stock en este pañol"
+                                    className="h-11 rounded-xl"
+                                    aria-label="Motivo del rechazo"
+                                />
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction onClick={onReject} className="bg-destructive hover:bg-destructive/90">Rechazar</AlertDialogAction>
+                                    <AlertDialogAction
+                                        disabled={!rejectReason.trim()}
+                                        onClick={() => { onReject(rejectReason.trim()); setRejectReason(''); }}
+                                        className="bg-destructive hover:bg-destructive/90"
+                                    >
+                                        Rechazar
+                                    </AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
                         </AlertDialog>

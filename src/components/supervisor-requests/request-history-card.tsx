@@ -91,6 +91,14 @@ export function RequestHistoryCard({ req, materialMap, contractName }: RequestHi
                     </p>
                 </div>
             )}
+            {stage === 'rejected' && (() => {
+                const m = /Motivo del rechazo: ([\s\S]*)$/.exec(req.notes || '');
+                return m ? (
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-destructive/5 border border-destructive/20">
+                        <p className="text-xs font-medium text-foreground"><span className="text-[10px] font-black uppercase tracking-widest text-destructive">Motivo del rechazo: </span>{m[1]}</p>
+                    </div>
+                ) : null;
+            })()}
             {(stage === 'waiting_adc' || stage === 'queued') && (
                 <p className="text-[10px] font-medium text-muted-foreground italic pl-1">{STAGE_META[stage].hint}</p>
             )}

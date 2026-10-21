@@ -634,6 +634,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         addAndApproveMaterialRequest: bindContext(materialRequestMutations.addAndApproveMaterialRequest),
         authorizeMaterialRequest: bindContext(materialRequestMutations.authorizeMaterialRequest),
         updateMaterialRequestStatus: bindContext(materialRequestMutations.updateMaterialRequestStatus),
+        rejectMaterialRequest: bindContext(materialRequestMutations.rejectMaterialRequest),
         cancelApprovedMaterialRequest: bindContext(materialRequestMutations.cancelApprovedMaterialRequest),
         deliverApprovedMaterialRequest: bindContext(materialRequestMutations.deliverApprovedMaterialRequest),
         addReturnRequest: bindContext(materialRequestMutations.addReturnRequest),

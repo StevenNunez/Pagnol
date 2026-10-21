@@ -1,4 +1,5 @@
 import type { CompatibleMaterialRequest } from '@/components/pagnol-requests/request-shared';
+import { withdrawalStage, type WithdrawalStage } from '@/components/pagnol-requests/withdrawal-queues';
 
 // ── Pipeline desde el punto de vista del SOLICITANTE ────────────────────────
 // El campo `status` de la BD solo distingue pending/approved/rejected, pero
@@ -7,14 +8,19 @@ import type { CompatibleMaterialRequest } from '@/components/pagnol-requests/req
 
 export type SupervisorStage = 'waiting_adc' | 'queued' | 'ready_pickup' | 'delivered' | 'rejected';
 
+// El estado sale de `withdrawalStage` (una sola definición para todas las pantallas); aquí sólo se le
+// pone el nombre que ve el solicitante.
+const SUPERVISOR_STAGE: Record<WithdrawalStage, SupervisorStage> = {
+    waitingAdc: 'waiting_adc', // sin autorización del ADC la solicitud ni siquiera llegó al pañol
+    toApprove: 'queued',
+    toDeliver: 'ready_pickup',
+    delivered: 'delivered',
+    rejected: 'rejected',
+};
+
 export function resolveSupervisorStage(req: CompatibleMaterialRequest): SupervisorStage {
-    if (req.status === 'rejected') return 'rejected';
-    if (req.status === 'pending') {
-        // Gate ADC: sin adcAuthorizedAt, la solicitud ni siquiera llegó al pañol.
-        return req.adcAuthorizedAt ? 'queued' : 'waiting_adc';
-    }
-    // approved
-    return req.deliveryDate ? 'delivered' : 'ready_pickup';
+    const stage = withdrawalStage(req);
+    return stage ? SUPERVISOR_STAGE[stage] : 'waiting_adc';
 }
 
 export const STAGE_META: Record<SupervisorStage, { label: string; cls: string; hint: string }> = {

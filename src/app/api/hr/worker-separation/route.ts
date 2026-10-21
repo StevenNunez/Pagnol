@@ -1,3 +1,4 @@
+import { managerIdsFromRow } from '@/lib/warehouse-managers';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAuth, hasPermission, type AuthContext } from '@/modules/core/lib/api-auth';
@@ -139,7 +140,7 @@ export async function POST(request: Request) {
                 const [users, cws, whs] = await Promise.all([
                     a.from('profiles').select('id, role, employment_status, is_active, responsible_supervisor_id').eq('tenant_id', worker.tenant_id).is('deleted_at', null),
                     a.from('contract_workers').select('contract_id, user_id, end_date').eq('tenant_id', worker.tenant_id),
-                    a.from('warehouses').select('manager_id').eq('tenant_id', worker.tenant_id),
+                    a.from('warehouses').select('manager_ids').eq('tenant_id', worker.tenant_id),
                 ]);
                 const ids = separationNotifyIds(workerId, ctx.userId, scope === 'contract' ? contractId : null, {
                     users: (users.data ?? []).map(u => ({
@@ -147,7 +148,7 @@ export async function POST(request: Request) {
                         responsibleSupervisorId: u.responsible_supervisor_id,
                     })),
                     contractWorkers: (cws.data ?? []).filter(c => !c.end_date).map(c => ({ contractId: c.contract_id, userId: c.user_id })),
-                    warehouses: (whs.data ?? []).map(w => ({ managerId: w.manager_id })),
+                    warehouses: (whs.data ?? []).map(w => ({ managerIds: managerIdsFromRow(w) })),
                 });
                 if (ids.length > 0) {
                     const names = pending.slice(0, 3).map(p => p.name).join(', ');

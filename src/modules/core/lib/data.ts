@@ -1072,8 +1072,8 @@ export interface Warehouse {
   tenantId: string;
   name: string;
   location?: string | null;
-  managerId?: string | null;   // encargado (panolero) → profiles.id
-  managerName?: string | null;
+  /** Encargados (pañoleros) del pañol, por turno → profiles.id. El primero es el principal. */
+  managerIds: string[];
   status: 'active' | 'inactive';
   notes?: string | null;
   /** Oficina central: a donde vuelven los activos al devolverse. A lo más uno por empresa. */

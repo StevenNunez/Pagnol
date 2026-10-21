@@ -361,7 +361,7 @@ export interface AppStateContextType extends AppDataState {
   updateContractWorker: (id: string, data: Partial<ContractWorker>) => Promise<void>;
 
   // Pañoles y existencias por contrato
-  addWarehouse: (data: { name: string; location?: string | null; managerId?: string | null; managerName?: string | null; notes?: string | null; contractIds?: string[] }) => Promise<Warehouse>;
+  addWarehouse: (data: { name: string; location?: string | null; managerIds?: string[]; notes?: string | null; contractIds?: string[] }) => Promise<Warehouse>;
   updateWarehouse: (id: string, data: Partial<Warehouse> & { contractIds?: string[] }) => Promise<void>;
   deleteWarehouse: (id: string) => Promise<void>;
   transferMaterialStock: (params: { materialId: string; qty: number; fromContractId: string | null; toContractId: string | null; fromWarehouseId?: string | null; warehouseId?: string | null; justification?: string }) => Promise<void>;

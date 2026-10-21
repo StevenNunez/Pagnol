@@ -55,7 +55,7 @@ export function pendingEquipmentOf(
 export interface NotifyDirectory {
     users: readonly { id: string; role: string; employmentStatus?: string | null; isActive?: boolean | null; responsibleSupervisorId?: string | null }[];
     contractWorkers: readonly { contractId: string; userId: string; endDate?: string | Date | null }[];
-    warehouses: readonly { managerId?: string | null }[];
+    warehouses: readonly { managerIds?: readonly string[] | null }[];
 }
 
 /**
@@ -79,7 +79,7 @@ export function separationNotifyIds(
 
     const ids = new Set<string>();
     for (const u of live.values()) if (u.role === 'panolero') ids.add(u.id);
-    for (const w of dir.warehouses) if (w.managerId && live.has(w.managerId)) ids.add(w.managerId);
+    for (const w of dir.warehouses) for (const m of w.managerIds ?? []) if (live.has(m)) ids.add(m);
 
     const responsible = worker?.responsibleSupervisorId;
     if (responsible && live.has(responsible)) {

@@ -62,6 +62,7 @@ import * as workReportMutations from './mutations/workReportMutations';
 import * as workReportCatalogMutations from './mutations/workReportCatalogMutations';
 import * as workOrderMutations from './mutations/workOrderMutations';
 import * as workWeeklyReportMutations from './mutations/workWeeklyReportMutations';
+import { setGaveUp, setSlow } from '@/modules/core/lib/data-health';
 import * as hrMutations from './mutations/hrMutations';
 import * as biometricMutations from './mutations/biometricMutations';
 import * as withdrawalReviewMutations from './mutations/withdrawalReviewMutations';
@@ -457,6 +458,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         const allDataLoaded = (Object.keys(collections) as CollectionName[])
             .filter(name => on(name))
             .every(name => collections[name]?.hasLoaded === true);
+        if (allDataLoaded) setGaveUp(false);
 
         // Antes se hacía `return` aquí mientras faltara UNA sola colección, así que
         // el estado no se publicaba hasta que respondían las 54. Medido en DEMO:
@@ -576,15 +578,24 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     ]);
 
 
-    // Safety net: if isLoading stays true for more than 12 seconds, force it false.
-    // This prevents the UI from being permanently blocked by auth or network delays.
+    // Red de seguridad en dos tiempos. A los 12 s sólo se AVISA que tarda (la UI
+    // sigue en «cargando» con un mensaje honesto): antes se forzaba `isLoading=false`
+    // y las páginas afirmaban «0 ítems» con la carga aún en curso. Cada petición ya
+    // vence sola a los 20 s (`collection-fetch`), así que el corte duro de 30 s es el
+    // último recurso: suelta la pantalla pero deja `gaveUp`, para que la UI no
+    // presente lo que falte como «vacío».
     useEffect(() => {
-        if (!state.isLoading) return;
-        const timer = setTimeout(() => {
-            console.warn('[DataProvider] isLoading timeout — forcing false. Check auth/network.');
+        if (!state.isLoading) {
+            setSlow(false);
+            return;
+        }
+        const slowTimer = setTimeout(() => setSlow(true), 12000);
+        const hardTimer = setTimeout(() => {
+            console.warn('[DataProvider] isLoading timeout — soltando la pantalla. Revisar sesión/red.');
+            setGaveUp(true);
             dispatch({ type: 'SET_LOADING', payload: false });
-        }, 12000);
-        return () => clearTimeout(timer);
+        }, 30000);
+        return () => { clearTimeout(slowTimer); clearTimeout(hardTimer); };
     }, [state.isLoading]);
 
     const notify = useCallback((message: string, variant: "default" | "destructive" | "success" = "default") => {

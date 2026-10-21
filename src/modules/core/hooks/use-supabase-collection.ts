@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/modules/core/lib/supabase";
+import { backoffFor, markFailed, markOk, setRealtime, useRetryTick } from "@/modules/core/lib/data-health";
+import { loadAllPages, nextCollectionState, type FetchPage, type PageResult } from "@/modules/core/lib/collection-fetch";
+import "@/modules/core/lib/data-resync";
 
 interface Options<T> {
     tenantId?: string | null;
@@ -79,65 +82,66 @@ export function useSupabaseCollection<T>(
         if (hasLoaded) setHasLoaded(false);
     }
 
+    const dataRef = useRef<T[]>(data);
+    dataRef.current = data;
+    // Sube cuando el canal Realtime se reconecta: lo ocurrido mientras estuvo caído
+    // no llega por el canal, así que hay que volver a leer.
+    const [resyncTick, setResyncTick] = useState(0);
+    const retryTick = useRetryTick();
+
     useEffect(() => {
         // tenantId null/undefined means auth is loading or no tenant selected
         if (!enabled || tenantId == null) return;
 
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let attempt = 0;
+
+        const fetchPage: FetchPage = (from, to, cols, signal) => {
+            let query = supabase.from(table).select(cols).range(from, to);
+            if (tenantId !== null) query = query.eq('tenant_id', tenantId);
+            if (softDelete) query = query.is('deleted_at', null);
+            if (orderBy) query = query.order(orderBy.column, { ascending: orderBy.ascending ?? true });
+            return query.abortSignal(signal) as unknown as PromiseLike<PageResult>;
+        };
+
         const fetchData = async () => {
-            let allResults: any[] = [];
-            let from = 0;
-            const step = 1000;
-            let hasMore = true;
-            let columnsInUse = columns;
-
-            while (hasMore) {
-                let query = supabase.from(table).select(columnsInUse).range(from, from + step - 1);
-
-                if (tenantId !== null) {
-                    query = query.eq('tenant_id', tenantId);
-                }
-
-                if (softDelete) {
-                    query = query.is('deleted_at', null);
-                }
-
-                if (orderBy) {
-                    query = query.order(orderBy.column, { ascending: orderBy.ascending ?? true });
-                }
-
-                const { data: batch, error } = await query;
-
-                if (error?.code === '42703' && fallbackColumns && columnsInUse !== fallbackColumns) {
-                    console.warn(`[${table}] falta una columna en la base (${error.message}); se usan las columnas anteriores. ¿Hay una migración sin aplicar?`);
-                    columnsInUse = fallbackColumns;
-                    continue;
-                }
-
-                if (error) {
-                    console.error(`Error fetching collection ${table}:`, error.message, error.code, error.details);
-                    hasMore = false;
-                } else {
-                    if (batch && batch.length > 0) {
-                        allResults = [...allResults, ...batch];
-                        from += batch.length;
-                        if (batch.length < step) hasMore = false;
-                    } else {
-                        hasMore = false;
-                    }
-                }
+            const outcome = await loadAllPages(fetchPage, {
+                columns,
+                fallbackColumns,
+                onFallback: (m) => console.warn(`[${table}] falta una columna en la base (${m}); se usan las columnas anteriores. ¿Hay una migración sin aplicar?`),
+            });
+            if (cancelled) return;
+            const next = nextCollectionState(dataRef.current, outcome, mapper);
+            if (next.failed) {
+                console.error(`Error fetching collection ${table}:`, (outcome as { error: string }).error);
+                markFailed(table);
+                const wait = backoffFor(attempt++);
+                if (wait != null) timer = setTimeout(() => { if (!cancelled) void fetchData(); }, wait);
+            } else {
+                markOk(table);
+                attempt = 0;
+                setData(next.data);
             }
-
-            const mapped = mapper ? allResults.map(mapper) : allResults;
-            setData(mapped as T[]);
-            // Se marca DESPUÉS del fetch, incluso si vino vacío o falló: lo que
-            // significa es "ya se intentó", que es justo lo que necesita la UI
-            // para dejar de decir "cargando". Si se marcara sólo con datos, una
-            // colección legítimamente vacía se quedaría en el spinner para siempre.
+            // Se marca DESPUÉS del intento, incluso si falló: significa «ya se
+            // intentó», que es lo que la UI necesita para salir del spinner. Un
+            // fallo no se disfraza de «vacío»: queda en `data-health` y la UI lo
+            // muestra con botón de reintento.
             setHasLoaded(true);
         };
 
-        fetchData();
+        void fetchData();
+        return () => {
+            cancelled = true;
+            if (timer) clearTimeout(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [table, tenantId, enabled, orderBy?.column, orderBy?.ascending, version, retryTick, resyncTick]);
 
+    useEffect(() => {
+        if (!enabled || tenantId == null) return;
+
+        let wasDown = false;
         // Suffix with timestamp to ensure unique channel IDs and avoid collisions
         const channel = supabase
             .channel(`${table}-changes-${tenantId || 'all'}-${Date.now()}`)
@@ -181,10 +185,22 @@ export function useSupabaseCollection<T>(
                     return prev;
                 });
             })
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    setRealtime(table, true);
+                    if (wasDown) {
+                        wasDown = false;
+                        setResyncTick(t => t + 1);
+                    }
+                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    wasDown = true;
+                    setRealtime(table, false);
+                }
+            });
 
         return () => {
             supabase.removeChannel(channel);
+            setRealtime(table, true);
         };
         // `columns`, `mapper`, `orderBy` y `softDelete` llegan como literales en cada
         // llamada al hook, así que su identidad cambia en todos los renders de
@@ -193,7 +209,7 @@ export function useSupabaseCollection<T>(
         // valores primitivos (`orderBy?.column`, `orderBy?.ascending`), que son lo
         // único que cambia de verdad; el resto es estable por construcción.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [table, tenantId, enabled, orderBy?.column, orderBy?.ascending, version]);
+    }, [table, tenantId, enabled, orderBy?.column, orderBy?.ascending]);
 
     return markLoaded(data, hasLoaded);
 }

@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import { DataHealthBanner } from '@/components/data-health-banner';
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -496,6 +497,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 overflow-y-auto no-scrollbar relative">
+          <DataHealthBanner />
           <OnboardingBanner />
           <EnrollmentQualityBanner />
           <StorageWarning />

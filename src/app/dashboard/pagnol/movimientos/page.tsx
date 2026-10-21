@@ -43,6 +43,7 @@ import { useToast } from '@/modules/core/hooks/use-toast';
 import { buscarPorCodigoEscaneado, pareceMalConfigurado } from '@/modules/core/lib/scan-code';
 import { parseIdDocument, findWorkerByRun, normalizeRun } from '@/lib/cedula';
 import { formatRut } from '@/lib/rut';
+import { isWarehouseManager } from '@/lib/warehouse-managers';
 import { QrScannerDialog } from '@/components/qr-scanner-dialog';
 import { IdentityMethodChoice, CarnetEntry, type IdMethod } from './identity-method';
 import { fetchRecordFields } from '@/modules/core/hooks/use-record-fields';
@@ -360,7 +361,7 @@ export default function MovimientosPagnolPage() {
   // Si el usuario logueado es encargado de pañol(es), los movimientos que
   // registra quedan imputados a su pañol: 1 → autocarga; varios → elige.
   const myWarehouses = useMemo(
-    () => (warehouses || []).filter(w => w.status === 'active' && w.managerId === currentUser?.id),
+    () => (warehouses || []).filter(w => w.status === 'active' && isWarehouseManager(w, currentUser?.id)),
     [warehouses, currentUser?.id]
   );
   const [txWarehouseId, setTxWarehouseId] = useState<string | null>(null);

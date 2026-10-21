@@ -27,13 +27,13 @@ import {
     AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Edit, Loader2, MoreHorizontal, Plus, Search, Trash2, Warehouse as WarehouseIcon } from "lucide-react";
-
-const NO_MANAGER = "__none__";
+import { ROLES } from "@/modules/core/lib/permissions";
+import { managerNames } from "@/lib/warehouse-managers";
 
 interface WarehouseFormValues {
     name: string;
     location: string;
-    managerId: string; // NO_MANAGER = sin encargado
+    managerIds: string[]; // encargados por turno; el primero es el principal
     notes: string;
     status: "active" | "inactive";
     contractIds: string[];
@@ -43,7 +43,7 @@ interface WarehouseFormValues {
 const emptyForm: WarehouseFormValues = {
     name: "",
     location: "",
-    managerId: NO_MANAGER,
+    managerIds: [],
     notes: "",
     status: "active",
     contractIds: [],
@@ -65,6 +65,7 @@ export default function WarehousesPage() {
     const [form, setForm] = useState<WarehouseFormValues>(emptyForm);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [deleting, setDeleting] = useState<Warehouse | null>(null);
+    const [managerSearch, setManagerSearch] = useState("");
 
     const activeContracts = useMemo(
         () => ((contracts || []) as Contract[]).filter((c) => c.status === "active"),
@@ -78,6 +79,17 @@ export default function WarehousesPage() {
         () => [...((users || []) as User[])].sort((a, b) => a.name.localeCompare(b.name)),
         [users],
     );
+    const userNames = useMemo(() => new Map(sortedUsers.map((u) => [u.id, u.name])), [sortedUsers]);
+
+    // Quién se puede elegir como encargado: las personas en actividad (más las que ya lo son, para poder quitarlas),
+    // con los pañoleros primero y filtradas por lo que se escribe.
+    const managerCandidates = useMemo(() => {
+        const q = managerSearch.trim().toLowerCase();
+        return sortedUsers
+            .filter((u) => form.managerIds.includes(u.id) || u.employmentStatus !== "terminated")
+            .filter((u) => !q || u.name.toLowerCase().includes(q) || (ROLES[u.role as keyof typeof ROLES]?.label || "").toLowerCase().includes(q))
+            .sort((a, b) => Number(b.role === "panolero") - Number(a.role === "panolero"));
+    }, [sortedUsers, managerSearch, form.managerIds]);
 
     // Contratos que atiende cada pañol (N:M).
     const contractsByWarehouse = useMemo(() => {
@@ -107,13 +119,14 @@ export default function WarehousesPage() {
         return list.filter((w) =>
             w.name.toLowerCase().includes(q) ||
             (w.location || "").toLowerCase().includes(q) ||
-            (w.managerName || "").toLowerCase().includes(q),
+            managerNames(w, (id) => userNames.get(id)).some((n) => n.toLowerCase().includes(q)),
         );
-    }, [warehouses, searchTerm]);
+    }, [warehouses, searchTerm, userNames]);
 
     const openCreate = () => {
         setEditing(null);
         setForm(emptyForm);
+        setManagerSearch("");
         setDialogOpen(true);
     };
 
@@ -122,13 +135,22 @@ export default function WarehousesPage() {
         setForm({
             name: w.name,
             location: w.location || "",
-            managerId: w.managerId || NO_MANAGER,
+            managerIds: w.managerIds ?? [],
             notes: w.notes || "",
             status: w.status,
             contractIds: contractsByWarehouse.get(w.id) || [],
             isCentral: !!w.isCentral,
         });
+        setManagerSearch("");
         setDialogOpen(true);
+    };
+
+    // Marcar/desmarcar un encargado; el orden de marcado es el orden de la lista (el primero es el principal).
+    const toggleManager = (userId: string) => {
+        setForm((f) => ({
+            ...f,
+            managerIds: f.managerIds.includes(userId) ? f.managerIds.filter((id) => id !== userId) : [...f.managerIds, userId],
+        }));
     };
 
     const toggleContract = (contractId: string) => {
@@ -147,15 +169,10 @@ export default function WarehousesPage() {
         }
         setIsSubmitting(true);
         try {
-            const managerId = form.managerId === NO_MANAGER ? null : form.managerId;
-            const managerName = managerId
-                ? sortedUsers.find((u) => u.id === managerId)?.name || null
-                : null;
             const payload = {
                 name: form.name.trim(),
                 location: form.location.trim() || null,
-                managerId,
-                managerName,
+                managerIds: form.managerIds,
                 notes: form.notes.trim() || null,
                 contractIds: form.contractIds,
                 // Sólo si cambia (o al crear uno central): no se manda la columna si no hace falta.
@@ -209,10 +226,21 @@ export default function WarehousesPage() {
         },
         {
             key: "manager",
-            header: "Encargado",
-            cell: (w) => w.managerName
-                ? <span className="text-sm">{w.managerName}</span>
-                : <span className="text-sm text-muted-foreground">Sin asignar</span>,
+            header: "Encargados",
+            cell: (w) => {
+                // Los turnos: se ven todos los pañoleros que atienden este pañol.
+                const names = managerNames(w, (id) => userNames.get(id));
+                if (!names.length) return <span className="text-sm text-muted-foreground">Sin asignar</span>;
+                return (
+                    <div className="flex flex-wrap gap-1.5">
+                        {names.map((n, i) => (
+                            <Badge key={`${n}-${i}`} variant={i === 0 ? "default" : "outline"} className="rounded-xl text-[10px] font-bold" title={i === 0 ? "Encargado principal" : undefined}>
+                                {n}
+                            </Badge>
+                        ))}
+                    </div>
+                );
+            },
         },
         {
             key: "contracts",
@@ -276,13 +304,13 @@ export default function WarehousesPage() {
     return (
         <PageShell
             title="Gestión de Pañoles"
-            description="Define los pañoles físicos, su encargado y los contratos que atiende cada uno."
+            description="Define los pañoles físicos, quiénes los atienden por turno y los contratos que atiende cada uno."
             toolbar={
                 <>
                     <div className="relative w-full max-w-sm">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
-                            placeholder="Buscar por nombre, ubicación o encargado..."
+                            placeholder="Buscar por nombre, ubicación o encargados..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="pl-9 rounded-xl"
@@ -349,23 +377,41 @@ export default function WarehousesPage() {
                         </div>
 
                         <div className="space-y-1.5">
-                            <Label>Encargado (panolero)</Label>
-                            <Select
-                                value={form.managerId}
-                                onValueChange={(v) => setForm((f) => ({ ...f, managerId: v }))}
-                            >
-                                <SelectTrigger className="rounded-xl">
-                                    <SelectValue placeholder="Sin asignar" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value={NO_MANAGER}>Sin asignar</SelectItem>
-                                    {sortedUsers.map((u) => (
-                                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                            <Label>Encargados (pañoleros del turno)</Label>
+                            <Input
+                                value={managerSearch}
+                                onChange={(e) => setManagerSearch(e.target.value)}
+                                placeholder="Buscar por nombre o cargo…"
+                                className="rounded-xl"
+                                aria-label="Buscar encargados"
+                            />
+                            <ScrollArea className="h-44 rounded-xl border">
+                                <div className="p-3 space-y-2">
+                                    {managerCandidates.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground">No hay personas que coincidan.</p>
+                                    ) : managerCandidates.map((u) => (
+                                        <label key={u.id} className="flex items-center gap-2.5 cursor-pointer">
+                                            <Checkbox
+                                                checked={form.managerIds.includes(u.id)}
+                                                onCheckedChange={() => toggleManager(u.id)}
+                                            />
+                                            <span className="text-sm">
+                                                {u.name}
+                                                <span className="ml-1.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                                                    {ROLES[u.role as keyof typeof ROLES]?.label || u.role}
+                                                </span>
+                                                {form.managerIds[0] === u.id && (
+                                                    <span className="ml-1.5 text-[9px] font-black uppercase tracking-widest text-primary">Principal</span>
+                                                )}
+                                            </span>
+                                        </label>
                                     ))}
-                                </SelectContent>
-                            </Select>
+                                </div>
+                            </ScrollArea>
                             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                Sus movimientos de pañol quedarán imputados a este pañol
+                                {form.managerIds.length === 0
+                                    ? "Marca a todos los que atienden este pañol (turnos). Sus movimientos quedarán imputados a este pañol"
+                                    : `${form.managerIds.length} encargado${form.managerIds.length > 1 ? "s" : ""}: sus movimientos quedan imputados a este pañol`}
                             </p>
                         </div>
 

@@ -51,23 +51,25 @@ describe('separationNotifyIds', () => {
         { id: 'supB', role: 'supervisor' },
         { id: 'pan', role: 'panolero' },
         { id: 'enc', role: 'operador' },
+        { id: 'turno-noche', role: 'operador' },
         { id: 'rrhh', role: 'recursos-humanos' },
         { id: 'baja', role: 'panolero', employmentStatus: 'terminated' },
     ];
     const contractWorkers = [
         { contractId: 'c1', userId: 'supB' }, { contractId: 'c1', userId: 'juan' },
     ];
-    const warehouses = [{ managerId: 'enc' }, { managerId: 'baja' }, { managerId: null }];
+    const warehouses = [{ managerIds: ['enc'] }, { managerIds: ['baja'] }, { managerIds: [] }, { managerIds: ['turno-noche', 'enc'] }];
 
     it('avisa a bodega y al supervisor responsable, no al contrato', () => {
         const ids = separationNotifyIds('juan', 'rrhh', 'c1', { users, contractWorkers, warehouses });
-        expect(ids.sort()).toEqual(['enc', 'pan', 'supA']);
+        // «turno-noche» es el segundo encargado de un pañol: también se le avisa (antes sólo el primero).
+        expect(ids.sort()).toEqual(['enc', 'pan', 'supA', 'turno-noche']);
     });
 
     it('sin responsable asignado cae a los supervisores del contrato', () => {
         const u = users.map(x => x.id === 'juan' ? { ...x, responsibleSupervisorId: null } : x);
         const ids = separationNotifyIds('juan', 'rrhh', 'c1', { users: u, contractWorkers, warehouses });
-        expect(ids.sort()).toEqual(['enc', 'pan', 'supB']);
+        expect(ids.sort()).toEqual(['enc', 'pan', 'supB', 'turno-noche']);
     });
 
     it('nunca a quien se va, a quien lo desvincula ni a gente dada de baja', () => {

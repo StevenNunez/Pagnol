@@ -10,12 +10,15 @@ import type { MutationContext as Context } from './context';
 
 // ── Pañoles ───────────────────────────────────────────────────────────────────
 
+/** Sin repetidos ni vacíos, conservando el orden (el primero es el encargado principal). */
+const uniqueIds = (ids?: readonly string[] | null): string[] => [...new Set((ids ?? []).filter(Boolean))];
+
 export async function addWarehouse(
     data: {
         name: string;
         location?: string | null;
-        managerId?: string | null;
-        managerName?: string | null;
+        /** Encargados del pañol (turnos); el primero es el principal. */
+        managerIds?: string[];
         notes?: string | null;
         contractIds?: string[];
         /** Sólo se envía al marcarlo: así crear pañoles sigue funcionando antes de aplicar la migración 20261020000000. */
@@ -34,8 +37,7 @@ export async function addWarehouse(
             tenant_id: tenantId,
             name: data.name.trim(),
             location: data.location || null,
-            manager_id: data.managerId || null,
-            manager_name: data.managerName || null,
+            manager_ids: uniqueIds(data.managerIds),
             notes: data.notes || null,
             status: 'active',
             created_by: user.id,
@@ -60,8 +62,7 @@ export async function updateWarehouse(
     const payload: Record<string, unknown> = {};
     if (data.name !== undefined) payload.name = data.name;
     if (data.location !== undefined) payload.location = data.location;
-    if (data.managerId !== undefined) payload.manager_id = data.managerId;
-    if (data.managerName !== undefined) payload.manager_name = data.managerName;
+    if (data.managerIds !== undefined) payload.manager_ids = uniqueIds(data.managerIds);
     if (data.status !== undefined) payload.status = data.status;
     if (data.notes !== undefined) payload.notes = data.notes;
     if (data.isCentral !== undefined) {

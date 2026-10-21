@@ -15,6 +15,7 @@ export default defineConfig({
     // (no hay suite global en el resto).
     include: [
       'src/modules/offline/**/*.test.ts',
+      'src/modules/core/lib/data-health.test.ts',
       'src/modules/data/mutations/financeMath.test.ts',
       'src/modules/data/mutations/payrollMath.test.ts',
       'src/modules/data/mutations/payrollLedgerMath.test.ts',
@@ -29,6 +30,7 @@ export default defineConfig({
       'src/modules/data/mutations/maintenanceMath.test.ts',
       'src/modules/data/mutations/maintenanceMutations.test.ts',
       'src/lib/push-payload.test.ts',
+      'src/lib/warehouse-managers.test.ts',
       'src/components/pagnol-requests/withdrawal-queues.test.ts',
       'src/modules/data/mutations/materialRequestMutations.test.ts',
       'src/lib/construction-forecast.test.ts',

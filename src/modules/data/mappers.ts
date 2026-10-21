@@ -1,3 +1,4 @@
+import { managerIdsFromRow } from '@/lib/warehouse-managers';
 import {
     Material, User, MaterialCategory, StockMovement, AttendanceLog, MaterialRequest, PurchaseRequest,
     ReturnRequest, PurchaseLot, PurchaseOrder, Supplier, SupplierPayment, SalaryAdvance, QuoteRequest, GoodsReceipt, CostCenter,
@@ -195,8 +196,7 @@ export const mappers = {
         tenantId: item.tenant_id,
         name: item.name,
         location: item.location || null,
-        managerId: item.manager_id || null,
-        managerName: item.manager_name || null,
+        managerIds: managerIdsFromRow(item),
         status: item.status || 'active',
         notes: item.notes || null,
         isCentral: !!item.is_central,

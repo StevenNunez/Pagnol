@@ -100,3 +100,23 @@ describe('parseIdDocument — pistola con otra distribución de teclado', () => 
         expect(parseIdDocument("1234'56789012")).toBeNull();
     });
 });
+
+// Salida REAL observada de una pistola de este proyecto leyendo el QR de una cédula (números
+// inventados; sólo importa la forma). La pistola traduce con otra distribución de teclado:
+//   `:`→`Ñ`  `/`→`-`  `?`→`_`  `=`→`¿`  `&`→`/`  `-`→`'`  `_`→`?`
+// y la cédula de extranjero trae `type=CEDULA_EXT`.
+describe('parseIdDocument — QR de la cédula tal como lo entrega la pistola', () => {
+    const run = `${A}-${A_DV}`;
+    const pistoleado = (tipo: string) =>
+        `httpsÑ--portal.sidiv.registrocivil.cl-docstatus_RUN¿${A}'${A_DV}/type¿${tipo}/serial¿123456789/mrz¿123456789012345678901234`;
+    it('cédula de extranjero (CEDULA?EXT)', () => {
+        expect(parseIdDocument(pistoleado('CEDULA?EXT'))).toEqual({ run, source: 'url' });
+    });
+    it('cédula chilena (CEDULA)', () => {
+        expect(parseIdDocument(pistoleado('CEDULA'))?.run).toBe(run);
+    });
+    it('con el dígito verificador malo no lee a nadie', () => {
+        const mal = A_DV === '0' ? '1' : '0';
+        expect(parseIdDocument(pistoleado('CEDULA').replace(`'${A_DV}/`, `'${mal}/`))).toBeNull();
+    });
+});

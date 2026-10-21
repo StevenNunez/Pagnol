@@ -65,6 +65,8 @@ interface CarnetProps {
      * haciendo nada— y, si no se entiende, muestra qué llegó en vez de callar.
      */
     parse?: (raw: string) => unknown;
+    /** Qué pasó con la última lectura (p. ej. «se leyó el RUT X, pero nadie lo tiene»); queda a la vista. */
+    note?: string | null;
     placeholder?: string;
 }
 
@@ -72,7 +74,7 @@ interface CarnetProps {
 const IDLE_MS = 400;
 
 /** Entrada del carnet. Toma el foco al aparecer (y lo recupera) para que la pistola escriba directo en ella. */
-export function CarnetEntry({ value, onChange, onSubmit, onCamera, parse, placeholder = 'Pase el carnet o escriba el RUT…' }: CarnetProps) {
+export function CarnetEntry({ value, onChange, onSubmit, onCamera, parse, note, placeholder = 'Pase el carnet o escriba el RUT…' }: CarnetProps) {
     const ref = useRef<HTMLInputElement>(null);
     const [last, setLast] = useState<{ text: string; ok: boolean } | null>(null);
     useEffect(() => { ref.current?.focus(); }, []);
@@ -126,6 +128,12 @@ export function CarnetEntry({ value, onChange, onSubmit, onCamera, parse, placeh
             <p className="text-[10px] font-medium text-muted-foreground">
                 El lector escribe solo en este campo. Con la cámara, encuadre el código del carnet.
             </p>
+            {note && (
+                <div className="rounded-xl bg-warning-subtle text-warning-subtle-foreground px-4 py-3" role="status">
+                    <p className="text-[10px] font-black uppercase tracking-widest">No se encontró a la persona</p>
+                    <p className="mt-1 text-[11px] font-medium leading-snug">{note}</p>
+                </div>
+            )}
             {last && !last.ok && (
                 <div className="rounded-xl bg-warning-subtle text-warning-subtle-foreground px-4 py-3" role="status">
                     <p className="text-[10px] font-black uppercase tracking-widest">No se pudo entender lo leído</p>

@@ -42,6 +42,7 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { buscarPorCodigoEscaneado, pareceMalConfigurado } from '@/modules/core/lib/scan-code';
 import { parseIdDocument, findWorkerByRun, normalizeRun } from '@/lib/cedula';
+import { formatRut } from '@/lib/rut';
 import { QrScannerDialog } from '@/components/qr-scanner-dialog';
 import { IdentityMethodChoice, CarnetEntry, type IdMethod } from './identity-method';
 import { fetchRecordFields } from '@/modules/core/hooks/use-record-fields';
@@ -308,6 +309,8 @@ export default function MovimientosPagnolPage() {
   const [idScanOpen, setIdScanOpen] = useState(false);
   const [idScanPurpose, setIdScanPurpose] = useState<'identify' | 'receive'>('identify');
   const [receiveIdText, setReceiveIdText] = useState('');
+  // Qué pasó con la última lectura del carnet, a la vista (el aviso pasajero se pierde con facilidad).
+  const [carnetNote, setCarnetNote] = useState<string | null>(null);
   // Con qué se acredita a la persona: se elige al empezar cada paso (identificar / recibir) y
   // sólo el método elegido tiene su lector activo. Evita que la cámara del rostro y el
   // lector de carnets compitan en la misma pantalla.
@@ -512,6 +515,7 @@ export default function MovimientosPagnolPage() {
     setTxState('CREADA');
     setFlowStep('SCANNING');
     setScanMethod('choose');
+    setCarnetNote(null);
     setIsModalOpen(true);
   };
 
@@ -840,17 +844,25 @@ export default function MovimientosPagnolPage() {
   const handleIdDocument = (raw: string) => {
     const parsed = parseIdDocument(raw);
     if (!parsed) {
+      setCarnetNote(null); // lo leído no se entendió: lo explica el propio campo (qué llegó y por qué)
       toast({ variant: 'destructive', title: "No pude leer el RUT", description: "Vuelve a pasar el carnet o escribe el RUT. También puedes buscarlo por nombre." });
       return;
     }
     const found = findWorkerByRun(users || [], parsed.run);
+    const leido = formatRut(parsed.run);
     if (found.kind === 'none') {
+      const total = (users || []).length;
+      const conRut = (users || []).filter(u => u.rut).length;
+      setCarnetNote(`Se leyó el RUT ${leido}, pero ninguna ficha de «${currentTenant?.name ?? 'esta empresa'}» tiene ese RUT (hay ${total} personas cargadas, ${conRut} con RUT). Revise que la persona esté en esta empresa y con su RUT puesto.`);
       toast({ variant: 'destructive', title: "RUT no registrado", description: "No hay un trabajador con ese RUT en la empresa." });
     } else if (found.kind === 'ambiguous') {
+      setCarnetNote(`Se leyó el RUT ${leido}, pero hay ${found.users.length} fichas con ese RUT (${found.users.map(u => u.name).join(', ')}). Corríjalo en Usuarios; mientras, use la selección manual.`);
       toast({ variant: 'destructive', title: "RUT repetido", description: `Hay ${found.users.length} fichas con ese RUT (${found.users.map(u => u.name).join(', ')}). Corrígelo en Usuarios; mientras, usa la búsqueda manual.` });
     } else if (found.kind === 'separated') {
+      setCarnetNote(`Se leyó el RUT ${leido}: ${found.user.name} figura desvinculado/a de la empresa.`);
       toast({ variant: 'destructive', title: "Trabajador desvinculado", description: `${found.user.name} ya no pertenece a la empresa. Si trae equipos, recíbelos como devolución.` });
     } else {
+      setCarnetNote(null);
       acceptByCarnet(found.user);
     }
   };
@@ -884,9 +896,11 @@ export default function MovimientosPagnolPage() {
       return;
     }
     if (!selectedEmployee || normalizeRun(selectedEmployee.rut) !== parsed.run) {
+      setCarnetNote(`Se leyó el RUT ${formatRut(parsed.run)}, pero se esperaba el de ${selectedEmployee?.name ?? 'la persona identificada'}${selectedEmployee?.rut ? ` (${formatRut(selectedEmployee.rut)})` : ' (su ficha no tiene RUT)'}.`);
       toast({ variant: 'destructive', title: "Ese carnet no es de quien recibe", description: `Se esperaba el RUT de ${selectedEmployee?.name ?? 'la persona identificada'}.` });
       return;
     }
+    setCarnetNote(null);
     setIdentifiedByRut(true);
     void handleFinalAcceptance(true);
   };
@@ -1984,6 +1998,7 @@ export default function MovimientosPagnolPage() {
                     value={idText}
                     onChange={setIdText}
                     parse={parseIdDocument}
+                    note={carnetNote}
                     onSubmit={(v) => { handleIdDocument(v); setIdText(''); }}
                     onCamera={() => { setIdScanPurpose('identify'); setIdScanOpen(true); }}
                   />
@@ -2613,6 +2628,7 @@ export default function MovimientosPagnolPage() {
                     value={receiveIdText}
                     onChange={setReceiveIdText}
                     parse={parseIdDocument}
+                    note={carnetNote}
                     onSubmit={(v) => { handleReceiverDocument(v); setReceiveIdText(''); }}
                     onCamera={() => { setIdScanPurpose('receive'); setIdScanOpen(true); }}
                   />

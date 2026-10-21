@@ -43,6 +43,7 @@ import { useToast } from '@/modules/core/hooks/use-toast';
 import { buscarPorCodigoEscaneado, pareceMalConfigurado } from '@/modules/core/lib/scan-code';
 import { parseIdDocument, findWorkerByRun, normalizeRun } from '@/lib/cedula';
 import { QrScannerDialog } from '@/components/qr-scanner-dialog';
+import { IdentityMethodChoice, CarnetEntry, type IdMethod } from './identity-method';
 import { fetchRecordFields } from '@/modules/core/hooks/use-record-fields';
 import { PageHeader } from '@/components/page-header';
 import { SecureFileLink } from '@/components/secure-file-link';
@@ -307,6 +308,11 @@ export default function MovimientosPagnolPage() {
   const [idScanOpen, setIdScanOpen] = useState(false);
   const [idScanPurpose, setIdScanPurpose] = useState<'identify' | 'receive'>('identify');
   const [receiveIdText, setReceiveIdText] = useState('');
+  // Con qué se acredita a la persona: se elige al empezar cada paso (identificar / recibir) y
+  // sólo el método elegido tiene su lector activo. Evita que la cámara del rostro y el
+  // lector de carnets compitan en la misma pantalla.
+  const [scanMethod, setScanMethod] = useState<IdMethod>('choose');
+  const [receiveMethod, setReceiveMethod] = useState<IdMethod>('choose');
   const [identifiedByRut, setIdentifiedByRut] = useState(false);
   const [justReturnedIds, setJustReturnedIds] = useState<Set<string>>(new Set());
   const [pendingReturnTxs, setPendingReturnTxs] = useState<DisplayTransaction[]>([]);
@@ -505,8 +511,8 @@ export default function MovimientosPagnolPage() {
     setSearchAsset('');
     setTxState('CREADA');
     setFlowStep('SCANNING');
+    setScanMethod('choose');
     setIsModalOpen(true);
-    startFaceDetect();
   };
 
   const handleContinueDelivery = async (tx: DisplayTransaction) => {
@@ -942,22 +948,10 @@ export default function MovimientosPagnolPage() {
     if (videoRef.current && cameraStream) {
       videoRef.current.srcObject = cameraStream;
     }
-  }, [cameraStream, flowStep]); // Re-run when step changes (video element mounts/unmounts)
+  }, [cameraStream, flowStep, scanMethod, receiveMethod]); // Re-run when step or method changes (video element mounts/unmounts)
 
-  // Auto-start camera when reaching FIRMA RECIBIDO — delay 400ms to let hardware release from prior stream
-  useEffect(() => {
-    if (flowStep === 'FIRMA RECIBIDO') {
-      const t = setTimeout(() => {
-        startFaceDetect().finally(() => setIsPagnoleroConfirming(false));
-      }, 400);
-      return () => clearTimeout(t);
-    }
-    // Sólo debe dispararse al ENTRAR al paso de firma. `startFaceDetect` es una
-    // función suelta (identidad nueva en cada render) que además hace
-    // `setCameraStream`: declararla encadenaría efecto → render → efecto y
-    // reiniciaría la cámara en bucle en mitad del cierre biométrico.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flowStep]);
+  // En FIRMA RECIBIDO la cámara ya NO arranca sola: la persona elige antes si valida con el
+  // rostro o con el carnet (`receiveMethod`), y sólo el rostro enciende la cámara.
 
   // Un solo aviso por sesión de que el lector está mal configurado: repetirlo en
   // cada fierro de una entrega de veinte sería inusable.
@@ -1126,8 +1120,8 @@ export default function MovimientosPagnolPage() {
       void handleFinalAcceptance(true);
       return;
     }
-    setIsPagnoleroConfirming(true);
     setTxState('ENTREGADA_POR_PAÑOLERO');
+    setReceiveMethod('choose');
     setFlowStep('FIRMA RECIBIDO');
     toast({
       variant: 'info',
@@ -1874,8 +1868,9 @@ export default function MovimientosPagnolPage() {
         open={idScanOpen}
         onOpenChange={(o) => {
           setIdScanOpen(o);
-          // El escáner usa la cámara trasera: al cerrar vuelve la del rostro.
-          if (!o) void startFaceDetect();
+          // El escáner usa la cámara trasera: al cerrar vuelve la del rostro SOLO si quien
+          // eligió el rostro. Con el carnet no hay cámara frontal que reanudar.
+          if (!o && (idScanPurpose === 'receive' ? receiveMethod : scanMethod) === 'face') void startFaceDetect();
         }}
         onScan={(raw) => (idScanPurpose === 'receive' ? handleReceiverDocument(raw) : handleIdDocument(raw))}
         idDocument
@@ -1952,7 +1947,65 @@ export default function MovimientosPagnolPage() {
             </DialogHeader>
 
             <div className="flex-1 overflow-y-auto p-6 sm:p-10 custom-scrollbar">
-              {flowStep === 'SCANNING' && (
+              {flowStep === 'SCANNING' && scanMethod === 'choose' && (
+                <div className="text-center space-y-8 animate-in zoom-in-95 max-w-xl mx-auto">
+                  <div>
+                    <h4 className="font-black uppercase text-2xl tracking-tight text-foreground">¿Cómo se identifica?</h4>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase mt-2 tracking-widest">Elija una forma. Solo esa queda activa.</p>
+                  </div>
+                  <IdentityMethodChoice
+                    onFace={() => { setScanMethod('face'); void startFaceDetect(); }}
+                    onCarnet={() => setScanMethod('carnet')}
+                  />
+                  <div className="pt-6 border-t border-border">
+                    <p className="text-[9px] text-muted-foreground mb-3 font-medium">¿Ninguna de las dos sirve?</p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setFlowStep('MANUAL USER SELECT')}
+                      className="bg-muted hover:bg-muted/80 text-muted-foreground font-bold text-[10px] uppercase tracking-wider rounded-xl h-10 px-6"
+                    >
+                      Selección Manual de Operario
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {flowStep === 'SCANNING' && scanMethod === 'carnet' && (
+                <div className="text-center space-y-8 animate-in zoom-in-95 max-w-md mx-auto">
+                  <div className="mx-auto w-20 h-20 rounded-[1.5rem] bg-primary/10 text-primary flex items-center justify-center">
+                    <CreditCard size={40} />
+                  </div>
+                  <div>
+                    <h4 className="font-black uppercase text-2xl tracking-tight text-foreground">Identificación con carnet</h4>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase mt-2 tracking-widest">No se usa la cámara del rostro</p>
+                  </div>
+                  <CarnetEntry
+                    value={idText}
+                    onChange={setIdText}
+                    onSubmit={(v) => { handleIdDocument(v); setIdText(''); }}
+                    onCamera={() => { setIdScanPurpose('identify'); setIdScanOpen(true); }}
+                  />
+                  <div className="pt-6 border-t border-border flex flex-col gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => { setIdText(''); setScanMethod('face'); void startFaceDetect(); }}
+                      className="text-muted-foreground font-black uppercase text-[10px] tracking-widest"
+                    >
+                      Identificarse con el rostro
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => { setIdText(''); setFlowStep('MANUAL USER SELECT'); }}
+                      className="text-muted-foreground font-black uppercase text-[10px] tracking-widest"
+                    >
+                      Selección manual de operario
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {flowStep === 'SCANNING' && scanMethod === 'face' && (
                 <div className="text-center space-y-8 animate-in zoom-in-95 max-w-sm mx-auto">
                   <div className="relative aspect-square rounded-[3rem] overflow-hidden bg-black border-4 border-pagnol-orange shadow-2xl shadow-pagnol-orange/20">
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
@@ -2007,53 +2060,30 @@ export default function MovimientosPagnolPage() {
 
                     <p className="text-[9px] font-bold text-muted-foreground mt-4">Sistema de Identificación Pagnol</p>
 
-                    {/* Carnet: lo pasa por la pistola (que escribe como teclado), por la cámara o se
-                        escribe el RUT. Sólo identifica: después se pide el rostro igual. */}
-                    <div className="mt-6 pt-6 border-t border-border space-y-3">
-                      <p className="text-[9px] text-muted-foreground font-medium">¿Trae su carnet? Pásalo por el lector o escribe el RUT</p>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={idText}
-                          onChange={(e) => setIdText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && idText.trim()) {
-                              e.preventDefault();
-                              handleIdDocument(idText);
-                              setIdText('');
-                            }
-                          }}
-                          placeholder="RUT o carnet…"
-                          autoComplete="off"
-                          className="h-10 rounded-xl border-border bg-muted text-sm"
-                          aria-label="RUT o lectura del carnet"
-                        />
+                    {/* Cambiar de método: apaga la cámara del rostro; el carnet no la usa. */}
+                    <div className="mt-6 pt-6 border-t border-border">
+                      <p className="text-[9px] text-muted-foreground mb-3 font-medium">¿Problemas con el rostro?</p>
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                         <Button
-                          type="button"
                           variant="secondary"
-                          size="icon"
-                          className="h-10 w-10 shrink-0 rounded-xl"
-                          aria-label="Escanear carnet con la cámara"
-                          onClick={() => { stopCamera(); setIdScanPurpose('identify'); setIdScanOpen(true); }}
+                          size="sm"
+                          onClick={() => { stopCamera(); setScanDiag(null); setScanHalt(null); setScanMethod('carnet'); }}
+                          className="font-bold text-[10px] uppercase tracking-wider rounded-xl h-10 px-6 gap-2"
                         >
-                          <CreditCard size={16} />
+                          <CreditCard size={14} /> Usar carnet
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            stopCamera();
+                            setFlowStep('MANUAL USER SELECT');
+                          }}
+                          className="bg-muted hover:bg-muted/80 text-muted-foreground font-bold text-[10px] uppercase tracking-wider rounded-xl h-10 px-6"
+                        >
+                          Selección Manual de Operario
                         </Button>
                       </div>
-                    </div>
-
-                    {/* Fallback Manual */}
-                    <div className="mt-6 pt-6 border-t border-border">
-                      <p className="text-[9px] text-muted-foreground mb-3 font-medium">¿Problemas con la biometría?</p>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          stopCamera();
-                          setFlowStep('MANUAL USER SELECT');
-                        }}
-                        className="bg-muted hover:bg-muted/80 text-muted-foreground font-bold text-[10px] uppercase tracking-wider rounded-xl h-10 px-6"
-                      >
-                        Selección Manual de Operario
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -2101,8 +2131,8 @@ export default function MovimientosPagnolPage() {
                       ))}
                     </div>
                   </div>
-                  <Button variant="ghost" onClick={() => { setScanHalt(null); setScanDiag(null); setFlowStep('SCANNING'); startFaceDetect(); }} className="w-full text-muted-foreground text-[10px] uppercase font-bold">
-                    Volver a Escáner
+                  <Button variant="ghost" onClick={() => { setScanHalt(null); setScanDiag(null); setScanMethod('choose'); setFlowStep('SCANNING'); }} className="w-full text-muted-foreground text-[10px] uppercase font-bold">
+                    Volver a elegir cómo identificarse
                   </Button>
                 </div>
               )}
@@ -2551,7 +2581,54 @@ export default function MovimientosPagnolPage() {
                 </div>
               )}
 
-              {flowStep === 'FIRMA RECIBIDO' && (
+              {flowStep === 'FIRMA RECIBIDO' && receiveMethod === 'choose' && (
+                <div className="text-center space-y-8 animate-in zoom-in-95 max-w-xl mx-auto">
+                  <div>
+                    <h4 className="font-black uppercase text-2xl tracking-tight text-foreground">Certificación de Recepción</h4>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase mt-2 tracking-widest">
+                      {selectedEmployee?.name ? `${selectedEmployee.name} confirma que recibió. ` : ''}Elija cómo validar.
+                    </p>
+                  </div>
+                  <IdentityMethodChoice
+                    onFace={() => { setReceiveMethod('face'); void startFaceDetect(); }}
+                    onCarnet={() => setReceiveMethod('carnet')}
+                    faceDisabledReason={!sujetoAVerificarId && !excepcionAprobada ? 'Esta persona no tiene rostro enrolado: valide con el carnet.' : undefined}
+                  />
+                </div>
+              )}
+
+              {flowStep === 'FIRMA RECIBIDO' && receiveMethod === 'carnet' && (
+                <div className="text-center space-y-8 animate-in zoom-in-95 max-w-md mx-auto">
+                  <div className="mx-auto w-20 h-20 rounded-[1.5rem] bg-primary/10 text-primary flex items-center justify-center">
+                    <CreditCard size={40} />
+                  </div>
+                  <div>
+                    <h4 className="font-black uppercase text-2xl tracking-tight text-foreground">Recepción con carnet</h4>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase mt-2 tracking-widest">
+                      Debe ser el carnet de {selectedEmployee?.name ?? 'quien recibe'}
+                    </p>
+                  </div>
+                  <CarnetEntry
+                    value={receiveIdText}
+                    onChange={setReceiveIdText}
+                    onSubmit={(v) => { handleReceiverDocument(v); setReceiveIdText(''); }}
+                    onCamera={() => { setIdScanPurpose('receive'); setIdScanOpen(true); }}
+                  />
+                  {(sujetoAVerificarId || excepcionAprobada) && (
+                    <div className="pt-6 border-t border-border">
+                      <Button
+                        variant="ghost"
+                        onClick={() => { setReceiveIdText(''); setReceiveMethod('face'); void startFaceDetect(); }}
+                        className="text-muted-foreground font-black uppercase text-[10px] tracking-widest"
+                      >
+                        Validar con el rostro
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {flowStep === 'FIRMA RECIBIDO' && receiveMethod === 'face' && (
                 <div className="text-center space-y-8 animate-in zoom-in-95 max-w-md mx-auto">
                   <div className="relative aspect-square rounded-[3rem] overflow-hidden bg-black border-4 border-pagnol-orange/30 shadow-2xl">
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
@@ -2588,41 +2665,18 @@ export default function MovimientosPagnolPage() {
                   <div className="space-y-4">
                     <h4 className="font-black uppercase text-xl text-foreground">Certificación de Recepción</h4>
                     <p className="text-[10px] font-black text-muted-foreground uppercase leading-relaxed px-10">
-                      Valide con el rostro (botón de abajo) o con el carnet de quien recibe. Cualquiera de las dos cierra el protocolo.
+                      Mire a la cámara y pulse el botón de abajo para validar y cerrar el protocolo.
                     </p>
                   </div>
 
-                  {/* Alternativa a la cara: el carnet de quien recibe. Si se valida así, se cierra sin biometría. */}
-                  <div className="rounded-2xl border border-border p-4 space-y-3 text-left">
-                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">¿Prefiere validar con su carnet?</p>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={receiveIdText}
-                        onChange={(e) => setReceiveIdText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && receiveIdText.trim()) {
-                            e.preventDefault();
-                            handleReceiverDocument(receiveIdText);
-                            setReceiveIdText('');
-                          }
-                        }}
-                        placeholder="Pase el carnet o escriba el RUT…"
-                        autoComplete="off"
-                        className="h-10 rounded-xl border-border bg-muted text-sm"
-                        aria-label="Carnet de quien recibe"
-                      />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="h-10 w-10 shrink-0 rounded-xl"
-                        aria-label="Escanear carnet con la cámara"
-                        onClick={() => { stopCamera(); setIdScanPurpose('receive'); setIdScanOpen(true); }}
-                      >
-                        <CreditCard size={16} />
-                      </Button>
-                    </div>
-                  </div>
+                  {/* Cambiar al carnet de quien recibe: apaga la cámara del rostro. */}
+                  <Button
+                    variant="ghost"
+                    onClick={() => { stopCamera(); setReceiveMethod('carnet'); }}
+                    className="text-muted-foreground font-black uppercase text-[10px] tracking-widest gap-2"
+                  >
+                    <CreditCard size={14} /> Validar con el carnet
+                  </Button>
 
                   <Button
                     disabled={isBiometricPulse || !cameraStream || (!sujetoAVerificarId && !excepcionAprobada)}

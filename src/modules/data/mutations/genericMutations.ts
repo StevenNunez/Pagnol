@@ -502,12 +502,13 @@ export async function deleteMaterial(materialId: string, reason: string, { user,
     }
 
     const now = new Date().toISOString();
+    const stockBefore = Number(material.stock || 0);
     const movId = await nextInternalCode(tenantId, 'MOV');
     const { error: movErr } = await supabase.from('stock_movements').insert({
         id: movId,
         material_id: materialId,
         material_name: material.name,
-        quantity_change: -(material.stock || 0),
+        quantity_change: -stockBefore,
         new_stock: 0,
         type: 'deletion',
         date: now,
@@ -518,11 +519,30 @@ export async function deleteMaterial(materialId: string, reason: string, { user,
     });
     if (movErr) throw movErr;
 
-    const { error } = await supabase
+    // El kardex dice "quedó en 0": la ficha y el desglose por contrato tienen que decir lo
+    // mismo. Si el stock se dejara, la valorización, las existencias de la API y los
+    // reportes por contrato seguirían contando unidades de un activo que ya no existe.
+    // `.select()` porque un UPDATE que la RLS deja en 0 filas no lanza error.
+    const { data: updated, error } = await supabase
         .from('materials')
-        .update({ deleted_at: now, deleted_by: user.id, deletion_reason: reason.trim() })
-        .eq('id', materialId);
+        .update({ deleted_at: now, deleted_by: user.id, deletion_reason: reason.trim(), stock: 0 })
+        .eq('id', materialId)
+        .select('id');
     if (error) throw error;
+    if (!updated?.length) throw new Error('No se pudo eliminar el activo: no tienes acceso a esa ficha.');
+
+    if (stockBefore > 0) {
+        try {
+            await consumeFromLedger({ tenantId, materialId, contractId: null, qty: stockBefore });
+        } catch (ledgerErr) {
+            // Sin el desglose en cero la suma no calzaría con el total: se deshace la baja.
+            await supabase
+                .from('materials')
+                .update({ deleted_at: null, deleted_by: null, deletion_reason: null, stock: stockBefore })
+                .eq('id', materialId);
+            throw ledgerErr;
+        }
+    }
 }
 
 // --- Categories & Units ---

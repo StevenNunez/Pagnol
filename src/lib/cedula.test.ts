@@ -74,3 +74,29 @@ describe('findWorkerByRun', () => {
         expect(normalizeRun(null)).toBeNull();
     });
 });
+
+// La pistola es un teclado: con la distribución equivocada el guion llega como `'` y el resto de
+// los símbolos de una URL cambian de lugar. El dígito verificador sigue mandando: una lectura
+// estropeada nunca puede apuntar a otra persona.
+describe('parseIdDocument — pistola con otra distribución de teclado', () => {
+    const run = `${A}-${A_DV}`;
+    it('el RUT con el guion cambiado por otro símbolo', () => {
+        expect(parseIdDocument(`${A}'${A_DV}`)?.run).toBe(run);
+        expect(parseIdDocument(`12.345.678_${A_DV}`)?.run).toBe(run);
+    });
+    it('el PDF417 antiguo con el guion cambiado', () => {
+        expect(parseIdDocument(`${A}'${A_DV} ABC123 DEMO`)?.run).toBe(run);
+    });
+    it('la URL del QR nuevo con `RUN=` y `-` estropeados', () => {
+        expect(parseIdDocument(`https:--portal.sidiv.registrocivil.cl-docstatus_RUN)${A}'${A_DV}&type)CEDULA`)?.run).toBe(run);
+    });
+    it('con el dígito verificador malo sigue rechazando', () => {
+        const mal = A_DV === '0' ? '1' : '0';
+        expect(parseIdDocument(`${A}'${mal}`)).toBeNull();
+        expect(parseIdDocument(`https:--x.cl-docstatus_RUN)${A}'${mal}&type)CEDULA`)).toBeNull();
+    });
+    it('un número cualquiera con un símbolo en medio no pasa por RUN', () => {
+        expect(parseIdDocument('123456789012')).toBeNull();
+        expect(parseIdDocument("1234'56789012")).toBeNull();
+    });
+});

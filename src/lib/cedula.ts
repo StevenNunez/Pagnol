@@ -71,7 +71,33 @@ export function parseIdDocument(raw: string | null | undefined): ParsedId | null
             if (run) return { run, source: 'barcode' };
         }
     }
+
+    // 5) Pistola con otra distribución de teclado. La pistola envía pulsaciones y las traduce
+    //    Windows con SU distribución: con un lector en teclado inglés el guion llega como `'` o
+    //    `_`, y en una URL también `=`, `:` y `/` salen cambiados (`RUN)12345678'9`). Se acepta un
+    //    símbolo cualquiera donde iría el guion, y hasta tres tras `RUN`. Sigue siendo seguro:
+    //    el dígito verificador se valida igual, y lo leído sólo sirve para buscar una ficha.
+    const SIM = '[^0-9A-Za-z]';
+    const CUERPO = '(\\d{1,2}(?:[.,]\\d{3}){2}|\\d{7,8})';
+    const enUrl = text.match(new RegExp(`RUN${SIM}{1,3}${CUERPO}${SIM}([0-9Kk])(?!\\d)`, 'i'));
+    const alInicio = enUrl ? null : text.match(new RegExp(`^${CUERPO}${SIM}([0-9Kk])(?!\\d)`));
+    const raro = enUrl ?? alInicio;
+    if (raro) {
+        const run = validRun(raro[1].replace(/[.,]/g, ''), raro[2]);
+        if (run) return { run, source: enUrl ? 'url' : 'barcode' };
+    }
     return null;
+}
+
+/**
+ * ¿Lo leído trae símbolos donde un RUT o la URL del carnet no los llevan? Delata un lector con
+ * el teclado en otro idioma (ver el paso 5 de `parseIdDocument`). Sirve para avisarle a quien
+ * opera, en vez de dejarlo frente a un "no se pudo leer" sin explicación.
+ */
+export function parecePistolaMalConfigurada(raw: string | null | undefined): boolean {
+    // El guion y el punto son normales en un RUT; `'`, `_`, `(`, `)` y `"` no. Sólo se consulta
+    // cuando la lectura ya falló, así que un falso positivo apenas agrega un aviso.
+    return /['_()"]/.test((raw || '').trim());
 }
 
 /** "12.345.678-9" → "12345678-9", para comparar el RUN leído con el de la ficha. */

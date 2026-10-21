@@ -83,10 +83,6 @@ export function QrScannerDialog({
             if (cameras && cameras.length) {
               const qrboxFunction = (viewfinderWidth: number, viewfinderHeight: number): LocalQrDimensions => {
                 const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                // El PDF417 del carnet es ancho y bajo: un cuadro cuadrado lo recortaría.
-                if (idDocument) {
-                  return { width: Math.floor(viewfinderWidth * 0.95), height: Math.floor(minEdge * 0.55) };
-                }
                 const qrboxSize = Math.floor(minEdge * 0.9);
                 return { width: qrboxSize, height: qrboxSize };
               };
@@ -95,7 +91,11 @@ export function QrScannerDialog({
                 { facingMode: "environment" },
                 {
                   fps: 10,
-                  qrbox: qrboxFunction,
+                  // Carnet: SIN recorte, se analiza todo el cuadro. Antes se recortaba a una
+                  // franja del 55 % del alto (pensada para el PDF417, ancho y bajo), y un QR
+                  // acercado a la cámara —que es lo que hace quien lo escanea— se salía de la
+                  // franja y nunca se leía (reproducido: un QR de 77 % del alto, 0 lecturas en 20 s).
+                  ...(idDocument ? {} : { qrbox: qrboxFunction }),
                   aspectRatio: 1.0,
                 },
                 (decodedText) => {

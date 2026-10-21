@@ -1983,6 +1983,7 @@ export default function MovimientosPagnolPage() {
                   <CarnetEntry
                     value={idText}
                     onChange={setIdText}
+                    parse={parseIdDocument}
                     onSubmit={(v) => { handleIdDocument(v); setIdText(''); }}
                     onCamera={() => { setIdScanPurpose('identify'); setIdScanOpen(true); }}
                   />
@@ -2611,6 +2612,7 @@ export default function MovimientosPagnolPage() {
                   <CarnetEntry
                     value={receiveIdText}
                     onChange={setReceiveIdText}
+                    parse={parseIdDocument}
                     onSubmit={(v) => { handleReceiverDocument(v); setReceiveIdText(''); }}
                     onCamera={() => { setIdScanPurpose('receive'); setIdScanOpen(true); }}
                   />

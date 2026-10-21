@@ -24,7 +24,7 @@ const BUCKET = 'contracts';
 
 export type BiometricStage = 'identificacion' | 'recepcion';
 export type BiometricOutcome =
-    | 'match' | 'no_match' | 'no_face' | 'error' | 'spoof_suspected'
+    | 'match' | 'no_match' | 'no_face' | 'error' | 'spoof_suspected' | 'id_document'
     | 'exception_requested' | 'exception_granted' | 'exception_denied';
 
 /**

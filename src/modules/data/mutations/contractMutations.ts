@@ -192,7 +192,21 @@ export async function addContractWorker(
 
   const { error } = await supabase.from('contract_workers').insert(payload);
 
-  if (error) throw error;
+  if (error) {
+    // Ya hubo una asignación cerrada (se desvinculó de este contrato): volver a
+    // asignarlo la reabre, en vez de chocar con la unicidad contrato+persona.
+    if ((error as any).code === '23505') {
+      const { data: reopened, error: upErr } = await supabase
+        .from('contract_workers')
+        .update({ end_date: null, shift_schedule_id: shiftScheduleId, role_in_contract: roleInContract || null })
+        .eq('tenant_id', tenantId).eq('contract_id', contractId).eq('user_id', userId)
+        .not('end_date', 'is', null)
+        .select('id');
+      if (upErr) throw upErr;
+      if (reopened && reopened.length > 0) return;
+    }
+    throw error;
+  }
 }
 
 export async function removeContractWorker(

@@ -44,6 +44,8 @@ export async function updateTenant(tenantId: string, data: Partial<Tenant>, { }:
     if (data.codeTypes !== undefined) payload.code_types = data.codeTypes ?? {};
     if (data.laborCostFactor !== undefined) payload.labor_cost_factor = data.laborCostFactor;
     if (data.withdrawalReviewMode !== undefined) payload.withdrawal_review_mode = data.withdrawalReviewMode;
+    if (data.withdrawalReviewDeadlineHours !== undefined) payload.withdrawal_review_deadline_hours = data.withdrawalReviewDeadlineHours;
+    if (data.receivingMode !== undefined) payload.receiving_mode = data.receivingMode;
     if (data.approvalSettings !== undefined) payload.approval_settings = data.approvalSettings;
     // `.select()` para detectar UPDATE silencioso de 0 filas (típico de RLS que no
     // matchea): sin esto Supabase no devuelve error y el cambio no persiste.
@@ -141,6 +143,7 @@ export async function hrUpdateUser(userId: string, data: any, { }: Context) {
             emergencyContactName: data.emergencyContactName,
             emergencyContactPhone: data.emergencyContactPhone,
             employmentStatus: data.employmentStatus,
+            responsibleSupervisorId: data.responsibleSupervisorId,
         }),
     });
     const json = await res.json();
@@ -214,6 +217,9 @@ export async function updateUser(userId: string, data: any, { user, can }: Conte
         .eq('id', userId)
         .select('id');
 
+    if (error?.code === '23505' && error.message.includes('profiles_tenant_rut_unique')) {
+        throw new Error('Ya existe otra persona con ese RUT en la empresa.');
+    }
     if (error) throw error;
     if (!rows || rows.length === 0) {
         throw new Error('No se pudo guardar: no tienes permiso para editar a este usuario (RLS).');

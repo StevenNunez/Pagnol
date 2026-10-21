@@ -4,14 +4,19 @@ import { useMemo } from "react";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import type { ContractWorker, MaterialRequest, ReturnRequest, WithdrawalReview, WithdrawalReviewResolution } from "@/modules/core/lib/data";
 import {
-    canReviewRequest, indexReviews, summarizeReview, resolveObservations,
-    type RequestReviewSummary, type ObservationState,
+    canReviewRequest, indexReviews, summarizeReview, resolveObservations, isOversightRole,
+    reviewDueState, regularizationState,
+    type RequestReviewSummary, type ObservationState, type RegularizationState,
 } from "@/modules/data/mutations/withdrawalReviewMath";
 
 export interface ReviewableWithdrawal {
     req: MaterialRequest;
     summary: RequestReviewSummary;
     facts: WithdrawalReview[];
+    /** Plazo de revisión: `overdue` sólo si sigue sin revisarse del todo. */
+    due: { hoursOpen: number; overdue: boolean; deadlineHours: number };
+    /** Tercer estado del retiro: lo observado, ¿ya se regularizó? */
+    regularization: RegularizationState;
 }
 
 /** Una línea marcada "no corresponde", con en qué quedó. */
@@ -28,7 +33,7 @@ export interface WithdrawalObservation {
  * con el estado de su revisión derivado de los hechos.
  */
 export function useReviewableWithdrawals() {
-    const { requests, withdrawalReviews, withdrawalReviewResolutions, returnRequests, contractWorkers, can } = useAppState();
+    const { requests, withdrawalReviews, withdrawalReviewResolutions, returnRequests, contractWorkers, can, currentTenant } = useAppState();
     const { user } = useAuth();
     const canReview = can("material_requests:review_withdrawals");
     const seesAllContracts = can("material_requests:select_any_contract");
@@ -37,7 +42,7 @@ export function useReviewableWithdrawals() {
         const empty = {
             canReview,
             all: [] as ReviewableWithdrawal[], pending: [] as ReviewableWithdrawal[], reviewed: [] as ReviewableWithdrawal[],
-            observations: [] as WithdrawalObservation[], openObservations: 0,
+            observations: [] as WithdrawalObservation[], openObservations: 0, overdueCount: 0,
         };
         if (!user || !canReview) return empty;
 
@@ -45,7 +50,9 @@ export function useReviewableWithdrawals() {
             ((contractWorkers || []) as ContractWorker[]).filter(cw => cw.userId === user.id).map(cw => cw.contractId)
         );
         const byRequest = indexReviews((withdrawalReviews || []) as WithdrawalReview[]);
-        const reviewer = { id: user.id, seesAllContracts, contractIds: myContractIds };
+        const reviewer = { id: user.id, seesAllContracts, contractIds: myContractIds, oversight: isOversightRole(user.role) };
+        const deadlineHours = currentTenant?.withdrawalReviewDeadlineHours;
+        const now = new Date();
 
         const all: ReviewableWithdrawal[] = [];
         for (const req of (requests || []) as MaterialRequest[]) {
@@ -54,7 +61,13 @@ export function useReviewableWithdrawals() {
             const reviewable = { ...req, items };
             if (!canReviewRequest(reviewable, reviewer)) continue;
             const facts = byRequest.get(req.id) || [];
-            all.push({ req, facts, summary: summarizeReview(reviewable, facts) });
+            const summary = summarizeReview(reviewable, facts);
+            const due = reviewDueState(req.createdAt as any, deadlineHours, now);
+            all.push({
+                req, facts, summary,
+                due: { ...due, overdue: due.overdue && summary.state !== "reviewed" },
+                regularization: "none",
+            });
         }
         all.sort((a, b) => new Date(b.req.createdAt as any).getTime() - new Date(a.req.createdAt as any).getTime());
 
@@ -75,6 +88,15 @@ export function useReviewableWithdrawals() {
             })),
             new Set(resolutionByReview.keys()),
         );
+        // Regularización por retiro: se deriva del estado de sus observaciones.
+        const statusesByRequest = new Map<string, ObservationState["status"][]>();
+        for (const { fact, req } of flagged) {
+            const list = statusesByRequest.get(req.id) || [];
+            list.push(states.get(fact.id)!.status);
+            statusesByRequest.set(req.id, list);
+        }
+        for (const w of all) w.regularization = regularizationState(statusesByRequest.get(w.req.id) || []);
+
         const observations: WithdrawalObservation[] = flagged
             .map(({ fact, req }) => ({ fact, req, state: states.get(fact.id)!, resolution: resolutionByReview.get(fact.id) }))
             // Abiertas primero (las más antiguas arriba); después lo cerrado, lo más reciente arriba.
@@ -92,7 +114,8 @@ export function useReviewableWithdrawals() {
             all,
             // Los más antiguos primero: es lo que lleva más tiempo esperando.
             pending: all.filter(w => w.summary.state !== "reviewed").reverse(),
+            overdueCount: all.filter(w => w.due.overdue).length,
             reviewed: all.filter(w => w.summary.state === "reviewed"),
         };
-    }, [requests, withdrawalReviews, withdrawalReviewResolutions, returnRequests, contractWorkers, user, canReview, seesAllContracts]);
+    }, [requests, withdrawalReviews, withdrawalReviewResolutions, returnRequests, contractWorkers, user, canReview, seesAllContracts, currentTenant?.withdrawalReviewDeadlineHours]);
 }

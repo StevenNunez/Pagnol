@@ -106,6 +106,156 @@ export const MovimientoSchema = z
     })
     .openapi('Movimiento');
 
+export const COMPRA_LINEA_ESTADOS = ['esperada', 'parcial', 'recibida', 'cancelada'] as const;
+
+export const CompraLineaSchema = z
+    .object({
+        id: uuid,
+        external_ref: z.string().openapi({ description: 'BASE de la línea en el sistema que compra; de ella salen las referencias de lo que se crea al recibir.' }),
+        material: z.object({ id: uuid, nombre: z.string(), rastreable: z.boolean() }),
+        cantidad_esperada: z.number(),
+        cantidad_recibida: z.number().openapi({ description: 'Lo que el pañolero ya recibió en Pagnol.' }),
+        valor_unitario: z.number().nullable().openapi({ description: 'Valor NETO por unidad, en CLP, que anunció el sistema que compra; se copia al activo como valor de compra al recibirlo. Sin valor, el activo queda sin valor de compra.' }),
+        estado: z.enum(COMPRA_LINEA_ESTADOS).openapi({ description: 'Derivado de lo recibido: `esperada`, `parcial`, `recibida` o `cancelada`.' }),
+    })
+    .openapi('CompraLinea');
+
+export const CreadoSchema = z.object({
+    tipo: z.enum(['activo', 'movimiento']),
+    id: uuid,
+    external_ref: z.string().openapi({ description: 'La referencia con la que quedó registrado: `<base de la línea>:unidad:<n>` (equipos) o `<base>:recepcion:<k>` (consumibles).' }),
+}).openapi('Creado');
+
+export const CompraRecepcionSchema = z
+    .object({
+        id: uuid,
+        guia_despacho: z.string(),
+        fecha_recepcion: z.string().openapi({ description: 'YYYY-MM-DD.' }),
+        recibido_por: RefSchema,
+        lineas: z.array(z.object({
+            linea_external_ref: z.string(),
+            cantidad: z.number(),
+            cantidad_corregida: z.number().openapi({ description: 'Lo que después se quitó de esta recepción (corrección del pañolero). La recepción original no cambia.' }),
+            creados: z.array(CreadoSchema),
+        })),
+    })
+    .openapi('CompraRecepcion');
+
+export const CompraCorreccionSchema = z
+    .object({
+        id: uuid,
+        recepcion_id: uuid,
+        guia_despacho: z.string(),
+        linea_external_ref: z.string(),
+        cantidad_quitada: z.number(),
+        motivo: z.string(),
+        corregido_por: RefSchema,
+        fecha: isoDateTime,
+        revertidos: z.array(CreadoSchema).openapi({ description: 'Qué se revirtió en Pagnol: los equipos dados de baja o el ajuste de stock.' }),
+    })
+    .openapi('CompraCorreccion');
+
+export const CompraSchema = z
+    .object({
+        id: uuid,
+        external_ref: z.string().openapi({ description: 'La OC del sistema que compra. Única por empresa.' }),
+        estado: z.enum(['abierta', 'cerrada', 'cancelada']).openapi({
+            description: '`abierta` mientras alguna línea espera algo; `cerrada` cuando todo lo vigente se recibió; `cancelada` si se canceló entera o todas sus líneas.',
+        }),
+        proveedor: RefSchema.nullable(),
+        panol: RefSchema.openapi({ description: 'Pañol de destino: donde el pañolero recibe.' }),
+        fecha_estimada: z.string().nullable().openapi({ description: 'YYYY-MM-DD.' }),
+        contrato_ref: z.string().nullable().openapi({ description: 'Referencia de contrato del sistema que compra (texto libre; no es un contrato de Pagnol).' }),
+        lineas: z.array(CompraLineaSchema),
+        recepciones: z.array(CompraRecepcionSchema).openapi({ description: 'Lo que el pañolero fue recibiendo, en orden. Cada una es un hecho que no se edita.' }),
+        correcciones: z.array(CompraCorreccionSchema).openapi({ description: 'Lo que el pañolero quitó después de una recepción porque no venía. `cantidad_recibida` ya lo descuenta.' }),
+        created_at: isoDateTime,
+        updated_at: isoDateTime,
+    })
+    .openapi('Compra');
+
+/** `data` del evento `compra.recepcion_corregida`: se quitó cantidad de una recepción ya informada. */
+export const CompraRecepcionCorregidaSchema = z
+    .object({
+        compra_id: uuid,
+        compra_external_ref: z.string(),
+        recepcion_id: uuid,
+        guia_despacho: z.string(),
+        correccion_id: uuid,
+        motivo: z.string(),
+        corregido_por: RefSchema,
+        fecha_correccion: isoDateTime,
+        panol: RefSchema,
+        linea: z.object({
+            id: uuid,
+            external_ref: z.string(),
+            material: z.object({ id: uuid, nombre: z.string() }),
+            cantidad_esperada: z.number(),
+            cantidad_quitada: z.number().openapi({ description: 'Lo que se quitó en ESTA corrección.' }),
+            cantidad_recibida_acumulada: z.number().openapi({ description: 'Lo recibido NETO después de la corrección.' }),
+            estado: z.enum(COMPRA_LINEA_ESTADOS),
+            revertidos: z.array(CreadoSchema),
+        }),
+    })
+    .openapi('CompraRecepcionCorregida');
+
+/** `data` de los eventos `solicitud_compra.*`: una solicitud de compra hecha en Pagnol (todas sus líneas). */
+export const SOLICITUD_COMPRA_ESTADOS = ['pendiente', 'aprobada', 'rechazada'] as const;
+export const SolicitudCompraSchema = z
+    .object({
+        id: uuid.openapi({ description: 'Identificador de la solicitud (el del lote, o el de su única fila).' }),
+        codigo: z.string().nullable().openapi({ description: 'Código legible (ej. `PRQ-0042`).' }),
+        estado: z.enum(SOLICITUD_COMPRA_ESTADOS).openapi({
+            description: '`pendiente` mientras falta revisión/autorización; `aprobada` cuando ya pasaron todas las que la empresa tenga configuradas; `rechazada` si no quedó ninguna línea viva.',
+        }),
+        solicitante: RefSchema.nullable(),
+        contrato: RefSchema.nullable().openapi({ description: 'El contrato al que se carga el gasto (su centro de costo en el sistema que compra).' }),
+        area: z.string().nullable(),
+        motivo: z.string().nullable().openapi({ description: 'Justificación escrita por quien pide.' }),
+        prioridad: z.enum(['normal', 'urgente']),
+        motivo_urgencia: z.string().nullable(),
+        necesaria_para: z.string().nullable().openapi({ description: 'YYYY-MM-DD.' }),
+        origen: z.literal('manual'),
+        lineas: z.array(z.object({
+            id: uuid,
+            descripcion: z.string().openapi({ description: 'Lo que se pide, en palabras de quien lo pide: no está atado al catálogo.' }),
+            categoria: z.string().nullable(),
+            tipo: z.enum(['producto', 'servicio']),
+            cantidad: z.number(),
+            unidad: z.string().nullable(),
+            estado: z.enum(['pendiente', 'autorizada', 'rechazada']).openapi({
+                description: 'Una solicitud aprobada lista sólo las líneas `autorizada`; las `rechazada` van aparte para que no se compren.',
+            }),
+        })),
+        revisada_por: RefSchema.nullable().openapi({ description: 'Quien la revisó por Operaciones.' }),
+        autorizada_por: RefSchema.nullable().openapi({ description: 'Quien la autorizó (ADC o administración).' }),
+        motivo_rechazo: z.string().nullable(),
+        created_at: isoDateTime,
+    })
+    .openapi('SolicitudCompra');
+
+export const CompraRecibidaSchema = z
+    .object({
+        compra_id: uuid,
+        compra_external_ref: z.string(),
+        recepcion_id: uuid,
+        guia_despacho: z.string(),
+        fecha_recepcion: z.string().openapi({ description: 'YYYY-MM-DD.' }),
+        recibido_por: RefSchema,
+        panol: RefSchema,
+        linea: z.object({
+            id: uuid,
+            external_ref: z.string(),
+            material: z.object({ id: uuid, nombre: z.string() }),
+            cantidad_esperada: z.number(),
+            cantidad_recibida_ahora: z.number().openapi({ description: 'Lo recibido en ESTA recepción.' }),
+            cantidad_recibida_acumulada: z.number().openapi({ description: 'Lo recibido hasta aquí, contando esta recepción.' }),
+            estado: z.enum(COMPRA_LINEA_ESTADOS),
+            creados: z.array(CreadoSchema),
+        }),
+    })
+    .openapi('CompraRecibida');
+
 // ── Cuerpos de escritura ────────────────────────────────────────────────────
 const externalRef = z.string().trim().min(1).max(200)
     .openapi({ description: 'Referencia única del sistema que origina la operación. Repetirla devuelve lo ya creado, nunca duplica.' });
@@ -135,6 +285,39 @@ export const PatchActivoBodySchema = z
     .strict()
     .refine(b => b.estado !== undefined || b.ubicacion !== undefined, { message: 'Indica `estado` o `ubicacion`.' })
     .openapi('PatchActivo');
+
+export const CreateCompraBodySchema = z
+    .object({
+        external_ref: externalRef.openapi({ description: 'La OC del sistema que compra. Repetirla devuelve la compra ya anunciada (200) sin modificarla; para corregirla, `PATCH`.' }),
+        proveedor_id: uuid.nullable().optional(),
+        panol_id: uuid.openapi({ description: 'Pañol de destino (ver `/panoles`).' }),
+        fecha_estimada: isoDate.nullable().optional(),
+        contrato_ref: z.string().trim().max(200).nullable().optional().openapi({ description: 'Referencia de contrato del sistema que compra (texto libre).' }),
+        lineas: z.array(z.object({
+            external_ref: externalRef.openapi({ description: 'BASE de la línea; única por empresa.' }),
+            material_id: uuid.openapi({ description: 'Ítem del catálogo (no una unidad ya creada).' }),
+            cantidad: z.number().positive(),
+            valor_unitario: z.number().nonnegative().nullable().optional().openapi({ description: 'Valor NETO por unidad, en CLP. Si viene, Pagnol lo copia al activo como valor de compra al recibirlo; si no, el activo queda sin valor. No genera gasto en Pagnol.' }),
+        }).strict()).min(1).max(200),
+    })
+    .strict()
+    .openapi('CreateCompra');
+
+export const PatchCompraBodySchema = z
+    .object({
+        fecha_estimada: isoDate.nullable().optional(),
+        panol_id: uuid.optional(),
+        contrato_ref: z.string().trim().max(200).nullable().optional(),
+        cancelar: z.literal(true).optional().openapi({ description: 'Cancela la compra entera (y todas sus líneas).' }),
+        lineas: z.array(z.object({
+            external_ref: externalRef,
+            cantidad: z.number().positive().optional(),
+            cancelar: z.literal(true).optional(),
+        }).strict().refine(l => l.cantidad !== undefined || l.cancelar !== undefined, { message: 'Indica `cantidad` o `cancelar`.' })).min(1).max(200).optional(),
+    })
+    .strict()
+    .refine(b => Object.keys(b).length > 0, { message: 'No hay nada que cambiar.' })
+    .openapi('PatchCompra');
 
 export const CreateMovimientoBodySchema = z
     .discriminatedUnion('tipo', [
@@ -173,6 +356,22 @@ export const CreateWebhookBodySchema = z
     })
     .strict()
     .openapi('CreateWebhook');
+
+export const PatchWebhookBodySchema = z
+    .object({
+        url: z.string().trim().superRefine((u, ctx) => {
+            const problem = webhookUrlProblem(u);
+            if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+        }).optional(),
+        events: z.array(WebhookEventTypeSchema).min(1).max(WEBHOOK_EVENTS.length)
+            .refine(list => new Set(list).size === list.length, { message: 'Hay eventos repetidos.' })
+            .optional().openapi({ description: 'Reemplaza la lista de eventos. El secreto de firma NO cambia.' }),
+        descripcion: z.string().trim().min(1).max(200).nullable().optional(),
+        activo: z.boolean().optional().openapi({ description: '`false` pausa las entregas sin borrar la suscripción.' }),
+    })
+    .strict()
+    .refine(b => Object.keys(b).length > 0, { message: 'No hay nada que cambiar.' })
+    .openapi('PatchWebhook');
 
 const webhookFields = {
     id: uuid,
@@ -219,6 +418,12 @@ export type PanolDTO = z.infer<typeof PanolSchema>;
 export type ExistenciasDTO = z.infer<typeof ExistenciasSchema>;
 export type MovimientoDTO = z.infer<typeof MovimientoSchema>;
 export type RefDTO = z.infer<typeof RefSchema>;
+export type CompraDTO = z.infer<typeof CompraSchema>;
+export type CompraLineaDTO = z.infer<typeof CompraLineaSchema>;
+export type CompraRecepcionDTO = z.infer<typeof CompraRecepcionSchema>;
+export type CompraRecibidaDTO = z.infer<typeof CompraRecibidaSchema>;
+export type CompraRecepcionCorregidaDTO = z.infer<typeof CompraRecepcionCorregidaSchema>;
+export type SolicitudCompraDTO = z.infer<typeof SolicitudCompraSchema>;
 
 export const ErrorSchema = z
     .object({
@@ -271,6 +476,13 @@ export const ActivosQuerySchema = z.object({
     estado: z.enum(ACTIVO_ESTADOS).optional(),
     material_id: uuid.optional().openapi({ description: 'Unidades creadas desde este ítem del catálogo.' }),
     external_ref: z.string().trim().min(1).max(200).optional().openapi({ description: 'Busca la unidad creada con esta referencia.' }),
+    updated_since: updatedSince,
+    limit,
+    cursor,
+});
+
+export const ComprasQuerySchema = z.object({
+    external_ref: z.string().trim().min(1).max(200).optional().openapi({ description: 'Busca la compra anunciada con esta referencia (la OC).' }),
     updated_since: updatedSince,
     limit,
     cursor,

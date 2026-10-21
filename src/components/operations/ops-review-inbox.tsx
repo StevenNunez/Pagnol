@@ -122,8 +122,8 @@ function ReviewCard({
   const invalidQty = group.lines.some(ln => !removed.has(ln.key) && !(numOf(ln) >= 1));
   const allRemoved = removed.size === group.lines.length;
   const noteOk = note.trim().length >= REASON_MIN;
-  // Sacar líneas o rechazar se explica: el supervisor lo va a leer.
-  const approveNeedsNote = removed.size > 0;
+  // Sacar líneas, cambiar una cantidad o rechazar se explica: el supervisor lo va a leer.
+  const approveNeedsNote = changed;
 
   const step = (ln: OpsReviewLine, d: number) =>
     setQty(q => ({ ...q, [ln.key]: String(Math.max(1, (numOf(ln) || 0) + d)) }));
@@ -231,7 +231,7 @@ function ReviewCard({
             <Textarea
               value={note}
               onChange={e => setNote(e.target.value)}
-              placeholder={approveNeedsNote ? 'Explica por qué quitaste líneas (lo verá el supervisor)' : 'Comentario para el ADC o el supervisor (opcional para aprobar, obligatorio para rechazar)'}
+              placeholder={approveNeedsNote ? 'Explica qué cambiaste y por qué (lo verá el supervisor)' : 'Comentario para el ADC o el supervisor (opcional para aprobar, obligatorio para rechazar)'}
               className="rounded-xl min-h-[64px] text-sm"
             />
             <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">

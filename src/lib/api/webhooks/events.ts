@@ -9,13 +9,18 @@ export const WEBHOOK_EVENTS = [
     'activo.actualizado',
     'activo.dado_de_baja',
     'stock.bajo_minimo',
+    'compra.recibida',
+    'compra.recepcion_corregida',
+    'solicitud_compra.creada',
+    'solicitud_compra.aprobada',
+    'solicitud_compra.rechazada',
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENTS)[number];
 
 /** Qué recurso de la API lleva en `data` cada evento. */
-export function eventResource(type: WebhookEventType): 'material' | 'proveedor' | 'activo' | 'stock' {
-    return type.split('.')[0] as 'material' | 'proveedor' | 'activo' | 'stock';
+export function eventResource(type: WebhookEventType): 'material' | 'proveedor' | 'activo' | 'stock' | 'compra' | 'solicitud_compra' {
+    return type.split('.')[0] as 'material' | 'proveedor' | 'activo' | 'stock' | 'compra' | 'solicitud_compra';
 }
 
 // Backoff del contrato: ≈ 1 min, 5 min, 30 min, 2 h, 6 h, 24 h. Pasado el último

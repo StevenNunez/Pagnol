@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { DailyTalk, User } from '@/modules/core/lib/data';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { SIGN_METHOD_LABEL, type TalkAttendance } from '@/lib/daily-talk-attendance';
 
 declare module 'jspdf' {
   interface jsPDF {
@@ -29,6 +30,10 @@ const formatDate = (date: Date | string | undefined | null) => {
 };
 
 async function getBase64FromUrl(url: string): Promise<string> {
+  // Una imagen que ya viene en base64 se usa tal cual. Pasarla por fetch() la
+  // rompe: la política de seguridad (connect-src) bloquea los `data:`, y las
+  // firmas y la foto salían en blanco del PDF sin ningún error visible.
+  if (url.startsWith('data:')) return url;
   try {
     const res = await fetch(url);
     if (!res.ok) return '';
@@ -44,13 +49,26 @@ async function getBase64FromUrl(url: string): Promise<string> {
   }
 }
 
+/**
+ * Dibuja una imagen sin que una sola imagen mala tire abajo todo el informe.
+ * Una firma corrupta o un PNG truncado hacen que jsPDF lance «wrong PNG
+ * signature»; el acta debe salir igual, con ese espacio en blanco.
+ */
+function safeAddImage(doc: jsPDF, img: string, x: number, y: number, w: number, h: number) {
+  try {
+    doc.addImage(img, img.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', x, y, w, h);
+  } catch (err) {
+    console.warn('Imagen omitida del PDF:', err);
+  }
+}
+
 function addHeader(doc: jsPDF, logo?: string) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const logoSize = 25;
   const topY = 8;
   const headerSectionEndY = topY + logoSize + 2;
 
-  if (logo) doc.addImage(logo, 'PNG', MARGIN, topY, logoSize, logoSize);
+  if (logo) safeAddImage(doc, logo, MARGIN, topY, logoSize, logoSize);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -92,7 +110,16 @@ function addFooter(doc: jsPDF) {
     }
 }
 
-export async function generateDailyTalkPDF(talk: DailyTalk, users: User[], logoUrl?: string) {
+export interface DailyTalkPdfOptions {
+  /** Estado de cada convocado, derivado de los hechos. Sin esto se usa el JSON anterior. */
+  attendance?: TalkAttendance;
+  /** workerId → imagen de la firma (PNG en base64), pedida a la base al generar. */
+  signatures?: Record<string, string>;
+}
+
+const STATE_LABEL = { signed: 'Firmado', absent: 'Ausente', pending: 'Pendiente' } as const;
+
+export async function generateDailyTalkPDF(talk: DailyTalk, users: User[], logoUrl?: string, opts: DailyTalkPdfOptions = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -131,48 +158,66 @@ export async function generateDailyTalkPDF(talk: DailyTalk, users: User[], logoU
   doc.text('Asistentes:', MARGIN, y);
   y += 2;
   
-  const assistantsData = talk.asistentes.map((asistente, i) => {
-    const user = userMap.get(asistente.id);
+  // Con los hechos de firma, cada fila dice cómo se acreditó y si confirmó haber
+  // comprendido; sin ellos (charlas anteriores) se lee el JSON como siempre.
+  const attendeeRows = opts.attendance?.rows ?? talk.asistentes.map(a => ({
+    id: a.id, name: a.name, rut: a.rut ?? '', state: a.signed ? 'signed' as const : 'pending' as const,
+    method: a.signed ? 'legacy' as const : null, acknowledged: false,
+    at: a.signedAt ? new Date(a.signedAt as any) : null, recordedByName: null, note: null,
+  }));
+
+  const assistantsData = attendeeRows.map((row, i) => {
+    const user = userMap.get(row.id);
+    const how = row.state === 'signed'
+      ? ['Firmado', row.method ? SIGN_METHOD_LABEL[row.method] : '', row.at ? format(row.at, 'd/MM/yyyy HH:mm') : '']
+          .filter(Boolean).join('\n')
+      : STATE_LABEL[row.state];
     return [
       i + 1,
-      asistente.name,
+      row.name,
       user?.cargo || 'N/A',
-      asistente.rut || 'N/A',
+      row.rut || 'N/A',
+      how,
+      row.state === 'signed' ? (row.acknowledged ? 'Sí' : 'No indicó') : '—',
       '', // Dejamos la celda de firma vacía para dibujarla después
     ]
   });
 
   const signatureImages: { [key: number]: string } = {};
-  for (let i = 0; i < talk.asistentes.length; i++) {
-    const asistente = talk.asistentes[i];
-    if (asistente.signature) {
-      signatureImages[i] = await getBase64FromUrl(asistente.signature);
+  for (let i = 0; i < attendeeRows.length; i++) {
+    const row = attendeeRows[i];
+    const source = opts.signatures?.[row.id] ?? talk.asistentes.find(a => a.id === row.id)?.signature;
+    if (row.state === 'signed' && source) {
+      signatureImages[i] = await getBase64FromUrl(source);
     }
   }
-  
+
+  const SIGN_COL = 6;
   autoTable(doc, {
-      head: [['N°', 'Nombre Completo', 'Cargo', 'RUT', 'Firma']],
+      head: [['N°', 'Nombre Completo', 'Cargo', 'RUT', 'Asistencia', 'Entendió', 'Firma']],
       body: assistantsData,
       startY: y,
       theme: 'grid',
       headStyles: { fillColor: COLORS.primary, textColor: COLORS.white },
-      styles: { fontSize: 9, cellPadding: 2, minCellHeight: 12, valign: 'middle' },
+      styles: { fontSize: 8, cellPadding: 1.5, minCellHeight: 14, valign: 'middle' },
       columnStyles: {
-          0: { cellWidth: 10, halign: 'center' },
-          1: { cellWidth: 60 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 30 },
-          4: { cellWidth: 38, halign: 'center' },
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 36 },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 30 },
+          5: { cellWidth: 14, halign: 'center' },
+          6: { cellWidth: 32, halign: 'center' },
       },
       didDrawCell: (data: { column: { index: number; }; cell: { section: string; x: number; y: number; width: number; height: number; }; row: { index: number; }; }) => {
-        if (data.column.index === 4 && data.cell.section === 'body') {
+        if (data.column.index === SIGN_COL && data.cell.section === 'body') {
             const signatureImg = signatureImages[data.row.index];
             if (signatureImg) {
                 const imgWidth = 25;
                 const imgHeight = 10;
                 const x = data.cell.x + (data.cell.width - imgWidth) / 2;
                 const y = data.cell.y + (data.cell.height - imgHeight) / 2;
-                doc.addImage(signatureImg, 'PNG', x, y, imgWidth, imgHeight);
+                safeAddImage(doc, signatureImg, x, y, imgWidth, imgHeight);
             }
         }
     }
@@ -191,7 +236,7 @@ export async function generateDailyTalkPDF(talk: DailyTalk, users: User[], logoU
         doc.setFont('helvetica', 'bold');
         doc.text('Evidencia Fotográfica:', MARGIN, y);
         y += 5;
-        doc.addImage(foto, 'PNG', MARGIN, y, 90, 60);
+        safeAddImage(doc, foto, MARGIN, y, 90, 60);
         y += 65;
     }
   }
@@ -204,7 +249,7 @@ export async function generateDailyTalkPDF(talk: DailyTalk, users: User[], logoU
   doc.text('Firma Expositor', sigX + sigWidth/2, sigY, { align: 'center'});
   const firmaImg = await getBase64FromUrl(talk.firma);
   if(firmaImg) {
-    doc.addImage(firmaImg, 'PNG', sigX, sigY + 2, sigWidth, sigHeight);
+    safeAddImage(doc, firmaImg, sigX, sigY + 2, sigWidth, sigHeight);
   }
   const lineY = sigY + sigHeight + 4;
   doc.line(sigX, lineY, sigX + sigWidth, lineY);

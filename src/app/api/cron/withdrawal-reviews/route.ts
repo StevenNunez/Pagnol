@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/modules/core/lib/supabase';
 import { sendPushToUsers } from '@/lib/push-notify';
 import {
-    summarizeReview, indexReviews, reviewerIdsFor, resolveObservations,
+    summarizeReview, indexReviews, reviewerIdsFor, resolveObservations, reviewDueState,
     type ReviewFact,
 } from '@/modules/data/mutations/withdrawalReviewMath';
 
@@ -10,7 +10,10 @@ import {
 // modo "revisión posterior":
 //   · a quien le toca revisar → cuántos retiros del pañol tiene pendientes;
 //   · a administración → cuánto de lo "no autorizado" sigue abierto (ni
-//     devuelto ni justificado) desde hace más de un día.
+//     devuelto ni justificado) desde hace más de un día;
+//   · a la jefatura (Jefe de Operaciones) → los retiros que pasaron el plazo de
+//     revisión de la empresa sin que su supervisor los revisara (escalamiento).
+//     Sólo avisa: nunca detiene lo que la bodega entrega.
 // Las mismas funciones puras que usa la pantalla deciden quién revisa y qué
 // está abierto, así el aviso y la bandeja no pueden contar distinto.
 
@@ -30,16 +33,16 @@ export async function GET(req: NextRequest) {
     const admin = getSupabaseAdmin();
     try {
         const { data: tenants, error: tErr } = await admin
-            .from('tenants').select('id').eq('withdrawal_review_mode', 'post');
+            .from('tenants').select('*').eq('withdrawal_review_mode', 'post');
         if (tErr) throw tErr;
 
         const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
         const graceLimit = Date.now() - OBSERVATION_GRACE_HOURS * 3_600_000;
-        const report: Record<string, { reviewersNotified: number; pending: number; openObservations: number }> = {};
+        const report: Record<string, { reviewersNotified: number; pending: number; openObservations: number; overdue: number }> = {};
 
-        for (const { id: tenantId } of tenants || []) {
+        for (const { id: tenantId, withdrawal_review_deadline_hours: deadlineHours } of tenants || []) {
             const [reqs, reviews, resolutions, returns, profiles, cws] = await Promise.all([
-                admin.from('material_requests').select('id, supervisor_id, contract_id, items, created_at')
+                admin.from('material_requests').select('*')
                     .eq('tenant_id', tenantId).eq('requires_review', true).gte('created_at', since),
                 admin.from('withdrawal_reviews').select('id, request_id, material_id, decision, quantity')
                     .eq('tenant_id', tenantId).gte('created_at', since),
@@ -63,6 +66,7 @@ export async function GET(req: NextRequest) {
             // ── Pendientes de revisar, por revisor ────────────────────────────
             const pendingByReviewer = new Map<string, number>();
             let pendingTotal = 0;
+            let overdueTotal = 0;
             for (const r of reqs.data || []) {
                 const items = Array.isArray(r.items) ? r.items : [];
                 const summary = summarizeReview(
@@ -71,7 +75,8 @@ export async function GET(req: NextRequest) {
                 );
                 if (summary.state === 'reviewed') continue;
                 pendingTotal++;
-                for (const uid of reviewerIdsFor(r.contract_id, r.supervisor_id, users, contractWorkers)) {
+                if (reviewDueState(r.created_at, deadlineHours).overdue) overdueTotal++;
+                for (const uid of reviewerIdsFor(r.contract_id, r.supervisor_id, users, contractWorkers, r.reviewer_supervisor_id)) {
                     pendingByReviewer.set(uid, (pendingByReviewer.get(uid) || 0) + 1);
                 }
             }
@@ -115,7 +120,19 @@ export async function GET(req: NextRequest) {
                 });
             }
 
-            report[tenantId] = { reviewersNotified: pendingByReviewer.size, pending: pendingTotal, openObservations };
+            // ── Escalamiento: vencidos sin revisar → jefatura ─────────────────
+            const joIds = users.filter(u => u.role === 'jefe-operaciones').map(u => u.id);
+            const escalateTo = joIds.length > 0 ? joIds : adminIds;
+            if (overdueTotal > 0 && escalateTo.length > 0) {
+                await sendPushToUsers(tenantId, escalateTo, {
+                    title: 'Retiros sin revisar fuera de plazo',
+                    body: `${overdueTotal} retiro${overdueTotal !== 1 ? 's' : ''} del pañol pasaron el plazo de revisión (${deadlineHours ?? 48} h) sin que su supervisor los revisara.`,
+                    url: '/dashboard/supervisor/revisar-retiros',
+                    tag: 'withdrawal-review-overdue',
+                });
+            }
+
+            report[tenantId] = { reviewersNotified: pendingByReviewer.size, pending: pendingTotal, openObservations, overdue: overdueTotal };
         }
 
         return NextResponse.json({ ok: true, tenants: report });

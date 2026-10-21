@@ -19,6 +19,13 @@ interface QrScannerDialogProps {
   onScan: (qrCode: string) => void;
   title: string;
   description: string;
+  /**
+   * Modo carnet de identidad: además del QR (cédula nueva) lee el código PDF417 de
+   * la cédula antigua. PDF417 sólo lo decodifica el lector nativo del navegador
+   * (`BarcodeDetector`); donde no existe, el lector sigue con QR y para el resto
+   * queda la pistola o escribir el RUT.
+   */
+  idDocument?: boolean;
 }
 
 // QrDimensions is not exported anymore, so we define it locally.
@@ -34,20 +41,40 @@ export function QrScannerDialog({
   onScan,
   title,
   description,
+  idDocument = false,
 }: QrScannerDialogProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [scanResult, setScanResult] = useState<"success" | "fail" | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoContainerId = "qr-reader";
 
+  // Los callbacks llegan nuevos en cada render del padre; si el efecto de la cámara
+  // dependiera de ellos, la cámara se reiniciaría a cada render. Se guarda la última
+  // versión en una ref y el efecto sólo depende de abrir/cerrar.
+  const onScanRef = useRef(onScan);
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => {
+    onScanRef.current = onScan;
+    onOpenChangeRef.current = onOpenChange;
+  });
+
   useEffect(() => {
     if (open) {
       // Import the library only on the client-side
-      import("html5-qrcode").then(({ Html5Qrcode }) => {
+      import("html5-qrcode").then(({ Html5Qrcode, Html5QrcodeSupportedFormats }) => {
         setCameraError(null);
         setScanResult(null);
 
-        const qrScanner = new Html5Qrcode(videoContainerId);
+        const qrScanner = new Html5Qrcode(
+          videoContainerId,
+          idDocument
+            ? {
+                verbose: false,
+                formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.PDF_417],
+                useBarCodeDetectorIfSupported: true,
+              }
+            : { verbose: false },
+        );
         scannerRef.current = qrScanner;
 
         const startScanner = async () => {
@@ -56,6 +83,10 @@ export function QrScannerDialog({
             if (cameras && cameras.length) {
               const qrboxFunction = (viewfinderWidth: number, viewfinderHeight: number): LocalQrDimensions => {
                 const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                // El PDF417 del carnet es ancho y bajo: un cuadro cuadrado lo recortaría.
+                if (idDocument) {
+                  return { width: Math.floor(viewfinderWidth * 0.95), height: Math.floor(minEdge * 0.55) };
+                }
                 const qrboxSize = Math.floor(minEdge * 0.9);
                 return { width: qrboxSize, height: qrboxSize };
               };
@@ -73,8 +104,8 @@ export function QrScannerDialog({
                     qrScanner.pause(true);
                   }
                   setTimeout(() => {
-                    onScan(decodedText);
-                    onOpenChange(false);
+                    onScanRef.current(decodedText);
+                    onOpenChangeRef.current(false);
                   }, 1000);
                 },
                 (errorMessage) => {
@@ -107,7 +138,9 @@ export function QrScannerDialog({
         setCameraError(null);
       };
     }
-  }, [open, onScan, onOpenChange]);
+    // `idDocument` no cambia mientras el diálogo está abierto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleClose = (isOpen: boolean) => {
     if (!isOpen) {

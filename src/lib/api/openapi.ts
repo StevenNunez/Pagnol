@@ -4,6 +4,7 @@ import {
     ActivoSchema, ActivosQuerySchema, CreateActivoBodySchema, CreateMovimientoBodySchema, ErrorSchema, ExistenciasSchema,
     IdParamSchema, MaterialSchema, MaterialesQuerySchema, MovimientoSchema, PanolSchema, PatchActivoBodySchema,
     ProveedorSchema, ProveedoresQuerySchema, listSchema,
+    CompraRecepcionCorregidaSchema, CompraRecibidaSchema, SolicitudCompraSchema, CompraSchema, ComprasQuerySchema, CreateCompraBodySchema, PatchCompraBodySchema, PatchWebhookBodySchema,
     CreateWebhookBodySchema, WebhookCreatedSchema, WebhookEventSchema, WebhookSchema,
 } from './schemas';
 import type { ApiScope } from './scopes';
@@ -167,8 +168,52 @@ function buildDocument() {
         responses: { 201: json(MovimientoSchema, 'Movimiento registrado.'), 200: json(MovimientoSchema, 'Ya existía con esa `external_ref`.'), ...writeErrors },
     });
 
+    // ── Compras esperadas: lo que el sistema que compra anuncia y viene en camino ─
+    registry.registerPath({
+        method: 'get', path: '/compras-esperadas', operationId: 'listCompras', tags: ['Compras esperadas'],
+        summary: 'Compras anunciadas a Pagnol, con el estado de cada línea.',
+        description: 'Requiere `compras:read`. Orden por `updated_at` ascendente; paginación por cursor. El estado de cada línea se deriva de lo recibido en Pagnol.',
+        security: [{ apiKey: [] }],
+        request: { query: ComprasQuerySchema },
+        responses: { 200: json(listSchema(CompraSchema, 'CompraList'), 'Página de compras.'), ...commonErrors },
+    });
+    registry.registerPath({
+        method: 'get', path: '/compras-esperadas/{id}', operationId: 'getCompra', tags: ['Compras esperadas'],
+        summary: 'Una compra esperada.',
+        description: 'Requiere `compras:read`.',
+        security: [{ apiKey: [] }],
+        request: { params: IdParamSchema },
+        responses: { 200: json(CompraSchema, 'La compra.'), 404: errorResponse('No existe en la empresa (`not_found`).'), ...commonErrors },
+    });
+    registry.registerPath({
+        method: 'post', path: '/compras-esperadas', operationId: 'createCompra', tags: ['Compras esperadas'],
+        summary: 'Anuncia una compra que viene en camino.',
+        description: 'Requiere `compras:write`. Sólo para empresas cuya recepción es en Pagnol (si no, 409). No es una orden de compra de Pagnol y no genera gasto. ' +
+            'Repetir la `external_ref` devuelve la compra ya anunciada (200) sin modificarla. Se anuncia cuando la OC se envía al proveedor. ' +
+            'Lo que el pañolero reciba en Pagnol se informa con el evento `compra.recibida` y queda en `recepciones`.',
+        security: [{ apiKey: [] }],
+        request: { headers: IdempotencyHeader, body: { content: { 'application/json': { schema: CreateCompraBodySchema } } } },
+        responses: { 201: json(CompraSchema, 'Compra anunciada.'), 200: json(CompraSchema, 'Ya existía con esa `external_ref`.'), ...writeErrors },
+    });
+    registry.registerPath({
+        method: 'patch', path: '/compras-esperadas/{id}', operationId: 'patchCompra', tags: ['Compras esperadas'],
+        summary: 'Corrige o cancela una compra esperada.',
+        description: 'Requiere `compras:write`. Corrige fecha, pañol, contrato o cantidades, o cancela la compra o líneas sueltas. ' +
+            'Con recepciones, una línea nunca puede quedar por debajo de lo ya recibido y el pañol no se cambia (409). ' +
+            'Una compra cancelada no se modifica (409); cancelar conserva lo ya recibido.',
+        security: [{ apiKey: [] }],
+        request: { params: IdParamSchema, headers: IdempotencyHeader, body: { content: { 'application/json': { schema: PatchCompraBodySchema } } } },
+        responses: { 200: json(CompraSchema, 'Compra actualizada.'), ...writeErrors },
+    });
+
     // ── Webhooks: Pagnol avisa cuando algo cambia ───────────────────────────
     registry.register('WebhookEvent', WebhookEventSchema);
+    // `data` del evento `compra.recibida` (una línea recibida en una recepción).
+    registry.register('CompraRecibida', CompraRecibidaSchema);
+    // `data` del evento `compra.recepcion_corregida` (se quitó cantidad de una recepción ya informada).
+    registry.register('CompraRecepcionCorregida', CompraRecepcionCorregidaSchema);
+    // `data` de los eventos `solicitud_compra.creada|aprobada|rechazada` (una solicitud, todas sus líneas).
+    registry.register('SolicitudCompra', SolicitudCompraSchema);
     registry.registerPath({
         method: 'get', path: '/webhooks', operationId: 'listWebhooks', tags: ['Webhooks'],
         summary: 'Webhooks registrados por la empresa.',
@@ -192,6 +237,15 @@ function buildDocument() {
             ...commonErrors,
             409: errorResponse('`idempotency_conflict`, o `conflict` si la URL ya está registrada o se alcanzó el máximo.'),
         },
+    });
+    registry.registerPath({
+        method: 'patch', path: '/webhooks/{id}', operationId: 'patchWebhook', tags: ['Webhooks'],
+        summary: 'Cambia los eventos, la URL, la descripción o pausa un webhook.',
+        description: 'Requiere `webhooks:manage`. El secreto de firma NO cambia: sirve para sumar eventos nuevos sin recrear la suscripción. ' +
+            '`activo: false` pausa las entregas sin borrarla.',
+        security: [{ apiKey: [] }],
+        request: { params: IdParamSchema, headers: IdempotencyHeader, body: { content: { 'application/json': { schema: PatchWebhookBodySchema } } } },
+        responses: { 200: json(WebhookSchema, 'Webhook actualizado.'), ...writeErrors },
     });
     registry.registerPath({
         method: 'delete', path: '/webhooks/{id}', operationId: 'deleteWebhook', tags: ['Webhooks'],

@@ -32,6 +32,9 @@ export const MODULE_ACCESS: { prefix: string; anyOf: Permission[]; superAdminOnl
     { prefix: '/dashboard/subscriptions', anyOf: ['module_subscriptions:view'], superAdminOnly: true },
     { prefix: '/dashboard/super-admin', anyOf: ['module_subscriptions:view'], superAdminOnly: true },
     { prefix: '/dashboard/safety', anyOf: ['module_safety:view'] },
+    // Las charlas las lleva el supervisor sin necesidad de abrir todo Prevención.
+    { prefix: '/dashboard/safety/daily-talk', anyOf: ['module_safety:view', 'safety_talks:manage'] },
+    { prefix: '/dashboard/safety/review-daily-talks', anyOf: ['module_safety:view', 'safety_talks:manage'] },
     { prefix: '/dashboard/attendance', anyOf: ['module_attendance:view'] },
     { prefix: '/dashboard/payments', anyOf: ['module_payments:view'] },
     { prefix: '/dashboard/reports', anyOf: ['module_reports:view'] },

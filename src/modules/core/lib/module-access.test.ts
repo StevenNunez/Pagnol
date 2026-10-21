@@ -61,3 +61,29 @@ describe('quién ve Control de Activos (permisos de fábrica)', () => {
         expect(canOpenPath('/dashboard/wallet', canAs('operador'))).toBe(true);
     });
 });
+
+describe('roles y charlas diarias (reunión 2026-10-20)', () => {
+    const open = (role: UserRole, path: string) => canOpenPath(path, canAs(role), role);
+
+    it('el supervisor lleva las charlas sin abrir todo Prevención', () => {
+        expect(open('supervisor', '/dashboard/safety/daily-talk')).toBe(true);
+        expect(open('supervisor', '/dashboard/safety/review-daily-talks')).toBe(true);
+        expect(open('supervisor', '/dashboard/safety/review-daily-talks/abc')).toBe(true);
+        expect(open('supervisor', '/dashboard/safety')).toBe(false);
+        expect(open('supervisor', '/dashboard/safety/templates')).toBe(false);
+    });
+
+    it('el APR asesora e inspecciona; no valida retiros de bodega', () => {
+        expect(ROLES.apr.permissions).not.toContain('material_requests:review_withdrawals');
+        expect(open('apr', '/dashboard/safety/review-inspections')).toBe(true);
+    });
+
+    it('el supervisor valida los retiros de sus trabajadores; el pañolero no se valida a sí mismo', () => {
+        expect(ROLES.supervisor.permissions).toContain('material_requests:review_withdrawals');
+        expect(ROLES.panolero.permissions).not.toContain('material_requests:review_withdrawals');
+    });
+
+    it('el operador no lleva charlas', () => {
+        expect(open('operador', '/dashboard/safety/daily-talk')).toBe(false);
+    });
+});

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-    activeWebhookTargets, activosByIds, getExistencias, materialesByIds, proveedoresByIds,
+    activeWebhookTargets, activosByIds, comprasCorregidasByIds, comprasRecibidasByIds, getExistencias, materialesByIds, proveedoresByIds, solicitudesCompraByIds,
 } from '../queries';
 import { eventResource, planRetry, type WebhookEventType } from './events';
 import { signedHeaders } from './sign';
@@ -139,11 +139,15 @@ async function loadResources(db: SupabaseClient, tenantId: string, events: Event
     const out = new Map<string, Record<string, unknown>>();
     const idsOf = (kind: ReturnType<typeof eventResource>) => [...new Set(events.filter(e => eventResource(e.type) === kind).map(e => e.resource_id))];
 
-    const [materiales, activos, proveedores, stockMats] = await Promise.all([
+    const idsOfType = (type: WebhookEventType) => [...new Set(events.filter(e => e.type === type).map(e => e.resource_id))];
+    const [materiales, activos, proveedores, stockMats, compras, corregidas, solicitudes] = await Promise.all([
         materialesByIds(db, tenantId, 'materiales', idsOf('material')),
         activosByIds(db, tenantId, idsOf('activo')),
         proveedoresByIds(db, tenantId, idsOf('proveedor')),
         materialesByIds(db, tenantId, 'materiales', idsOf('stock')),
+        comprasRecibidasByIds(db, tenantId, idsOfType('compra.recibida')),
+        comprasCorregidasByIds(db, tenantId, idsOfType('compra.recepcion_corregida')),
+        solicitudesCompraByIds(db, tenantId, idsOf('solicitud_compra')),
     ]);
     const index = <T extends { id: string }>(list: T[]) => new Map(list.map(x => [x.id, x]));
     const mats = index(materiales), acts = index(activos), provs = index(proveedores), stock = index(stockMats);
@@ -153,6 +157,13 @@ async function loadResources(db: SupabaseClient, tenantId: string, events: Event
         if (kind === 'material') { const m = mats.get(e.resource_id); if (m) out.set(e.id, { ...m }); }
         else if (kind === 'activo') { const a = acts.get(e.resource_id); if (a) out.set(e.id, { ...a }); }
         else if (kind === 'proveedor') { const p = provs.get(e.resource_id); if (p) out.set(e.id, { ...p }); }
+        // Una recepción es un hecho que no cambia: se arma igual que cuando ocurrió.
+        else if (kind === 'compra') {
+            const c = e.type === 'compra.recepcion_corregida' ? corregidas.get(e.resource_id) : compras.get(e.resource_id);
+            if (c) out.set(e.id, { ...c });
+        }
+        // La solicitud se lee ahora; el tipo de evento dice QUÉ pasó, el estado dice cómo está.
+        else if (kind === 'solicitud_compra') { const s = solicitudes.get(e.resource_id); if (s) out.set(e.id, { ...s }); }
         else {
             const m = stock.get(e.resource_id);
             if (!m) continue;

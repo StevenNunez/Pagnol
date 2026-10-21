@@ -34,6 +34,7 @@ import {
   BiometricVerification,
   WithdrawalReview,
   WithdrawalReviewResolution,
+  DailyTalkSignature,
   ApprovalProposal,
   ApprovalSignature,
   SafetyInspection,
@@ -121,6 +122,7 @@ export interface AppDataState {
   biometricVerifications: BiometricVerification[];
   withdrawalReviews: WithdrawalReview[];
   withdrawalReviewResolutions: WithdrawalReviewResolution[];
+  dailyTalkSignatures: DailyTalkSignature[];
   // RFC-006 F2: propuestas de compra y sus firmas.
   approvalProposals: ApprovalProposal[];
   approvalSignatures: ApprovalSignature[];
@@ -191,7 +193,7 @@ export interface AppStateContextType extends AppDataState {
   addAndApproveMaterialRequest: (data: { items: { materialId: string; quantity: number }[]; area: string; contractId?: string | null; contractName?: string | null; supervisorId: string; contractUrl?: string | null; internalCode?: string; warehouseId?: string | null; requiresReview?: boolean; }) => Promise<void>;
   authorizeMaterialRequest: (requestId: string) => Promise<void>;
   updateMaterialRequestStatus: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
-  deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null, verification: { mode: 'biometric' | 'exception'; exceptionGroupId?: string | null } | null) => Promise<void>;
+  deliverApprovedMaterialRequest: (requestId: string, contractUrl: string | null, receiver: { id: string; name: string } | null, verification: { mode: 'biometric' | 'exception' | 'rut'; exceptionGroupId?: string | null } | null) => Promise<void>;
   // Cada ítem lleva su propio contrato de reingreso (un mismo material puede
   // tener saldo pendiente en más de un contrato a la vez).
   addReturnRequest: (items: { materialId: string; quantity: number; materialName: string; unit: string; contractId?: string | null; contractName?: string | null }[], notes: string) => Promise<void>;
@@ -318,6 +320,7 @@ export interface AppStateContextType extends AppDataState {
   requestBiometricException: (params: Parameters<typeof import('./mutations/biometricMutations').requestBiometricException>[0]) => Promise<string>;
   resolveBiometricException: (params: Parameters<typeof import('./mutations/biometricMutations').resolveBiometricException>[0]) => Promise<void>;
   reviewWithdrawal: (params: Parameters<typeof import('./mutations/withdrawalReviewMutations').reviewWithdrawal>[0]) => Promise<void>;
+  approveWithdrawalLines: (params: Parameters<typeof import('./mutations/withdrawalReviewMutations').approveWithdrawalLines>[0]) => Promise<number>;
   justifyWithdrawalObservation: (params: Parameters<typeof import('./mutations/withdrawalReviewMutations').justifyWithdrawalObservation>[0]) => Promise<void>;
 
   // Safety
@@ -331,8 +334,8 @@ export interface AppStateContextType extends AppDataState {
   completeSafetyInspection: (inspectionId: string, data: any) => Promise<void>;
   reviewSafetyInspection: (inspectionId: string, status: 'approved' | 'rejected', notes: string, signature: string) => Promise<void>;
   addBehaviorObservation: (data: any) => Promise<void>;
-  addDailyTalk: (data: Omit<DailyTalk, 'id' | 'createdAt' | 'tenantId'>) => Promise<void>;
-  signDailyTalk: (talkId: string) => Promise<void>;
+  addDailyTalk: (data: Omit<DailyTalk, 'id' | 'createdAt' | 'tenantId'>) => Promise<string>;
+  signDailyTalk: (talkId: string, acknowledged: boolean) => Promise<void>;
 
   // Attendance
   handleAttendanceScan: (qrCode: string) => Promise<ScanResult>;

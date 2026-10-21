@@ -40,6 +40,13 @@ export interface Tenant {
   // de entregar (histórico); 'post' = C y B se entregan en el acto y el
   // supervisor los revisa después; A sigue con aprobación previa.
   withdrawalReviewMode?: 'prior' | 'post';
+  // Horas que puede esperar una revisión posterior antes de escalarse al Jefe
+  // de Operaciones. No detiene la bodega: sólo avisa y marca "vencido".
+  withdrawalReviewDeadlineHours?: number;
+  // Dónde se recibe lo que se compra: 'externa' = en el sistema que compra (hoy, Valar) y
+  // se informa a Pagnol por API; 'pagnol' = el pañolero lo recibe en Pagnol sobre una
+  // compra esperada. Nunca los dos.
+  receivingMode?: 'externa' | 'pagnol';
   // RFC-006: montos de firma. Sin valor = los de fábrica (ver approvalMath.ts).
   approvalSettings?: ApprovalSettings | null;
 }
@@ -195,6 +202,8 @@ export interface User {
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   employmentStatus?: 'active' | 'on_leave' | 'terminated';
+  /** Supervisor que valida lo que este trabajador retira en el pañol. */
+  responsibleSupervisorId?: string | null;
 }
 
 export type LeaveType = 'vacation' | 'sick_leave' | 'permit' | 'other';
@@ -635,6 +644,8 @@ export interface MaterialRequest {
   receivedByUserName?: string | null;
   // Salió en ventanilla con revisión posterior del supervisor (modo 'post').
   requiresReview?: boolean;
+  // Supervisor responsable del trabajador AL MOMENTO de la entrega (copia fija).
+  reviewerSupervisorId?: string | null;
 }
 
 /**
@@ -673,6 +684,28 @@ export interface WithdrawalReviewResolution {
 }
 
 /**
+ * Firma o ausencia de un convocado a una charla diaria (tabla
+ * `daily_talk_signatures`, append-only). El estado de cada asistente se deriva
+ * de estos hechos (ver lib/daily-talk-attendance.ts). La imagen de la firma
+ * manuscrita y la evidencia no viajan en la colección: se piden al generar el PDF.
+ */
+export interface DailyTalkSignature {
+  id: string;
+  tenantId: string;
+  talkId: string;
+  workerId: string;
+  workerName: string;
+  workerRut?: string | null;
+  status: 'signed' | 'absent';
+  method?: 'own_session' | 'face' | 'handwritten' | null;
+  acknowledged: boolean;
+  recordedBy: string;
+  recordedByName: string;
+  note?: string | null;
+  signedAt: Date;
+}
+
+/**
  * Hecho biométrico: algo que ocurrió frente a la cámara del pañol. Append-only —
  * no se edita ni se borra, porque la evidencia que se puede editar no es
  * evidencia. El estado de una excepción se DERIVA encadenando hechos por
@@ -692,6 +725,7 @@ export interface BiometricVerification {
   transactionCode: string | null;
   outcome:
     | 'match' | 'no_match' | 'no_face' | 'error' | 'spoof_suspected'
+    | 'id_document'
     | 'exception_requested' | 'exception_granted' | 'exception_denied';
   distance: number | null;
   /** Umbral vigente ese día: sin él, una distancia vieja es ininterpretable. */

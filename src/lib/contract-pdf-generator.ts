@@ -94,7 +94,7 @@ interface ContractData {
      * entrega salió por excepción autorizada.
      */
     verification?: {
-        mode: 'biometric' | 'exception';
+        mode: 'biometric' | 'exception' | 'rut';
         /** Sólo en excepciones: quién la autorizó y por qué. */
         authorizedByName?: string | null;
         reason?: string | null;
@@ -186,7 +186,9 @@ export async function generateContractPDF(data: ContractData) {
     // afirmaba siempre "firmado biométricamente … de manera irrefutable", incluso
     // cuando no hubo verificación facial — y "irrefutable" no es sostenible ni
     // con ella: el sistema aún no detecta si es una persona viva o una foto.
-    const clausulaIdentidad = data.verification?.mode === 'exception'
+    const clausulaIdentidad = data.verification?.mode === 'rut'
+        ? "4. La identidad del receptor fue verificada mediante la lectura de su cédula de identidad (RUT) al momento de la entrega, y el registro de esa verificación queda almacenado junto a este documento."
+        : data.verification?.mode === 'exception'
         ? `4. La identidad del receptor NO fue verificada biométricamente. La entrega se realizó bajo excepción autorizada por ${data.verification.authorizedByName || 'un responsable autorizado'}${data.verification.reason ? `, por el siguiente motivo: ${data.verification.reason}` : ''}.`
         : "4. La identidad del receptor fue verificada mediante reconocimiento facial al momento de la entrega, y el registro de esa verificación queda almacenado junto a este documento.";
 
@@ -250,7 +252,9 @@ export async function generateContractPDF(data: ContractData) {
     // verificada biométricamente" y aquí abajo la afirmación contraria. Es el
     // mismo defecto que ya se corrigió en la cláusula, sobreviviendo en el pie.
     doc.text(
-        data.verification?.mode === 'exception' ? "(Entrega por excepción autorizada)" : "(Biometría Validada)",
+        data.verification?.mode === 'exception' ? "(Entrega por excepción autorizada)"
+            : data.verification?.mode === 'rut' ? "(Identidad validada con cédula)"
+            : "(Biometría Validada)",
         margin + 50, y, { align: "center" },
     );
     doc.text(data.pagnoleroName, pageWidth - margin - 50, y, { align: "center" });

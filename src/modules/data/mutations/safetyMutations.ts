@@ -181,10 +181,10 @@ export async function addBehaviorObservation(data: any, { user, tenantId }: Cont
     if (error) throw error;
 }
 
-export async function addDailyTalk(data: Omit<DailyTalk, 'id' | 'createdAt' | 'tenantId'>, { user, tenantId }: Context) {
+export async function addDailyTalk(data: Omit<DailyTalk, 'id' | 'createdAt' | 'tenantId'>, { user, tenantId }: Context): Promise<string> {
     if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
 
-    const { error } = await supabase.from('daily_talks').insert({
+    const { data: created, error } = await supabase.from('daily_talks').insert({
         obra: data.obra,
         fecha: data.fecha,
         asistentes: data.asistentes,
@@ -195,36 +195,20 @@ export async function addDailyTalk(data: Omit<DailyTalk, 'id' | 'createdAt' | 't
         expositor_name: data.expositorName,
         tenant_id: tenantId,
         created_at: new Date().toISOString(),
-    });
+    }).select('id').single();
     if (error) throw error;
+    return created.id as string;
 }
 
-export async function signDailyTalk(talkId: string, { user, tenantId }: Context) {
+/**
+ * Firma de asistencia del propio trabajador, desde su sesión. La escribe el
+ * servidor como un hecho (`daily_talk_signatures`); aquí ya no se toca el JSON
+ * de asistentes. `acknowledged` = confirmó además que comprendió los temas.
+ */
+export async function signDailyTalk(talkId: string, acknowledged: boolean, { user, tenantId }: Context) {
     if (!user || !tenantId) throw new Error("No autenticado o sin inquilino.");
-
-    const { data: talk } = await supabase.from('daily_talks').select('*').eq('id', talkId).single();
-    if (!talk) throw new Error("La charla no existe.");
-
-    const { data: userProfile } = await supabase.from('profiles').select('signature').eq('id', user.id).single();
-    if (!userProfile) throw new Error("No se pudo encontrar tu perfil de usuario.");
-
-    const attendees = talk.asistentes || [];
-    const attendeeIndex = attendees.findIndex((a: any) => a.id === user.id);
-
-    if (attendeeIndex === -1) {
-        throw new Error("No estás en la lista de asistentes de esta charla.");
-    }
-
-    const newAttendees = [...attendees];
-    newAttendees[attendeeIndex] = {
-        ...newAttendees[attendeeIndex],
-        signed: true,
-        signedAt: new Date().toISOString(),
-        signature: userProfile.signature || null,
-    };
-
-    const { error } = await supabase.from('daily_talks').update({ asistentes: newAttendees }).eq('id', talkId);
-    if (error) throw error;
+    const { signOnTalk } = await import('@/modules/core/lib/daily-talk-client');
+    await signOnTalk({ talkId, method: 'own_session', acknowledged });
 }
 
 

@@ -124,6 +124,9 @@ const queries = vi.hoisted(() => ({
     materialesByIds: vi.fn(),
     activosByIds: vi.fn(),
     proveedoresByIds: vi.fn(),
+    comprasRecibidasByIds: vi.fn(),
+    comprasCorregidasByIds: vi.fn(),
+    solicitudesCompraByIds: vi.fn(),
     getExistencias: vi.fn(),
 }));
 vi.mock('../queries', () => queries);
@@ -162,6 +165,9 @@ beforeEach(() => {
     queries.materialesByIds.mockImplementation(async (_db, _t, _k, ids: string[]) => ids.map(id => mat(id)));
     queries.activosByIds.mockResolvedValue([]);
     queries.proveedoresByIds.mockResolvedValue([]);
+    queries.comprasRecibidasByIds.mockResolvedValue(new Map());
+    queries.comprasCorregidasByIds.mockResolvedValue(new Map());
+    queries.solicitudesCompraByIds.mockResolvedValue(new Map());
     queries.getExistencias.mockResolvedValue({ material_id: S1, stock_actual: 3, existencias: [{ panol: { id: 'p1', nombre: 'Pañol 1' }, contrato: null, cantidad: 3 }] });
 });
 

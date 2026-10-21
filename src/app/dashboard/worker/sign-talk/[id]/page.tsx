@@ -7,7 +7,9 @@ import { PageHeader } from "@/components/page-header";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft, CheckCircle, Edit } from "lucide-react";
+import { Loader2, ArrowLeft, CheckCircle, Edit, UserX } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { attendanceOf } from "@/lib/daily-talk-attendance";
 import { LoadingState } from "@/components/loading-state";
 import { DailyTalk } from "@/modules/core/lib/data";
 import { format } from "date-fns";
@@ -23,10 +25,12 @@ const formatDate = (date: Date | string | undefined | null) => {
 export default function SignDailyTalkPage() {
     const params = useParams();
     const router = useRouter();
-    const { dailyTalks, isLoading, signDailyTalk } = useAppState();
+    const { dailyTalks, dailyTalkSignatures, isLoading, signDailyTalk } = useAppState();
     const { user } = useAuth();
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    // Asistir y comprender son cosas distintas: la comprensión se confirma aparte.
+    const [understood, setUnderstood] = useState(false);
 
     const talkId = params.id as string;
 
@@ -35,16 +39,17 @@ export default function SignDailyTalkPage() {
         return dailyTalks.find(o => o.id === talkId) || null;
     }, [dailyTalks, talkId]);
 
+    // Estado derivado de los hechos (firmó / faltó / pendiente), no del JSON de asistentes.
     const attendeeInfo = useMemo(() => {
         if (!talk || !user) return null;
-        return talk.asistentes.find(a => a.id === user.id);
-    }, [talk, user]);
+        return attendanceOf(talk, dailyTalkSignatures || []).rows.find(r => r.id === user.id) ?? null;
+    }, [talk, dailyTalkSignatures, user]);
 
 
     const handleSign = async () => {
         setIsSubmitting(true);
         try {
-            await signDailyTalk(talkId);
+            await signDailyTalk(talkId, understood);
             toast({
                 title: "¡Charla Firmada!",
                 description: "Gracias por confirmar tu asistencia.",
@@ -108,13 +113,23 @@ export default function SignDailyTalkPage() {
                 </CardContent>
             </Card>
 
-            {attendeeInfo.signed ? (
+            {attendeeInfo.state === "absent" ? (
+                <Card>
+                    <CardHeader className="text-center">
+                        <UserX className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+                        <CardTitle>Quedaste registrado como ausente</CardTitle>
+                        <CardDescription>
+                            Si sí estuviste en la charla, pídele a quien la dirigió que tome tu firma en su equipo.
+                        </CardDescription>
+                    </CardHeader>
+                </Card>
+            ) : attendeeInfo.state === "signed" ? (
                 <Card className="bg-green-50 border-green-200">
                     <CardHeader className="text-center">
                         <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-2" />
                         <CardTitle className="text-green-800">Ya has firmado esta charla</CardTitle>
                         <CardDescription className="text-green-700">
-                            Tu asistencia fue confirmada el {formatDate(attendeeInfo.signedAt)}.
+                            Tu asistencia fue confirmada el {formatDate(attendeeInfo.at)}{attendeeInfo.acknowledged ? " y confirmaste haber comprendido los temas" : ""}.
                         </CardDescription>
                     </CardHeader>
                 </Card>
@@ -123,9 +138,18 @@ export default function SignDailyTalkPage() {
                     <CardHeader>
                         <CardTitle>Confirmación de Firma</CardTitle>
                         <CardDescription>
-                            Al hacer clic en "Leer y Firmar", confirmas que has asistido y comprendido los temas tratados en esta charla de seguridad. Tu firma quedará registrada con tu nombre de usuario y la fecha actual.
+                            Al firmar confirmas que <b>asististe</b> a esta charla de seguridad. Tu firma queda registrada con tu nombre, la fecha y la hora.
                         </CardDescription>
                     </CardHeader>
+                    <CardContent>
+                        <label className="flex items-start gap-3 text-sm cursor-pointer">
+                            <Checkbox checked={understood} onCheckedChange={(v) => setUnderstood(!!v)} className="mt-0.5" />
+                            <span>
+                                <b>Entendí los temas tratados.</b>
+                                <span className="block text-xs text-muted-foreground">Es una confirmación aparte de tu asistencia. Si algo no quedó claro, déjala sin marcar y consúltalo con tu supervisor.</span>
+                            </span>
+                        </label>
+                    </CardContent>
                     <CardFooter>
                         <Button className="w-full" size="lg" onClick={handleSign} disabled={isSubmitting}>
                             {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Edit className="h-5 w-5 mr-2" />}

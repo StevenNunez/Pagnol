@@ -16,6 +16,7 @@ import { getInitials } from "@/modules/core/lib/sequence-utils";
 import { generateApiToken, type GeneratedApiToken } from "@/modules/core/lib/api-tokens-client";
 import { ApiKeysCard } from "./api-keys-card";
 import { WithdrawalModeCard } from "./withdrawal-mode-card";
+import { ReceivingModeCard } from "./receiving-mode-card";
 import { ApprovalSettingsCard } from "./approval-settings-card";
 import {
   Building2, Hash, ImageIcon, Loader2, Save, Trash2, UploadCloud, Lock, Plus, X,
@@ -56,7 +57,7 @@ interface ApiTokenRow {
 }
 
 export default function ConfiguracionPage() {
-  const { currentTenant, updateTenant, can } = useAppState();
+  const { currentTenant, updateTenant, can, users } = useAppState();
   const { user } = useAuth();
   const { toast } = useToast();
   const canManage = can("module_settings:view");
@@ -461,6 +462,18 @@ export default function ConfiguracionPage() {
           tenant={currentTenant}
           disabled={!canManage}
           onSave={(mode) => updateTenant(currentTenant.id, { withdrawalReviewMode: mode })}
+          onSaveDeadline={(hours) => updateTenant(currentTenant.id, { withdrawalReviewDeadlineHours: hours })}
+          workersWithoutSupervisor={(users || []).filter(u =>
+            u.role === 'operador' && u.employmentStatus !== 'terminated' && !u.responsibleSupervisorId
+          ).length}
+        />
+      )}
+
+      {currentTenant && (
+        <ReceivingModeCard
+          tenant={currentTenant}
+          disabled={!canManageApiKeys}
+          onSave={(mode) => updateTenant(currentTenant.id, { receivingMode: mode })}
         />
       )}
 

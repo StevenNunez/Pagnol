@@ -101,6 +101,9 @@ const PROFILE_COLUMNS = [
     'emergency_contact_name', 'emergency_contact_phone', 'employment_status',
     'biometric_enrolled',
 ].join(', ');
+// Columna agregada por la migración 20261021000000. Mientras no esté aplicada la
+// colección cae a PROFILE_COLUMNS (ver `fallbackColumns`) en vez de quedar vacía.
+const PROFILE_COLUMNS_WITH_SUPERVISOR = `${PROFILE_COLUMNS}, responsible_supervisor_id`;
 
 /**
  * Columnas de `materials`, explícitas por el mismo motivo que PROFILE_COLUMNS:
@@ -153,6 +156,7 @@ const initialState: AppDataState = {
     approvalProposals: [],
     approvalSignatures: [],
     withdrawalReviewResolutions: [],
+    dailyTalkSignatures: [],
     safetyInspections: [],
     checklistTemplates: [],
     behaviorObservations: [],
@@ -257,6 +261,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             codeTypes: t.code_types ?? {},
             laborCostFactor: t.labor_cost_factor != null ? Number(t.labor_cost_factor) : undefined,
             withdrawalReviewMode: t.withdrawal_review_mode === 'post' ? 'post' as const : 'prior' as const,
+            withdrawalReviewDeadlineHours: t.withdrawal_review_deadline_hours != null ? Number(t.withdrawal_review_deadline_hours) : 48,
+            receivingMode: t.receiving_mode === 'pagnol' ? 'pagnol' as const : 'externa' as const,
             approvalSettings: t.approval_settings ?? null,
         });
 
@@ -280,7 +286,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     }, [tenantId, refreshVersion]);
 
     const materialsData = useSupabaseCollection('materials', { tenantId, enabled: on('materials'), mapper: mappers.materials, softDelete: true, columns: MATERIAL_COLUMNS });
-    const usersData = useSupabaseCollection('profiles', { tenantId, enabled: on('users'), mapper: mappers.profiles, softDelete: true, columns: PROFILE_COLUMNS });
+    const usersData = useSupabaseCollection('profiles', { tenantId, enabled: on('users'), mapper: mappers.profiles, softDelete: true, columns: PROFILE_COLUMNS_WITH_SUPERVISOR, fallbackColumns: PROFILE_COLUMNS });
     const requestsData = useSupabaseCollection('material_requests', { tenantId, enabled: on('requests'), mapper: mappers.material_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const returnRequestsData = useSupabaseCollection('return_requests', { tenantId, enabled: on('returnRequests'), mapper: mappers.return_requests, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const purchaseRequestsData = useSupabaseCollection('purchase_requests', { tenantId, enabled: on('purchaseRequests'), mapper: mappers.purchase_requests, orderBy: { column: 'created_at', ascending: false } });
@@ -306,6 +312,8 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
     const approvalProposalsData = useSupabaseCollection('approval_proposals', { tenantId, enabled: on('approvalProposals'), mapper: mappers.approval_proposals, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
     const approvalSignaturesData = useSupabaseCollection('approval_signatures', { tenantId, enabled: on('approvalSignatures'), mapper: mappers.approval_signatures, orderBy: { column: 'created_at', ascending: true }, version: refreshVersion });
     const withdrawalReviewResolutionsData = useSupabaseCollection('withdrawal_review_resolutions', { tenantId, enabled: on('withdrawalReviewResolutions'), mapper: mappers.withdrawal_review_resolutions, orderBy: { column: 'created_at', ascending: false }, version: refreshVersion });
+    // Firmas y ausencias de charlas: sin la imagen de la firma ni la evidencia (pesan; se piden para el PDF).
+    const dailyTalkSignaturesData = useSupabaseCollection('daily_talk_signatures', { tenantId, enabled: on('dailyTalkSignatures'), mapper: mappers.daily_talk_signatures, orderBy: { column: 'signed_at', ascending: false }, columns: 'id, tenant_id, talk_id, worker_id, worker_name, worker_rut, status, method, acknowledged, recorded_by, recorded_by_name, note, signed_at', version: refreshVersion });
     const assignedChecklistsData = useSupabaseCollection('assigned_checklists', { tenantId, enabled: on('assignedChecklists'), mapper: mappers.assigned_checklists, orderBy: { column: 'created_at', ascending: false }, columns: 'id, tenant_id, template_id, template_title, supervisor_id, assigner_id, assigner_name, status, area, items, observations, performed_by, completed_at, reviewed_by, rejection_notes, created_at' });
     const safetyInspectionsData = useSupabaseCollection('safety_inspections', { tenantId, enabled: on('safetyInspections'), mapper: mappers.safety_inspections, orderBy: { column: 'created_at', ascending: false } });
     const checklistTemplatesData = useSupabaseCollection('checklist_templates', { tenantId, enabled: on('checklistTemplates'), mapper: mappers.checklist_templates });
@@ -422,6 +430,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
             biometricVerifications: biometricVerificationsData,
             withdrawalReviews: withdrawalReviewsData,
             withdrawalReviewResolutions: withdrawalReviewResolutionsData,
+            dailyTalkSignatures: dailyTalkSignaturesData,
             approvalProposals: approvalProposalsData,
             approvalSignatures: approvalSignaturesData,
             safetyInspections: safetyInspectionsData, checklistTemplates: checklistTemplatesData,
@@ -498,6 +507,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
                 biometricVerifications: processData(biometricVerificationsData),
                 withdrawalReviews: processData(withdrawalReviewsData),
                 withdrawalReviewResolutions: processData(withdrawalReviewResolutionsData),
+                dailyTalkSignatures: processData(dailyTalkSignaturesData),
                 approvalProposals: processData(approvalProposalsData),
                 approvalSignatures: processData(approvalSignaturesData),
                 safetyInspections: processData(safetyInspectionsData),
@@ -547,7 +557,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         authLoading, user, usersData, materialsData, requestsData,
         returnRequestsData, purchaseRequestsData, suppliersData, materialCategoriesData,
         unitsData, purchaseLotsData, purchaseOrdersData, quoteRequestsData, supplierPaymentsData,
-        salaryAdvancesData, attendanceLogsData, assignedChecklistsData, biometricVerificationsData, withdrawalReviewsData, withdrawalReviewResolutionsData, approvalProposalsData, approvalSignaturesData, safetyInspectionsData,
+        salaryAdvancesData, attendanceLogsData, assignedChecklistsData, biometricVerificationsData, withdrawalReviewsData, withdrawalReviewResolutionsData, dailyTalkSignaturesData, approvalProposalsData, approvalSignaturesData, safetyInspectionsData,
         checklistTemplatesData, behaviorObservationsData, stockMovementsData,
         subscriptionPlansData, workProjectsData, workItemsData, progressLogsData, tenantId, dynamicRolesData, paymentStatesData,
         dailyTalksData, maintenanceOrdersData, maintenanceLogsData, eaDocumentsData,
@@ -716,6 +726,7 @@ function useAppValue(): readonly [AppStateContextType, React.Dispatch<AppStateAc
         requestBiometricException: bindContext(biometricMutations.requestBiometricException),
         resolveBiometricException: bindContext(biometricMutations.resolveBiometricException),
         reviewWithdrawal: bindContext(withdrawalReviewMutations.reviewWithdrawal),
+        approveWithdrawalLines: bindContext(withdrawalReviewMutations.approveWithdrawalLines),
         justifyWithdrawalObservation: bindContext(withdrawalReviewMutations.justifyWithdrawalObservation),
 
         // Safety

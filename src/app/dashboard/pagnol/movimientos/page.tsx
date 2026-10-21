@@ -28,6 +28,7 @@ import {
   MessageSquare,
   Download,
   MapPin,
+  CreditCard,
   Settings2,
   Warehouse as WarehouseIcon,
   AlertTriangle,
@@ -40,6 +41,8 @@ import { generateContractPDF } from '@/lib/contract-pdf-generator';
 import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { useToast } from '@/modules/core/hooks/use-toast';
 import { buscarPorCodigoEscaneado, pareceMalConfigurado } from '@/modules/core/lib/scan-code';
+import { parseIdDocument, findWorkerByRun, normalizeRun } from '@/lib/cedula';
+import { QrScannerDialog } from '@/components/qr-scanner-dialog';
 import { fetchRecordFields } from '@/modules/core/hooks/use-record-fields';
 import { PageHeader } from '@/components/page-header';
 import { SecureFileLink } from '@/components/secure-file-link';
@@ -297,6 +300,14 @@ export default function MovimientosPagnolPage() {
    */
   const [scanHalt, setScanHalt] = useState<BiometricFailureDetail | null>(null);
   const [manualUserSearch, setManualUserSearch] = useState('');
+  // Carnet de identidad: es una de las dos formas de acreditar a quien recibe (la otra
+  // es el rostro). Si la persona se validó con el carnet, NO se le piden los pasos
+  // biométricos: ni al identificarla ni al cerrar la entrega o la devolución.
+  const [idText, setIdText] = useState('');
+  const [idScanOpen, setIdScanOpen] = useState(false);
+  const [idScanPurpose, setIdScanPurpose] = useState<'identify' | 'receive'>('identify');
+  const [receiveIdText, setReceiveIdText] = useState('');
+  const [identifiedByRut, setIdentifiedByRut] = useState(false);
   const [justReturnedIds, setJustReturnedIds] = useState<Set<string>>(new Set());
   const [pendingReturnTxs, setPendingReturnTxs] = useState<DisplayTransaction[]>([]);
   const [capturingPhotoFor, setCapturingPhotoFor] = useState<string | null>(null);
@@ -484,6 +495,9 @@ export default function MovimientosPagnolPage() {
     setSearchAsset('');
     setDescription('');
     setManualUserSearch('');
+    setIdText('');
+    setReceiveIdText('');
+    setIdentifiedByRut(false);
     setPendingDeliveryId(null);
     setPendingDeliveryCode(null);
     setIsPagnoleroConfirming(false);
@@ -553,25 +567,27 @@ export default function MovimientosPagnolPage() {
     // biométrica, salvo excepción autorizada por ADC o Administrador. Se bloquea
     // ACÁ y no al final: antes el pañolero avanzaba tres pasos con el trabajador
     // esperando para toparse con un "Protocolo Incompleto" que no explicaba nada.
+    // Sin rostro enrolado ya no se bloquea: se valida con el carnet al cerrar (paso de
+    // recepción), o con una excepción autorizada si no tiene carnet a mano.
+    setIdentifiedByRut(false);
     if (!emp.biometricEnrolled) {
       // ¿Ya hay una excepción autorizada para él? Puede haberla aprobado el ADC
       // desde la bandeja hace un minuto: llega por Realtime, sin recargar.
       const yaAutorizada = excepcionesAprobadasPorUsuario.get(emp.id);
-      if (!yaAutorizada) {
-        setExcepcionPara({ emp, requestId: tx.id, transactionCode: tx.internalCode || null });
+      if (yaAutorizada) {
+        setExcepcionAprobada(yaAutorizada);
         toast({
-          title: "Sin biometría enrolada",
-          description: `${emp.name} no puede retirar sin verificación. Enrólalo en Personal o registra una excepción autorizada.`,
-          variant: "destructive",
+          variant: 'info',
+          title: "Excepción vigente",
+          description: `${emp.name} tiene una excepción autorizada. La entrega quedará marcada como sin verificación biométrica.`,
         });
-        return;
+      } else {
+        toast({
+          variant: 'info',
+          title: "Sin rostro enrolado",
+          description: `${emp.name} se valida con su carnet al cerrar la entrega.`,
+        });
       }
-      setExcepcionAprobada(yaAutorizada);
-      toast({
-        variant: 'info',
-        title: "Excepción vigente",
-        description: `${emp.name} tiene una excepción autorizada. La entrega quedará marcada como sin verificación biométrica.`,
-      });
     }
 
     setSelectedType('WITHDRAWAL');
@@ -752,6 +768,14 @@ export default function MovimientosPagnolPage() {
   }, [biometricVerifications]);
 
   const handleIdentityVerified = async (emp: UserType) => {
+    if (selectedType === 'WITHDRAWAL' && emp.employmentStatus === 'terminated') {
+      toast({
+        variant: 'destructive',
+        title: "Trabajador desvinculado",
+        description: `${emp.name} ya no pertenece a la empresa y no puede retirar. Si trae equipos, recíbelos como devolución.`,
+      });
+      return;
+    }
     if (!emp.biometricEnrolled) {
       toast({ variant: 'destructive', title: "Acceso Denegado", description: "Trabajador no enrolado." });
       return;
@@ -800,6 +824,65 @@ export default function MovimientosPagnolPage() {
       }
     }
     setIsBiometricPulse(false);
+  };
+
+  /**
+   * Lo que entregó el lector de carnets (cámara, pistola o RUT escrito). Del carnet
+   * sólo se usa el RUN, para buscar a la persona en la empresa; nada del documento
+   * se guarda. Si hay dos fichas con el mismo RUT no se elige a ninguna.
+   */
+  const handleIdDocument = (raw: string) => {
+    const parsed = parseIdDocument(raw);
+    if (!parsed) {
+      toast({ variant: 'destructive', title: "No pude leer el RUT", description: "Vuelve a pasar el carnet o escribe el RUT. También puedes buscarlo por nombre." });
+      return;
+    }
+    const found = findWorkerByRun(users || [], parsed.run);
+    if (found.kind === 'none') {
+      toast({ variant: 'destructive', title: "RUT no registrado", description: "No hay un trabajador con ese RUT en la empresa." });
+    } else if (found.kind === 'ambiguous') {
+      toast({ variant: 'destructive', title: "RUT repetido", description: `Hay ${found.users.length} fichas con ese RUT (${found.users.map(u => u.name).join(', ')}). Corrígelo en Usuarios; mientras, usa la búsqueda manual.` });
+    } else if (found.kind === 'separated') {
+      toast({ variant: 'destructive', title: "Trabajador desvinculado", description: `${found.user.name} ya no pertenece a la empresa. Si trae equipos, recíbelos como devolución.` });
+    } else {
+      acceptByCarnet(found.user);
+    }
+  };
+
+  /**
+   * Identidad acreditada con el carnet: la persona queda validada sin cámara. No exige
+   * biometría enrolada y deja el hecho escrito (`id_document`) para la auditoría.
+   */
+  const acceptByCarnet = (emp: UserType) => {
+    setSelectedEmployee(emp);
+    setSujetoAVerificarId(null);
+    setIdentifiedByRut(true);
+    setTxState('IDENTIDAD_VERIFICADA');
+    setFlowStep('ITEMS SELECTION');
+    void recordBiometricVerification({
+      subject: { id: emp.id, name: emp.name },
+      stage: 'identificacion',
+      outcome: 'id_document',
+      requestId: pendingDeliveryId,
+      transactionCode: pendingDeliveryCode,
+    });
+    stopCamera();
+    toast({ variant: 'success', title: "Identidad validada con el carnet", description: `Bienvenido, ${emp.name}` });
+  };
+
+  /** En el cierre: ¿el carnet que se pasó es el de quien recibe? Si sí, se cierra sin biometría. */
+  const handleReceiverDocument = (raw: string) => {
+    const parsed = parseIdDocument(raw);
+    if (!parsed) {
+      toast({ variant: 'destructive', title: "No pude leer el RUT", description: "Vuelve a pasar el carnet o escribe el RUT." });
+      return;
+    }
+    if (!selectedEmployee || normalizeRun(selectedEmployee.rut) !== parsed.run) {
+      toast({ variant: 'destructive', title: "Ese carnet no es de quien recibe", description: `Se esperaba el RUT de ${selectedEmployee?.name ?? 'la persona identificada'}.` });
+      return;
+    }
+    setIdentifiedByRut(true);
+    void handleFinalAcceptance(true);
   };
 
   // Bucle de búsqueda 1:N
@@ -1038,6 +1121,11 @@ export default function MovimientosPagnolPage() {
   };
 
   const handlePagnoleroApproval = () => {
+    // Validado con el carnet: no hay paso de cámara. Se cierra directo.
+    if (identifiedByRut) {
+      void handleFinalAcceptance(true);
+      return;
+    }
     setIsPagnoleroConfirming(true);
     setTxState('ENTREGADA_POR_PAÑOLERO');
     setFlowStep('FIRMA RECIBIDO');
@@ -1106,7 +1194,8 @@ export default function MovimientosPagnolPage() {
    * un contrato que da a entender que hubo biometría cuando no la hubo es peor
    * que uno que no dice nada.
    */
-  const datosVerificacionParaContrato = useCallback(() => {
+  const datosVerificacionParaContrato = useCallback((porCarnet = false) => {
+    if (porCarnet) return { mode: 'rut' as const };
     if (!excepcionAprobada) return { mode: 'biometric' as const };
     const hechos = biometricVerifications.filter(h => h.exceptionGroupId === excepcionAprobada);
     const aprobacion = hechos.find(h => h.outcome === 'exception_granted');
@@ -1118,15 +1207,20 @@ export default function MovimientosPagnolPage() {
     };
   }, [excepcionAprobada, biometricVerifications]);
 
-  const handleFinalAcceptance = async () => {
+  const handleFinalAcceptance = async (viaRut?: boolean) => {
     if (!selectedEmployee) return;
+    // `viaRut` llega explícito porque el estado recién seteado aún no se ve en este render.
+    // (Estricto `=== true`: como onClick esta función recibe el evento.)
+    const porCarnet = viaRut === true || identifiedByRut;
 
     // Vía de excepción: hay una autorización vigente de un ADC/Administrador, así
     // que la entrega sale sin cámara — pero queda MARCADA como tal, con quién la
     // autorizó y por qué, y eso se imprime en el contrato de responsabilidad.
-    const conExcepcion = !!excepcionAprobada;
+    const conExcepcion = !porCarnet && !!excepcionAprobada;
+    // Con el carnet o con una excepción autorizada no hay cámara ni biometría.
+    const sinBiometria = conExcepcion || porCarnet;
 
-    if (!conExcepcion) {
+    if (!sinBiometria) {
       if (!sujetoAVerificarId) {
         toast({
           variant: 'destructive',
@@ -1144,7 +1238,17 @@ export default function MovimientosPagnolPage() {
 
     setIsBiometricPulse(true);
     try {
-      if (!conExcepcion) {
+      if (porCarnet) {
+        // Éste es el acto que constituye la aceptación del activo: queda el hecho
+        // (identidad acreditada con el carnet) igual que antes quedaba el de la cara.
+        void recordBiometricVerification({
+          subject: { id: selectedEmployee.id, name: selectedEmployee.name },
+          stage: 'recepcion',
+          outcome: 'id_document',
+          requestId: pendingDeliveryId,
+          transactionCode: pendingDeliveryCode,
+        });
+      } else if (!conExcepcion) {
         const verificationPromise = verifyBiometric(sujetoAVerificarId!, (s) => console.log(s), videoRef.current || undefined);
         const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Tiempo de espera agotado. Asegúrese de estar frente a la cámara.")), 15000));
 
@@ -1272,7 +1376,7 @@ export default function MovimientosPagnolPage() {
             pagnoleroName: currentUser?.name || 'Pañolero',
             pagnoleroSignatureUrl: currentUser?.signature || null,
             logoUrl: currentTenant?.logoUrl,
-            verification: datosVerificacionParaContrato(),
+            verification: datosVerificacionParaContrato(porCarnet),
           });
 
           // 2. Subir a Storage con timeout (8s)
@@ -1297,9 +1401,11 @@ export default function MovimientosPagnolPage() {
             pendingDeliveryId,
             contractUrl,
             { id: selectedEmployee.id, name: selectedEmployee.name },
-            conExcepcion
-              ? { mode: 'exception', exceptionGroupId: excepcionAprobada }
-              : { mode: 'biometric' },
+            porCarnet
+              ? { mode: 'rut' }
+              : conExcepcion
+                ? { mode: 'exception', exceptionGroupId: excepcionAprobada }
+                : { mode: 'biometric' },
           ),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Tiempo de espera excedido al confirmar la entrega. Verifica tu conexión y reintenta.')), 20000)
@@ -1382,7 +1488,7 @@ export default function MovimientosPagnolPage() {
         if (postReview) {
           // Aviso a quien revisa: supervisores del contrato; si no hay, administración.
           // Si el push falla la entrega igual quedó: el retiro espera en su bandeja.
-          const reviewers = reviewerIdsFor(txContractId, selectedEmployee.id, users || [], contractWorkers || []);
+          const reviewers = reviewerIdsFor(txContractId, selectedEmployee.id, users || [], contractWorkers || [], selectedEmployee.responsibleSupervisorId);
           if (reviewers.length > 0) {
             const n = selectedAssetIds.length;
             fetch('/api/push/send', {
@@ -1764,6 +1870,19 @@ export default function MovimientosPagnolPage() {
         </DialogContent>
       </Dialog>
 
+      <QrScannerDialog
+        open={idScanOpen}
+        onOpenChange={(o) => {
+          setIdScanOpen(o);
+          // El escáner usa la cámara trasera: al cerrar vuelve la del rostro.
+          if (!o) void startFaceDetect();
+        }}
+        onScan={(raw) => (idScanPurpose === 'receive' ? handleReceiverDocument(raw) : handleIdDocument(raw))}
+        idDocument
+        title="Escanear carnet"
+        description="Encuadra el código del carnet (QR o código de barras del reverso)."
+      />
+
       <Dialog open={isModalOpen} onOpenChange={(val) => {
         if (!val) {
           stopCamera();
@@ -1887,6 +2006,39 @@ export default function MovimientosPagnolPage() {
                     })()}
 
                     <p className="text-[9px] font-bold text-muted-foreground mt-4">Sistema de Identificación Pagnol</p>
+
+                    {/* Carnet: lo pasa por la pistola (que escribe como teclado), por la cámara o se
+                        escribe el RUT. Sólo identifica: después se pide el rostro igual. */}
+                    <div className="mt-6 pt-6 border-t border-border space-y-3">
+                      <p className="text-[9px] text-muted-foreground font-medium">¿Trae su carnet? Pásalo por el lector o escribe el RUT</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={idText}
+                          onChange={(e) => setIdText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && idText.trim()) {
+                              e.preventDefault();
+                              handleIdDocument(idText);
+                              setIdText('');
+                            }
+                          }}
+                          placeholder="RUT o carnet…"
+                          autoComplete="off"
+                          className="h-10 rounded-xl border-border bg-muted text-sm"
+                          aria-label="RUT o lectura del carnet"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="h-10 w-10 shrink-0 rounded-xl"
+                          aria-label="Escanear carnet con la cámara"
+                          onClick={() => { stopCamera(); setIdScanPurpose('identify'); setIdScanOpen(true); }}
+                        >
+                          <CreditCard size={16} />
+                        </Button>
+                      </div>
+                    </div>
 
                     {/* Fallback Manual */}
                     <div className="mt-6 pt-6 border-t border-border">
@@ -2436,13 +2588,45 @@ export default function MovimientosPagnolPage() {
                   <div className="space-y-4">
                     <h4 className="font-black uppercase text-xl text-foreground">Certificación de Recepción</h4>
                     <p className="text-[10px] font-black text-muted-foreground uppercase leading-relaxed px-10">
-                      Al presionar el botón, se realizará una validación biométrica final para cerrar el protocolo de entrega.
+                      Valide con el rostro (botón de abajo) o con el carnet de quien recibe. Cualquiera de las dos cierra el protocolo.
                     </p>
                   </div>
 
+                  {/* Alternativa a la cara: el carnet de quien recibe. Si se valida así, se cierra sin biometría. */}
+                  <div className="rounded-2xl border border-border p-4 space-y-3 text-left">
+                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">¿Prefiere validar con su carnet?</p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={receiveIdText}
+                        onChange={(e) => setReceiveIdText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && receiveIdText.trim()) {
+                            e.preventDefault();
+                            handleReceiverDocument(receiveIdText);
+                            setReceiveIdText('');
+                          }
+                        }}
+                        placeholder="Pase el carnet o escriba el RUT…"
+                        autoComplete="off"
+                        className="h-10 rounded-xl border-border bg-muted text-sm"
+                        aria-label="Carnet de quien recibe"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="icon"
+                        className="h-10 w-10 shrink-0 rounded-xl"
+                        aria-label="Escanear carnet con la cámara"
+                        onClick={() => { stopCamera(); setIdScanPurpose('receive'); setIdScanOpen(true); }}
+                      >
+                        <CreditCard size={16} />
+                      </Button>
+                    </div>
+                  </div>
+
                   <Button
-                    disabled={isBiometricPulse || !cameraStream}
-                    onClick={handleFinalAcceptance}
+                    disabled={isBiometricPulse || !cameraStream || (!sujetoAVerificarId && !excepcionAprobada)}
+                    onClick={() => void handleFinalAcceptance()}
                     className="w-full py-8 rounded-[1.5rem] bg-pagnol-orange text-white font-black uppercase tracking-widest shadow-xl shadow-pagnol-orange/20 hover:bg-pagnol-orange/90 transition-all disabled:opacity-50"
                   >
                     {livenessPrompt
@@ -2451,7 +2635,9 @@ export default function MovimientosPagnolPage() {
                         ? <Loader2 className="animate-spin mx-auto" />
                         : !cameraStream
                           ? "Iniciando cámara..."
-                          : "Validar Biometría y Cerrar"
+                          : (!sujetoAVerificarId && !excepcionAprobada)
+                            ? "Sin rostro enrolado: use el carnet"
+                            : "Validar Biometría y Cerrar"
                     }
                   </Button>
                 </div>

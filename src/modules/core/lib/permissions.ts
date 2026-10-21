@@ -152,6 +152,7 @@ export const ALL_PERMISSIONS = {
     'work_reports:delete': { label: 'Eliminar Informes de Terreno', group: 'Reportes de Trabajo' },
 
     'safety_templates:create': { label: 'Crear Plantillas de Seguridad', group: 'Prevención de Riesgos' },
+    'safety_talks:manage': { label: 'Llevar las charlas diarias (registrar, tomar firmas, avisar a los pendientes)', group: 'Prevención de Riesgos' },
     'safety_templates:assign': { label: 'Asignar Checklists/Inspecciones', group: 'Prevención de Riesgos' },
     'safety_checklists:complete': { label: 'Completar Mis Checklists', group: 'Prevención de Riesgos' },
     'safety_checklists:review': { label: 'Revisar Checklists', group: 'Prevención de Riesgos' },
@@ -224,7 +225,7 @@ const ADMINISTRADOR_PERMISSIONS: Permission[] = [
             'categories:create', 'categories:view', 'categories:edit', 'categories:delete',
             'units:create', 'units:view', 'units:delete',
             // Seguridad
-            'safety_templates:create', 'safety_templates:assign',
+            'safety_templates:create', 'safety_templates:assign', 'safety_talks:manage',
             'safety_checklists:complete', 'safety_checklists:review',
             'safety_inspections:create', 'safety_inspections:complete', 'safety_inspections:review',
             'safety_observations:create', 'safety_observations:review',
@@ -288,7 +289,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'purchase_requests:review_operations', 'rentals:review_operations',
             'approvals:sign_adc',
             'users:view',
-            'safety_templates:create', 'safety_templates:assign',
+            'safety_templates:create', 'safety_templates:assign', 'safety_talks:manage',
             'safety_checklists:complete', 'safety_checklists:review',
             'safety_inspections:create', 'safety_inspections:complete', 'safety_inspections:review',
             'safety_observations:create', 'safety_observations:review',
@@ -375,6 +376,8 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             'material_requests:review_withdrawals',
             'purchase_requests:create',
             'return_requests:create',
+            // Las charlas de su cuadrilla las lleva el supervisor (sin abrir todo el módulo de Prevención).
+            'safety_talks:manage',
             'module_work_reports:view', 'work_reports:create', 'work_reports:edit', 'work_reports:delete',
             'work_reports:sign', 'work_reports:submit', 'work_reports:download_pdf',
         ],
@@ -384,7 +387,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         description: 'Gestiona checklists, inspecciones y observaciones de seguridad.',
         permissions: [
             'module_safety:view', 'module_users:view', 'module_reports:view',
-            'safety_templates:create', 'safety_templates:assign',
+            'safety_templates:create', 'safety_templates:assign', 'safety_talks:manage',
             'safety_checklists:complete', 'safety_checklists:review',
             'safety_inspections:create', 'safety_inspections:complete', 'safety_inspections:review',
             'safety_observations:create', 'safety_observations:review',
@@ -400,7 +403,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
         permissions: [
             'module_safety:view', 'module_users:view',
             'tools:view_own',
-            'safety_templates:create', 'safety_templates:assign',
+            'safety_templates:create', 'safety_templates:assign', 'safety_talks:manage',
             'safety_checklists:review', 'safety_checklists:complete',
             'safety_inspections:create', 'safety_inspections:review', 'safety_inspections:complete',
             'safety_observations:create', 'safety_observations:review',
@@ -548,6 +551,7 @@ export const ROLES: Record<UserRole, { label: string; description: string; permi
             // Pide material y compras para la faena (Módulo Supervisor).
             'materials:view_all', 'material_requests:create', 'material_requests:view_own',
             'purchase_requests:create', 'return_requests:create',
+            'safety_talks:manage',
             // RFC-006 F1: revisa compras y arriendos de terreno antes del ADC.
             'module_authorizations:view',
             'purchase_requests:review_operations', 'purchase_requests:view_all',

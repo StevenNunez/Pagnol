@@ -11,6 +11,7 @@ import { Inbox, ArrowRight, Users, CheckCircle } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import Link from "next/link";
 import type { DailyTalk } from "@/modules/core/lib/data";
+import { attendanceOf, indexSignatures } from "@/lib/daily-talk-attendance";
 
 const formatDate = (date: Date | string | undefined | null) => {
     if (!date) return 'N/A';
@@ -19,7 +20,8 @@ const formatDate = (date: Date | string | undefined | null) => {
 };
 
 export default function ReviewDailyTalksPage() {
-    const { dailyTalks, isLoading } = useAppState();
+    const { dailyTalks, dailyTalkSignatures, isLoading } = useAppState();
+    const factsByTalk = useMemo(() => indexSignatures(dailyTalkSignatures || []), [dailyTalkSignatures]);
 
     const sortedTalks = useMemo(() => {
         if (!dailyTalks) return [];
@@ -50,8 +52,9 @@ export default function ReviewDailyTalksPage() {
                         {sortedTalks.length > 0 ? (
                             <div className="space-y-3 p-4">
                                 {sortedTalks.map((talk: DailyTalk) => {
-                                    const firmados = talk.asistentes?.filter(a => a.signed).length ?? 0;
-                                    const total = talk.asistentes?.length ?? 0;
+                                    const att = attendanceOf(talk, factsByTalk.get(talk.id) || []);
+                                    const firmados = att.signed;
+                                    const total = att.total;
                                     return (
                                         <Link key={talk.id} href={`/dashboard/safety/review-daily-talks/${talk.id}`}>
                                             <div className="p-4 border rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:bg-muted/50 transition-colors cursor-pointer">

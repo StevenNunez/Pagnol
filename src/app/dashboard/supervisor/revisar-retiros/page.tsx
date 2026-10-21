@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useAppState, useAuth } from "@/modules/core/contexts/app-provider";
 import { useToast } from "@/modules/core/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { ClipboardCheck, Search, ChevronRight, AlertTriangle, CheckCircle2, Lock, Download, Loader2 } from "lucide-react";
+import { ClipboardCheck, Search, ChevronRight, AlertTriangle, CheckCircle2, Lock, Download, Loader2, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authHeaders } from "@/modules/core/lib/auth-header";
 import { format, formatDistanceToNow, isToday } from "date-fns";
@@ -17,6 +17,7 @@ import type { ReviewLine } from "@/modules/data/mutations/withdrawalReviewMutati
 import { useReviewableWithdrawals, type ReviewableWithdrawal } from "@/components/withdrawal-review/use-reviewable-withdrawals";
 import { ReviewDialog } from "@/components/withdrawal-review/review-dialog";
 import { ObservationsList } from "@/components/withdrawal-review/observations-list";
+import { BulkApproveList, pendingLines, type BulkLine } from "@/components/withdrawal-review/bulk-approve-list";
 import { downloadWithdrawalReport } from "@/components/withdrawal-review/export-report";
 
 type Tab = "pending" | "reviewed" | "observations";
@@ -28,16 +29,18 @@ const REVIEWED_LIMIT = 50;
  * supervisor revisa entre una tarea y otra, no sentado en un escritorio.
  */
 export default function RevisarRetirosPage() {
-    const { users, materials, reviewWithdrawal, justifyWithdrawalObservation, can, currentTenant } = useAppState();
+    const { users, materials, reviewWithdrawal, approveWithdrawalLines, justifyWithdrawalObservation, can, currentTenant } = useAppState();
     const { getTenantId } = useAuth();
     const { toast } = useToast();
-    const { canReview, all, pending, reviewed, observations, openObservations } = useReviewableWithdrawals();
+    const { canReview, all, pending, reviewed, observations, openObservations, overdueCount } = useReviewableWithdrawals();
     const canResolve = can("material_requests:resolve_observations");
     const [exporting, setExporting] = useState(false);
 
     const [tab, setTab] = useState<Tab>("pending");
     const [search, setSearch] = useState("");
     const [openId, setOpenId] = useState<string | null>(null);
+    // "Por retiro" abre cada retiro para observar; "Por ítem" aprueba en bloque.
+    const [view, setView] = useState<"order" | "items">("order");
 
     const usersMap = useMemo(() => new Map(((users || []) as User[]).map(u => [u.id, u])), [users]);
     const materialMap = useMemo(() => new Map(((materials || []) as Material[]).map(m => [m.id, m])), [materials]);
@@ -111,6 +114,24 @@ export default function RevisarRetirosPage() {
         }
     };
 
+    const approveBulk = async (picked: BulkLine[]) => {
+        try {
+            const n = await approveWithdrawalLines({
+                lines: picked.map(l => ({ requestId: l.requestId, materialId: l.materialId, materialName: l.materialName, quantity: l.quantity })),
+            });
+            toast({ variant: "success", title: "Retiros aprobados", description: `${n} ítem${n !== 1 ? "s" : ""} quedaron conformes.` });
+        } catch (err: any) {
+            toast({ variant: "destructive", title: "No se pudo aprobar", description: err?.message || "Intenta nuevamente." });
+            throw err;
+        }
+    };
+
+    const bulkLines = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        const lines = pendingLines(pending, workerOf, materialMap);
+        return q ? lines.filter(l => l.worker.toLowerCase().includes(q) || l.materialName.toLowerCase().includes(q)) : lines;
+    }, [pending, workerOf, materialMap, search]);
+
     const justify = async (reviewId: string, note: string) => {
         try {
             await justifyWithdrawalObservation({ reviewId, note });
@@ -170,7 +191,27 @@ export default function RevisarRetirosPage() {
                 </div>
             </div>
 
-            {tab === "observations" ? (
+            {tab === "pending" && overdueCount > 0 && (
+                <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                    <Clock className="h-4 w-4 shrink-0" />
+                    <span><b>{overdueCount}</b> retiro{overdueCount !== 1 ? "s" : ""} pasaron el plazo de revisión ({currentTenant?.withdrawalReviewDeadlineHours ?? 48} h). La jefatura recibe el aviso.</span>
+                </div>
+            )}
+            {tab === "pending" && pending.length > 0 && (
+                <div className="flex items-center gap-1 bg-muted/50 border rounded-xl p-1 w-full sm:w-fit">
+                    {([["order", "Por retiro"], ["items", "Por ítem"]] as const).map(([k, label]) => (
+                        <button key={k} type="button" onClick={() => setView(k)}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                                view === k ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {tab === "pending" && view === "items" && bulkLines.length > 0 ? (
+                <BulkApproveList lines={bulkLines} onApprove={approveBulk} />
+            ) : tab === "observations" ? (
                 filteredObservations.length === 0 ? (
                     <EmptyState
                         icon={<CheckCircle2 size={24} />}
@@ -211,6 +252,15 @@ export default function RevisarRetirosPage() {
                                         <p className="font-bold text-base leading-tight break-words">{workerOf(w)}</p>
                                         {w.summary.state === "partial" && (
                                             <span className="badge-warning text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md">A medias</span>
+                                        )}
+                                        {w.due.overdue && (
+                                            <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-destructive/10 text-destructive flex items-center gap-1"><Clock size={10} /> Vencido</span>
+                                        )}
+                                        {w.regularization !== "none" && (
+                                            <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md",
+                                                w.regularization === "pending" ? "badge-warning" : "badge-success")}>
+                                                {w.regularization === "pending" ? "Por regularizar" : "Regularizado"}
+                                            </span>
                                         )}
                                         {w.summary.state === "reviewed" && (w.summary.unauthorizedLines > 0
                                             ? <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-destructive/10 text-destructive flex items-center gap-1"><AlertTriangle size={10} /> {w.summary.unauthorizedLines} no corresponde{w.summary.unauthorizedLines > 1 ? "n" : ""}</span>

@@ -96,6 +96,23 @@ async function fakeRpc(fn: string, a: Row): Promise<{ data: any; error: any }> {
         tables.stock_movements.push({ id, tenant_id: a.p_tenant_id, material_id: mat.id, quantity_change: a.p_qty, external_ref: ref });
         return { data: [{ movement_id: id, created: true, material_id: mat.id, stock: mat.stock }], error: null };
     }
+    if (fn === 'api_create_expected_purchase') {
+        const prev = tables.expected_purchases.find(r => r.tenant_id === a.p_tenant_id && r.external_ref === a.p_external_ref);
+        if (prev) return { data: [{ purchase_id: prev.id, created: false }], error: null };
+        if (!inTenant('warehouses', a.p_warehouse_id)) return apiError('not_found', 'El panol_id no existe o no está activo en esta empresa.');
+        for (const l of a.p_lines) if (!inTenant('materials', l.material_id)) return apiError('not_found', 'El material_id no existe en esta empresa.');
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        tables.expected_purchases.push({ id, tenant_id: a.p_tenant_id, external_ref: a.p_external_ref, supplier_id: a.p_supplier_id, warehouse_id: a.p_warehouse_id, estimated_date: a.p_date, contract_ref: a.p_contract_ref, canceled_at: null, created_at: now, updated_at: now });
+        for (const l of a.p_lines) tables.expected_purchase_lines.push({ id: randomUUID(), tenant_id: a.p_tenant_id, purchase_id: id, external_ref: l.external_ref, material_id: l.material_id, expected_qty: l.cantidad, canceled_at: null, created_at: now });
+        return { data: [{ purchase_id: id, created: true }], error: null };
+    }
+    if (fn === 'api_patch_expected_purchase') {
+        const p = inTenant('expected_purchases', a.p_id);
+        if (!p) return apiError('not_found', 'Compra esperada no encontrada.');
+        if (a.p_patch.cancelar) p.canceled_at = new Date().toISOString();
+        return { data: null, error: null };
+    }
     throw new Error(`rpc no emulada: ${fn}`);
 }
 
@@ -130,7 +147,7 @@ const KEY = {
     A_REVOCADA: 'pk_test_' + 'd'.repeat(64),
 };
 const READ = ['materiales:read', 'productos:read', 'proveedores:read', 'activos:read'];
-const ALL = [...READ, 'activos:write', 'stock:write', 'webhooks:manage'];
+const ALL = [...READ, 'activos:write', 'stock:write', 'compras:read', 'compras:write', 'webhooks:manage'];
 
 beforeEach(() => {
     dataQueries.length = 0;
@@ -143,6 +160,14 @@ beforeEach(() => {
     tables.contracts = [];
     tables.material_stocks = [A, B].map(t => ({ tenant_id: t, material_id: uid(t, 2), warehouse_id: uid(t, 50), contract_id: null, qty: 1 }));
     tables.holders = [];
+    // Mismas OC y mismas referencias de línea en ambas empresas: sólo el tenant las distingue.
+    tables.expected_purchases = [A, B].map(t => ({
+        id: uid(t, 200), tenant_id: t, external_ref: 'OC-1', supplier_id: uid(t, 101), warehouse_id: uid(t, 50), estimated_date: '2026-11-01',
+        contract_ref: null, canceled_at: null, created_at: '2026-07-01T00:00:00+00:00', updated_at: '2026-07-01T00:00:00+00:00',
+    }));
+    tables.expected_purchase_lines = [A, B].map(t => ({
+        id: uid(t, 210), tenant_id: t, purchase_id: uid(t, 200), external_ref: 'OC-1:1', material_id: uid(t, 2), expected_qty: 3, canceled_at: null, created_at: '2026-07-01T00:00:00+00:00',
+    }));
     tables.stock_movements = [];
     tables.idempotency_keys = [];
     tables.webhook_subscriptions = [];
@@ -161,6 +186,7 @@ const ENDPOINTS: { path: string; table: string; list: () => Promise<Handler>; de
     { path: 'productos', table: 'materials', list: async () => (await import('@/app/api/v1/productos/route')).GET, detail: async () => (await import('@/app/api/v1/productos/[id]/route')).GET },
     { path: 'proveedores', table: 'suppliers', list: async () => (await import('@/app/api/v1/proveedores/route')).GET, detail: async () => (await import('@/app/api/v1/proveedores/[id]/route')).GET },
     { path: 'activos', table: 'materials', list: async () => (await import('@/app/api/v1/activos/route')).GET, detail: async () => (await import('@/app/api/v1/activos/[id]/route')).GET },
+    { path: 'compras-esperadas', table: 'expected_purchases', list: async () => (await import('@/app/api/v1/compras-esperadas/route')).GET, detail: async () => (await import('@/app/api/v1/compras-esperadas/[id]/route')).GET },
 ];
 
 const req = (path: string, key?: string, init: { method?: string; body?: unknown; idem?: string | null } = {}) => {
@@ -326,6 +352,60 @@ describe('escritura — aislamiento', () => {
     });
 });
 
+describe('compras esperadas — escritura y aislamiento', () => {
+    const anunciar = (key: string, body: Row, idem?: string) =>
+        import('@/app/api/v1/compras-esperadas/route').then(m => m.POST(req('compras-esperadas', key, { method: 'POST', body, idem }) as any, noParams as any));
+    const linea = (t: string) => ({ external_ref: 'OC-9:1', material_id: uid(t, 1), cantidad: 4 });
+
+    it('anuncia en la empresa de la llave; repetir la OC devuelve la misma compra', async () => {
+        const body = { external_ref: 'OC-9', panol_id: uid(A, 50), proveedor_id: uid(A, 101), lineas: [linea(A)] };
+        const res = await anunciar(KEY.A, body);
+        expect(res.status).toBe(201);
+        const compra = await res.json();
+        expect(tables.expected_purchases.find(p => p.id === compra.id)?.tenant_id).toBe(A);
+        expect(compra).toMatchObject({ external_ref: 'OC-9', estado: 'abierta' });
+        expect(compra.lineas[0]).toMatchObject({ cantidad_esperada: 4, cantidad_recibida: 0, estado: 'esperada' });
+        const again = await anunciar(KEY.A, body);
+        expect(again.status).toBe(200);
+        expect((await again.json()).id).toBe(compra.id);
+        expectAllScopedTo(A);
+    });
+
+    it('un pañol o un material de OTRA empresa responde 404 y no crea nada', async () => {
+        const antes = tables.expected_purchases.length;
+        expect((await anunciar(KEY.A, { external_ref: 'OC-X', panol_id: uid(B, 50), lineas: [linea(A)] })).status).toBe(404);
+        expect((await anunciar(KEY.A, { external_ref: 'OC-Y', panol_id: uid(A, 50), lineas: [linea(B)] })).status).toBe(404);
+        expect(tables.expected_purchases.length).toBe(antes);
+        expectAllScopedTo(A);
+    });
+
+    it('la misma OC en otra empresa es otra compra (no choca)', async () => {
+        const res = await anunciar(KEY.B, { external_ref: 'OC-1', panol_id: uid(B, 50), lineas: [{ external_ref: 'OC-1:1', material_id: uid(B, 1), cantidad: 1 }] });
+        expect(res.status).toBe(200); // ya existía la OC-1 de B (la del fixture), no la de A
+        expect((await res.json()).id).toBe(uid(B, 200));
+    });
+
+    it('PATCH de una compra de OTRA empresa responde 404 y no la toca', async () => {
+        const { PATCH } = await import('@/app/api/v1/compras-esperadas/[id]/route');
+        const res = await PATCH(req('compras-esperadas/x', KEY.A, { method: 'PATCH', body: { cancelar: true } }) as any, params(uid(B, 200)));
+        expect(res.status).toBe(404);
+        expect(tables.expected_purchases.find(p => p.id === uid(B, 200))?.canceled_at).toBeNull();
+        const own = await PATCH(req('compras-esperadas/x', KEY.A, { method: 'PATCH', body: { cancelar: true } }) as any, params(uid(A, 200)));
+        expect(own.status).toBe(200);
+        expect((await own.json()).estado).toBe('cancelada');
+        expectAllScopedTo(A);
+    });
+
+    it('exigen su scope: leer no alcanza para escribir', async () => {
+        tables.api_keys[0].scopes = ['compras:read'];
+        expect((await anunciar(KEY.A, { external_ref: 'OC-Z', panol_id: uid(A, 50), lineas: [linea(A)] })).status).toBe(403);
+        const { GET } = await import('@/app/api/v1/compras-esperadas/route');
+        expect((await GET(req('compras-esperadas', KEY.A))).status).toBe(200);
+        tables.api_keys[0].scopes = ['activos:write'];
+        expect((await GET(req('compras-esperadas', KEY.A))).status).toBe(403);
+    });
+});
+
 describe('idempotencia', () => {
     const crear = (body: Row, idem?: string | null) =>
         import('@/app/api/v1/activos/route').then(m => m.POST(req('activos', KEY.A, { method: 'POST', body, idem }) as any, noParams as any));
@@ -431,6 +511,24 @@ describe('webhooks — aislamiento y contrato', () => {
         expect(await propio.text()).toBe('');
         expect(tables.webhook_subscriptions.map(h => h.id)).toEqual([deB.id]);
         expect((await borrar(KEY.A, mio.id)).status).toBe(404);
+    });
+
+    it('PATCH cambia los eventos sin tocar el secreto, y no cruza empresas', async () => {
+        const mio = await (await crear(KEY.A, { url: URL_A, events: ['activo.creado'] })).json();
+        const deB = await (await crear(KEY.B, { url: URL_A, events: ['activo.creado'] })).json();
+        const parchar = (key: string, id: string, body: Row) =>
+            import('@/app/api/v1/webhooks/[id]/route').then(m => m.PATCH(req('webhooks/x', key, { method: 'PATCH', body }) as any, params(id)));
+
+        const ok = await parchar(KEY.A, mio.id, { events: ['activo.creado', 'compra.recibida'], activo: false });
+        expect(ok.status).toBe(200);
+        const dto = await ok.json();
+        expect(dto).toMatchObject({ id: mio.id, events: ['activo.creado', 'compra.recibida'], activo: false });
+        expect(dto.secret).toBeUndefined();
+        expect(tables.webhook_subscriptions.find(h => h.id === mio.id)?.secret).toBe(mio.secret); // el secreto sigue siendo el mismo
+
+        const ajeno = await parchar(KEY.A, deB.id, { activo: false });
+        expect(ajeno.status).toBe(404);
+        expect(tables.webhook_subscriptions.find(h => h.id === deB.id)?.active).toBe(true);
     });
 
     it('exige el scope webhooks:manage', async () => {

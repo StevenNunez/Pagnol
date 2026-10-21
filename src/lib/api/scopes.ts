@@ -8,6 +8,8 @@ export const API_SCOPES = [
     'activos:read',
     'activos:write',
     'stock:write',
+    'compras:read',
+    'compras:write',
     'webhooks:manage',
 ] as const;
 
@@ -22,6 +24,8 @@ export const API_SCOPE_LABELS: Record<ApiScope, string> = {
     'activos:read': 'Leer activos',
     'activos:write': 'Crear activos al recibirlos y editar su estado',
     'stock:write': 'Ingresar stock de consumibles al recibirlos',
+    'compras:read': 'Consultar las compras esperadas',
+    'compras:write': 'Anunciar, corregir y cancelar compras esperadas',
     'webhooks:manage': 'Administrar webhooks',
 };
 
@@ -33,6 +37,8 @@ export const API_SCOPES_AVAILABLE: readonly ApiScope[] = [
     'activos:read',
     'activos:write',
     'stock:write',
+    'compras:read',
+    'compras:write',
     'webhooks:manage',
 ];
 

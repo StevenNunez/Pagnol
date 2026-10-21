@@ -6,6 +6,12 @@ interface Options<T> {
     orderBy?: { column: string; ascending?: boolean };
     mapper?: (item: any) => T;
     columns?: string;
+    /**
+     * Columnas a usar si la base responde 42703 (columna inexistente): sirve para
+     * desplegar el código ANTES de aplicar una migración sin que la colección
+     * entera quede vacía en silencio. Se avisa por consola; no oculta el drift.
+     */
+    fallbackColumns?: string;
     enabled?: boolean;
     version?: number;
     softDelete?: boolean;
@@ -50,6 +56,7 @@ export function useSupabaseCollection<T>(
         orderBy,
         mapper,
         columns = "*",
+        fallbackColumns,
         enabled = true,
         version,
         softDelete = false,
@@ -81,9 +88,10 @@ export function useSupabaseCollection<T>(
             let from = 0;
             const step = 1000;
             let hasMore = true;
+            let columnsInUse = columns;
 
             while (hasMore) {
-                let query = supabase.from(table).select(columns).range(from, from + step - 1);
+                let query = supabase.from(table).select(columnsInUse).range(from, from + step - 1);
 
                 if (tenantId !== null) {
                     query = query.eq('tenant_id', tenantId);
@@ -98,6 +106,12 @@ export function useSupabaseCollection<T>(
                 }
 
                 const { data: batch, error } = await query;
+
+                if (error?.code === '42703' && fallbackColumns && columnsInUse !== fallbackColumns) {
+                    console.warn(`[${table}] falta una columna en la base (${error.message}); se usan las columnas anteriores. ¿Hay una migración sin aplicar?`);
+                    columnsInUse = fallbackColumns;
+                    continue;
+                }
 
                 if (error) {
                     console.error(`Error fetching collection ${table}:`, error.message, error.code, error.details);

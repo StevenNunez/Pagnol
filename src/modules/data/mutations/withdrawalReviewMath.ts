@@ -14,8 +14,17 @@ export interface ReviewableRequest {
     contractId?: string | null;
     /** Quien retiró (en las entregas directas es el trabajador). */
     supervisorId: string;
+    /** Supervisor responsable del trabajador al momento de la entrega, si tenía. */
+    reviewerSupervisorId?: string | null;
+    createdAt?: Date | string | null;
     items: ReviewableItem[];
 }
+
+/** Roles que supervisan toda la operación y pueden revisar cualquier retiro. */
+export const WITHDRAWAL_OVERSIGHT_ROLES: readonly string[] = [
+    'super-admin', 'administrador', 'soporte-pagnol', 'jefe-operaciones',
+];
+export const isOversightRole = (role?: string | null) => !!role && WITHDRAWAL_OVERSIGHT_ROLES.includes(role);
 
 export interface ReviewFact {
     requestId: string;
@@ -63,31 +72,41 @@ export function summarizeReview(req: ReviewableRequest, facts: readonly ReviewFa
 /**
  * ¿Puede este usuario revisar este retiro?
  *  - nunca el propio retiro (nadie se autoriza a sí mismo);
- *  - quien ve todos los contratos (oficina/administración) revisa cualquiera;
- *  - el resto, sólo los retiros imputados a un contrato al que está vinculado.
+ *  - si el trabajador tenía supervisor responsable al retirar, sólo ese
+ *    supervisor y la jefatura (`oversight`: administración / Jefe de Operaciones);
+ *  - si no tenía, la regla de antes: quien ve todos los contratos revisa
+ *    cualquiera, el resto sólo los de un contrato al que está vinculado.
  *    Un retiro sin contrato queda para quien ve todos.
  */
 export function canReviewRequest(
     req: ReviewableRequest,
-    reviewer: { id: string; seesAllContracts: boolean; contractIds: ReadonlySet<string> },
+    reviewer: { id: string; seesAllContracts: boolean; contractIds: ReadonlySet<string>; oversight?: boolean },
 ): boolean {
     if (!req.requiresReview) return false;
     if (req.supervisorId === reviewer.id) return false;
+    if (req.reviewerSupervisorId) {
+        return req.reviewerSupervisorId === reviewer.id || !!reviewer.oversight;
+    }
     if (reviewer.seesAllContracts) return true;
     return !!req.contractId && reviewer.contractIds.has(req.contractId);
 }
 
 /**
- * A quién avisar de un retiro nuevo: los supervisores vinculados al contrato
- * del retiro; si no hay ninguno (o el retiro no tiene contrato), los
- * administradores. Nunca a quien retiró.
+ * A quién avisar de un retiro nuevo: el supervisor responsable del trabajador,
+ * si tiene uno activo; si no, los supervisores vinculados al contrato del
+ * retiro; y si tampoco hay, los administradores. Nunca a quien retiró.
  */
 export function reviewerIdsFor(
     contractId: string | null | undefined,
     withdrawnBy: string,
     users: readonly { id: string; role: string }[],
     contractWorkers: readonly { contractId: string; userId: string }[],
+    responsibleSupervisorId?: string | null,
 ): string[] {
+    if (responsibleSupervisorId && responsibleSupervisorId !== withdrawnBy
+        && users.some(u => u.id === responsibleSupervisorId)) {
+        return [responsibleSupervisorId];
+    }
     const roleOf = new Map(users.map(u => [u.id, u.role]));
     // Se excluye a quien retiró ANTES de decidir el respaldo: si el único
     // supervisor del contrato es él mismo, el aviso tiene que ir a administración.
@@ -186,4 +205,49 @@ export function resolveObservations(
             : { status: 'open', returnedQty });
     }
     return out;
+}
+
+// ── Plazo y escalamiento ─────────────────────────────────────────────────────
+
+export const DEFAULT_REVIEW_DEADLINE_HOURS = 48;
+
+/**
+ * ¿Se pasó el plazo de revisión? Se cuenta desde la entrega. Un retiro ya
+ * revisado nunca vence. No detiene nada: sólo marca y permite avisar a la jefatura.
+ */
+export function reviewDueState(
+    createdAt: Date | string | null | undefined,
+    deadlineHours: number | null | undefined,
+    now: Date = new Date(),
+): { hoursOpen: number; overdue: boolean; deadlineHours: number } {
+    const limit = deadlineHours && deadlineHours > 0 ? deadlineHours : DEFAULT_REVIEW_DEADLINE_HOURS;
+    const t = createdAt ? new Date(createdAt).getTime() : NaN;
+    if (!Number.isFinite(t)) return { hoursOpen: 0, overdue: false, deadlineHours: limit };
+    const hoursOpen = Math.max(0, (now.getTime() - t) / 3_600_000);
+    return { hoursOpen, overdue: hoursOpen >= limit, deadlineHours: limit };
+}
+
+// ── Los tres estados independientes de un retiro ─────────────────────────────
+//   Entrega      → ocurre en ventanilla (no depende de la revisión).
+//   Validación   → pending | partial | reviewed   (summarizeReview)
+//   Regularización → none | pending | resolved    (acá)
+
+export type RegularizationState = 'none' | 'pending' | 'resolved';
+
+/**
+ * Regularización de un retiro: 'none' si nada se observó; 'pending' si alguna
+ * observación sigue abierta (ni devuelta ni justificada); 'resolved' si todas
+ * se cerraron.
+ */
+export function regularizationState(
+    observationStatuses: readonly ObservationStatus[],
+): RegularizationState {
+    if (observationStatuses.length === 0) return 'none';
+    return observationStatuses.some(s => s === 'open') ? 'pending' : 'resolved';
+}
+
+/** Materiales de un retiro que todavía no tienen decisión. */
+export function pendingMaterialIds(req: ReviewableRequest, facts: readonly ReviewFact[] = []): string[] {
+    const decided = new Set(facts.map(f => f.materialId).filter((x): x is string => !!x));
+    return [...new Set(req.items.map(i => i.materialId))].filter(id => !decided.has(id));
 }

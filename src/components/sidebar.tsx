@@ -73,6 +73,7 @@ import {
   FileBadge,
   PackageSearch,
   Settings,
+  UserMinus,
 } from 'lucide-react';
 
 import { useAuth, useAppState } from '@/modules/core/contexts/app-provider';
@@ -86,10 +87,14 @@ import type { Permission } from '@/modules/core/lib/permissions';
 import { TenantSwitcher } from '@/components/tenant-switcher';
 import { Button } from '@/components/ui/button';
 
-const getPanolNavItems = (can: (p: Permission) => boolean) => [
+const getPanolNavItems = (can: (p: Permission) => boolean, receivingMode?: 'externa' | 'pagnol') => [
   { href: '/dashboard/pagnol', icon: LayoutDashboard, label: 'Panel Principal' },
   { href: '/dashboard/pagnol/activos', icon: Package, label: 'Gestión de Activos' },
   { href: '/dashboard/pagnol/solicitudes', icon: ClipboardList, label: 'Entregas y Devoluciones' },
+  // Sólo las empresas que reciben en Pagnol tienen compras por recibir.
+  ...(receivingMode === 'pagnol'
+    ? [{ href: '/dashboard/pagnol/por-recibir', icon: Truck, label: 'Por Recibir' }]
+    : []),
   { href: '/dashboard/pagnol/movimientos', icon: ArrowLeftRight, label: 'Transacciones' },
   ...(can('material_requests:review_withdrawals')
     ? [{ href: '/dashboard/pagnol/revisar-retiros', icon: ClipboardCheck, label: 'Revisar Retiros' }]
@@ -129,7 +134,11 @@ const getPurchasingNavItems = () => [
   { href: '/dashboard/purchasing/finance', icon: DollarSign, label: 'Finanzas' },
 ];
 
-const getSafetyNavItems = (can: (p: any) => boolean) => [
+const getSafetyNavItems = (can: (p: any) => boolean) => !can('module_safety:view') ? [
+  // Quien lleva charlas sin ser de Prevención (el supervisor) ve sólo lo suyo.
+  { href: '/dashboard/safety/daily-talk', icon: Users, label: 'Charla Diaria' },
+  { href: '/dashboard/safety/review-daily-talks', icon: BookOpen, label: 'Revisar Charlas' },
+] : [
   { href: '/dashboard/safety', icon: ShieldCheck, label: 'Panel de Seguridad' },
   { href: '/dashboard/safety/assigned-checklists', icon: ClipboardList, label: 'Checklists' },
   { href: '/dashboard/safety/assigned-inspections', icon: Search, label: 'Inspecciones' },
@@ -142,7 +151,7 @@ const getSafetyNavItems = (can: (p: any) => boolean) => [
   ...(can('safety_inspections:review') ? [
     { href: '/dashboard/safety/review-inspections', icon: ShieldAlert, label: 'Revisar Inspecciones' },
   ] : []),
-  ...(can('safety_checklists:review') ? [
+  ...(can('safety_checklists:review') || can('safety_talks:manage') ? [
     { href: '/dashboard/safety/review-daily-talks', icon: BookOpen, label: 'Revisar Charlas' },
   ] : []),
   ...(can('safety_observations:review') ? [
@@ -239,6 +248,7 @@ const getRrhhNavItems = (can: (p: Permission) => boolean) => [
   ...(can('hr_employees:edit') ? [
     { href: '/dashboard/rrhh/remuneraciones', icon: Wallet, label: 'Remuneraciones' },
     { href: '/dashboard/rrhh/finiquitos', icon: HandCoins, label: 'Finiquitos' },
+    { href: '/dashboard/rrhh/desvinculaciones', icon: UserMinus, label: 'Desvinculaciones' },
   ] : []),
   ...(can('contracts:manage') ? [
     { href: '/dashboard/rrhh/contratos', icon: Briefcase, label: 'Contratos' },
@@ -288,6 +298,10 @@ const getSupervisorNavItems = (can: (p: Permission) => boolean) => [
   { href: '/dashboard/supervisor/purchase-request-form', icon: ShoppingCart, label: 'Solicitud Compra' },
   { href: '/dashboard/purchasing/purchase-request-form?tipo=arriendo', icon: KeyRound, label: 'Solicitud Arriendo' },
   { href: '/dashboard/supervisor/suppliers', icon: Building2, label: 'Lista Proveedores' },
+  ...(can('safety_talks:manage') && !can('module_safety:view') ? [
+    { href: '/dashboard/safety/daily-talk', icon: Users, label: 'Charla Diaria' },
+    { href: '/dashboard/safety/review-daily-talks', icon: BookOpen, label: 'Revisar Charlas' },
+  ] : []),
 ];
 
 const getCommitteeNavItems = () => [
@@ -338,6 +352,7 @@ function PanolPendingBadge({ isActive }: { isActive: boolean }) {
 export function Sidebar({ onLinkClick }: SidebarProps) {
   const pathname = usePathname();
   const { user, can, logout } = useAuth();
+  const { currentTenant } = useAppState();
 
   const handleLinkClick = () => {
     if (onLinkClick) {
@@ -363,7 +378,7 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
       return { navItems: getAbastecimientoNavItems(), moduleTitle: 'Abastecimiento', moduleIcon: PackageSearch };
     }
     if (pathname.startsWith('/dashboard/pagnol')) {
-      return { navItems: getPanolNavItems(can), moduleTitle: 'Control de Activos', moduleIcon: Warehouse };
+      return { navItems: getPanolNavItems(can, currentTenant?.receivingMode), moduleTitle: 'Control de Activos', moduleIcon: Warehouse };
     }
     if (pathname.startsWith('/dashboard/construction-control')) {
       return { navItems: getConstructionNavItems(can), moduleTitle: 'Control de Obras', moduleIcon: Construction };
@@ -419,7 +434,7 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
     // Bodega fusionada en el Módulo Pagnol: las rutas viejas redirigen, pero si
     // el usuario aterriza en una, mostramos el nav de Pagnol.
     if (pathname.startsWith('/dashboard/bodega')) {
-      return { navItems: getPanolNavItems(can), moduleTitle: 'Control de Activos', moduleIcon: Warehouse };
+      return { navItems: getPanolNavItems(can, currentTenant?.receivingMode), moduleTitle: 'Control de Activos', moduleIcon: Warehouse };
     }
     if (pathname.startsWith('/dashboard/dte')) {
       return { navItems: getDteNavItems(), moduleTitle: 'Facturación DTE', moduleIcon: Receipt };
@@ -451,7 +466,7 @@ export function Sidebar({ onLinkClick }: SidebarProps) {
     }
 
     return { navItems: [], moduleTitle: 'PAGNOL', moduleIcon: LayoutDashboard };
-  }, [pathname, user, can]);
+  }, [pathname, user, can, currentTenant?.receivingMode]);
 
   return (
     <div className="flex h-full max-h-screen flex-col bg-[#1A3A44] text-white">

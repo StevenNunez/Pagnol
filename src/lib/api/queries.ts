@@ -8,8 +8,10 @@ import {
     rutVariants, toActivoDTO, toMaterialDTO, toProveedorDTO,
     type ActivoLugar, type MaterialRow, type SupplierRow,
 } from './mappers';
+import { toSolicitudCompraDTO, type SolicitudRow } from './solicitudes';
+import { toCompraDTO, toCompraRecepcionCorregidaDTO, toCompraRecibidaDTO, type CompraLineaRow, type CompraRow, type MaterialLite, type RecepcionCorreccionRow, type RecepcionLineaRow, type RecepcionRow } from './compras';
 import type {
-    ActivoDTO, ActivoEstado, ExistenciasDTO, MaterialDTO, MovimientoDTO, PanolDTO, ProveedorDTO, RefDTO,
+    ActivoDTO, ActivoEstado, CompraDTO, CompraRecepcionCorregidaDTO, CompraRecibidaDTO, ExistenciasDTO, MaterialDTO, MovimientoDTO, PanolDTO, ProveedorDTO, RefDTO, SolicitudCompraDTO,
     WebhookCreatedDTO, WebhookDTO,
 } from './schemas';
 
@@ -318,6 +320,129 @@ export async function patchActivo(
     return getActivo(db, tenantId, id);
 }
 
+// ── Compras esperadas ───────────────────────────────────────────────────────
+
+const COMPRA_COLUMNS = 'id, external_ref, supplier_id, warehouse_id, estimated_date, contract_ref, canceled_at, created_at, updated_at';
+const LINEA_COLUMNS = 'id, purchase_id, external_ref, material_id, expected_qty, unit_value, canceled_at, created_at';
+const RECEPCION_COLUMNS = 'id, purchase_id, warehouse_id, guide_number, received_on, received_by, received_by_name, created_at';
+// `*`: tolera que la columna `expected_qty` (migración 20261027010000) aún no exista.
+const RECEPCION_LINEA_COLUMNS = '*';
+// `*` también: tolera que la tabla de correcciones aún no exista (migración 20261028000000) en lecturas viejas.
+const CORRECCION_COLUMNS = '*';
+
+async function toCompras(db: SupabaseClient, tenantId: string, rows: CompraRow[]): Promise<CompraDTO[]> {
+    if (!rows.length) return [];
+    const { data: ls, error } = await scoped(db, 'expected_purchase_lines', LINEA_COLUMNS, tenantId)
+        .in('purchase_id', rows.map(r => r.id))
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
+    if (error) throw error;
+    const lineas = (ls ?? []) as unknown as CompraLineaRow[];
+
+    const matIds = [...new Set(lineas.map(l => l.material_id))];
+    const mats = new Map<string, MaterialLite>();
+    if (matIds.length) {
+        const { data, error: e } = await scoped(db, 'materials', 'id, name, usage_type', tenantId).in('id', matIds);
+        if (e) throw e;
+        for (const m of (data ?? []) as unknown as MaterialLite[]) mats.set(m.id, m);
+    }
+    const supIds = [...new Set(rows.map(r => r.supplier_id).filter(Boolean) as string[])];
+    const sups = new Map<string, RefDTO>();
+    if (supIds.length) {
+        const { data, error: e } = await scoped(db, 'suppliers', 'id, name', tenantId).in('id', supIds);
+        if (e) throw e;
+        for (const s of (data ?? []) as unknown as { id: string; name: string }[]) sups.set(s.id, { id: s.id, nombre: s.name });
+    }
+    const panoles = await namesById(db, tenantId, 'warehouses', [...new Set(rows.map(r => r.warehouse_id))]);
+
+    // Lo recibido en Pagnol: hechos inmutables de los que sale la cantidad y el estado de cada línea.
+    const { data: rs, error: rErr } = await scoped(db, 'expected_purchase_receipts', RECEPCION_COLUMNS, tenantId)
+        .in('purchase_id', rows.map(r => r.id));
+    if (rErr) throw rErr;
+    const recepciones = (rs ?? []) as unknown as RecepcionRow[];
+    let recepcionLineas: RecepcionLineaRow[] = [];
+    let correcciones: RecepcionCorreccionRow[] = [];
+    if (recepciones.length) {
+        const { data: rls, error: lErr } = await scoped(db, 'expected_purchase_receipt_lines', RECEPCION_LINEA_COLUMNS, tenantId)
+            .in('receipt_id', recepciones.map(r => r.id));
+        if (lErr) throw lErr;
+        recepcionLineas = (rls ?? []) as unknown as RecepcionLineaRow[];
+        correcciones = await correccionesDe(db, tenantId, recepcionLineas.map(x => x.id));
+    }
+
+    return rows.map(r => toCompraDTO(r, lineas, {
+        materiales: mats,
+        proveedor: r.supplier_id ? sups.get(r.supplier_id) ?? null : null,
+        panol: panoles.get(r.warehouse_id) ?? { id: r.warehouse_id, nombre: '' },
+        recepciones,
+        recepcionLineas,
+        correcciones,
+    }));
+}
+
+/** Correcciones de un conjunto de líneas de recepción. Si la tabla aún no existe (migración sin aplicar), no hay correcciones. */
+async function correccionesDe(db: SupabaseClient, tenantId: string, receiptLineIds: string[]): Promise<RecepcionCorreccionRow[]> {
+    const out: RecepcionCorreccionRow[] = [];
+    for (let i = 0; i < receiptLineIds.length; i += BY_IDS_CHUNK) {
+        const { data, error } = await scoped(db, 'expected_purchase_receipt_corrections', CORRECCION_COLUMNS, tenantId)
+            .in('receipt_line_id', receiptLineIds.slice(i, i + BY_IDS_CHUNK));
+        if (error) {
+            if ((error as { code?: string }).code === 'PGRST205' || (error as { code?: string }).code === '42P01') return [];
+            throw error;
+        }
+        out.push(...((data ?? []) as unknown as RecepcionCorreccionRow[]));
+    }
+    return out;
+}
+
+export async function listCompras(
+    db: SupabaseClient, tenantId: string,
+    params: ListParams & { external_ref?: string },
+): Promise<Page<CompraDTO>> {
+    let query = scoped(db, 'expected_purchases', COMPRA_COLUMNS, tenantId);
+    if (params.external_ref) query = query.eq('external_ref', params.external_ref);
+    const { rows, next_cursor } = await runPage<CompraRow>(query, params);
+    return { data: await toCompras(db, tenantId, rows), next_cursor };
+}
+
+export async function getCompra(db: SupabaseClient, tenantId: string, id: string): Promise<CompraDTO> {
+    const row = await runOne<CompraRow>(scoped(db, 'expected_purchases', COMPRA_COLUMNS, tenantId).eq('id', id), 'Compra esperada');
+    return (await toCompras(db, tenantId, [row]))[0];
+}
+
+/** Anuncia una compra con sus líneas (función api_create_expected_purchase: una transacción). */
+export async function createCompra(
+    db: SupabaseClient, tenantId: string, actor: string,
+    body: {
+        external_ref: string; proveedor_id?: string | null; panol_id: string; fecha_estimada?: string | null;
+        contrato_ref?: string | null; lineas: { external_ref: string; material_id: string; cantidad: number }[];
+    },
+): Promise<WriteResult<CompraDTO>> {
+    const { data, error } = await db.rpc('api_create_expected_purchase', {
+        p_tenant_id: tenantId,
+        p_actor: actor,
+        p_external_ref: body.external_ref,
+        p_supplier_id: body.proveedor_id ?? null,
+        p_warehouse_id: body.panol_id,
+        p_date: body.fecha_estimada ?? null,
+        p_contract_ref: body.contrato_ref ?? null,
+        p_lines: body.lineas,
+    });
+    if (error) fromRpcError(error);
+    const row = (data as { purchase_id: string; created: boolean }[])[0];
+    return { created: row.created, data: await getCompra(db, tenantId, row.purchase_id) };
+}
+
+/** Corrige o cancela. Sólo viaja lo que cambia: un `null` explícito borra el valor. */
+export async function patchCompra(
+    db: SupabaseClient, tenantId: string, id: string,
+    body: { fecha_estimada?: string | null; panol_id?: string; contrato_ref?: string | null; cancelar?: true; lineas?: { external_ref: string; cantidad?: number; cancelar?: true }[] },
+): Promise<CompraDTO> {
+    const { error } = await db.rpc('api_patch_expected_purchase', { p_tenant_id: tenantId, p_id: id, p_patch: body });
+    if (error) fromRpcError(error);
+    return getCompra(db, tenantId, id);
+}
+
 // ── Movimientos de stock (consumibles) ──────────────────────────────────────
 
 /** Ingreso de stock de un consumible, o reverso de un ingreso (api_stock_entry: una transacción). */
@@ -404,6 +529,125 @@ export async function materialesByIds(db: SupabaseClient, tenantId: string, kind
     return rows.map(toMaterialDTO);
 }
 
+/** `data` de `compra.recibida`, una por línea recibida (los ids son los de `expected_purchase_receipt_lines`). */
+export async function comprasRecibidasByIds(db: SupabaseClient, tenantId: string, ids: string[]): Promise<Map<string, CompraRecibidaDTO>> {
+    const out = new Map<string, CompraRecibidaDTO>();
+    if (!ids.length) return out;
+    const mine = await rowsByIds<RecepcionLineaRow>(db, tenantId, 'expected_purchase_receipt_lines', RECEPCION_LINEA_COLUMNS, ids);
+    if (!mine.length) return out;
+
+    const lineIds = [...new Set(mine.map(m => m.line_id))];
+    const lineas = await rowsByIds<CompraLineaRow>(db, tenantId, 'expected_purchase_lines', LINEA_COLUMNS, lineIds);
+    // Para la acumulada hacen falta TODAS las recepciones de esas líneas, no sólo las del evento.
+    const todas: RecepcionLineaRow[] = [];
+    for (let i = 0; i < lineIds.length; i += BY_IDS_CHUNK) {
+        const { data, error } = await scoped(db, 'expected_purchase_receipt_lines', RECEPCION_LINEA_COLUMNS, tenantId)
+            .in('line_id', lineIds.slice(i, i + BY_IDS_CHUNK));
+        if (error) throw error;
+        todas.push(...((data ?? []) as unknown as RecepcionLineaRow[]));
+    }
+    const recepciones = await rowsByIds<RecepcionRow>(db, tenantId, 'expected_purchase_receipts', RECEPCION_COLUMNS, [...new Set(todas.map(t => t.receipt_id))]);
+    const compras = await rowsByIds<CompraRow>(db, tenantId, 'expected_purchases', COMPRA_COLUMNS, [...new Set(lineas.map(l => l.purchase_id))]);
+    const mats = await rowsByIds<{ id: string; name: string }>(db, tenantId, 'materials', 'id, name', [...new Set(lineas.map(l => l.material_id))]);
+    const panoles = await namesById(db, tenantId, 'warehouses', [...new Set(recepciones.map(r => r.warehouse_id ?? '').filter(Boolean))]);
+
+    const correcciones = await correccionesDe(db, tenantId, todas.map(t => t.id));
+    const byId = <T extends { id: string }>(l: T[]) => new Map(l.map(x => [x.id, x]));
+    const lineaBy = byId(lineas), recBy = byId(recepciones), compraBy = byId(compras), matBy = byId(mats);
+    for (const m of mine) {
+        const linea = lineaBy.get(m.line_id), recepcion = recBy.get(m.receipt_id);
+        const compra = linea ? compraBy.get(linea.purchase_id) : undefined;
+        const material = linea ? matBy.get(linea.material_id) : undefined;
+        if (!linea || !recepcion || !compra || !material) continue;
+        const wid = recepcion.warehouse_id ?? compra.warehouse_id;
+        out.set(m.id, toCompraRecibidaDTO({
+            compra, recepcion, recepcionLinea: m, linea, material,
+            deLaLinea: todas.filter(t => t.line_id === m.line_id),
+            correcciones,
+            panol: panoles.get(wid) ?? { id: wid, nombre: '' },
+        }));
+    }
+    return out;
+}
+
+/** `data` de `compra.recepcion_corregida`, una por corrección (los ids son los de `expected_purchase_receipt_corrections`). */
+export async function comprasCorregidasByIds(db: SupabaseClient, tenantId: string, ids: string[]): Promise<Map<string, CompraRecepcionCorregidaDTO>> {
+    const out = new Map<string, CompraRecepcionCorregidaDTO>();
+    if (!ids.length) return out;
+    const mine = await rowsByIds<RecepcionCorreccionRow>(db, tenantId, 'expected_purchase_receipt_corrections', CORRECCION_COLUMNS, ids);
+    if (!mine.length) return out;
+
+    const receiptLines = await rowsByIds<RecepcionLineaRow>(db, tenantId, 'expected_purchase_receipt_lines', RECEPCION_LINEA_COLUMNS, [...new Set(mine.map(m => m.receipt_line_id))]);
+    const lineIds = [...new Set(receiptLines.map(r => r.line_id))];
+    const lineas = await rowsByIds<CompraLineaRow>(db, tenantId, 'expected_purchase_lines', LINEA_COLUMNS, lineIds);
+    // Para la acumulada neta: todas las recepciones de esas líneas y todas las correcciones de ellas.
+    const todas: RecepcionLineaRow[] = [];
+    for (let i = 0; i < lineIds.length; i += BY_IDS_CHUNK) {
+        const { data, error } = await scoped(db, 'expected_purchase_receipt_lines', RECEPCION_LINEA_COLUMNS, tenantId)
+            .in('line_id', lineIds.slice(i, i + BY_IDS_CHUNK));
+        if (error) throw error;
+        todas.push(...((data ?? []) as unknown as RecepcionLineaRow[]));
+    }
+    const correcciones = await correccionesDe(db, tenantId, todas.map(t => t.id));
+    const recepciones = await rowsByIds<RecepcionRow>(db, tenantId, 'expected_purchase_receipts', RECEPCION_COLUMNS, [...new Set(receiptLines.map(r => r.receipt_id))]);
+    const compras = await rowsByIds<CompraRow>(db, tenantId, 'expected_purchases', COMPRA_COLUMNS, [...new Set(lineas.map(l => l.purchase_id))]);
+    const mats = await rowsByIds<{ id: string; name: string }>(db, tenantId, 'materials', 'id, name', [...new Set(lineas.map(l => l.material_id))]);
+    const panoles = await namesById(db, tenantId, 'warehouses', [...new Set(recepciones.map(r => r.warehouse_id ?? '').filter(Boolean))]);
+
+    const byId = <T extends { id: string }>(l: T[]) => new Map(l.map(x => [x.id, x]));
+    const rlBy = byId(receiptLines), lineaBy = byId(lineas), recBy = byId(recepciones), compraBy = byId(compras), matBy = byId(mats);
+    for (const c of mine) {
+        const rl = rlBy.get(c.receipt_line_id);
+        const linea = rl ? lineaBy.get(rl.line_id) : undefined;
+        const recepcion = rl ? recBy.get(rl.receipt_id) : undefined;
+        const compra = linea ? compraBy.get(linea.purchase_id) : undefined;
+        const material = linea ? matBy.get(linea.material_id) : undefined;
+        if (!rl || !linea || !recepcion || !compra || !material) continue;
+        const wid = recepcion.warehouse_id ?? compra.warehouse_id;
+        out.set(c.id, toCompraRecepcionCorregidaDTO({
+            compra, recepcion, correccion: c, linea, material,
+            deLaLinea: todas.filter(t => t.line_id === rl.line_id),
+            correcciones,
+            panol: panoles.get(wid) ?? { id: wid, nombre: '' },
+        }));
+    }
+    return out;
+}
+
+const SOLICITUD_COLUMNS = 'id, batch_id, internal_code, material_name, item_description, quantity, unit, category, request_type, justification, supervisor_id, requester_name, contract_id, contract_name, area, urgency, urgency_reason, needed_by, status, rejection_reason, adc_authorized_at, adc_authorized_by, ops_reviewed_by, ops_reviewed_by_name, created_at';
+
+/**
+ * `data` de los eventos `solicitud_compra.*`. El id del evento es el de la solicitud: el `batch_id` de
+ * sus líneas, o el id de la fila si va sola. Se arma con el estado de AHORA (como el resto de recursos).
+ */
+export async function solicitudesCompraByIds(db: SupabaseClient, tenantId: string, ids: string[]): Promise<Map<string, SolicitudCompraDTO>> {
+    const out = new Map<string, SolicitudCompraDTO>();
+    const rows: SolicitudRow[] = [];
+    for (let i = 0; i < ids.length; i += BY_IDS_CHUNK) {
+        const list = ids.slice(i, i + BY_IDS_CHUNK).join(',');
+        const { data, error } = await scoped(db, 'purchase_requests', SOLICITUD_COLUMNS, tenantId)
+            .or(`id.in.(${list}),batch_id.in.(${list})`)
+            .neq('request_target', 'client')
+            .is('rental_request_id', null);
+        if (error) throw error;
+        rows.push(...((data ?? []) as unknown as SolicitudRow[]));
+    }
+    if (!rows.length) return out;
+
+    const userIds = [...new Set(rows.flatMap(r => [r.adc_authorized_by, r.ops_reviewed_by, r.supervisor_id]).filter((x): x is string => !!x))];
+    const names = new Map<string, string>();
+    for (let i = 0; i < userIds.length; i += BY_IDS_CHUNK) {
+        const { data, error } = await scoped(db, 'profiles', 'id, name', tenantId).in('id', userIds.slice(i, i + BY_IDS_CHUNK));
+        if (error) throw error;
+        for (const p of (data ?? []) as unknown as { id: string; name: string | null }[]) names.set(p.id, p.name ?? '');
+    }
+    for (const id of ids) {
+        const mine = rows.filter(r => (r.batch_id ?? r.id) === id);
+        if (mine.length) out.set(id, toSolicitudCompraDTO(id, mine, names));
+    }
+    return out;
+}
+
 export async function activosByIds(db: SupabaseClient, tenantId: string, ids: string[]): Promise<ActivoDTO[]> {
     const rows = await rowsByIds<MaterialRow>(db, tenantId, 'materials', MATERIAL_API_COLUMNS, ids, q => applyKind(q, 'activos'));
     return toActivos(db, tenantId, rows);
@@ -481,6 +725,33 @@ export async function activeWebhookTargets(db: SupabaseClient, tenantId: string)
     const { data, error } = await scoped(db, 'webhook_subscriptions', 'id, events', tenantId).eq('active', true);
     if (error) throw error;
     return (data ?? []) as unknown as { id: string; events: string[] }[];
+}
+
+/** Cambia url / eventos / descripción / pausa. El secreto de firma NO cambia: esa es la razón de que exista. */
+export async function patchWebhook(
+    db: SupabaseClient, tenantId: string, id: string,
+    body: { url?: string; events?: WebhookDTO['events']; descripcion?: string | null; activo?: boolean },
+): Promise<WebhookDTO> {
+    const current = await runOne<WebhookRow>(scoped(db, 'webhook_subscriptions', WEBHOOK_COLUMNS, tenantId).eq('id', id), 'Webhook');
+    if (body.url !== undefined && body.url !== current.url) {
+        const { data: same, error: e } = await scoped(db, 'webhook_subscriptions', 'id', tenantId).eq('url', body.url);
+        if (e) throw e;
+        if ((same ?? []).length) throw new ApiError('conflict', 'Ya hay un webhook registrado con esa URL.');
+    }
+    const patch: Record<string, unknown> = {};
+    if (body.url !== undefined) patch.url = body.url;
+    if (body.events !== undefined) patch.events = body.events;
+    if (body.descripcion !== undefined) patch.description = body.descripcion;
+    if (body.activo !== undefined) patch.active = body.activo;
+
+    const { data, error } = await db.from('webhook_subscriptions').update(patch)
+        .eq('tenant_id', tenantId).eq('id', id).select(WEBHOOK_COLUMNS);
+    if (error) {
+        if ((error as { code?: string }).code === '23505') throw new ApiError('conflict', 'Ya hay un webhook registrado con esa URL.');
+        throw error;
+    }
+    if (!data?.length) throw new ApiError('not_found', 'Webhook no encontrado.');
+    return toWebhookDTO((data as unknown as WebhookRow[])[0]);
 }
 
 export async function deleteWebhook(db: SupabaseClient, tenantId: string, id: string): Promise<void> {

@@ -28,6 +28,7 @@ import { generateUserInternalId } from '@/modules/core/lib/user-internal-id';
 import { ROLES } from '@/modules/core/lib/permissions';
 import type { User } from '@/modules/core/lib/data';
 import { EmploymentContractSection } from '@/components/employment-contract-section';
+import { SeparateWorkerDialog, ReinstateWorkerDialog } from '@/components/hr/separate-worker-dialog';
 
 const ProfileSchema = z.object({
     name: z.string().min(3, 'El nombre es requerido.'),
@@ -47,6 +48,7 @@ const ProfileSchema = z.object({
     emergencyContactName: z.string().optional(),
     emergencyContactPhone: z.string().optional(),
     employmentStatus: z.enum(['active', 'on_leave', 'terminated']).optional(),
+    responsibleSupervisorId: z.string().optional(),
 });
 type ProfileForm = z.infer<typeof ProfileSchema>;
 
@@ -94,6 +96,12 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
     const canEditPayroll = canEditUsers || self;
     // Actor de RRHH puro (sin users:edit): guarda por API service-role acotada a RRHH.
     const useHrApi = !self && !canEditUsers && canHR;
+    // Nadie se asigna a sí mismo el supervisor que lo valida (lo exige también la base).
+    const canAssignSupervisor = !self && (canEditUsers || canHR);
+    const supervisorOptions = useMemo(
+        () => (users || []).filter(u => u.role === 'supervisor' && u.id !== user.id && u.employmentStatus !== 'terminated'),
+        [users, user.id]
+    );
 
     const tabs = useMemo(() => ([
         { id: 'identidad' as const, label: 'Identidad', icon: UserIcon, show: true },
@@ -105,6 +113,8 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
 
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab && tabs.some(t => t.id === defaultTab) ? defaultTab : 'identidad');
     const [enrollOpen, setEnrollOpen] = useState(false);
+    const [separateOpen, setSeparateOpen] = useState(false);
+    const [reinstateOpen, setReinstateOpen] = useState(false);
 
     // Contratos/faenas asignados (Fase 2 Valar): asignar, cambiar turno o quitar sin
     // salir del panel. Las acciones guardan al instante (no pasan por "Guardar cambios").
@@ -112,6 +122,11 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
     const assignments = useMemo(
         () => contractWorkers.filter(cw => cw.userId === user.id && !cw.endDate),
         [contractWorkers, user.id]
+    );
+    const canSeparate = !self && (canEditUsers || canHR) && user.role !== 'super-admin';
+    const separationAssignments = useMemo(
+        () => assignments.map(a => ({ contractId: a.contractId, name: contracts.find(c => c.id === a.contractId)?.name ?? 'Contrato' })),
+        [assignments, contracts]
     );
     const availableContracts = useMemo(
         () => contracts.filter(c => c.status === 'active' && !assignments.some(a => a.contractId === c.id)),
@@ -209,6 +224,7 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
             emergencyContactName: user.emergencyContactName ?? '',
             emergencyContactPhone: user.emergencyContactPhone ?? '',
             employmentStatus: user.employmentStatus ?? 'active',
+            responsibleSupervisorId: user.responsibleSupervisorId ?? '',
         },
     });
 
@@ -248,6 +264,11 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                 }
                 if (canEditRole) payload.role = data.role;
                 await updateUser(user.id, payload);
+            }
+            // Supervisor responsable: siempre por la API acotada (valida empresa y rol),
+            // porque `updateUser` no lo escribe. Sólo si cambió.
+            if (canAssignSupervisor && (data.responsibleSupervisorId || '') !== (user.responsibleSupervisorId ?? '')) {
+                await hrUpdateUser(user.id, { responsibleSupervisorId: data.responsibleSupervisorId || null });
             }
             // "Guardar cambios" también confirma una asignación de contrato elegida en el
             // select pero no confirmada con "Asignar" — antes esa selección se descartaba
@@ -305,6 +326,17 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                     onEnrollUser={enrollUser}
                     tenantId={authUser?.tenantId || null}
                 />
+            )}
+            {canSeparate && separateOpen && (
+                <SeparateWorkerDialog
+                    user={user}
+                    open={separateOpen}
+                    onClose={() => { setSeparateOpen(false); onClose(); }}
+                    assignments={separationAssignments}
+                />
+            )}
+            {canSeparate && reinstateOpen && (
+                <ReinstateWorkerDialog user={user} open={reinstateOpen} onClose={() => { setReinstateOpen(false); onClose(); }} />
             )}
             {self ? (
                 <>
@@ -368,12 +400,34 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         <Field label="Cargo / Puesto"><Input {...register('cargo')} className="h-12 rounded-xl" /></Field>
                                         <Field label="Estado laboral">
-                                            <select {...register('employmentStatus')} className="h-12 w-full rounded-xl border bg-background px-3 text-sm">
-                                                <option value="active">Activo</option>
-                                                <option value="on_leave">Con Licencia/Vacaciones</option>
-                                                <option value="terminated">Desvinculado</option>
-                                            </select>
+                                            {user.employmentStatus === 'terminated' ? (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="h-12 flex-1 rounded-xl border bg-destructive/10 text-destructive px-3 text-sm font-bold flex items-center">Desvinculado</span>
+                                                    {canSeparate && (
+                                                        <Button type="button" variant="outline" className="h-12 rounded-xl" onClick={() => setReinstateOpen(true)}>Reincorporar</Button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2">
+                                                    <select {...register('employmentStatus')} className="h-12 flex-1 rounded-xl border bg-background px-3 text-sm">
+                                                        <option value="active">Activo</option>
+                                                        <option value="on_leave">Con Licencia/Vacaciones</option>
+                                                    </select>
+                                                    {canSeparate && (
+                                                        <Button type="button" variant="outline" className="h-12 rounded-xl text-destructive hover:text-destructive" onClick={() => setSeparateOpen(true)}>Desvincular…</Button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </Field>
+                                        {canAssignSupervisor && user.role !== 'supervisor' && (
+                                            <Field label="Supervisor responsable">
+                                                <select {...register('responsibleSupervisorId')} className="h-12 w-full rounded-xl border bg-background px-3 text-sm">
+                                                    <option value="">Sin asignar</option>
+                                                    {supervisorOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                                </select>
+                                                <p className="text-[10px] text-muted-foreground mt-1">Valida lo que esta persona retira en el pañol.</p>
+                                            </Field>
+                                        )}
                                         <Field label="Fecha de nacimiento"><Input type="date" {...register('birthDate')} className="h-12 rounded-xl" /></Field>
                                         <Field label="Dirección" full><Input {...register('address')} className="h-12 rounded-xl" /></Field>
                                         <Field label="Contacto de emergencia"><Input {...register('emergencyContactName')} className="h-12 rounded-xl" /></Field>

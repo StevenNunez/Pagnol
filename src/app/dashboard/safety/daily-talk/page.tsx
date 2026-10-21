@@ -25,6 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { User } from "@/modules/core/lib/data";
 import { suggestMiningSafetyTalkTopic } from "@/actions/ai-actions";
+import { notifyTalk } from "@/modules/core/lib/daily-talk-client";
 
 const attendeeSchema = z.object({
   id: z.string(),
@@ -58,7 +59,7 @@ export default function DailyTalkPage() {
   const [isSuggesting, setIsSuggesting] = useState(false);
   
   const workers = useMemo(() => 
-    (users || []).filter(u => u.role !== 'guardia')
+    (users || []).filter(u => u.role !== 'guardia' && u.employmentStatus !== 'terminated')
     .sort((a,b) => a.name.localeCompare(b.name)), 
   [users]);
 
@@ -132,10 +133,16 @@ export default function DailyTalkPage() {
         expositorName: authUser.name,
       };
 
-      await addDailyTalk(dataToSave as any);
+      const talkId = await addDailyTalk(dataToSave as any);
+      // Se avisa a los convocados que tienen la app; quienes no, firman en tu equipo
+      // desde el detalle de la charla. Si el aviso falla, la charla ya quedó guardada.
+      let warned = 0;
+      try { warned = (await notifyTalk(talkId, 'all')).sent; } catch { /* sin aviso */ }
       toast({
         title: "Charla Guardada y Asignada",
-        description: "El registro fue guardado. Los asistentes deben firmar desde su propio perfil.",
+        description: warned > 0
+          ? "Se avisó a los asistentes para que firmen. Sigue quién firmó en «Revisión de Charlas»."
+          : "El registro fue guardado. Toma la firma de los asistentes desde «Revisión de Charlas».",
       });
       reset();
     } catch (error: any) {

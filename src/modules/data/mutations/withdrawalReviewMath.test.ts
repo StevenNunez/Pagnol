@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     summarizeReview, indexReviews, canReviewRequest, reviewerIdsFor, resolveObservations,
+    reviewDueState, regularizationState, pendingMaterialIds, isOversightRole,
     type ReviewableRequest, type Observation, type ReturnFact,
 } from './withdrawalReviewMath';
 
@@ -180,5 +181,73 @@ describe('resolveObservations', () => {
         const r = resolveObservations([obs('a', { withdrawnAt: d(3) }), obs('b')], [ret('x')], new Set(['a']));
         expect(r.get('a')!.status).toBe('justified');
         expect(r.get('b')!.status).toBe('returned');
+    });
+});
+
+describe('supervisor responsable', () => {
+    const me = (over = {}) => ({ id: 'sup1', seesAllContracts: false, contractIds: new Set(['c1']), ...over });
+
+    it('con responsable: sólo él revisa, aunque otro supervisor comparta el contrato', () => {
+        const r = req({ reviewerSupervisorId: 'sup1' });
+        expect(canReviewRequest(r, me())).toBe(true);
+        expect(canReviewRequest(r, me({ id: 'sup2' }))).toBe(false);
+    });
+
+    it('con responsable: ver todos los contratos NO basta, hace falta ser jefatura', () => {
+        const r = req({ reviewerSupervisorId: 'sup1' });
+        expect(canReviewRequest(r, me({ id: 'oficina', seesAllContracts: true }))).toBe(false);
+        expect(canReviewRequest(r, me({ id: 'jo', seesAllContracts: true, oversight: true }))).toBe(true);
+    });
+
+    it('nadie revisa su propio retiro, ni siquiera la jefatura', () => {
+        const r = req({ supervisorId: 'jo', reviewerSupervisorId: 'sup1' });
+        expect(canReviewRequest(r, me({ id: 'jo', oversight: true }))).toBe(false);
+    });
+
+    it('sin responsable rige la regla del contrato', () => {
+        expect(canReviewRequest(req(), me())).toBe(true);
+        expect(canReviewRequest(req(), me({ contractIds: new Set(['otro']) }))).toBe(false);
+    });
+
+    it('el aviso va al responsable; si es quien retiró o no existe, cae al respaldo', () => {
+        const users = [{ id: 'sup1', role: 'supervisor' }, { id: 'adm', role: 'administrador' }, { id: 'w', role: 'operador' }];
+        expect(reviewerIdsFor('c1', 'w', users, [], 'sup1')).toEqual(['sup1']);
+        expect(reviewerIdsFor('c1', 'sup1', users, [], 'sup1')).toEqual(['adm']);
+        expect(reviewerIdsFor('c1', 'w', users, [], 'fantasma')).toEqual(['adm']);
+    });
+
+    it('isOversightRole', () => {
+        expect(isOversightRole('jefe-operaciones')).toBe(true);
+        expect(isOversightRole('supervisor')).toBe(false);
+        expect(isOversightRole(undefined)).toBe(false);
+    });
+});
+
+describe('plazo de revisión', () => {
+    const now = new Date('2026-10-20T12:00:00Z');
+    it('no vence antes del plazo y vence justo en él', () => {
+        expect(reviewDueState('2026-10-19T13:00:00Z', 24, now).overdue).toBe(false);
+        expect(reviewDueState('2026-10-19T12:00:00Z', 24, now).overdue).toBe(true);
+    });
+    it('sin plazo configurado usa 48 horas', () => {
+        expect(reviewDueState('2026-10-18T13:00:00Z', null, now).overdue).toBe(false);
+        expect(reviewDueState('2026-10-18T11:00:00Z', undefined, now).deadlineHours).toBe(48);
+    });
+    it('fecha ilegible: nunca marca vencido', () => {
+        expect(reviewDueState(undefined, 24, now).overdue).toBe(false);
+        expect(reviewDueState('basura', 24, now).overdue).toBe(false);
+    });
+});
+
+describe('regularización y líneas pendientes', () => {
+    it('regularizationState', () => {
+        expect(regularizationState([])).toBe('none');
+        expect(regularizationState(['open', 'returned'])).toBe('pending');
+        expect(regularizationState(['returned', 'justified'])).toBe('resolved');
+    });
+    it('pendingMaterialIds ignora lo ya decidido y no repite materiales', () => {
+        const r = req({ items: [{ materialId: 'm1', quantity: 1 }, { materialId: 'm1', quantity: 1 }, { materialId: 'm2', quantity: 1 }] });
+        expect(pendingMaterialIds(r, [{ requestId: 'r1', materialId: 'm2', decision: 'authorized' }])).toEqual(['m1']);
+        expect(pendingMaterialIds(r)).toEqual(['m1', 'm2']);
     });
 });

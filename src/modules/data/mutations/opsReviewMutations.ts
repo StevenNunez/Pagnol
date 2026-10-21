@@ -60,6 +60,21 @@ export async function reviewPurchaseRequests(
     if (fetchErr) throw fetchErr;
     if (!rows || rows.length !== ids.length) throw new Error('El pedido cambió mientras lo revisabas. Recarga la página.');
 
+    // Toda modificación queda con autor, fecha y MOTIVO: corregir una cantidad o la
+    // descripción sin explicar por qué deja al supervisor sin saber qué pasó con su pedido.
+    const rowById = new Map(rows.map(r => [r.id, r]));
+    const modified = input.decision === 'approve' && input.lines.some(l => {
+        if (l.remove) return false;
+        const r = rowById.get(l.id);
+        if (!r) return false;
+        const qtyChanged = l.quantity !== undefined && Number(l.quantity) !== Number(r.quantity);
+        const descChanged = l.itemDescription !== undefined && (l.itemDescription || null) !== (r.item_description || null);
+        return qtyChanged || descChanged;
+    });
+    if (modified && (note?.length || 0) < OPS_REJECT_REASON_MIN) {
+        throw new Error(`Cambiaste cantidades o descripciones: explica por qué (mínimo ${OPS_REJECT_REASON_MIN} caracteres), el supervisor lo va a ver.`);
+    }
+
     for (const r of rows) {
         if (r.status !== 'pending' || r.ops_reviewed_at || r.adc_authorized_at) {
             throw new Error(`${r.internal_code || 'Una línea'} ya fue revisada por otra persona. Recarga la página.`);

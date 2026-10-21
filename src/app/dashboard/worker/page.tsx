@@ -16,6 +16,7 @@ import { canOpenPath } from '@/modules/core/lib/module-access';
 import { formatDistanceToNow, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { PageHeader } from '@/components/page-header';
+import { isPendingFor } from '@/lib/daily-talk-attendance';
 
 // El flujo de adelantos que vivía en esta página quedó RETIRADO.
 //
@@ -34,7 +35,7 @@ import { PageHeader } from '@/components/page-header';
 
 export default function WorkerDashboard() {
   const { user, can } = useAuth();
-  const { dailyTalks } = useAppState();
+  const { dailyTalks, dailyTalkSignatures } = useAppState();
   // "Mi Asistencia" abre el módulo completo de Asistencia (no hay vista personal):
   // sólo se ofrece a quien puede abrirlo.
   const canSeeAttendance = canOpenPath('/dashboard/attendance', can, user?.role);
@@ -42,9 +43,9 @@ export default function WorkerDashboard() {
   const pendingTalks = useMemo(() => {
     if (!user || !dailyTalks) return [];
     return dailyTalks.filter(talk =>
-      talk.asistentes.some(a => a.id === user.id && !a.signed)
+      isPendingFor(talk, dailyTalkSignatures || [], user.id)
     ).sort((a, b) => (b.fecha as any) - (a.fecha as any));
-  }, [dailyTalks, user]);
+  }, [dailyTalks, dailyTalkSignatures, user]);
 
   const formatRelativeDate = (date: any) => {
     const d = date instanceof Date ? date : new Date(date);

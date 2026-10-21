@@ -115,6 +115,9 @@ export async function POST(request: Request) {
         if (profileError) {
             // Rollback: delete the auth user if profile creation fails
             await admin.auth.admin.deleteUser(newUser.id);
+            if (profileError.code === '23505' && profileError.message.includes('profiles_tenant_rut_unique')) {
+                return NextResponse.json({ error: 'Ya existe una persona con ese RUT en la empresa.' }, { status: 409 });
+            }
             return NextResponse.json({ error: profileError.message }, { status: 500 });
         }
 

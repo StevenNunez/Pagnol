@@ -20,6 +20,7 @@ const HR_FIELD_MAP: Record<string, string> = {
     emergencyContactName: 'emergency_contact_name',
     emergencyContactPhone: 'emergency_contact_phone',
     employmentStatus: 'employment_status',
+    responsibleSupervisorId: 'responsible_supervisor_id',
 };
 
 export async function POST(request: Request) {
@@ -57,6 +58,23 @@ export async function POST(request: Request) {
         const payload: Record<string, any> = {};
         for (const [camel, col] of Object.entries(HR_FIELD_MAP)) {
             if (camel in body) payload[col] = body[camel] || null;
+        }
+
+        // El supervisor responsable debe ser un supervisor ACTIVO de la misma
+        // empresa y no la propia persona: la base lo aceptaría cualquiera.
+        if (payload.responsible_supervisor_id) {
+            if (payload.responsible_supervisor_id === userId) {
+                return NextResponse.json({ error: 'Una persona no puede ser su propio supervisor responsable.' }, { status: 400 });
+            }
+            const { data: sup } = await admin
+                .from('profiles')
+                .select('id, tenant_id, role, is_active, deleted_at')
+                .eq('id', payload.responsible_supervisor_id)
+                .single();
+            if (!sup || sup.tenant_id !== target.tenant_id || sup.role !== 'supervisor'
+                || sup.is_active === false || sup.deleted_at) {
+                return NextResponse.json({ error: 'El supervisor elegido no existe o no está activo en esta empresa.' }, { status: 400 });
+            }
         }
 
         if (Object.keys(payload).length === 0) {

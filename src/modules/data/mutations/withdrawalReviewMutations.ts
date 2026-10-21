@@ -70,6 +70,50 @@ export async function reviewWithdrawal(
 }
 
 /**
+ * Aprobación masiva: da por conforme un conjunto de líneas, de uno o varios
+ * retiros, en UN solo INSERT (o entran todas o no entra ninguna). Aplica
+ * exclusivamente a las líneas que se pasan: nada se aprueba "por arrastre".
+ * Sólo conforma; para observar una línea se usa `reviewWithdrawal` (pide motivo).
+ */
+export async function approveWithdrawalLines(
+    params: { lines: { requestId: string; materialId: string; materialName: string; quantity: number }[] },
+    { user, tenantId, can }: Context,
+): Promise<number> {
+    if (!user || !tenantId) throw new Error('No autenticado o sin inquilino.');
+    if (!can('material_requests:review_withdrawals')) {
+        throw new Error('No tienes permiso para revisar retiros.');
+    }
+    if (params.lines.length === 0) throw new Error('No hay líneas seleccionadas.');
+
+    const rows = params.lines.map(l => ({
+        tenant_id: tenantId,
+        request_id: l.requestId,
+        material_id: l.materialId,
+        material_name: l.materialName,
+        quantity: l.quantity,
+        decision: 'authorized' as const,
+        reason: null,
+        reviewer_id: user.id,
+        reviewer_name: user.name,
+    }));
+
+    const { data, error } = await supabase.from('withdrawal_reviews').insert(rows).select('id');
+    if (error) {
+        if (error.code === '23505') {
+            throw new Error('Alguien ya revisó una de estas líneas. Recarga para ver lo que quedó pendiente.');
+        }
+        if (error.code === '42501') {
+            throw new Error('Alguna de las líneas no es de tu cuadrilla. No se aprobó ninguna.');
+        }
+        throw error;
+    }
+    if (!data || data.length !== rows.length) {
+        throw new Error('La aprobación no se guardó completa (permiso denegado). Recarga e intenta de nuevo.');
+    }
+    return data.length;
+}
+
+/**
  * Cierra con una justificación una línea marcada "no corresponde" (etapa 3).
  * Para lo que no va a volver al pañol: típicamente un consumible ya gastado.
  * Lo devuelto se cierra solo (se deriva de las devoluciones); esto no.

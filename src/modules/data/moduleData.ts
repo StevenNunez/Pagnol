@@ -46,7 +46,7 @@ export const ALL_COLLECTIONS = [
     'users', 'materials', 'requests', 'returnRequests', 'purchaseRequests',
     'suppliers', 'materialCategories', 'units', 'purchaseLots', 'purchaseOrders',
     'quoteRequests', 'goodsReceipts', 'costCenters', 'supplierPayments',
-    'salaryAdvances', 'attendanceLogs', 'assignedChecklists', 'biometricVerifications', 'withdrawalReviews', 'withdrawalReviewResolutions', 'approvalProposals', 'approvalSignatures', 'safetyInspections',
+    'salaryAdvances', 'attendanceLogs', 'assignedChecklists', 'biometricVerifications', 'withdrawalReviews', 'withdrawalReviewResolutions', 'dailyTalkSignatures', 'approvalProposals', 'approvalSignatures', 'safetyInspections',
     'checklistTemplates', 'behaviorObservations', 'stockMovements', 'workItems', 'workProjects',
     'progressLogs', 'paymentStates', 'dailyTalks', 'maintenanceOrders',
     'maintenanceLogs', 'eaDocuments', 'protocolTemplates', 'protocols',
@@ -89,7 +89,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
     ],
     'bodega': [],
     'configuracion': [
-        'clients', 'contractWorkers', 'contracts', 'costCenters',
+        'clients', 'contractWorkers', 'contracts', 'costCenters', 'users',
     ],
     'construction-control': [
         'contracts', 'progressLogs', 'protocolTemplates', 'protocols', 'users',
@@ -142,7 +142,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
     ],
     'safety': [
         'assignedChecklists', 'behaviorObservations', 'checklistTemplates',
-        'dailyTalks', 'safetyInspections', 'users',
+        'dailyTalks', 'dailyTalkSignatures', 'safetyInspections', 'users',
     ],
     'subscriptions': [],
     'super-admin': [],
@@ -157,7 +157,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
         'shiftSchedules', 'users',
     ],
     'wallet': [
-        'attendanceLogs', 'dailyTalks', 'salaryAdvances', 'users',
+        'attendanceLogs', 'dailyTalks', 'dailyTalkSignatures', 'salaryAdvances', 'users',
     ],
     'work-reports': [
         'materials', 'users', 'workOrders', 'workReportAreas',
@@ -165,7 +165,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
         'workReports', 'workWeeklyReports',
     ],
     'worker': [
-        'dailyTalks',
+        'dailyTalks', 'dailyTalkSignatures',
     ],
 };
 

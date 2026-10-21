@@ -190,6 +190,16 @@ export async function addAndApproveMaterialRequest(
   const supervisorName = s?.name || 'Usuario';
   const now = new Date().toISOString();
 
+  // Con revisión posterior, el supervisor responsable del trabajador queda COPIADO
+  // en el retiro: si después cambia de supervisor, este retiro sigue con quien
+  // le correspondía. Sin responsable asignado rige el respaldo por contrato.
+  let reviewerSupervisorId: string | null = null;
+  if (requestData.requiresReview) {
+    const { data: resp } = await supabase
+      .from('profiles').select('responsible_supervisor_id').eq('id', requestData.supervisorId).single();
+    reviewerSupervisorId = resp?.responsible_supervisor_id ?? null;
+  }
+
   // 3. Perform Insert and Updates
   const { error: reqErr } = await supabase.from('material_requests').insert({
     internal_code: requestId,
@@ -217,6 +227,7 @@ export async function addAndApproveMaterialRequest(
     // Sólo se envía cuando aplica: así una empresa en modo 'prior' sigue
     // funcionando aunque la migración 20261007000000 aún no esté aplicada.
     ...(requestData.requiresReview ? { requires_review: true } : {}),
+    ...(reviewerSupervisorId ? { reviewer_supervisor_id: reviewerSupervisorId } : {}),
     created_at: now
   });
   if (reqErr) throw reqErr;
@@ -397,7 +408,7 @@ export async function deliverApprovedMaterialRequest(
    * Va ANTES del contexto: `bindContext` inyecta el contexto como último
    * argumento, así que ningún parámetro puede ir después.
    */
-  verification: { mode: 'biometric' | 'exception'; exceptionGroupId?: string | null } | null,
+  verification: { mode: 'biometric' | 'exception' | 'rut'; exceptionGroupId?: string | null } | null,
   context: Context,
 ) {
   const { user } = context;

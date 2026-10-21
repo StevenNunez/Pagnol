@@ -28,6 +28,7 @@ import { fetchMyPayrollLines } from '@/modules/data/mutations/payrollRunMutation
 import { earnedBaseSalary } from '@/modules/data/mutations/payrollMath';
 import { laborDayPresence, type LaborDayLog } from '@/modules/data/mutations/financeMath';
 import { buildLiquidacionPdf, liquidacionFileName } from '@/lib/liquidacion-pdf';
+import { isPendingFor } from '@/lib/daily-talk-attendance';
 
 // Billetera del trabajador.
 //
@@ -47,7 +48,7 @@ export default function WorkerWallet() {
     const { user, can } = useAuth();
     // "Mi Asistencia" abre el módulo completo: sólo para quien puede abrirlo.
     const canSeeAttendance = canOpenPath('/dashboard/attendance', can, user?.role);
-    const { attendanceLogs, addSalaryAdvanceRequest, dailyTalks, salaryAdvances, users, currentTenant } = useAppState();
+    const { attendanceLogs, addSalaryAdvanceRequest, dailyTalks, dailyTalkSignatures, salaryAdvances, users, currentTenant } = useAppState();
     const router = useRouter();
     const [isAdvanceModalOpen, setAdvanceModalOpen] = useState(false);
     const [isSending, setIsSending] = useState(false);
@@ -180,9 +181,9 @@ export default function WorkerWallet() {
     const pendingTalks = useMemo(() => {
         if (!user || !dailyTalks) return [];
         return dailyTalks
-            .filter(talk => talk.asistentes.some(a => a.id === user.id && !a.signed))
+            .filter(talk => isPendingFor(talk, dailyTalkSignatures || [], user.id))
             .sort((a, b) => (b.fecha as any) - (a.fecha as any));
-    }, [dailyTalks, user]);
+    }, [dailyTalks, dailyTalkSignatures, user]);
 
     const handleRequestAdvance = async () => {
         if (!user) return;

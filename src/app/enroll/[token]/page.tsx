@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { CheckCircle, Camera, ChevronRight, Loader2, AlertCircle, ScanFace, FileImage, Sparkles, X } from 'lucide-react';
+import { CheckCircle, Camera, ChevronRight, Loader2, AlertCircle, ScanFace, FileImage, Sparkles, SwitchCamera, X } from 'lucide-react';
 import { loadBiometricModels, captureBiometrics } from '@/lib/biometricService';
 import { BiometricConsentGate } from '@/components/biometric-consent-gate';
 import { cn } from '@/lib/utils';
@@ -33,17 +33,36 @@ export default function MobileEnrollPage() {
         if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); setCameraStream(null); }
     }, [cameraStream]);
 
-    const startCamera = useCallback(async (facing: 'user' | 'environment') => {
+    // Cámara en uso. Define también el espejo: sólo la frontal se ve y se guarda
+    // como espejo; la trasera va tal cual.
+    const [facing, setFacing] = useState<'user' | 'environment'>('environment');
+
+    const startCamera = useCallback(async (facingMode: 'user' | 'environment') => {
         stopCamera();
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing } });
+            let stream: MediaStream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facingMode } } });
+            } catch {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            }
             setCameraStream(stream);
-            if (videoRef.current) videoRef.current.srcObject = stream;
+            setFacing(facingMode);
         } catch {
             setErrorMsg('No se pudo acceder a la cámara. Verifica los permisos del navegador.');
             setStep('error');
         }
     }, [stopCamera]);
+
+    // Conectar el stream al <video> cuando AMBOS existen. Antes se asignaba dentro
+    // de `startCamera`, que corre antes de que el paso de cámara pinte el <video>
+    // (se llama justo al cambiar de paso): `videoRef.current` era null y la cámara
+    // trasera nunca se veía; sólo la selfie, que arranca con el video ya montado.
+    useEffect(() => {
+        if (videoRef.current && videoRef.current.srcObject !== cameraStream) {
+            videoRef.current.srcObject = cameraStream;
+        }
+    }, [cameraStream, step]);
 
     useEffect(() => {
         const validate = async () => {
@@ -113,7 +132,7 @@ export default function MobileEnrollPage() {
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        if (step === 'face') { ctx.scale(-1, 1); ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height); }
+        if (step === 'face' && facing === 'user') { ctx.scale(-1, 1); ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height); }
         else { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); }
         const imageData = canvas.toDataURL('image/jpeg', 0.85);
 
@@ -138,7 +157,7 @@ export default function MobileEnrollPage() {
         // por argumento. ⚠️ Si se agrega un dato capturado DESPUÉS de la selfie, hay
         // que leerlo con la forma funcional o pasarlo por argumento.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [step, stopCamera, startCamera]);
+    }, [step, facing, stopCamera, startCamera]);
 
     const processFace = async (faceData: string) => {
         setStep('processing');
@@ -269,7 +288,17 @@ export default function MobileEnrollPage() {
                         </div>
 
                         <div className="relative rounded-[2rem] overflow-hidden bg-black aspect-[3/4] flex-1">
-                            <video ref={videoRef} autoPlay playsInline muted className={cn("w-full h-full object-cover", step === 'face' && '[transform:scaleX(-1)]')} />
+                            <video ref={videoRef} autoPlay playsInline muted className={cn("w-full h-full object-cover", step === 'face' && facing === 'user' && '[transform:scaleX(-1)]')} />
+
+                            {/* Voltear cámara: el trabajador no siempre es quien sostiene el teléfono */}
+                            <button
+                                type="button"
+                                onClick={() => startCamera(facing === 'user' ? 'environment' : 'user')}
+                                aria-label={facing === 'user' ? 'Usar cámara trasera' : 'Usar cámara frontal'}
+                                className="absolute top-4 right-4 z-10 flex items-center gap-2 rounded-full bg-black/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white backdrop-blur active:scale-95"
+                            >
+                                <SwitchCamera size={16} /> {facing === 'user' ? 'Trasera' : 'Frontal'}
+                            </button>
 
                             {/* Frame overlay */}
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

@@ -18,7 +18,7 @@ import { User } from '@/modules/core/lib/data';
 import {
     X, ChevronRight, ChevronLeft, ScanFace, CheckCircle,
     Camera, Loader2, Smartphone, Monitor, QrCode,
-    FileText, User as UserIcon, Sparkles
+    FileText, User as UserIcon, Sparkles, SwitchCamera
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { cn } from '@/lib/utils';
@@ -151,6 +151,18 @@ export function EnrollmentWizard({
         }
     }, [isOpen, selectedUser, reset, generateInternalId]);
 
+    // Cámara en uso, para el botón de voltear (frontal ↔ trasera).
+    const [facing, setFacing] = useState<'user' | 'environment'>('environment');
+
+    // Conectar el stream al <video> cuando ambos existen: `startCamera` corre
+    // justo al cambiar de paso, antes de que el <video> se pinte, y asignarlo ahí
+    // dejaba la cámara trasera sin imagen (sólo la selfie se veía).
+    useEffect(() => {
+        if (videoRef.current && videoRef.current.srcObject !== cameraStream) {
+            videoRef.current.srcObject = cameraStream;
+        }
+    }, [cameraStream, step, mode, isProcessing]);
+
     const stopCamera = useCallback(() => {
         if (cameraStream) {
             cameraStream.getTracks().forEach(t => t.stop());
@@ -163,7 +175,7 @@ export function EnrollmentWizard({
         const tryGetStream = async (constraints: MediaStreamConstraints) => {
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             setCameraStream(stream);
-            if (videoRef.current) videoRef.current.srcObject = stream;
+            setFacing(facingMode);
         };
         try {
             await tryGetStream({ video: { facingMode: { ideal: facingMode } } });
@@ -700,7 +712,15 @@ export function EnrollmentWizard({
                                                 {kycSubStep === 'id_back' && 'Coloca el REVERSO de la cédula dentro del recuadro'}
                                                 {kycSubStep === 'face' && 'Mira directo a la cámara'}
                                             </p>
-                                            <div className="flex justify-center gap-3">
+                                            <div className="flex justify-center items-center gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => startCamera(facing === 'user' ? 'environment' : 'user')}
+                                                    aria-label={facing === 'user' ? 'Usar cámara trasera' : 'Usar cámara frontal'}
+                                                    className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full text-white flex items-center justify-center transition-all"
+                                                >
+                                                    <SwitchCamera size={20} />
+                                                </button>
                                                 <button onClick={capturePhoto} className="w-16 h-16 bg-white rounded-full border-4 border-slate-200 hover:scale-110 hover:border-primary transition-all shadow-xl flex items-center justify-center">
                                                     <Camera className="text-slate-700" size={22} />
                                                 </button>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -61,6 +61,8 @@ interface UserPanelProps {
     /** El usuario actual se edita a sí mismo (Mi Perfil). */
     self?: boolean;
     defaultTab?: TabId;
+    /** Abre directo el diálogo de desvinculación (atajo desde la lista de usuarios). */
+    startSeparation?: boolean;
 }
 
 const toDateInput = (d: Date | string | null | undefined) => {
@@ -76,7 +78,7 @@ const labelCls = 'text-[10px] font-black uppercase tracking-widest text-muted-fo
  * antes vivía disperso: Identidad, Contrato/RRHH, Biometría, Seguridad y Permisos.
  * Las pestañas se muestran/ocultan según el permiso de quien lo abre.
  */
-export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: UserPanelProps) {
+export function UserPanel({ user, isOpen, onClose, self = false, defaultTab, startSeparation = false }: UserPanelProps) {
     const {
         updateUser, enrollUser, hrUpdateUser, addUser, can, users,
         contracts, contractWorkers, shiftSchedules, clients,
@@ -113,7 +115,14 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab }: U
 
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab && tabs.some(t => t.id === defaultTab) ? defaultTab : 'identidad');
     const [enrollOpen, setEnrollOpen] = useState(false);
+    // Si nace abierto, su portal quedaría montado a la vez que el de la ficha y por debajo de ella:
+    // se abre un instante después (efecto de abajo) para que quede encima.
     const [separateOpen, setSeparateOpen] = useState(false);
+    useEffect(() => {
+        if (!startSeparation) return;
+        const t = setTimeout(() => setSeparateOpen(true), 250);
+        return () => clearTimeout(t);
+    }, [startSeparation]);
     const [reinstateOpen, setReinstateOpen] = useState(false);
 
     // Contratos/faenas asignados (Fase 2 Valar): asignar, cambiar turno o quitar sin

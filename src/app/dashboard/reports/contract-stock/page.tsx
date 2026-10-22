@@ -226,10 +226,38 @@ export default function ContractStockReportPage() {
             rows = rows.filter((m) => m.materialName.toLowerCase().includes(q));
         }
         rows = [...rows].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        const inflow = rows.filter((m) => m.quantityChange > 0).reduce((a, m) => a + m.quantityChange, 0);
-        const outflow = rows.filter((m) => m.quantityChange < 0).reduce((a, m) => a + Math.abs(m.quantityChange), 0);
-        return { rows, inflow, outflow, net: inflow - outflow };
-    }, [stockMovements, allowedContract, warehouseFilter, searchTerm, dateFrom, dateTo]);
+        // Un traslado deja dos asientos (−N en el origen, +N en el destino) pero no es ni compra
+        // ni consumo: se cuenta aparte para que un guante que sólo cambió de pañol no figure
+        // como "salida". El neto sí lo incluye: es lo que de verdad varió en ese lugar.
+        const isTransfer = (m: StockMovement) => m.type === "contract-transfer";
+        const sum = (f: (m: StockMovement) => boolean) =>
+            rows.filter(f).reduce((a, m) => a + Math.abs(m.quantityChange), 0);
+        const inflow = sum((m) => !isTransfer(m) && m.quantityChange > 0);
+        const outflow = sum((m) => !isTransfer(m) && m.quantityChange < 0);
+        const transferIn = sum((m) => isTransfer(m) && m.quantityChange > 0);
+        const transferOut = sum((m) => isTransfer(m) && m.quantityChange < 0);
+        // Dinero entregado: lo que salió hacia las personas (entregas menos devoluciones), a costo
+        // unitario. El gasto ya ocurrió en la compra; esto es otro dato: cuánto de lo comprado ya se
+        // entregó. Sólo consumibles (un activo se presta, no se gasta) y sólo con costo cargado.
+        let deliveredValue = 0;
+        let deliveredNoCost = 0;
+        for (const m of rows) {
+            // Ojo: una recepción de compra también se guarda como `request-delivery`, pero con
+            // cantidad POSITIVA. Una entrega sale con signo negativo; una devolución o anulación
+            // vuelve como `return-reentry` positivo.
+            const delivered = m.type === "request-delivery" && m.quantityChange < 0 ? Math.abs(m.quantityChange)
+                : m.type === "return-reentry" && m.quantityChange > 0 ? -m.quantityChange : 0;
+            if (!delivered) continue;
+            const mat = materialsMap.get(m.materialId);
+            if (mat?.usageType !== "Consumible" || mat.ownership === "cliente") continue;
+            if (!mat.unitCost) { deliveredNoCost += 1; continue; }
+            deliveredValue += delivered * mat.unitCost;
+        }
+        return {
+            rows, inflow, outflow, transferIn, transferOut, deliveredValue, deliveredNoCost,
+            net: inflow + transferIn - outflow - transferOut,
+        };
+    }, [stockMovements, allowedContract, warehouseFilter, searchTerm, dateFrom, dateTo, materialsMap]);
 
     // ── Export Excel (3 hojas) ────────────────────────────────────────────────
     const handleExport = async () => {
@@ -456,6 +484,21 @@ export default function ContractStockReportPage() {
             ),
         },
         {
+            key: "value",
+            header: "Valor",
+            headerClassName: "text-right",
+            className: "text-right",
+            cell: (m) => {
+                const isDelivery = m.type === "request-delivery" && m.quantityChange < 0;
+                const isReturn = m.type === "return-reentry" && m.quantityChange > 0;
+                if (!isDelivery && !isReturn) return <span className="text-xs text-muted-foreground">—</span>;
+                const mat = materialsMap.get(m.materialId);
+                if (mat?.usageType !== "Consumible" || mat.ownership === "cliente" || !mat.unitCost) return <span className="text-xs text-muted-foreground">—</span>;
+                const v = Math.abs(m.quantityChange) * mat.unitCost;
+                return <span className="text-xs font-semibold whitespace-nowrap">{isDelivery ? "" : "−"}{fmtCLP(v)}</span>;
+            },
+        },
+        {
             key: "contract",
             header: "Contrato",
             cell: (m) => m.contractId
@@ -643,6 +686,19 @@ export default function ContractStockReportPage() {
                             <div className="px-4 py-2 rounded-xl bg-warning-subtle text-warning-subtle-foreground flex items-center gap-2">
                                 <ArrowUpRight size={14} />
                                 <span className="text-xs font-bold">Salidas: {fmtQty(kardex.outflow)}</span>
+                            </div>
+                            {(kardex.transferIn > 0 || kardex.transferOut > 0) && (
+                                <div className="px-4 py-2 rounded-xl bg-muted text-muted-foreground flex items-center gap-2" title="Unidades que sólo cambiaron de pañol o contrato; no son compra ni consumo.">
+                                    <ArrowLeftRight size={14} />
+                                    <span className="text-xs font-bold">Traslados: +{fmtQty(kardex.transferIn)} / −{fmtQty(kardex.transferOut)}</span>
+                                </div>
+                            )}
+                            <div
+                                className="px-4 py-2 rounded-xl bg-primary/10 text-foreground flex items-center gap-2"
+                                title={`Lo entregado a personas menos lo devuelto, a costo unitario (sólo consumibles). No es el gasto: ese ya ocurrió al comprar.${kardex.deliveredNoCost ? ` ${kardex.deliveredNoCost} movimiento(s) sin costo cargado no se valorizan.` : ""}`}
+                            >
+                                <ArrowUpRight size={14} />
+                                <span className="text-xs font-bold">Valor entregado: {fmtCLP(kardex.deliveredValue)}</span>
                             </div>
                             <div className="px-4 py-2 rounded-xl bg-info-subtle text-info-subtle-foreground flex items-center gap-2">
                                 <ArrowLeftRight size={14} />

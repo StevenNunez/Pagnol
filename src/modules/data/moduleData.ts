@@ -77,7 +77,7 @@ export const MODULE_DATA: Record<string, readonly CollectionName[]> = {
         'costCenters', 'goodsReceipts', 'materialCategories', 'materials',
         'purchaseLots', 'purchaseOrders', 'purchaseRequests', 'quoteRequests',
         'rentalQuoteRequests', 'rentalRequests', 'salaryAdvances',
-        'supplierPayments', 'suppliers', 'units', 'users',
+        'supplierPayments', 'suppliers', 'units', 'users', 'warehouses',
     ],
     'attendance': [
         'attendanceLogs', 'clients', 'contractWorkers', 'contracts',

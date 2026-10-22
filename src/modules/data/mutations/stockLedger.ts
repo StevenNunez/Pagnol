@@ -18,6 +18,29 @@ type LedgerRow = {
     qty: number;
 };
 
+/**
+ * Pañol donde queda físicamente lo que se recibe de una compra. El contrato de la compra dice
+ * de quién es el costo; el pañol dice dónde está. Si quien recibe no eligió uno, va a la oficina
+ * central (`warehouses.is_central`); si la empresa no tiene una activa, queda sin pañol, como antes.
+ */
+export async function resolveReceivingWarehouse(
+    tenantId: string,
+    requested?: string | null,
+): Promise<string | null> {
+    // `undefined` = nadie eligió (oficina central); `null` = se eligió expresamente «sin pañol».
+    if (requested === null) return null;
+    if (requested) return requested;
+    const { data, error } = await supabase
+        .from('warehouses')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('is_central', true)
+        .eq('status', 'active')
+        .maybeSingle();
+    if (error) throw error;
+    return data?.id ?? null;
+}
+
 export interface ConsumeSource {
     contractId: string | null;
     qty: number;

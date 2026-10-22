@@ -29,7 +29,7 @@ const FormSchema = z.object({
 
 type FormData = z.infer<typeof FormSchema>;
 
-export function CreateUserForm() {
+export function CreateUserForm({ onCreated }: { onCreated?: () => void } = {}) {
   const { toast } = useToast();
   const { user: authUser, currentTenantId } = useAuth();
   const { users, addUser } = useAppState();
@@ -110,6 +110,7 @@ export function CreateUserForm() {
       });
       reset();
       setValue('internalId', generateInternalId());
+      onCreated?.();
 
     } catch (error: any) {
       console.error("Error creating user:", error);

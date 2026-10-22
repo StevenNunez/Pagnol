@@ -3,7 +3,7 @@ import { nextInternalCode } from '@/modules/core/lib/sequence-utils';
 import { nanoid } from 'nanoid';
 import type { ReceiptItem, ReceiptPhoto } from '@/modules/core/lib/data';
 import type { MutationContext as Context } from './context';
-import { addToLedger, consumeFromLedger } from './stockLedger';
+import { addToLedger, consumeFromLedger, resolveReceivingWarehouse } from './stockLedger';
 import { emitFinanceEntries, reverseEntriesForSource, type FinanceEntryInput } from './financeLedger';
 
 const RECEPTION_BUCKET = 'reception-photos';
@@ -54,6 +54,7 @@ async function ingestStock(
     item: ReceiptItem,
     poCode: string,
     contract: { contractId: string | null; contractName: string | null },
+    warehouseId: string | null,
     { user, tenantId, can }: Context,
 ): Promise<string> {
     let materialId = item.materialId;
@@ -86,11 +87,13 @@ async function ingestStock(
         if (updErr) throw updErr;
     }
 
-    // El stock recibido entra al desglose del contrato de la solicitud de compra.
+    // El stock recibido entra al desglose del contrato de la solicitud de compra (de quién es el
+    // costo) y al pañol donde se recibió (dónde está).
     await addToLedger({
         tenantId: tenantId!,
         materialId: materialId!,
         contractId: contract.contractId,
+        warehouseId,
         qty: item.receivedQuantity,
     });
 
@@ -105,6 +108,7 @@ async function ingestStock(
         user_name: user!.name,
         contract_id: contract.contractId,
         contract_name: contract.contractName,
+        warehouse_id: warehouseId,
         tenant_id: tenantId,
     });
     if (movErr) throw movErr;
@@ -177,6 +181,8 @@ export async function receiveGoodsReceipt(
         items: ReceiptItem[];
         photos: ReceiptPhoto[];
         notes?: string;
+        /** Pañol donde queda lo recibido. Sin indicar: la oficina central; `null`: sin pañol. */
+        warehouseId?: string | null;
     },
     { user, tenantId, can }: Context,
 ): Promise<void> {
@@ -205,6 +211,7 @@ export async function receiveGoodsReceipt(
     // se hiciera, quedaría un activo fantasma ("mantención de compresor",
     // stock 1) que además entraría en la valorización del inventario.
     const isServiceOrder = po.order_type === 'servicio';
+    const receivingWarehouseId = isServiceOrder ? null : await resolveReceivingWarehouse(tenantId, data.warehouseId);
 
     // Ingreso de stock + resolución de materialId definitivo por ítem.
     const ingestedItems: ReceiptItem[] = [];
@@ -216,7 +223,7 @@ export async function receiveGoodsReceipt(
             continue;
         }
         const contract = itemContract(contractMaps, it);
-        const materialId = await ingestStock(it, poCode, contract, { user, tenantId, can });
+        const materialId = await ingestStock(it, poCode, contract, receivingWarehouseId, { user, tenantId, can });
         ingestedItems.push({ ...it, materialId });
 
         // Retroalimentación de precios (decisión F0): el precio real de compra

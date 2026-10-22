@@ -239,7 +239,7 @@ export interface AppStateContextType extends AppDataState {
   uploadQuoteAttachment: (rfqId: string, file: File) => Promise<{ url: string; path: string; name: string }>;
   awardQuote: (rfqId: string, quoteId: string, proposalId: string) => Promise<string>;
   uploadReceptionPhoto: (purchaseOrderId: string, file: File) => Promise<ReceiptPhoto>;
-  receiveGoodsReceipt: (data: { purchaseOrderId: string; items: ReceiptItem[]; photos: ReceiptPhoto[]; notes?: string }) => Promise<void>;
+  receiveGoodsReceipt: (data: { purchaseOrderId: string; items: ReceiptItem[]; photos: ReceiptPhoto[]; notes?: string; warehouseId?: string | null }) => Promise<void>;
   deleteGoodsReceipt: (id: string) => Promise<void>;
   addCostCenter: (data: Partial<CostCenter>) => Promise<void>;
   updateCostCenter: (id: string, data: Partial<CostCenter>) => Promise<void>;

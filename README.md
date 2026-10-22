@@ -21,118 +21,144 @@ una hoja que después nadie encuentra.
 
 El problema no es el cuaderno. El problema es lo que el cuaderno no puede responder:
 
-> ¿Cuántas horas hombre lleva imputadas este contrato?
-> ¿Dónde está físicamente ese generador — en el Contrato 4 o en el pañol central?
-> ¿Este consumo ya se comprometió contra el presupuesto o todavía no?
+> ¿Dónde está hoy ese generador: en el contrato de la mina o en la oficina central?
+> ¿Cuánto dinero en guantes ya entregamos este mes, y cuánto gastamos al comprarlos?
 > ¿Quién retiró ese equipo, y cómo lo probamos tres meses después ante el mandante?
+> ¿Esta compra ya se comprometió contra el presupuesto o todavía no?
+> Este trabajador renunció: ¿cómo lo saco de la nómina sin perder lo que hizo?
 
-**Pagnol responde esas preguntas.** Es un SaaS multi-tenant que sigue el ciclo completo:
-la solicitud de terreno, la autorización, la orden de compra, la recepción, la entrega al
-trabajador con verificación biométrica, el reporte de obra, el estado de pago y el margen
-final del contrato. Cada eslabón deja un hecho registrado, y cada hecho tiene autor, fecha
-y contrato.
+**Pagnol responde esas preguntas.** Sigue el ciclo completo de un material o un equipo: la
+solicitud desde terreno, la autorización, la orden de compra, la recepción, la entrega al
+trabajador con verificación facial, el reporte de obra, el estado de pago y el margen del
+contrato. Cada paso deja un registro con autor, fecha y contrato.
 
 No es un inventario con login. Es la trazabilidad de la plata y de los fierros, desde que
 alguien los pide hasta que alguien los factura.
 
 ---
 
-## Las cinco ideas que sostienen el sistema
+## Lo que hace
 
-Si vas a tocar este código, esto es lo que conviene entender antes que la carpeta `src/`.
+**Pañol y activos**
 
-**1. El aislamiento entre empresas vive en la base de datos, no en la aplicación.**
-Cada tabla tiene RLS de Postgres filtrando por `tenant_id`. Si mañana alguien escribe una
-query y olvida el `where`, Postgres igual no le entrega filas ajenas. La seguridad no
-depende de que todos los programadores se acuerden siempre.
+| Módulo | Qué hace |
+|---|---|
+| **Gestión de Activos** | Catálogo único de equipos, herramientas, repuestos y consumibles. Cada activo con su código y QR: se graba en el fierro con pistola de marcado o se imprime como etiqueta adhesiva (para EPP, arrendados y lo del cliente). |
+| **Entregas y Devoluciones** | La entrega al trabajador se cierra con su cara. La persona se identifica con su credencial QR, con la cédula o por búsqueda. |
+| **Pañoles** | Varios pañoles por empresa, una oficina central, y traslados entre ellos que dejan registro. |
+| **Stock por Contrato** | Cuántas unidades hay en cada contrato y en cada pañol, valorizadas, con el kardex del período y el dinero entregado. Exporta a Excel. |
+| **Mantenimiento** | Órdenes de trabajo y reportes de terreno en cascada (OT → diario → semanal), con PDF y firmas en cada nivel. |
 
-**2. Los hechos económicos no se editan: se reversan.**
-Cuando se emite una OC el gasto queda *comprometido*; cuando llega la recepción queda
-*devengado*; cuando se paga la factura queda *pagado*. Cada transición escribe un asiento
-inmutable en `finance_entries`. ¿Te equivocaste? Entra un asiento de reversa. Nunca un
-`UPDATE` sobre el pasado — porque un estado de pago que cambia solo, retroactivamente, es
-una conversación muy incómoda con el mandante.
+**Compras y plata**
 
-**3. Un ledger que no cuadra no es un ledger.**
-`materials.stock` dice cuántas unidades hay en total. `material_stocks` dice dónde están,
-desglosadas por contrato y por pañol. La suma del desglose debe ser igual al total,
-siempre. `stockLedger.ts` es el único lugar autorizado a mover esa aguja, justamente para
-que el invariante tenga un solo dueño.
+| Módulo | Qué hace |
+|---|---|
+| **Abastecimiento** | Requerimientos, solicitudes de compra, cotizaciones con comparador, órdenes de compra, recepción contra la OC, proveedores y alertas. |
+| **Arriendos** | Contratos de arriendo, arrendadores y calendario de pagos. Lo que se arrienda entra al pañol como un activo más. |
+| **Pagos** | Facturas, adelantos y pagos a proveedores. |
+| **Finanzas** | Margen por contrato (ingreso contra costo) y presupuesto contra ejecutado, calculados desde el libro de hechos económicos. |
+| **Estado de Pago** | Estados de pago de los contratos con el mandante. |
+| **Autorizaciones** | Una puerta previa a Abastecimiento: las solicitudes de material, compra y arriendo pasan primero por quien las autoriza. |
 
-**4. La biometría no sale del dispositivo.**
-La cámara corre en el navegador del pañolero. Lo que se guarda no es una foto: es un
-descriptor de 128 números del que no se puede reconstruir un rostro. La comparación es 1:1
-contra el descriptor del trabajador que dice ser. Nunca viaja una imagen al servidor,
-porque el dato biométrico que no se transmite es el que no se puede filtrar.
+**Personas y seguridad**
 
-**5. En terreno no siempre hay señal.**
-Las Órdenes de Trabajo funcionan sin conexión: se guardan en IndexedDB y esperan en una
-cola de salida hasta que vuelve la red. El supervisor que está en el fondo de un rajo no
-tiene por qué saber que el sistema está offline.
+| Módulo | Qué hace |
+|---|---|
+| **Usuarios y Personal** | Alta, edición, credenciales QR, permisos y **desvinculación que conserva el historial**. 24 roles, con permisos ajustables por empresa. |
+| **Asistencia y remuneraciones** | Asistencia diaria, turnos, reportes, liquidaciones, horas extra y finiquitos. |
+| **RRHH** | Fichas, documentos y solicitudes de los trabajadores. |
+| **Seguridad (CPHS)** | Charlas diarias con firma, checklists, inspecciones y observaciones de conducta. |
+| **Control de Obra** | Carta Gantt, estructura de partidas (WBS) y protocolos de calidad. |
+
+**Para conectar con otros sistemas**
+
+| Pieza | Qué hace |
+|---|---|
+| **API pública `/api/v1`** | Materiales, productos, activos, proveedores, pañoles, movimientos y compras esperadas. Llaves por empresa con permisos acotados; documentación OpenAPI en `/api/v1/openapi.json`. |
+| **Webhooks** | Avisan eventos (activo creado, stock bajo el mínimo, compra recibida…) con firma [Standard Webhooks](https://www.standardwebhooks.com) y reintentos. |
+| **Servidor MCP `/api/mcp`** | Deja que un asistente de IA consulte los datos de la empresa con las mismas reglas de permisos que una persona. |
+| **Asistente interno** | Un chat que responde sobre el inventario usando esas mismas herramientas. |
 
 ---
 
 ## El recorrido de una entrega
 
-La forma más rápida de entender la arquitectura es seguir un dato real de punta a punta.
-Un trabajador va al pañol a retirar un taladro:
+La forma más rápida de entender el sistema es seguir un dato real. Un trabajador va al
+pañol a retirar guantes:
 
 ```
-  Credencial QR  ──►  el pañolero la escanea; identifica al trabajador
+  Identificación ──►  el pañolero lee su credencial QR o su cédula
         │
-  Verificación   ──►  face-api compara el rostro en vivo contra el descriptor
-   biométrica         almacenado. Todo en el navegador, sin subir la imagen.
+  Verificación   ──►  la cámara toma el rostro de quien está parado ahí; el navegador
+   facial             extrae 128 números y los manda al servidor, que los compara con
+        │             la plantilla guardada. Vuelve un veredicto, nunca la plantilla.
         │
-  Contrato       ──►  contract_workers dice a qué contrato está asignado.
-                      Uno solo → se autocompleta. Varios → el pañolero elige.
+  Contrato       ──►  el trabajador está asignado a un contrato (o a un área interna).
+                      Uno solo: se completa solo. Varios: el pañolero elige.
         │
-  Ledger         ──►  consumeFromLedger descuenta primero del contrato pedido,
-                      luego del pool de empresa, luego de otros contratos.
+  Existencias    ──►  se descuenta del contrato pedido; si no alcanza, del pool de la
+                      empresa; si no, de otros contratos. El total siempre cuadra.
         │
-  Kardex         ──►  stock_movements graba el movimiento con contrato, pañol,
-                      autor y hora. Este registro ya no se toca nunca más.
+  Kardex         ──►  queda el movimiento con contrato, pañol, autor y hora.
         │
-  Costo          ──►  la valorización imputa el consumo al centro de costo y
-                      aparece en el margen del contrato.
+  Costo          ──►  el gasto ya ocurrió al comprar, a nombre del contrato de la compra.
+                      Si las unidades venían de otro contrato, el costo pasa al que las
+                      consume; lo que ya estaba ahí no se cuenta dos veces.
 ```
 
-Seis capas, una sola acción del usuario: escanear y mirar a la cámara.
+Una sola acción para el usuario (mirar a la cámara) y seis registros detrás.
 
 ---
 
-## Módulos
+## Las decisiones que sostienen el sistema
 
-**Núcleo operacional**
+Si vas a tocar este código, esto conviene entenderlo antes que la carpeta `src/`.
 
-| Módulo | Qué hace |
+**1. Las empresas están separadas en la base de datos, no solo en la aplicación.**
+Cada tabla del negocio filtra por empresa con las reglas de seguridad de Postgres (RLS). Si
+mañana alguien escribe una consulta y olvida el filtro, la base igual no entrega filas
+ajenas. La seguridad no depende de que todos se acuerden siempre.
+
+**2. Lo económico no se edita: se corrige con un asiento nuevo.**
+Una OC emitida deja el gasto *comprometido*; la recepción lo deja *devengado*; el pago lo
+deja *pagado*. Cada paso escribe un hecho que no se modifica. ¿Te equivocaste? Entra un
+asiento de reversa. Un estado de pago que cambia solo, hacia atrás en el tiempo, es una
+conversación muy incómoda con el mandante.
+
+**3. Las existencias tienen que cuadrar, y "de quién es" no es "dónde está".**
+`materials.stock` dice cuántas unidades hay en total; `material_stocks` dice dónde están,
+por contrato y por pañol, y la suma del desglose es igual al total. El **contrato** de una
+unidad dice de quién es el costo (el que la compró); el **pañol** dice dónde está
+físicamente. Mover un guante de la oficina central a un pañol no cambia de quién es.
+Cambiarlo de contrato sí, y por eso se pide una justificación.
+
+**4. La plantilla de la cara no sale del servidor.**
+El navegador usa la cámara y calcula un descriptor de 128 números de quien está enfrente;
+solo eso viaja. La plantilla guardada vive en el servidor y la comparación ocurre allá, así
+que ningún compañero de la empresa puede descargar la cara de otro. Al enrolar a una
+persona también se guardan las fotos de su cédula y de su rostro, en una tabla aparte que
+solo puede leer la propia persona o un administrador de su empresa.
+
+**5. Quien se va se desvincula; no se borra.**
+Desvincular saca a la persona de la nómina y le cierra el acceso, pero deja a la vista sus
+entregas, firmas y solicitudes. Eliminar existe y es otra cosa: marca el perfil como
+eliminado y lo saca de todas las listas, y desde la aplicación no se puede deshacer. Por eso
+el botón de desvincular está a la mano y el diálogo de eliminar lo sugiere primero.
+
+---
+
+## Lo que funciona y lo que todavía no
+
+Esto no es un folleto, así que también va lo que falta:
+
+| Tema | Estado real |
 |---|---|
-| **Pagnol** | Pañol digital y superficie única de activos (ISO 55001): activos, movimientos con cierre biométrico, personal, mantenimiento, órdenes de trabajo. Es además la referencia del sistema de diseño. |
-| **Bodega** | Materiales, stock y solicitudes. Stock desglosado por contrato y por pañol, con valorización. |
-| **Reportes de Trabajo** | Reportes de terreno en cascada: OT → Diario → Semanal (formato SQM de 4 páginas), con PDF y firmas en cada nivel. |
-| **Reportes** | Tableros de entregas, inventario, estadísticas y valorización de stock por contrato, con exportación a Excel. |
-
-**Abastecimiento y finanzas**
-
-| Módulo | Qué hace |
-|---|---|
-| **Abastecimiento** | Hub de compras: solicitudes, RFQ con comparador de cotizaciones, órdenes, recepción ligada a OC, proveedores 360°, centros de costo, alertas. |
-| **Compras · Pagos** | Solicitudes y órdenes de compra, proveedores, lotes; facturas, adelantos y pagos a proveedores. |
-| **Arriendos** | Contratos, arrendadores (unificados con proveedores) y pagos. Las OC de arriendo materializan cada equipo como un activo del pañol. |
-| **Finanzas** | Margen por contrato y presupuesto contra ejecutado, construidos sobre el ledger de `finance_entries`. |
-| **Estado de Pago · DTE** | Estados de pago de contratos; facturación electrónica chilena (UI lista, backend pendiente). |
-
-**Personas, seguridad y control**
-
-| Módulo | Qué hace |
-|---|---|
-| **Asistencia** | Registro diario, reportes semanales y mensuales, cálculo de remuneraciones, finiquitos. |
-| **RRHH** | Fichas de empleados, documentos y solicitudes de trabajadores. |
-| **Seguridad (CPHS)** | Charlas diarias, checklists, inspecciones y observaciones de conducta. |
-| **Control de Obra** | WBS, carta Gantt y protocolos de calidad. |
-| **Autorizaciones (ADC)** | Puerta previa a Abastecimiento para solicitudes de material, compra y arriendo. |
-
-**Administración** — Usuarios y credenciales QR, permisos por tenant, configuración de
-empresa, wallet de anticipos, y consola de super-admin para la operación de la plataforma.
+| Facturación electrónica (DTE) | **Solo interfaz.** Las pantallas están, pero no hay conexión con el SII. |
+| Modo sin conexión | **Solo órdenes de trabajo.** Se guardan en el dispositivo y se sincronizan al volver la red. El resto de la app necesita internet. |
+| Prueba de vida facial | **En observación.** Se mide y se registra, pero todavía no bloquea una entrega. |
+| Pruebas automáticas | Unas 800, concentradas en la lógica de cálculo (existencias, finanzas, remuneraciones, offline, API). **Las pantallas se verifican a mano**, no hay pruebas de interfaz. |
+| Migraciones de base de datos | **No se aplican solas.** Hay que correrlas a mano, en orden. |
+| Despacho de webhooks | El cron de Vercel corre **una vez al día**. Para entregas casi inmediatas hay que llamar a `/api/cron/webhooks` cada minuto desde un programador externo. |
 
 ---
 
@@ -140,18 +166,19 @@ empresa, wallet de anticipos, y consola de super-admin para la operación de la 
 
 | Capa | Tecnología |
 |---|---|
-| Frontend | Next.js 16 (App Router), React 19, Tailwind, Radix / shadcn, Framer Motion |
-| Estado | `react-tracked` sobre un `useReducer` central — cada componente se re-renderiza solo por lo que lee |
-| Base de datos | PostgreSQL en Supabase, con RLS multi-tenant en todas las tablas |
-| Auth | Supabase Auth — login por email **o RUT** |
+| Aplicación | Next.js 16 (App Router), React 19, TypeScript, Tailwind, Radix / shadcn |
+| Estado | `react-tracked` sobre un `useReducer` central; cada módulo carga solo las colecciones que usa |
+| Base de datos | PostgreSQL en Supabase, con RLS por empresa |
+| Autenticación | Supabase Auth: se entra con correo **o con RUT** |
 | Tiempo real | Supabase Realtime |
-| IA | Google Genkit + Gemini, con un servidor **MCP** que expone las mismas herramientas a clientes externos |
-| Biometría | `@vladmandic/face-api` ejecutándose 100% en el navegador |
-| Credenciales | QR (`html5-qrcode` / `qrcode.react`) y tokens de enrolamiento |
-| Documentos | jsPDF y ExcelJS en cliente; `puppeteer-core` + `@sparticuz/chromium` en servidor |
-| Offline | Dexie (IndexedDB) + cola de salida + service worker |
-| Notificaciones | Web Push con VAPID |
-| Deploy | Vercel |
+| IA | Google Genkit + Gemini; servidor MCP con las mismas herramientas |
+| Rostro | `@vladmandic/face-api` en el navegador (extracción); comparación en el servidor |
+| Credenciales | Códigos QR (`html5-qrcode`, `qrcode.react`) y enlaces de enrolamiento |
+| Documentos | jsPDF y ExcelJS en el navegador; `puppeteer-core` + `@sparticuz/chromium` en el servidor |
+| Sin conexión | Dexie (IndexedDB) + cola de salida + service worker |
+| Avisos | Web Push (VAPID) y correo SMTP |
+| Pruebas | Vitest |
+| Despliegue | Vercel |
 
 ---
 
@@ -160,25 +187,29 @@ empresa, wallet de anticipos, y consola de super-admin para la operación de la 
 ```bash
 git clone https://github.com/StevenNunez/Pagnol.git
 cd Pagnol
-npm install --legacy-peer-deps
-
-cp .env.example .env.local  # Supabase, Gemini, SMTP y VAPID
-
+npm install            # el .npmrc ya activa legacy-peer-deps
+cp .env.example .env.local
 npm run dev
 ```
 
-Los modelos de face-api ya viajan en `public/models`, así que la biometría funciona
-desde el primer arranque — no hay que descargar nada aparte.
+Necesitas un proyecto de **Supabase** y completar `.env.local` (cada variable está
+explicada en `.env.example`). Los modelos de reconocimiento facial ya viajan en
+`public/models`, así que no hay que descargar nada aparte.
 
-Las **migraciones no se aplican solas**. Viven en `supabase/migrations/` (114 archivos con
-marca de tiempo) y se ejecutan a mano en el editor SQL de Supabase, en orden.
+**Las migraciones no se aplican solas.** Están en `supabase/migrations/` (155 archivos con
+fecha en el nombre) y se ejecutan a mano en el editor SQL de Supabase, de la más antigua a la
+más nueva.
 
 ```bash
-npm run build    # build de producción
-npm run lint     # ESLint
-npm test         # Vitest — motor offline y matemática del ledger financiero
-npx tsc --noEmit # chequeo de tipos, la herramienta principal de corrección
+npm run build      # build de producción
+npm run lint       # ESLint
+npm test           # Vitest
+npx tsc --noEmit   # chequeo de tipos
 ```
+
+Algo que muerde: un `UPDATE` hecho con el cliente anónimo que la RLS bloquea **no lanza
+error**; afecta cero filas y responde éxito. Si el cambio tiene que ocurrir, encadena
+`.select()` y verifica que volvieron filas.
 
 ---
 
@@ -186,38 +217,53 @@ npx tsc --noEmit # chequeo de tipos, la herramienta principal de corrección
 
 ```
 src/
-├── app/                  App Router: páginas de /dashboard y API routes
-│   └── api/mcp/          servidor MCP (JSON-RPC 2.0) para clientes externos
-├── components/           UI compartida; ui/ son los primitivos shadcn/Radix
+├── app/
+│   ├── dashboard/        las pantallas, una carpeta por módulo
+│   └── api/              rutas del servidor: /v1 (API pública), /mcp, /cron, /biometric…
+├── components/           interfaz compartida; ui/ son los primitivos shadcn/Radix
 ├── modules/
-│   ├── auth/             AuthProvider, permisos, cambio de tenant
-│   ├── core/             tipos de dominio, catálogo de permisos, hooks de datos
-│   ├── data/             DataProvider, mappers y mutations por dominio
-│   │   └── mutations/    stockLedger.ts y financeLedger.ts son los guardianes
-│   │                     de los invariantes descritos más arriba
-│   └── offline/          Dexie + outbox + sync (el único módulo con tests)
-├── ai/                   flujos Genkit y definiciones de herramientas
-└── lib/                  biometría, PDF, push, utilidades
+│   ├── auth/             sesión, cambio de empresa
+│   ├── core/             tipos, permisos y roles, hooks
+│   ├── data/             estado global, mapeadores y mutaciones por dominio
+│   │   └── mutations/    stockLedger.ts y financeLedger.ts guardan los invariantes
+│   └── offline/          IndexedDB, cola de salida y sincronización
+├── ai/                   flujos de Genkit y definición de las herramientas de consulta
+└── lib/                  rostro, PDF, API pública y webhooks, utilidades
 
-supabase/migrations/      114 migraciones SQL con timestamp
+supabase/migrations/      el esquema de la base, en orden
+public/models/            modelos de reconocimiento facial
 ```
 
-El historial de cambios se lleva en [`CHANGELOG.md`](CHANGELOG.md), en formato
-Keep a Changelog.
+---
+
+## Despliegue
+
+La app corre en **Vercel** y la base en **Supabase**.
+
+1. Importa el repositorio en Vercel. `vercel.json` ya fija el comando de instalación y el build.
+2. Carga en Vercel las variables de `.env.example`. Sin `CRON_SECRET` ninguna tarea
+   programada corre; sin `SUPABASE_SERVICE_ROLE_KEY` no funcionan las rutas de servidor.
+3. Aplica las migraciones en Supabase.
+4. Las tareas programadas (`vercel.json`) son: alertas de arriendo, tasa de la UF, costo de
+   mano de obra, revisión de retiros y despacho de webhooks, una vez al día cada una.
+5. Los PDF se generan en el servidor con Chromium. Los binarios de `@sparticuz/chromium`
+   están listados en `outputFileTracingIncludes` de `next.config.js`; si los quitas, el
+   despliegue falla.
 
 ---
 
 ## Seguridad
 
-- `.env`, `.env.local` y `.env.production` **nunca** se suben al repositorio; las
-  variables se configuran en el dashboard de Vercel.
-- La `SERVICE_ROLE_KEY` de Supabase se usa solo en API routes del servidor, jamás en el
-  cliente. Es la única llave que salta la RLS.
-- Cuidado con un detalle que muerde: un `UPDATE` del cliente anónimo que la RLS bloquea
-  **no lanza error** — afecta cero filas y devuelve éxito. Encadena `.select()` y verifica
-  que hayan vuelto filas cuando el update tenía que ocurrir.
-- El servidor MCP se autentica con un token propio (tabla `api_tokens`, guardado hasheado)
-  y resuelve el mismo contexto de tenant y permisos que tendría una persona.
+- `.env`, `.env.local` y similares **nunca** se suben al repositorio; las variables viven en
+  Vercel.
+- `SUPABASE_SERVICE_ROLE_KEY` se usa solo en rutas del servidor. Es la única llave que salta
+  la RLS, y cada consulta que la usa filtra por empresa de forma explícita.
+- La API pública se autentica con llaves por empresa. Solo se guarda su huella (SHA-256); la
+  llave se muestra una única vez al crearla.
+- El servidor MCP usa un token propio, guardado con hash, y resuelve la misma empresa y los
+  mismos permisos que tendría una persona.
+- Las contraseñas nuevas se revisan contra filtraciones conocidas antes de aceptarse.
+- La comparación facial y su umbral viven en el servidor, no en el navegador.
 
 ---
 

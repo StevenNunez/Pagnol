@@ -32,6 +32,7 @@ import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
 import { EnrollmentWizard } from '@/components/enrollment-wizard';
 import { SecureFileLink } from '@/components/secure-file-link';
+import { UserPanel } from '@/components/user-panel';
 
 // Cuentas de plataforma que no son "personal de faena": se ocultan de Gestión de Personal
 // para todos salvo super-admin (que ve todo).
@@ -162,6 +163,10 @@ export default function PersonalPage() {
   // (p.ej. Calidad, sin control total de usuarios).
   const canManageEmployees = can('users:create') || can('pagnol:enroll_personal');
   const canDelegatePermissions = can('permissions:manage');
+  // Editar la ficha abre el mismo panel que Gestión de Usuarios y Ficha de Empleados:
+  // lo que cada persona puede cambiar lo decide el panel según sus permisos.
+  const canEditPerson = can('users:edit') || can('hr_employees:edit');
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   const generateInternalId = useCallback(() => generateUserInternalId(users), [users]);
 
@@ -259,7 +264,7 @@ export default function PersonalPage() {
         </div>
       ),
     },
-    { key: 'rut', header: 'RUT', className: 'text-xs font-bold text-muted-foreground uppercase tracking-widest', cell: (emp) => emp.rut },
+    { key: 'rut', header: 'RUT', className: 'text-xs font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap', cell: (emp) => emp.rut },
     { key: 'internalId', header: 'ID Interno', className: 'text-xs font-mono tracking-widest', cell: (emp) => emp.internalId },
     { key: 'role', header: 'Rol', cell: (emp) => <Badge variant="outline">{getRoleDisplayName(emp.role)}</Badge> },
     {
@@ -294,6 +299,9 @@ export default function PersonalPage() {
       key: 'actions', header: 'Acciones', headerClassName: 'text-center',
       cell: (emp) => (
         <div className="flex items-center justify-center gap-3">
+          {canEditPerson && (
+            <Button variant="ghost" size="icon" onClick={() => setEditingUser(emp)} title="Editar ficha"><Pencil size={18} /></Button>
+          )}
           {canDelegatePermissions && emp.id !== currentUser?.id && (
             <Button variant="ghost" size="icon" onClick={() => handleOpenPermissions(emp)} className="text-pagnol-orange" title="Delegar Permisos"><Lock size={18} /></Button>
           )}
@@ -397,6 +405,15 @@ export default function PersonalPage() {
                 </div>
                 <div className="mt-1 flex flex-col gap-2">
                   <div className="flex gap-2">
+                    {canEditPerson && (
+                      <Button
+                        onClick={() => setEditingUser(emp)}
+                        variant="outline"
+                        className="flex-1 py-1 h-8 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5"
+                      >
+                        <Pencil size={11} /> Editar
+                      </Button>
+                    )}
                     {canDelegatePermissions && emp.id !== currentUser?.id && (() => {
                       const hasEnrollPerm = getEffectivePermissions(emp).includes('pagnol:enroll_personal');
                       return (
@@ -452,6 +469,14 @@ export default function PersonalPage() {
         </Card>
       )}
 
+
+      {editingUser && (
+        <UserPanel
+          user={editingUser}
+          isOpen={!!editingUser}
+          onClose={() => setEditingUser(null)}
+        />
+      )}
 
       {/* NEW ENROLLMENT WIZARD */}
       <EnrollmentWizard

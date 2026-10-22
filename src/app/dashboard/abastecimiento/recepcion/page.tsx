@@ -382,10 +382,22 @@ function ReceiveDialog({
     received?: Map<string, number>;
     materials: Material[];
     onClose: () => void;
-    receiveGoodsReceipt: (data: { purchaseOrderId: string; items: ReceiptItem[]; photos: ReceiptPhoto[]; notes?: string }) => Promise<void>;
+    receiveGoodsReceipt: (data: { purchaseOrderId: string; items: ReceiptItem[]; photos: ReceiptPhoto[]; notes?: string; warehouseId?: string | null }) => Promise<void>;
     uploadReceptionPhoto: (purchaseOrderId: string, file: File) => Promise<ReceiptPhoto>;
 }) {
     const { toast } = useToast();
+    const { warehouses } = useAppState();
+
+    // Dónde queda lo recibido. El contrato de la compra dice de quién es el costo; el pañol, dónde
+    // está. Por defecto la oficina central; si la empresa no tiene una, "sin pañol".
+    const activeWarehouses = useMemo(
+        () => (warehouses || []).filter((w) => w.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
+        [warehouses],
+    );
+    // null = nadie eligió todavía: vale la oficina central (calculado al renderizar, porque los
+    // pañoles pueden terminar de cargar después de abrir el diálogo).
+    const [warehouseChoice, setWarehouseChoice] = useState<string | null>(null);
+    const warehouseId = warehouseChoice ?? activeWarehouses.find((w) => w.isCentral)?.id ?? '';
 
     // RFC-004 F2: una OC de servicio se conforma, no se recibe — no hay stock
     // que ingresar ni material de destino que elegir.
@@ -459,7 +471,7 @@ function ReceiveDialog({
 
         setSubmitting(true);
         try {
-            await receiveGoodsReceipt({ purchaseOrderId: po.id, items, photos, notes: notes.trim() || undefined });
+            await receiveGoodsReceipt({ purchaseOrderId: po.id, items, photos, notes: notes.trim() || undefined, warehouseId: warehouseId || null });
             toast({
                 title: isServiceOrder ? "Conformidad registrada" : "Recepción registrada",
                 description: isServiceOrder
@@ -489,6 +501,24 @@ function ReceiveDialog({
                 </DialogHeader>
 
                 <div className="space-y-4">
+                    {!isServiceOrder && activeWarehouses.length > 0 && (
+                        <div className="space-y-1.5">
+                            <Label className="text-xs">¿Dónde queda lo recibido?</Label>
+                            <select
+                                value={warehouseId}
+                                onChange={(e) => setWarehouseChoice(e.target.value)}
+                                className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
+                            >
+                                <option value="">Sin pañol</option>
+                                {activeWarehouses.map((w) => (
+                                    <option key={w.id} value={w.id}>{w.name}{w.isCentral ? ' (oficina central)' : ''}</option>
+                                ))}
+                            </select>
+                            <p className="text-[11px] text-muted-foreground">
+                                El costo queda en el contrato de la compra; esto sólo registra dónde está físicamente.
+                            </p>
+                        </div>
+                    )}
                     {lines.map((l) => (
                         <div key={l.key} className="rounded-xl border p-4 space-y-3">
                             <div className="flex items-center justify-between gap-3">

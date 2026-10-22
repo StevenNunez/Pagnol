@@ -8,7 +8,7 @@ import { notifyAuthorizers } from '@/modules/core/lib/notify-authorizers';
 import { needsOpsReview } from '@/modules/core/lib/ops-review';
 import { loadSignedProposal } from './approvalMutations';
 import { isValidRut, formatRut } from '@/lib/rut';
-import { addToLedger } from './stockLedger';
+import { addToLedger, resolveReceivingWarehouse } from './stockLedger';
 import { emitFinanceEntries, reverseEntriesForSource, type FinanceEntryInput } from './financeLedger';
 
 import type { MutationContext as Context } from './context';
@@ -546,11 +546,14 @@ export async function receivePurchaseRequest(
     }, isClientSupply ? ['request_target', 'client_id'] : []);
   }
 
-  // El stock recibido entra al desglose del contrato de la solicitud de compra.
+  // El stock recibido entra al desglose del contrato de la solicitud de compra (de quién es el
+  // costo) y a la oficina central (dónde queda hasta que se traslade a un pañol).
+  const receivingWarehouseId = await resolveReceivingWarehouse(tenantId);
   await addToLedger({
     tenantId,
     materialId: materialId!,
     contractId: request.contract_id ?? null,
+    warehouseId: receivingWarehouseId,
     qty: receivedQuantity,
   });
 
@@ -572,6 +575,7 @@ export async function receivePurchaseRequest(
     related_request_id: requestId,
     contract_id: request.contract_id || null,
     contract_name: request.contract_name || null,
+    warehouse_id: receivingWarehouseId,
     tenant_id: tenantId,
   });
   if (movErr) throw movErr;

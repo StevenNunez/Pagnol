@@ -33,6 +33,7 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
     const [fromKey, setFromKey] = useState<string>(keyOf(null, null));
     const [toKey, setToKey] = useState<string>('');
     const [toWh, setToWh] = useState<string>(NO_WH);
+    const [toTouched, setToTouched] = useState(false);
     const [qty, setQty] = useState<string>('');
     const [justification, setJustification] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,11 +89,17 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
     const isAsset = isRastreable(material.usageType);
     const labelOf = (key: string) => (key === POOL ? 'Pool central' : contractMap.get(key)?.name || 'Contrato');
     const [fromContract, fromWh] = fromKey.split('|');
+    // Un consumible que cambia de contrato lleva su costo al contrato de destino (un activo no:
+    // sólo cambia de lugar). Es la excepción, no el movimiento normal.
+    const reassignsCost = !isAsset && !!toKey && toKey !== fromContract;
 
     const openTransfer = () => {
         const firstWithStock = rows.find((r) => r.qty > 0);
         setFromKey(firstWithStock?.key ?? keyOf(null, null));
-        setToKey(isAsset ? POOL : '');
+        // Por defecto el MISMO contrato: lo habitual es sólo cambiar de pañol. Cambiar de contrato
+        // reasigna el costo de las unidades y se pide expresamente.
+        setToKey(!isAsset && firstWithStock ? (firstWithStock.contractId ?? POOL) : POOL);
+        setToTouched(false);
         setToWh(NO_WH);
         // Una unidad con identidad propia (activo) se mueve de a una.
         setQty(Number(material.stock) === 1 ? '1' : '');
@@ -107,7 +114,11 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
             return;
         }
         if (toKey === fromContract && toWh === fromWh) {
-            notify('El destino es el mismo lugar de origen: cambia el contrato o el pañol.', 'destructive');
+            notify('El destino es el mismo lugar de origen: cambia el pañol (o reasigna el contrato).', 'destructive');
+            return;
+        }
+        if (reassignsCost && !justification.trim()) {
+            notify('Cambiar de contrato reasigna el costo: indica el motivo en la justificación.', 'destructive');
             return;
         }
         setIsSubmitting(true);
@@ -192,7 +203,7 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
                     <div className="space-y-4 py-2">
                         <div className="space-y-1.5">
                             <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Desde</Label>
-                            <Select value={fromKey} onValueChange={setFromKey}>
+                            <Select value={fromKey} onValueChange={(v) => { setFromKey(v); if (!toTouched && !isAsset) setToKey(v.split('|')[0]); }}>
                                 <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     {rows.filter((r) => r.qty > 0).map((r) => (
@@ -204,16 +215,21 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
                             </Select>
                         </div>
                         <div className="space-y-1.5">
-                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Contrato de destino</Label>
-                            <Select value={toKey} onValueChange={setToKey}>
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Contrato dueño del costo</Label>
+                            <Select value={toKey} onValueChange={(v) => { setToKey(v); setToTouched(true); }}>
                                 <SelectTrigger className="rounded-xl"><SelectValue placeholder="Selecciona destino…" /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value={POOL}>Pool central (sin contrato)</SelectItem>
+                                    <SelectItem value={POOL}>Pool central (sin contrato){fromContract === POOL ? ' — el mismo' : ''}</SelectItem>
                                     {!isAsset && activeContracts.map((c) => (
-                                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                        <SelectItem key={c.id} value={c.id}>{c.name}{fromContract === c.id ? ' — el mismo' : ''}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {reassignsCost && (
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-warning">
+                                    Cambiar de contrato mueve el costo de estas unidades al contrato de destino. Para sólo cambiarlas de pañol, deja el mismo contrato.
+                                </p>
+                            )}
                             {isAsset && (
                                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                                     Para entregarlo a un contrato o faena usa una solicitud de material.
@@ -247,7 +263,7 @@ export function ContractStockBreakdown({ material }: { material: Material }) {
                         </div>
                         <div className="space-y-1.5">
                             <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                Justificación (opcional)
+                                {reassignsCost ? 'Justificación (obligatoria al cambiar de contrato)' : 'Justificación (opcional)'}
                             </Label>
                             <Textarea
                                 value={justification}

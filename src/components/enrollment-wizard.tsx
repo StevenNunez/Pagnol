@@ -132,6 +132,7 @@ export function EnrollmentWizard({
                 password: selectedUser ? 'dummy-password' : '',
                 internalId: selectedUser?.internalId || generateInternalId(),
                 role: (selectedUser?.role as any) || 'operador',
+                cargo: selectedUser?.cargo || '',
             });
             // New users start at info step; existing users go straight to choose
             setMode(selectedUser ? 'choose' : 'desktop');

@@ -41,6 +41,7 @@ export default defineConfig({
       'src/lib/qrBmp.test.ts',
       'src/lib/rut.test.ts',
       'src/lib/worker-separation.test.ts',
+      'src/lib/pin.test.ts',
       'src/lib/daily-talk-attendance.test.ts',
       'src/lib/cedula.test.ts',
       'src/modules/core/lib/scan-code.test.ts',

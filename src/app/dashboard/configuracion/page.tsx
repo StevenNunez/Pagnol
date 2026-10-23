@@ -16,6 +16,7 @@ import { getInitials } from "@/modules/core/lib/sequence-utils";
 import { generateApiToken, type GeneratedApiToken } from "@/modules/core/lib/api-tokens-client";
 import { ApiKeysCard } from "./api-keys-card";
 import { WithdrawalModeCard } from "./withdrawal-mode-card";
+import { CarnetPinCard } from "./carnet-pin-card";
 import { ReceivingModeCard } from "./receiving-mode-card";
 import { ApprovalSettingsCard } from "./approval-settings-card";
 import {
@@ -466,6 +467,14 @@ export default function ConfiguracionPage() {
           workersWithoutSupervisor={(users || []).filter(u =>
             u.role === 'operador' && u.employmentStatus !== 'terminated' && !u.responsibleSupervisorId
           ).length}
+        />
+      )}
+
+      {currentTenant && (
+        <CarnetPinCard
+          tenant={currentTenant}
+          disabled={!canManage}
+          onSave={(required) => updateTenant(currentTenant.id, { carnetPinRequired: required })}
         />
       )}
 

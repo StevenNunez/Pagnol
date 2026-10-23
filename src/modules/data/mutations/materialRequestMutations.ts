@@ -447,7 +447,7 @@ export async function deliverApprovedMaterialRequest(
    * Va ANTES del contexto: `bindContext` inyecta el contexto como último
    * argumento, así que ningún parámetro puede ir después.
    */
-  verification: { mode: 'biometric' | 'exception' | 'rut'; exceptionGroupId?: string | null } | null,
+  verification: { mode: 'biometric' | 'exception' | 'rut' | 'pin'; exceptionGroupId?: string | null } | null,
   context: Context,
 ) {
   const { user } = context;

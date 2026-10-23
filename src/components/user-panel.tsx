@@ -30,6 +30,7 @@ import type { User } from '@/modules/core/lib/data';
 import { EmploymentContractSection } from '@/components/employment-contract-section';
 import { SeparateWorkerDialog, ReinstateWorkerDialog } from '@/components/hr/separate-worker-dialog';
 import { EraseBiometricsDialog } from '@/components/hr/erase-biometrics-dialog';
+import { getPinStatus, resetPin, type PinStatus } from '@/modules/core/lib/pin-client';
 import { SecureFileLink } from '@/components/secure-file-link';
 import { HR_DOCUMENTS_BUCKET } from '@/modules/core/lib/storage';
 import { CONSENT_VERSION, ELECTRONIC_DOCS_CONSENT_VERSION } from '@/modules/core/lib/biometric-consent';
@@ -121,6 +122,30 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab, sta
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab && tabs.some(t => t.id === defaultTab) ? defaultTab : 'identidad');
     const [enrollOpen, setEnrollOpen] = useState(false);
     const [eraseOpen, setEraseOpen] = useState(false);
+    // PIN de respaldo: sólo se muestra su ESTADO (nunca el PIN, que ni el servidor guarda en claro).
+    const [pinStatus, setPinStatus] = useState<PinStatus | null>(null);
+    const [pinResetting, setPinResetting] = useState(false);
+    const [pinConfirmReset, setPinConfirmReset] = useState(false);
+    const canSeePin = !self && (canHR || canEditUsers);
+    useEffect(() => {
+        if (!isOpen || activeTab !== 'biometria' || !canSeePin) return;
+        let alive = true;
+        getPinStatus(user.id).then(s => { if (alive) setPinStatus(s); }).catch(() => { if (alive) setPinStatus(null); });
+        return () => { alive = false; };
+    }, [isOpen, activeTab, canSeePin, user.id]);
+    const doResetPin = async () => {
+        setPinResetting(true);
+        try {
+            await resetPin(user.id);
+            setPinStatus(s => (s ? { ...s, hasPin: false, setAt: null, locked: false, attemptsLeft: 5, minutesLeft: 0 } : s));
+            setPinConfirmReset(false);
+            toast({ variant: 'success', title: 'PIN restablecido', description: 'La persona creará uno nuevo en su próxima entrega por carnet.' });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'No se pudo restablecer', description: err?.message || 'Intenta nuevamente.' });
+        } finally {
+            setPinResetting(false);
+        }
+    };
     const [generatingConsent, setGeneratingConsent] = useState(false);
     const [uploadingConsent, setUploadingConsent] = useState(false);
     // Escaneos de la autorización firmada que ya están en el perfil (el más nuevo primero).
@@ -694,6 +719,36 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab, sta
                                             </Button>
                                         ) : (
                                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Sin permiso para enrolar.</p>
+                                        )}
+                                        {canSeePin && pinStatus && (
+                                            <div className="max-w-sm space-y-2 border-t pt-5 w-full">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">PIN personal (respaldo)</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {pinStatus.locked
+                                                        ? `Bloqueado por demasiados intentos (reintenta en ${pinStatus.minutesLeft} min).`
+                                                        : pinStatus.hasPin
+                                                            ? `Creado el ${new Date(pinStatus.setAt as string).toLocaleDateString('es-CL')}.`
+                                                            : 'Aún no crea su PIN. Lo crea él mismo en su primera entrega por carnet.'}
+                                                    {!pinStatus.required && ' La empresa todavía no lo exige.'}
+                                                </p>
+                                                {pinStatus.hasPin && (
+                                                    pinConfirmReset ? (
+                                                        <div className="flex flex-wrap justify-center gap-2">
+                                                            <Button variant="destructive" disabled={pinResetting} onClick={doResetPin}
+                                                                className="rounded-xl font-black uppercase text-[10px] tracking-widest h-10 px-5 gap-2">
+                                                                {pinResetting && <Loader2 size={14} className="animate-spin" />} Sí, restablecer
+                                                            </Button>
+                                                            <Button variant="ghost" disabled={pinResetting} onClick={() => setPinConfirmReset(false)}
+                                                                className="rounded-xl font-black uppercase text-[10px] tracking-widest h-10 px-5">Cancelar</Button>
+                                                        </div>
+                                                    ) : (
+                                                        <Button variant="outline" onClick={() => setPinConfirmReset(true)}
+                                                            className="rounded-xl font-black uppercase text-[10px] tracking-widest h-10 px-5 gap-2">
+                                                            <KeyRound size={14} /> Restablecer PIN
+                                                        </Button>
+                                                    )
+                                                )}
+                                            </div>
                                         )}
                                         <div className="max-w-sm space-y-2 border-t pt-5 w-full">
                                             <p className="text-xs text-muted-foreground">

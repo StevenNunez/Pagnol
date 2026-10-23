@@ -47,6 +47,7 @@ import { formatRut } from '@/lib/rut';
 import { isWarehouseManager } from '@/lib/warehouse-managers';
 import { QrScannerDialog } from '@/components/qr-scanner-dialog';
 import { IdentityMethodChoice, CarnetEntry, type IdMethod } from './identity-method';
+import { PinDialog } from './pin-dialog';
 import { fetchRecordFields } from '@/modules/core/hooks/use-record-fields';
 import { PageHeader } from '@/components/page-header';
 import { SecureFileLink } from '@/components/secure-file-link';
@@ -319,6 +320,10 @@ export default function MovimientosPagnolPage() {
   const [scanMethod, setScanMethod] = useState<IdMethod>('choose');
   const [receiveMethod, setReceiveMethod] = useState<IdMethod>('choose');
   const [identifiedByRut, setIdentifiedByRut] = useState(false);
+  // PIN personal en la entrega por carnet. Si la empresa NO lo exige (marcha blanca) nada de esto se usa.
+  const pinRequired = currentTenant?.carnetPinRequired === true;
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const pinProofRef = useRef<{ workerId: string; verificationId: string } | null>(null);
   const [justReturnedIds, setJustReturnedIds] = useState<Set<string>>(new Set());
   const [pendingReturnTxs, setPendingReturnTxs] = useState<DisplayTransaction[]>([]);
   const [capturingPhotoFor, setCapturingPhotoFor] = useState<string | null>(null);
@@ -509,6 +514,7 @@ export default function MovimientosPagnolPage() {
     setIdText('');
     setReceiveIdText('');
     setIdentifiedByRut(false);
+    pinProofRef.current = null;
     setPendingDeliveryId(null);
     setPendingDeliveryCode(null);
     setIsPagnoleroConfirming(false);
@@ -582,6 +588,7 @@ export default function MovimientosPagnolPage() {
     // Sin rostro enrolado ya no se bloquea: se valida con el carnet al cerrar (paso de
     // recepción), o con una excepción autorizada si no tiene carnet a mano.
     setIdentifiedByRut(false);
+    pinProofRef.current = null;
     if (!emp.biometricEnrolled) {
       // ¿Ya hay una excepción autorizada para él? Puede haberla aprobado el ADC
       // desde la bandeja hace un minuto: llega por Realtime, sin recargar.
@@ -1204,8 +1211,8 @@ export default function MovimientosPagnolPage() {
    * un contrato que da a entender que hubo biometría cuando no la hubo es peor
    * que uno que no dice nada.
    */
-  const datosVerificacionParaContrato = useCallback((porCarnet = false) => {
-    if (porCarnet) return { mode: 'rut' as const };
+  const datosVerificacionParaContrato = useCallback((porCarnet = false, conPin = false) => {
+    if (porCarnet) return { mode: conPin ? ('pin' as const) : ('rut' as const) };
     if (!excepcionAprobada) return { mode: 'biometric' as const };
     const hechos = biometricVerifications.filter(h => h.exceptionGroupId === excepcionAprobada);
     const aprobacion = hechos.find(h => h.outcome === 'exception_granted');
@@ -1230,6 +1237,15 @@ export default function MovimientosPagnolPage() {
     // Con el carnet o con una excepción autorizada no hay cámara ni biometría.
     const sinBiometria = conExcepcion || porCarnet;
 
+    // Entrega por carnet con PIN exigido: el TRABAJADOR confirma con su PIN antes de cerrar. El
+    // diálogo valida en el servidor, que escribe la evidencia (`id_document_pin`), y vuelve acá.
+    // Apagado (marcha blanca) este bloque no hace nada y todo sigue como siempre.
+    const pinProof = pinProofRef.current && pinProofRef.current.workerId === selectedEmployee.id ? pinProofRef.current : null;
+    if (porCarnet && pinRequired && !pinProof) {
+      setPinDialogOpen(true);
+      return;
+    }
+
     if (!sinBiometria) {
       if (!sujetoAVerificarId) {
         toast({
@@ -1251,7 +1267,8 @@ export default function MovimientosPagnolPage() {
       if (porCarnet) {
         // Éste es el acto que constituye la aceptación del activo: queda el hecho
         // (identidad acreditada con el carnet) igual que antes quedaba el de la cara.
-        void recordBiometricVerification({
+        // Con PIN, la evidencia ya la escribió el servidor al validarlo: no se duplica.
+        if (!pinProof) void recordBiometricVerification({
           subject: { id: selectedEmployee.id, name: selectedEmployee.name },
           stage: 'recepcion',
           outcome: 'id_document',
@@ -1386,7 +1403,7 @@ export default function MovimientosPagnolPage() {
             pagnoleroName: currentUser?.name || 'Pañolero',
             pagnoleroSignatureUrl: currentUser?.signature || null,
             logoUrl: currentTenant?.logoUrl,
-            verification: datosVerificacionParaContrato(porCarnet),
+            verification: datosVerificacionParaContrato(porCarnet, !!pinProof),
           });
 
           // 2. Subir a Storage con timeout (8s)
@@ -1412,7 +1429,7 @@ export default function MovimientosPagnolPage() {
             contractUrl,
             { id: selectedEmployee.id, name: selectedEmployee.name },
             porCarnet
-              ? { mode: 'rut' }
+              ? { mode: pinProof ? 'pin' : 'rut' }
               : conExcepcion
                 ? { mode: 'exception', exceptionGroupId: excepcionAprobada }
                 : { mode: 'biometric' },
@@ -1468,7 +1485,7 @@ export default function MovimientosPagnolPage() {
             pagnoleroName: currentUser?.name || 'Pañolero',
             pagnoleroSignatureUrl: currentUser?.signature || null,
             logoUrl: currentTenant?.logoUrl,
-            verification: datosVerificacionParaContrato(),
+            verification: datosVerificacionParaContrato(porCarnet, !!pinProof),
           });
 
           // El tenant va EN LA RUTA: ver la nota de `return-evidence` más arriba.
@@ -1567,6 +1584,7 @@ export default function MovimientosPagnolPage() {
         refreshData();
       }
       setTxState('CERRADA');
+      pinProofRef.current = null;
       setFlowStep('COMPLETED');
       toast({
         variant: 'success',
@@ -2755,6 +2773,21 @@ export default function MovimientosPagnolPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* PIN del trabajador: sólo si la empresa lo exige (marcha blanca = nunca se abre). */}
+      <PinDialog
+        open={pinDialogOpen}
+        worker={selectedEmployee ? { id: selectedEmployee.id, name: selectedEmployee.name } : null}
+        items={selectedAssetIds.map(id => `${qtyOf(id)} × ${materialsMap.get(id)?.name || 'Ítem'}`)}
+        trace={{ requestId: pendingDeliveryId, transactionCode: pendingDeliveryCode }}
+        onCancel={() => setPinDialogOpen(false)}
+        onVerified={(verificationId) => {
+          if (!selectedEmployee) return;
+          pinProofRef.current = { workerId: selectedEmployee.id, verificationId };
+          setPinDialogOpen(false);
+          void handleFinalAcceptance(true);
+        }}
+      />
 
       {/* Única vía para que un activo salga sin verificación facial. */}
       <BiometricExceptionDialog

@@ -317,6 +317,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             codeTypes: t.code_types ?? {},
             laborCostFactor: t.labor_cost_factor != null ? Number(t.labor_cost_factor) : undefined,
             withdrawalReviewMode: t.withdrawal_review_mode === 'post' ? 'post' as const : 'prior' as const,
+            carnetPinRequired: t.carnet_pin_required === true,
             withdrawalReviewDeadlineHours: t.withdrawal_review_deadline_hours != null ? Number(t.withdrawal_review_deadline_hours) : 48,
             receivingMode: t.receiving_mode === 'pagnol' ? 'pagnol' as const : 'externa' as const,
             approvalSettings: t.approval_settings ?? null,

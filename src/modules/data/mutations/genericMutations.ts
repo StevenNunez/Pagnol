@@ -44,6 +44,7 @@ export async function updateTenant(tenantId: string, data: Partial<Tenant>, { }:
     if (data.codeTypes !== undefined) payload.code_types = data.codeTypes ?? {};
     if (data.laborCostFactor !== undefined) payload.labor_cost_factor = data.laborCostFactor;
     if (data.withdrawalReviewMode !== undefined) payload.withdrawal_review_mode = data.withdrawalReviewMode;
+    if (data.carnetPinRequired !== undefined) payload.carnet_pin_required = data.carnetPinRequired;
     if (data.withdrawalReviewDeadlineHours !== undefined) payload.withdrawal_review_deadline_hours = data.withdrawalReviewDeadlineHours;
     if (data.receivingMode !== undefined) payload.receiving_mode = data.receivingMode;
     if (data.approvalSettings !== undefined) payload.approval_settings = data.approvalSettings;

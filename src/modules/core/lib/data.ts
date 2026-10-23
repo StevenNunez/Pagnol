@@ -40,6 +40,8 @@ export interface Tenant {
   // de entregar (histórico); 'post' = C y B se entregan en el acto y el
   // supervisor los revisa después; A sigue con aprobación previa.
   withdrawalReviewMode?: 'prior' | 'post';
+  // Entrega por carnet: exige el PIN personal del trabajador. Apagado = marcha blanca (carnet solo).
+  carnetPinRequired?: boolean;
   // Horas que puede esperar una revisión posterior antes de escalarse al Jefe
   // de Operaciones. No detiene la bodega: sólo avisa y marca "vencido".
   withdrawalReviewDeadlineHours?: number;

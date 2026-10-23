@@ -456,7 +456,7 @@ export interface Severance {
     createdAt: string;
 }
 
-export type HRDocumentType = 'contract' | 'certificate' | 'license' | 'exam' | 'other';
+export type HRDocumentType = 'contract' | 'certificate' | 'license' | 'exam' | 'consent' | 'other';
 
 export interface HRDocument {
   id: string;

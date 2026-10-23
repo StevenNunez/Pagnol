@@ -94,7 +94,7 @@ export function SeparateWorkerDialog({
         },
         {
             key: "company", title: "De la empresa", icon: Building2,
-            body: "Deja de ser trabajador activo: no podrá retirar nada y se cierra su acceso a Pagnol.",
+            body: "Deja de ser trabajador activo: no podrá retirar nada y se cierra su acceso a Pagnol. Se borran su rostro y las fotos de su cédula (si debe devolver equipos, quedan hasta que los devuelva).",
         },
     ];
 
@@ -178,6 +178,7 @@ export function SeparateWorkerDialog({
                                 </ul>
                                 <p className="text-xs text-muted-foreground">
                                     Se desvincula igual, pero se avisa a bodega y a su supervisor, y queda el pendiente anotado.
+                                    {scope === "company" && " Su rostro no se borra todavía: sigue pendiente en Desvinculaciones, con un botón para borrarlo cuando devuelva lo que debe."}
                                 </p>
                             </>
                         )}

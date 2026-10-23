@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     X, Save, Loader2, User as UserIcon, Briefcase, ScanFace, KeyRound,
-    ShieldCheck, Mail, Signature, Lock, Trash2, Plus,
+    ShieldCheck, Mail, Signature, Lock, Trash2, Plus, FileText,
 } from 'lucide-react';
 import { UserIdentityFields } from '@/components/user-identity-fields';
 import { UserPermissionsEditor } from '@/components/user-permissions-editor';
@@ -29,6 +29,10 @@ import { ROLES } from '@/modules/core/lib/permissions';
 import type { User } from '@/modules/core/lib/data';
 import { EmploymentContractSection } from '@/components/employment-contract-section';
 import { SeparateWorkerDialog, ReinstateWorkerDialog } from '@/components/hr/separate-worker-dialog';
+import { EraseBiometricsDialog } from '@/components/hr/erase-biometrics-dialog';
+import { SecureFileLink } from '@/components/secure-file-link';
+import { HR_DOCUMENTS_BUCKET } from '@/modules/core/lib/storage';
+import { CONSENT_VERSION, ELECTRONIC_DOCS_CONSENT_VERSION } from '@/modules/core/lib/biometric-consent';
 
 const ProfileSchema = z.object({
     name: z.string().min(3, 'El nombre es requerido.'),
@@ -81,8 +85,9 @@ const labelCls = 'text-[10px] font-black uppercase tracking-widest text-muted-fo
 export function UserPanel({ user, isOpen, onClose, self = false, defaultTab, startSeparation = false }: UserPanelProps) {
     const {
         updateUser, enrollUser, hrUpdateUser, addUser, can, users,
-        contracts, contractWorkers, shiftSchedules, clients,
+        contracts, contractWorkers, shiftSchedules, clients, currentTenant,
         addContractWorker, removeContractWorker, updateContractWorker,
+        hrDocuments, addHRDocument,
     } = useAppState();
     const { user: authUser } = useAuth();
     const { toast } = useToast();
@@ -115,6 +120,69 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab, sta
 
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab && tabs.some(t => t.id === defaultTab) ? defaultTab : 'identidad');
     const [enrollOpen, setEnrollOpen] = useState(false);
+    const [eraseOpen, setEraseOpen] = useState(false);
+    const [generatingConsent, setGeneratingConsent] = useState(false);
+    const [uploadingConsent, setUploadingConsent] = useState(false);
+    // Escaneos de la autorización firmada que ya están en el perfil (el más nuevo primero).
+    const signedConsents = useMemo(
+        () => (hrDocuments || [])
+            .filter(d => d.userId === user.id && d.documentType === 'consent')
+            .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()),
+        [hrDocuments, user.id],
+    );
+    const canUploadConsent = can('hr_documents:manage');
+    const uploadSignedConsent = async (file: File | undefined) => {
+        if (!file) return;
+        const okType = file.type === 'application/pdf' || file.type.startsWith('image/');
+        if (!okType) {
+            toast({ variant: 'destructive', title: 'Archivo no válido', description: 'Sube el escaneo como PDF o como foto (JPG/PNG).' });
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            toast({ variant: 'destructive', title: 'Archivo muy pesado', description: 'El máximo es 10 MB. Escanéalo a menor resolución.' });
+            return;
+        }
+        setUploadingConsent(true);
+        try {
+            await addHRDocument({
+                userId: user.id,
+                userName: user.name,
+                documentType: 'consent',
+                name: `Autorización informada firmada (biometría v${CONSENT_VERSION} · documentos electrónicos v${ELECTRONIC_DOCS_CONSENT_VERSION})`,
+                issueDate: new Date().toISOString().slice(0, 10),
+                expiryDate: null,
+                notes: 'Escaneo del formato impreso firmado por el trabajador.',
+            }, file);
+            toast({ variant: 'success', title: 'Escaneo guardado', description: 'Quedó en los documentos de RR.HH. de esta persona.' });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'No se pudo guardar el escaneo', description: err?.message || 'Intenta nuevamente.' });
+        } finally {
+            setUploadingConsent(false);
+        }
+    };
+    // Formato impreso del consentimiento (con los datos de la persona, o en blanco).
+    const downloadConsent = async (blank: boolean) => {
+        setGeneratingConsent(true);
+        try {
+            const { generateConsentPdf } = await import('@/lib/consent-pdf-generator');
+            await generateConsentPdf({
+                empresa: {
+                    name: currentTenant?.name || '',
+                    rut: currentTenant?.rut,
+                    address: currentTenant?.address,
+                    logoUrl: currentTenant?.logoUrl,
+                    representante: currentTenant?.legalRepresentative,
+                },
+                worker: blank ? null : { name: user.name, rut: user.rut },
+            });
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'No se pudo generar el documento', description: err?.message || 'Intenta nuevamente.' });
+        } finally {
+            setGeneratingConsent(false);
+        }
+    };
+    // Borrar el rostro y la cédula: la propia persona (retira su autorización) o quien gestiona RR.HH./usuarios.
+    const canEraseBiometrics = self || canHR || canEditUsers;
     // Si nace abierto, su portal quedaría montado a la vez que el de la ficha y por debajo de ella:
     // se abre un instante después (efecto de abajo) para que quede encima.
     const [separateOpen, setSeparateOpen] = useState(false);
@@ -334,6 +402,15 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab, sta
                     onAddUser={addUser}
                     onEnrollUser={enrollUser}
                     tenantId={authUser?.tenantId || null}
+                />
+            )}
+            {eraseOpen && (
+                <EraseBiometricsDialog
+                    userId={user.id}
+                    userName={user.name}
+                    reason={user.employmentStatus === 'terminated' ? 'separation' : 'revocation'}
+                    open={eraseOpen}
+                    onClose={() => setEraseOpen(false)}
                 />
             )}
             {canSeparate && separateOpen && (
@@ -617,6 +694,60 @@ export function UserPanel({ user, isOpen, onClose, self = false, defaultTab, sta
                                             </Button>
                                         ) : (
                                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Sin permiso para enrolar.</p>
+                                        )}
+                                        <div className="max-w-sm space-y-2 border-t pt-5 w-full">
+                                            <p className="text-xs text-muted-foreground">
+                                                Formato para que el trabajador firme su autorización (datos biométricos y documentos electrónicos).
+                                            </p>
+                                            <div className="flex flex-wrap justify-center gap-2">
+                                                <Button variant="outline" disabled={generatingConsent} onClick={() => downloadConsent(false)}
+                                                    className="rounded-xl font-black uppercase text-[10px] tracking-widest h-11 px-5 gap-2">
+                                                    {generatingConsent ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />} Con sus datos
+                                                </Button>
+                                                <Button variant="ghost" disabled={generatingConsent} onClick={() => downloadConsent(true)}
+                                                    className="rounded-xl font-black uppercase text-[10px] tracking-widest h-11 px-5">
+                                                    En blanco
+                                                </Button>
+                                            </div>
+
+                                            {/* Escaneo firmado: queda en los documentos de RR.HH. del trabajador */}
+                                            <div className="pt-3 space-y-2">
+                                                {signedConsents.length > 0 ? (
+                                                    <ul className="space-y-1.5 text-left">
+                                                        {signedConsents.map(d => (
+                                                            <li key={d.id} className="flex items-center justify-between gap-3 rounded-xl border bg-success-subtle/40 px-3 py-2 text-xs">
+                                                                <span className="flex items-center gap-2 min-w-0">
+                                                                    <ShieldCheck size={14} className="text-success shrink-0" />
+                                                                    <span className="truncate">Firmada el {new Date((d.issueDate || d.createdAt) as any).toLocaleDateString('es-CL')}</span>
+                                                                </span>
+                                                                <SecureFileLink stored={d.filePath || d.fileUrl} bucket={HR_DOCUMENTS_BUCKET} className="font-bold text-primary underline shrink-0">
+                                                                    Ver
+                                                                </SecureFileLink>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                ) : (
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-warning">Sin escaneo firmado</p>
+                                                )}
+                                                {canUploadConsent && (
+                                                    <label className={`inline-flex items-center justify-center gap-2 rounded-xl border h-11 px-5 text-[10px] font-black uppercase tracking-widest cursor-pointer hover:bg-muted ${uploadingConsent ? 'opacity-50 pointer-events-none' : ''}`}>
+                                                        {uploadingConsent ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Subir escaneo firmado
+                                                        <input type="file" accept="application/pdf,image/*" className="hidden" disabled={uploadingConsent}
+                                                            onChange={e => { void uploadSignedConsent(e.target.files?.[0]); e.target.value = ''; }} />
+                                                    </label>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {user.biometricEnrolled && canEraseBiometrics && (
+                                            <div className="max-w-sm space-y-2 border-t pt-5">
+                                                <p className="text-xs text-muted-foreground">
+                                                    Si retira su autorización, se borran su rostro y las fotos de su cédula.
+                                                </p>
+                                                <Button variant="outline" onClick={() => setEraseOpen(true)}
+                                                    className="rounded-xl font-black uppercase text-[10px] tracking-widest h-11 px-8 gap-2 text-destructive border-destructive/40 hover:bg-destructive/10">
+                                                    <Trash2 size={16} /> Borrar datos biométricos
+                                                </Button>
+                                            </div>
                                         )}
                                     </div>
                                 </TabsContent>

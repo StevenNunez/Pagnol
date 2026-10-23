@@ -9,7 +9,8 @@ import { supabase } from '@/modules/core/lib/supabase';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, Search, ShieldOff, UserMinus } from 'lucide-react';
+import { RefreshCw, Search, ShieldOff, Trash2, UserMinus } from 'lucide-react';
+import { EraseBiometricsDialog } from '@/components/hr/erase-biometrics-dialog';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { SEPARATION_REASON_LABEL, type PendingItem, type SeparationReason } from '@/lib/worker-separation';
@@ -37,8 +38,11 @@ interface SeparationRow {
  * solo cuando el equipo vuelve al pañol.
  */
 export default function DesvinculacionesPage() {
-  const { can } = useAppState();
+  const { can, users } = useAppState();
   const allowed = can('hr_employees:edit');
+  // Quién sigue con el rostro registrado (el borrado automático no corre si debía devolver equipos).
+  const enrolledIds = useMemo(() => new Set((users ?? []).filter(u => u.biometricEnrolled).map(u => u.id)), [users]);
+  const [eraseTarget, setEraseTarget] = useState<{ id: string; name: string } | null>(null);
 
   const [rows, setRows] = useState<SeparationRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +150,27 @@ export default function DesvinculacionesPage() {
         );
       },
     },
+    {
+      key: 'biometrics', header: 'Datos biométricos',
+      cell: r => {
+        // Sólo importa en la última salida de la empresa de cada persona.
+        if (r.kind !== 'separation' || r.scope !== 'company' || latestByWorker.get(r.worker_id) !== r.id) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        if (!enrolledIds.has(r.worker_id)) return <Badge variant="outline" className="badge-success">Borrados</Badge>;
+        return (
+          <div className="space-y-1">
+            <Badge variant="outline" className="badge-warning">Pendiente de borrar</Badge>
+            <div>
+              <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-destructive"
+                onClick={() => setEraseTarget({ id: r.worker_id, name: r.worker_name })}>
+                <Trash2 className="h-3.5 w-3.5" /> Borrar ahora
+              </Button>
+            </div>
+          </div>
+        );
+      },
+    },
     { key: 'by', header: 'Registró', cell: r => <span className="text-xs text-muted-foreground">{r.created_by_name}</span> },
   ];
 
@@ -176,8 +201,17 @@ export default function DesvinculacionesPage() {
           title: search ? 'Sin resultados' : 'Aún no hay desvinculaciones',
           description: search ? `No se encontró "${search}".` : 'Se registran desde la ficha del trabajador (Contrato / RR.HH. › Desvincular).',
         }}
-        minWidth="900px"
+        minWidth="1000px"
       />
+      {eraseTarget && (
+        <EraseBiometricsDialog
+          userId={eraseTarget.id}
+          userName={eraseTarget.name}
+          reason="separation"
+          open
+          onClose={() => setEraseTarget(null)}
+        />
+      )}
     </PageShell>
   );
 }

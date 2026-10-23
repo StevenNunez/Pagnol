@@ -11,9 +11,13 @@
  * el texto completo, así que los consentimientos viejos siguen siendo válidos
  * para la redacción que su titular efectivamente leyó; la versión es lo que
  * permite saber a quién habría que volver a pedírselo.
+ *
+ * 1.1 (2026-10-22): el texto prometía eliminar los datos al terminar el vínculo o
+ * al revocar, y nada lo hacía. Ahora sí (migración `20261102000000`), y se aclara
+ * qué se conserva (la constancia y el registro de entregas).
  */
 
-export const CONSENT_VERSION = '1.0';
+export const CONSENT_VERSION = '1.1';
 
 /**
  * El texto NO promete que los datos se borren al terminar el trámite: Pagnol
@@ -31,7 +35,7 @@ export function buildConsentText(empresa: string): string {
 
         `Qué se guarda: una plantilla matemática derivada de mi rostro (un conjunto de valores numéricos, del cual no es posible reconstruir mi fotografía), junto con la selfie y las imágenes de mi cédula que entregué en este proceso. La plantilla se almacena cifrada en el servidor y no es visible para otros trabajadores ni para mis compañeros de faena.`,
 
-        `Por cuánto tiempo: mientras se mantenga mi vínculo con ${nombreEmpresa} y por el plazo que exija la normativa laboral aplicable. Terminado ese período, o si retiro esta autorización, mis datos biométricos son eliminados.`,
+        `Por cuánto tiempo: mientras se mantenga mi vínculo con ${nombreEmpresa}. Al terminar mi relación con la empresa, o si retiro esta autorización, se eliminan la plantilla de mi rostro, mi selfie y las imágenes de mi cédula (si en ese momento debo devolver equipos, la eliminación se hace cuando los devuelva). Se conservan la constancia de esta autorización y el registro de las entregas y devoluciones en que participé, como respaldo de lo ocurrido.`,
 
         `Declaro conocer que puedo revocar esta autorización en cualquier momento, y que en todo momento puedo ejercer los derechos de acceso, rectificación, cancelación y oposición sobre mis datos personales, dirigiéndome a ${nombreEmpresa}. Revocar la autorización no afecta la validez del tratamiento realizado antes de hacerlo.`,
     ].join('\n\n');
@@ -40,4 +44,23 @@ export function buildConsentText(empresa: string): string {
 /** Los párrafos sueltos, para pintarlos en pantalla. */
 export function consentParagraphs(empresa: string): string[] {
     return buildConsentText(empresa).split('\n\n');
+}
+
+/**
+ * Segunda autorización del formato impreso: documentos y firma electrónicos
+ * (Dictamen DT 789/15: consentimiento expreso; quien no acepta recibe todo en
+ * papel; la copia va al correo PARTICULAR, no al institucional). Vive acá, junto
+ * al texto biométrico, para que ninguno de los dos se copie a otro archivo.
+ * Texto NUEVO: debe revisarlo asesoría legal antes de usarse.
+ */
+export const ELECTRONIC_DOCS_CONSENT_VERSION = '1.0';
+
+export function electronicDocsParagraphs(empresa: string): string[] {
+  const nombreEmpresa = (empresa || '').trim() || 'la empresa';
+  return [
+    `Autorizo a ${nombreEmpresa} para que los documentos derivados de mi relación laboral que se emitan en la plataforma Pagnol —en particular los comprobantes de entrega de elementos de protección personal, materiales y herramientas— sean confeccionados, procesados, firmados y enviados de manera electrónica.`,
+    `Reconozco como mi firma electrónica simple el acto de identificarme en la plataforma por los medios que disponga la empresa (cédula de identidad, verificación de mi rostro u otro medio personal) y de confirmar la recepción. Cada documento queda registrado con mi nombre, RUT, fecha, hora y el medio con que me identifiqué, y puede imprimirse.`,
+    `Indico mi correo electrónico PARTICULAR —no el de la empresa— para que se me envíe automáticamente una copia de cada documento. Me comprometo a avisar si cambia.`,
+    `Entiendo que puedo negarme a esta modalidad, y que en ese caso mis documentos se me entregarán en papel y los firmaré de forma manuscrita, sin que ello afecte mi relación laboral. Puedo retirar esta autorización en cualquier momento.`,
+  ];
 }

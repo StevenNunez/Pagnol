@@ -18,6 +18,7 @@ export const HR_DOCUMENT_TYPE_LABEL: Record<HRDocumentType, string> = {
   certificate: 'Certificado',
   license: 'Licencia/Permiso',
   exam: 'Examen',
+  consent: 'Autorización firmada',
   other: 'Otro',
 };
 
